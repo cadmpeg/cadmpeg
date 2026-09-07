@@ -218,20 +218,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_ref()
         .expect("complete reference signature");
-    assert_eq!(signature.production.first_reference, 3);
+    assert_eq!(signature.production.first_reference(), 3);
     assert_eq!(signature.first_entity.entity_id(), 3);
     assert_eq!(
         signature.first_entity.entity(),
         Some(native.entity_records[2].id.as_str())
     );
     assert!(!signature.first_entity.is_null());
-    assert_eq!(signature.production.second_reference, 4);
+    assert_eq!(signature.production.second_reference(), 4);
     assert_eq!(signature.second_entity.entity_id(), 4);
     assert!(signature.second_entity.entity().is_none());
     assert!(signature.second_entity.is_null());
     assert_eq!(signature.production.second_reference_offset, 17);
-    assert_eq!(signature.production.signature, "2(E)");
-    assert_eq!(signature.production.signature_offset, 12);
+    assert_eq!(signature.production.signature(), "2(E)");
+    assert_eq!(signature.production.signature_offset(), 12);
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
         panic!("one reference-signature cohort");
     };
@@ -245,8 +245,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         format!("catia:outer:reference-signature-cohort#{graph_key}:00000000")
     );
     assert_eq!(cohort.ordinal, 0);
-    assert_eq!(cohort.first_reference, 3);
-    assert_eq!(cohort.second_reference, 4);
+    assert_eq!(cohort.first_reference(), 3);
+    assert_eq!(cohort.second_reference(), 4);
     assert!(cohort.schema_selection.is_none());
     assert_eq!(
         cohort.members,
@@ -353,39 +353,6 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
-    let mut malformed = crate::native::CatiaNative::decode(&bytes);
-    malformed.entity_records[0]
-        .reference_signature
-        .as_mut()
-        .expect("complete reference signature")
-        .production
-        .signature_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed reference-signature incidence");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
-    let mut malformed = crate::native::CatiaNative::decode(&bytes);
-    malformed.entity_records[0]
-        .reference_signature
-        .as_mut()
-        .expect("complete reference signature")
-        .production
-        .signature_program
-        .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed reference-signature program");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

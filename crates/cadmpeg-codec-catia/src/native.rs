@@ -2965,19 +2965,20 @@ pub struct CatiaReferenceSignature {
 /// Source-ordered descriptor records sharing one exact reference pair.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaReferenceSignatureCohortWire",
+    into = "CatiaReferenceSignatureCohortWire"
+)]
 pub struct CatiaReferenceSignatureCohort {
+    references: entity_table::ConsecutiveReferences,
     /// Globally unique cohort identity.
     pub id: String,
     /// Containing object graph.
     pub parent: String,
     /// Zero-based order of the cohort's first member within the graph.
     pub ordinal: u64,
-    /// First identity shared by every member.
-    pub first_reference: u32,
     /// Common same-graph incidence selected by the first identity.
     pub first_entity: CatiaEntityReference,
-    /// Consecutive second identity shared by every member.
-    pub second_reference: u32,
     /// Common same-graph incidence selected by the second identity.
     pub second_entity: CatiaEntityReference,
     /// Unique schema selected by descriptor-bearing members after `_SpecList`.
@@ -2985,6 +2986,77 @@ pub struct CatiaReferenceSignatureCohort {
     pub schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
     /// Descriptor-bearing entity records in source order.
     pub members: Vec<String>,
+}
+
+impl CatiaReferenceSignatureCohort {
+    /// First reference identity shared by the cohort.
+    pub fn first_reference(&self) -> u32 {
+        self.references.first()
+    }
+    /// Second reference identity shared by the cohort.
+    pub fn second_reference(&self) -> u32 {
+        self.references.second()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaReferenceSignatureCohortWire {
+    /// Globally unique cohort identity.
+    id: String,
+    /// Containing object graph.
+    parent: String,
+    /// Zero-based order of the cohort's first member within the graph.
+    ordinal: u64,
+    /// First identity shared by every member.
+    first_reference: u32,
+    /// Common same-graph incidence selected by the first identity.
+    first_entity: CatiaEntityReference,
+    /// Consecutive second identity shared by every member.
+    second_reference: u32,
+    /// Common same-graph incidence selected by the second identity.
+    second_entity: CatiaEntityReference,
+    /// Unique schema selected by descriptor-bearing members after `_SpecList`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
+    /// Descriptor-bearing entity records in source order.
+    members: Vec<String>,
+}
+
+impl From<CatiaReferenceSignatureCohort> for CatiaReferenceSignatureCohortWire {
+    fn from(value: CatiaReferenceSignatureCohort) -> Self {
+        Self {
+            first_reference: value.first_reference(),
+            second_reference: value.second_reference(),
+            id: value.id,
+            parent: value.parent,
+            ordinal: value.ordinal,
+            first_entity: value.first_entity,
+            second_entity: value.second_entity,
+            schema_selection: value.schema_selection,
+            members: value.members,
+        }
+    }
+}
+impl TryFrom<CatiaReferenceSignatureCohortWire> for CatiaReferenceSignatureCohort {
+    type Error = &'static str;
+    fn try_from(wire: CatiaReferenceSignatureCohortWire) -> Result<Self, Self::Error> {
+        let references = entity_table::ConsecutiveReferences::new(wire.first_reference)
+            .ok_or("first_reference has no consecutive successor")?;
+        if references.second() != wire.second_reference {
+            return Err("second_reference must follow first_reference");
+        }
+        Ok(Self {
+            references,
+            id: wire.id,
+            parent: wire.parent,
+            ordinal: wire.ordinal,
+            first_entity: wire.first_entity,
+            second_entity: wire.second_entity,
+            schema_selection: wire.schema_selection,
+            members: wire.members,
+        })
+    }
 }
 
 /// Cohort-level schema incidence selected after the `_SpecList` marker.
@@ -5369,14 +5441,14 @@ fn reference_signature(
 ) -> CatiaReferenceSignature {
     let first_entity = entity_reference(
         graph_id,
-        production.first_reference,
+        production.first_reference(),
         entity_references.entities,
         entity_references.classes,
         entity_references.terminal_nulls,
     );
     let second_entity = entity_reference(
         graph_id,
-        production.second_reference,
+        production.second_reference(),
         entity_references.entities,
         entity_references.classes,
         entity_references.terminal_nulls,
@@ -5404,7 +5476,7 @@ fn derive_reference_signature_cohorts(
     entity_records: &[CatiaEntityRecord],
 ) -> Vec<CatiaReferenceSignatureCohort> {
     let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
-    let mut cohort_by_pair = HashMap::<(String, u32, u32), usize>::new();
+    let mut cohort_by_pair = HashMap::<(String, u32), usize>::new();
     let mut next_ordinal_by_graph = HashMap::<String, u64>::new();
     for entity in entity_records {
         let Some(signature) = &entity.reference_signature else {
@@ -5412,8 +5484,7 @@ fn derive_reference_signature_cohorts(
         };
         let key = (
             entity.object_graph.clone(),
-            signature.production.first_reference,
-            signature.production.second_reference,
+            signature.production.first_reference(),
         );
         if let Some(index) = cohort_by_pair.get(&key).copied() {
             cohorts[index].members.push(entity.id.clone());
@@ -5435,9 +5506,8 @@ fn derive_reference_signature_cohorts(
             id,
             parent: entity.object_graph.clone(),
             ordinal: *ordinal,
-            first_reference: signature.production.first_reference,
+            references: signature.production.references(),
             first_entity: signature.first_entity.clone(),
-            second_reference: signature.production.second_reference,
             second_entity: signature.second_entity.clone(),
             schema_selection: None,
             members: vec![entity.id.clone()],

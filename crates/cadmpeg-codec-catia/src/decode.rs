@@ -686,7 +686,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
-            let program = &signature.production.signature_program;
+            let program = signature.production.signature_program();
             let qualifier_count = program
                 .iter()
                 .filter(|instruction| {

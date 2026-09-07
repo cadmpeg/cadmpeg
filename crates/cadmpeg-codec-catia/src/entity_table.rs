@@ -190,25 +190,203 @@ pub enum ReferenceSignatureInstruction {
 /// One fully consumed reference-signature production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ReferenceSignatureWire", into = "ReferenceSignatureWire")]
 pub struct ReferenceSignature {
+    references: ConsecutiveReferences,
+    /// Variable compact atom preceding the nested signature frame.
+    pub prefix: ReferenceSignaturePrefix,
+    tokens: Vec<ReferenceSignatureToken>,
+    signature_offset: usize,
+    /// Byte offset of the second reference marker within the value payload.
+    pub second_reference_offset: usize,
+}
+
+/// Consecutive fixed-width reference identities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConsecutiveReferences(u32);
+
+impl ConsecutiveReferences {
+    /// Consecutive references starting at the supplied identity.
+    pub(crate) fn new(first: u32) -> Option<Self> {
+        first.checked_add(1).map(|_| Self(first))
+    }
+    /// First reference identity.
+    pub(crate) fn first(self) -> u32 {
+        self.0
+    }
+    /// Second reference identity.
+    pub(crate) fn second(self) -> u32 {
+        self.0 + 1
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReferenceSignatureToken {
+    Symbol(ReferenceSignatureSymbol),
+    Decimal(String),
+    OpenCall,
+    Comma,
+    CloseCall,
+    Qualifier(u8),
+    Difference,
+}
+
+impl From<ReferenceSignatureInstruction> for ReferenceSignatureToken {
+    fn from(value: ReferenceSignatureInstruction) -> Self {
+        match value {
+            ReferenceSignatureInstruction::Symbol { symbol, .. } => Self::Symbol(symbol),
+            ReferenceSignatureInstruction::Decimal { digits, .. } => Self::Decimal(digits),
+            ReferenceSignatureInstruction::OpenCall { .. } => Self::OpenCall,
+            ReferenceSignatureInstruction::Comma { .. } => Self::Comma,
+            ReferenceSignatureInstruction::CloseCall { .. } => Self::CloseCall,
+            ReferenceSignatureInstruction::Qualifier { selector, .. } => Self::Qualifier(selector),
+            ReferenceSignatureInstruction::Difference { .. } => Self::Difference,
+        }
+    }
+}
+
+impl ReferenceSignatureToken {
+    fn text(&self) -> String {
+        match self {
+            Self::Symbol(ReferenceSignatureSymbol::E) => "E".to_owned(),
+            Self::Symbol(ReferenceSignatureSymbol::S) => "S".to_owned(),
+            Self::Symbol(ReferenceSignatureSymbol::T) => "T".to_owned(),
+            Self::Decimal(digits) => digits.clone(),
+            Self::OpenCall => "(".to_owned(),
+            Self::Comma => ",".to_owned(),
+            Self::CloseCall => ")".to_owned(),
+            Self::Qualifier(selector) => format!("#{selector:X}"),
+            Self::Difference => "-".to_owned(),
+        }
+    }
+
+    fn instruction(&self, offset: usize) -> ReferenceSignatureInstruction {
+        match self {
+            Self::Symbol(symbol) => ReferenceSignatureInstruction::Symbol {
+                symbol: *symbol,
+                offset,
+            },
+            Self::Decimal(digits) => ReferenceSignatureInstruction::Decimal {
+                digits: digits.clone(),
+                offset,
+            },
+            Self::OpenCall => ReferenceSignatureInstruction::OpenCall { offset },
+            Self::Comma => ReferenceSignatureInstruction::Comma { offset },
+            Self::CloseCall => ReferenceSignatureInstruction::CloseCall { offset },
+            Self::Qualifier(selector) => ReferenceSignatureInstruction::Qualifier {
+                selector: *selector,
+                hash_offset: offset,
+                selector_offset: offset + 1,
+            },
+            Self::Difference => ReferenceSignatureInstruction::Difference { offset },
+        }
+    }
+}
+
+impl ReferenceSignature {
+    /// Consecutive reference identities.
+    pub(crate) fn references(&self) -> ConsecutiveReferences {
+        self.references
+    }
+    /// First reference identity.
+    pub fn first_reference(&self) -> u32 {
+        self.references.first()
+    }
+    /// Second reference identity.
+    pub fn second_reference(&self) -> u32 {
+        self.references.second()
+    }
+    /// Exact signature text.
+    pub fn signature(&self) -> String {
+        self.tokens
+            .iter()
+            .map(ReferenceSignatureToken::text)
+            .collect()
+    }
+    /// Offset of the first signature byte.
+    pub fn signature_offset(&self) -> usize {
+        self.signature_offset
+    }
+    /// Source-ordered signature instructions.
+    pub fn signature_program(&self) -> Vec<ReferenceSignatureInstruction> {
+        let mut offset = self.signature_offset;
+        self.tokens
+            .iter()
+            .map(|token| {
+                let instruction = token.instruction(offset);
+                offset += token.text().len();
+                instruction
+            })
+            .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ReferenceSignatureWire {
     /// First fixed-width reference.
-    pub first_reference: u32,
+    first_reference: u32,
     /// Variable compact atom preceding the nested signature frame.
     #[serde(default)]
-    pub prefix: ReferenceSignaturePrefix,
+    prefix: ReferenceSignaturePrefix,
     /// Printable signature bytes between `0x81` and the first terminator.
-    pub signature: String,
+    signature: String,
     /// Source-ordered instruction program spanning the complete signature.
     #[serde(default)]
-    pub signature_program: Vec<ReferenceSignatureInstruction>,
+    signature_program: Vec<ReferenceSignatureInstruction>,
     /// Byte offset of the first signature byte within the `7C07` payload.
     #[serde(default)]
-    pub signature_offset: usize,
+    signature_offset: usize,
     /// Second fixed-width reference.
-    pub second_reference: u32,
+    second_reference: u32,
     /// Byte offset of the second reference marker within the `7C07` payload.
     #[serde(default)]
-    pub second_reference_offset: usize,
+    second_reference_offset: usize,
+}
+
+impl From<ReferenceSignature> for ReferenceSignatureWire {
+    fn from(value: ReferenceSignature) -> Self {
+        Self {
+            first_reference: value.first_reference(),
+            second_reference: value.second_reference(),
+            prefix: value.prefix,
+            signature: value.signature(),
+            signature_program: value.signature_program(),
+            signature_offset: value.signature_offset,
+            second_reference_offset: value.second_reference_offset,
+        }
+    }
+}
+impl TryFrom<ReferenceSignatureWire> for ReferenceSignature {
+    type Error = &'static str;
+    fn try_from(wire: ReferenceSignatureWire) -> Result<Self, Self::Error> {
+        let references = ConsecutiveReferences::new(wire.first_reference)
+            .ok_or("first_reference has no consecutive successor")?;
+        if wire.second_reference != references.second() {
+            return Err("second_reference must follow first_reference");
+        }
+        wire.signature_offset
+            .checked_add(wire.signature.len())
+            .ok_or("signature_offset overflows the signature extent")?;
+        let program = reference_signature_program(&wire.signature, wire.signature_offset)
+            .ok_or("signature is not a complete instruction program")?;
+        if !reference_signature_has_one_outer_call(&program) {
+            return Err("signature requires one outer call");
+        }
+        if wire.signature_program != program {
+            return Err("signature_program disagrees with signature and signature_offset");
+        }
+        Ok(Self {
+            references,
+            prefix: wire.prefix,
+            tokens: program
+                .into_iter()
+                .map(ReferenceSignatureToken::from)
+                .collect(),
+            signature_offset: wire.signature_offset,
+            second_reference_offset: wire.second_reference_offset,
+        })
+    }
 }
 
 fn reference_signature_program(
@@ -1060,7 +1238,8 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let second_reference = u32_le(payload, at + 1)?;
-    if first_reference.checked_add(1) != Some(second_reference) {
+    let references = ConsecutiveReferences::new(first_reference)?;
+    if references.second() != second_reference {
         return None;
     }
     let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
@@ -1092,12 +1271,13 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     (at + 5 == payload.len()).then_some(ReferenceSignature {
-        first_reference,
+        references,
         prefix,
-        signature,
-        signature_program,
+        tokens: signature_program
+            .into_iter()
+            .map(ReferenceSignatureToken::from)
+            .collect(),
         signature_offset,
-        second_reference,
         second_reference_offset,
     })
 }
@@ -1545,42 +1725,46 @@ mod tests {
 
         assert_eq!(
             parse_reference_signature(&payload),
-            Some(ReferenceSignature {
-                first_reference: 207,
-                prefix: ReferenceSignaturePrefix::Atom2,
-                signature: "2(E,0(E,4))".to_owned(),
-                signature_program: vec![
-                    ReferenceSignatureInstruction::Decimal {
-                        digits: "2".to_owned(),
-                        offset: 12,
-                    },
-                    ReferenceSignatureInstruction::OpenCall { offset: 13 },
-                    ReferenceSignatureInstruction::Symbol {
-                        symbol: ReferenceSignatureSymbol::E,
-                        offset: 14,
-                    },
-                    ReferenceSignatureInstruction::Comma { offset: 15 },
-                    ReferenceSignatureInstruction::Decimal {
-                        digits: "0".to_owned(),
-                        offset: 16,
-                    },
-                    ReferenceSignatureInstruction::OpenCall { offset: 17 },
-                    ReferenceSignatureInstruction::Symbol {
-                        symbol: ReferenceSignatureSymbol::E,
-                        offset: 18,
-                    },
-                    ReferenceSignatureInstruction::Comma { offset: 19 },
-                    ReferenceSignatureInstruction::Decimal {
-                        digits: "4".to_owned(),
-                        offset: 20,
-                    },
-                    ReferenceSignatureInstruction::CloseCall { offset: 21 },
-                    ReferenceSignatureInstruction::CloseCall { offset: 22 },
-                ],
-                signature_offset: 12,
-                second_reference: 208,
-                second_reference_offset: 24,
-            })
+            Some(
+                ReferenceSignatureWire {
+                    first_reference: 207,
+                    prefix: ReferenceSignaturePrefix::Atom2,
+                    signature: "2(E,0(E,4))".to_owned(),
+                    signature_program: vec![
+                        ReferenceSignatureInstruction::Decimal {
+                            digits: "2".to_owned(),
+                            offset: 12,
+                        },
+                        ReferenceSignatureInstruction::OpenCall { offset: 13 },
+                        ReferenceSignatureInstruction::Symbol {
+                            symbol: ReferenceSignatureSymbol::E,
+                            offset: 14,
+                        },
+                        ReferenceSignatureInstruction::Comma { offset: 15 },
+                        ReferenceSignatureInstruction::Decimal {
+                            digits: "0".to_owned(),
+                            offset: 16,
+                        },
+                        ReferenceSignatureInstruction::OpenCall { offset: 17 },
+                        ReferenceSignatureInstruction::Symbol {
+                            symbol: ReferenceSignatureSymbol::E,
+                            offset: 18,
+                        },
+                        ReferenceSignatureInstruction::Comma { offset: 19 },
+                        ReferenceSignatureInstruction::Decimal {
+                            digits: "4".to_owned(),
+                            offset: 20,
+                        },
+                        ReferenceSignatureInstruction::CloseCall { offset: 21 },
+                        ReferenceSignatureInstruction::CloseCall { offset: 22 },
+                    ],
+                    signature_offset: 12,
+                    second_reference: 208,
+                    second_reference_offset: 24,
+                }
+                .try_into()
+                .unwrap()
+            )
         );
 
         let mut nonconsecutive = payload;
