@@ -302,10 +302,14 @@ enum ComponentHistoryNamespace {
     Component(u64),
 }
 
+enum ScopeHistoryBinding {
+    Absent,
+    Bound(HashMap<String, String>),
+}
+
 /// History-state index qualified by component-local Design and ASM history.
 pub(crate) struct ScopeHistoryGraph<'a> {
-    histories_present: bool,
-    bound_histories: HashMap<String, String>,
+    binding: ScopeHistoryBinding,
     component_namespaces: HashMap<String, ComponentHistoryNamespace>,
     scopes_by_state:
         HashMap<(String, ComponentHistoryNamespace, String, i64), Vec<&'a DesignParameterScope>>,
@@ -319,13 +323,16 @@ impl<'a> ScopeHistoryGraph<'a> {
         component_naming_spaces: &[crate::records::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
-        let bound_histories = crate::history::bind_scope_histories(
-            scopes,
-            body_bindings,
-            body_recipe_operands,
-            histories,
-        );
-        let histories_present = !histories.is_empty();
+        let binding = if histories.is_empty() {
+            ScopeHistoryBinding::Absent
+        } else {
+            ScopeHistoryBinding::Bound(crate::history::bind_scope_histories(
+                scopes,
+                body_bindings,
+                body_recipe_operands,
+                histories,
+            ))
+        };
         let component_namespaces = scopes
             .iter()
             .filter_map(|scope| {
@@ -339,13 +346,14 @@ impl<'a> ScopeHistoryGraph<'a> {
             else {
                 continue;
             };
-            let history_id = if histories_present {
-                let Some(history_id) = bound_histories.get(&scope.id) else {
-                    continue;
-                };
-                history_id.clone()
-            } else {
-                String::new()
+            let history_id = match &binding {
+                ScopeHistoryBinding::Absent => String::new(),
+                ScopeHistoryBinding::Bound(bound) => {
+                    let Some(history_id) = bound.get(&scope.id) else {
+                        continue;
+                    };
+                    history_id.clone()
+                }
             };
             let Some(component_namespace) = component_namespaces.get(&scope.id) else {
                 continue;
@@ -361,8 +369,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                 .push(scope);
         }
         Self {
-            histories_present,
-            bound_histories,
+            binding,
             component_namespaces,
             scopes_by_state,
         }
@@ -387,10 +394,9 @@ impl<'a> ScopeHistoryGraph<'a> {
     }
 
     fn history_id(&self, scope: &DesignParameterScope) -> Option<&str> {
-        if self.histories_present {
-            self.bound_histories.get(&scope.id).map(String::as_str)
-        } else {
-            Some("")
+        match &self.binding {
+            ScopeHistoryBinding::Absent => Some(""),
+            ScopeHistoryBinding::Bound(bound) => bound.get(&scope.id).map(String::as_str),
         }
     }
 
@@ -4214,7 +4220,7 @@ pub(crate) fn bind_form_cages(
                         valid = false;
                         break;
                     };
-                    let Some(Some(entry_name)) = serializers.by_surface.get(&surface) else {
+                    let Some(entry_name) = serializers.entry_name(surface) else {
                         valid = false;
                         break;
                     };
@@ -4222,7 +4228,7 @@ pub(crate) fn bind_form_cages(
                         cage.source_object
                             .as_ref()
                             .and_then(|source| source.object_id.rsplit('/').next())
-                            == Some(entry_name.as_str())
+                            == Some(entry_name)
                     });
                     let Some(cage) = matches.next() else {
                         continue;
@@ -4342,12 +4348,12 @@ pub(crate) fn bind_form_cages(
         let resolved = surfaces
             .iter()
             .map(|surface| {
-                let entry_name = serializers.by_surface.get(surface)?.as_ref()?;
+                let entry_name = serializers.entry_name(*surface)?;
                 let mut matches = cages.iter().filter(|cage| {
                     cage.source_object
                         .as_ref()
                         .and_then(|source| source.object_id.rsplit('/').next())
-                        == Some(entry_name.as_str())
+                        == Some(entry_name)
                 });
                 let cage = matches.next()?;
                 matches.next().is_none().then(|| cage.id.clone())
@@ -4985,8 +4991,14 @@ fn form_cage_surface(
 }
 
 struct FormCageSerializers {
-    by_surface: HashMap<u32, Option<String>>,
+    index: HashMap<u32, usize>,
     ordered: Vec<(u32, Option<String>)>,
+}
+
+impl FormCageSerializers {
+    fn entry_name(&self, surface: u32) -> Option<&str> {
+        self.ordered[*self.index.get(&surface)?].1.as_deref()
+    }
 }
 
 fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCageSerializers {
@@ -4995,9 +5007,8 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         .flat_map(|(_, offsets)| offsets.iter().copied())
         .collect::<Vec<_>>();
     offsets.sort_unstable();
-    let mut by_surface = HashMap::<u32, Option<String>>::new();
     let mut ordered = Vec::<(u32, Option<String>)>::new();
-    let mut ordered_positions = HashMap::<u32, usize>::new();
+    let mut index = HashMap::<u32, usize>::new();
     for offset in offsets {
         let is_class_335 = bytes.get(offset + 4..offset + 7) == Some(b"335");
         if !matches!(
@@ -5049,21 +5060,14 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         if !is_class_335 && after_name + 11 != offset + form_serializer::LEN {
             continue;
         }
-        if let Some(candidate) = by_surface.get_mut(&surface) {
-            *candidate = None;
-            if let Some(position) = ordered_positions.get(&surface).copied() {
-                ordered[position].1 = None;
-            }
+        if let Some(position) = index.get(&surface).copied() {
+            ordered[position].1 = None;
         } else {
-            ordered_positions.insert(surface, ordered.len());
-            by_surface.insert(surface, Some(entry_name.clone()));
+            index.insert(surface, ordered.len());
             ordered.push((surface, Some(entry_name)));
         }
     }
-    FormCageSerializers {
-        by_surface,
-        ordered,
-    }
+    FormCageSerializers { index, ordered }
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {

@@ -228,20 +228,20 @@ pub(crate) fn metadata_for_bulk_stream(
 
 /// One live Design record selected by the primary index and resolved through
 /// its segment-local class tag.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct DesignPrimaryFrame<'a> {
     pub(crate) entity_id: u64,
-    pub(crate) class_tag: u32,
+    pub(crate) class_tag: crate::records::DesignClassTag,
     pub(crate) start: usize,
     pub(crate) end: usize,
     pub(crate) design_type: &'a SegmentType,
 }
 
-fn dynamic_type(
-    meta: &crate::metastream::MetaStream,
-    class_tag: u32,
-) -> Option<(usize, &SegmentType)> {
-    let ordinal = usize::try_from(class_tag.checked_sub(256)?).ok()?;
+fn dynamic_type<'a>(
+    meta: &'a crate::metastream::MetaStream,
+    class_tag: &crate::records::DesignClassTag,
+) -> Option<(usize, &'a SegmentType)> {
+    let ordinal = class_tag.as_str().parse::<usize>().ok()?.checked_sub(256)?;
     Some((ordinal, meta.types.get(ordinal)?))
 }
 
@@ -250,7 +250,7 @@ fn record_header_class_tag(
     at: usize,
     end: usize,
     expected_entity_id: u64,
-) -> Option<u32> {
+) -> Option<crate::records::DesignClassTag> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
     let indexed_matches = after_tag
         .checked_add(4)
@@ -265,7 +265,7 @@ fn record_header_class_tag(
     if !indexed_matches && !named_matches {
         return None;
     }
-    class_tag.parse().ok()
+    crate::records::DesignClassTag::try_from(class_tag).ok()
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -299,7 +299,7 @@ pub(crate) fn design_primary_frames<'a>(
                 "F3D primary record index points to an invalid record header".into(),
             ));
         };
-        let Some((type_ordinal, design_type)) = dynamic_type(meta, class_tag) else {
+        let Some((type_ordinal, design_type)) = dynamic_type(meta, &class_tag) else {
             return Err(CodecError::Malformed(
                 "F3D primary record class tag is outside its type table".into(),
             ));
@@ -317,7 +317,7 @@ pub(crate) fn design_primary_frames<'a>(
                     "F3D secondary record index points to an invalid nested header".into(),
                 ));
             };
-            if dynamic_type(meta, nested_class_tag).is_none() {
+            if dynamic_type(meta, &nested_class_tag).is_none() {
                 return Err(CodecError::Malformed(
                     "F3D secondary record header is incompatible with its primary record".into(),
                 ));

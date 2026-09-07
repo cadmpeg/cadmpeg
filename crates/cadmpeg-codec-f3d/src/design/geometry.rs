@@ -1417,7 +1417,6 @@ pub(crate) enum ProfileBoundary {
 
 #[derive(Clone)]
 pub(crate) struct CertifiedProfileLoop {
-    vertices: Vec<Point2>,
     tubes: Vec<CertifiedCurveTube>,
 }
 
@@ -1543,7 +1542,7 @@ impl ProfileBoundary {
 
     fn certified_loop(&self) -> Option<CertifiedProfileLoop> {
         match self {
-            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices.clone()),
+            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices),
             Self::CircularArcLoop(segments) => certified_analytic_loop(segments),
             Self::Circle { center, radius } => certified_circle(*center, *radius),
             Self::CertifiedLoop(loop_) => Some(loop_.clone()),
@@ -1552,24 +1551,31 @@ impl ProfileBoundary {
 }
 
 impl CertifiedProfileLoop {
-    fn from_vertices(vertices: Vec<Point2>) -> Option<Self> {
-        (vertices.len() >= 3).then(|| Self {
-            tubes: polygon_edges(&vertices)
+    fn new(tubes: Vec<CertifiedCurveTube>) -> Option<Self> {
+        (tubes.len() >= 3).then_some(Self { tubes })
+    }
+
+    fn vertices(&self) -> impl Iterator<Item = Point2> + '_ {
+        self.tubes.iter().map(|tube| tube.start)
+    }
+
+    fn from_vertices(vertices: &[Point2]) -> Option<Self> {
+        Self::new(
+            polygon_edges(vertices)
                 .map(|(start, end)| CertifiedCurveTube {
                     start,
                     end,
                     error: 0.0,
                 })
                 .collect(),
-            vertices,
-        })
+        )
     }
 
     fn contains_point(&self, point: Point2) -> bool {
         self.tubes
             .iter()
             .all(|tube| point_segment_distance(point, (tube.start, tube.end)) > tube.error)
-            && point_in_polygon(point, &self.vertices)
+            && point_in_polygon(point, &self.vertices().collect::<Vec<_>>())
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
@@ -1579,9 +1585,9 @@ impl CertifiedProfileLoop {
                     > outer.error + inner.error
             })
         }) && inner
-            .vertices
-            .first()
-            .is_some_and(|point| self.contains_point(*point))
+            .vertices()
+            .next()
+            .is_some_and(|point| self.contains_point(point))
     }
 }
 
@@ -1630,7 +1636,6 @@ fn certified_profile_loop(
     // scale keeps the conservative tube practical while exact boundary tests
     // continue to govern the source linear tolerance.
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
-    let mut vertices = Vec::new();
     let mut tubes = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
@@ -1662,16 +1667,17 @@ fn certified_profile_loop(
         if previous_end.is_some_and(|end| point_distance(end, first) > tolerance) {
             return None;
         }
-        vertices.extend(entity_tubes.iter().map(|tube| tube.start));
         previous_end = entity_tubes.last().map(|tube| tube.end);
         tubes.extend(entity_tubes);
     }
-    if tubes.len() < 3
-        || previous_end.is_none_or(|end| point_distance(end, tubes[0].start) > tolerance)
-    {
+    if previous_end.is_none_or(|end| {
+        tubes
+            .first()
+            .is_none_or(|first| point_distance(end, first.start) > tolerance)
+    }) {
         return None;
     }
-    Some(CertifiedProfileLoop { vertices, tubes })
+    CertifiedProfileLoop::new(tubes)
 }
 
 fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<CertifiedProfileLoop> {
@@ -1683,7 +1689,6 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
         })
         .fold(1.0_f64, f64::max);
     let tolerance = EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6 * scale;
-    let mut vertices = Vec::new();
     let mut tubes = Vec::new();
     for segment in segments {
         let segment_tubes = match segment {
@@ -1699,18 +1704,16 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
                 end_angle,
             } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance)?,
         };
-        vertices.extend(segment_tubes.iter().map(|tube| tube.start));
         tubes.extend(segment_tubes);
     }
-    Some(CertifiedProfileLoop { vertices, tubes })
+    CertifiedProfileLoop::new(tubes)
 }
 
 fn certified_circle(center: Point2, radius: f64) -> Option<CertifiedProfileLoop> {
     let tolerance =
         EPS_GEOMETRY_CERTIFIED_CIRCLE_E6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
     let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
-    let vertices = tubes.iter().map(|tube| tube.start).collect();
-    Some(CertifiedProfileLoop { vertices, tubes })
+    CertifiedProfileLoop::new(tubes)
 }
 
 fn certified_arc_tubes(

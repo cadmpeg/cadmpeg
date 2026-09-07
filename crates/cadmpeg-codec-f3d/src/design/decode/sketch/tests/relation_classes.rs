@@ -356,8 +356,20 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
             .collect::<Vec<_>>(),
         [900, 464, 470, 467, 473]
     );
-    assert_eq!(parsed.rectangular_reference_count, Some(1));
-    assert_eq!(parsed.rectangular_clause_ordinal, Some(1));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            reference_count: 1,
+            ..
+        }
+    ));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            clause_ordinal: Some(1),
+            ..
+        }
+    ));
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
@@ -400,8 +412,20 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
             .collect::<Vec<_>>(),
         [464, 470, 467, 473]
     );
-    assert_eq!(parsed.rectangular_reference_count, Some(0));
-    assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            reference_count: 0,
+            ..
+        }
+    ));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            clause_ordinal: Some(0),
+            ..
+        }
+    ));
     assert_eq!(parsed.parsed_end, record.len());
     let Some(SketchPatternDefinition::Rectangular { directions }) =
         decode_pattern_definition(&record, &parsed)
@@ -432,8 +456,20 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
             .collect::<Vec<_>>(),
         [464, 470, 467, 473]
     );
-    assert_eq!(parsed.rectangular_reference_count, Some(1));
-    assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            reference_count: 1,
+            ..
+        }
+    ));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            clause_ordinal: Some(0),
+            ..
+        }
+    ));
     assert!(matches!(
         decode_pattern_definition(&record, &parsed),
         Some(SketchPatternDefinition::Rectangular { .. })
@@ -477,8 +513,20 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
             .collect::<Vec<_>>(),
         [900, 901, 470, 467, 473]
     );
-    assert_eq!(parsed.rectangular_reference_count, Some(2));
-    assert_eq!(parsed.rectangular_clause_ordinal, None);
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            reference_count: 2,
+            ..
+        }
+    ));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            clause_ordinal: None,
+            ..
+        }
+    ));
     assert_eq!(decode_pattern_definition(&record, &parsed), None);
 }
 

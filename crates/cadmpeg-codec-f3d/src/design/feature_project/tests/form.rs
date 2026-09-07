@@ -161,9 +161,8 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
                 &bytes,
                 &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             )
-            .by_surface
-            .get(&8304),
-            Some(&Some(entry_name.into()))
+            .entry_name(8304),
+            Some(entry_name)
         );
     }
 }
@@ -187,9 +186,8 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
         )
-        .by_surface
-        .get(&8304),
-        Some(&Some(entry_name.into()))
+        .entry_name(8304),
+        Some(entry_name)
     );
 
     let mut wrong_pair = bytes.clone();
@@ -198,7 +196,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &wrong_pair,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
     )
-    .by_surface
+    .index
     .contains_key(&8304));
 
     let mut nonzero_tail = bytes;
@@ -207,7 +205,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &nonzero_tail,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
     )
-    .by_surface
+    .index
     .contains_key(&8304));
 }
 

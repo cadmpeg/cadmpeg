@@ -343,11 +343,6 @@ impl MeshBody {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct MeshDesignRecords {
-    features: Vec<DesignMeshFeature>,
-}
-
 fn validate_mesh_registration(
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
@@ -1064,7 +1059,7 @@ fn parse_mesh_design_records<F>(
     meta: &crate::metastream::MetaStream,
     source_entry_name: &str,
     asset_for_filename: &mut F,
-) -> Result<MeshDesignRecords, CodecError>
+) -> Result<Vec<DesignMeshFeature>, CodecError>
 where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
@@ -1073,9 +1068,7 @@ where
     let collection_frames =
         typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
     if collection_frames.is_empty() {
-        return Ok(MeshDesignRecords {
-            features: Vec::new(),
-        });
+        return Ok(Vec::new());
     }
     let collections = collection_frames
         .into_iter()
@@ -1085,9 +1078,7 @@ where
         .filter(|collection| !collection.body_records.is_empty())
         .collect::<Vec<_>>();
     if collections.is_empty() {
-        return Ok(MeshDesignRecords {
-            features: Vec::new(),
-        });
+        return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
         typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
@@ -1405,10 +1396,12 @@ where
             "all typed mesh graph records belong to exactly one feature",
         ));
     }
-    Ok(MeshDesignRecords { features })
+    Ok(features)
 }
 
-fn decode_mesh_design_records(scan: &ContainerScan) -> Result<Vec<MeshDesignRecords>, CodecError> {
+fn decode_mesh_design_records(
+    scan: &ContainerScan,
+) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -1439,7 +1432,7 @@ fn decode_mesh_design_records(scan: &ContainerScan) -> Result<Vec<MeshDesignReco
             &entry.name,
             &mut asset_for_filename,
         )?;
-        if !records.features.is_empty() {
+        if !records.is_empty() {
             out.push(records);
         }
     }
@@ -1447,13 +1440,13 @@ fn decode_mesh_design_records(scan: &ContainerScan) -> Result<Vec<MeshDesignReco
 }
 
 fn resolve_mesh_body(
-    records: &[MeshDesignRecords],
+    records: &[Vec<DesignMeshFeature>],
     entry_name: &str,
     fusion_uuid: &str,
 ) -> Option<(usize, usize, usize)> {
     let mut matches = Vec::new();
     for (design_ordinal, design) in records.iter().enumerate() {
-        for (feature_ordinal, feature) in design.features.iter().enumerate() {
+        for (feature_ordinal, feature) in design.iter().enumerate() {
             for (body_ordinal, body) in feature.bodies().iter().enumerate() {
                 if body.tessellation_id.is_none()
                     && body.entry.name() == entry_name
@@ -1503,9 +1496,9 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
             });
             continue;
         };
-        design_records[design_ordinal].features[feature_ordinal].bodies_mut()[body_ordinal]
+        design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
             .container_mesh_uuid = Some(container.mesh_uuid.clone());
-        let body = &design_records[design_ordinal].features[feature_ordinal].bodies()[body_ordinal];
+        let body = &design_records[design_ordinal][feature_ordinal].bodies()[body_ordinal];
         let projected = match MeshBody::from_container(
             &entry.name,
             body.placement.record().byte_offset(),
@@ -1521,13 +1514,13 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
                 continue;
             }
         };
-        design_records[design_ordinal].features[feature_ordinal].bodies_mut()[body_ordinal]
+        design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
             .tessellation_id = Some(projected.id.clone());
         outcomes.push(MeshContainerOutcome::Joined(projected));
     }
     for body in design_records
         .iter()
-        .flat_map(|design| &design.features)
+        .flatten()
         .flat_map(crate::records::DesignMeshFeature::bodies)
         .filter(|body| body.tessellation_id.is_none())
     {
@@ -1537,10 +1530,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
     }
     Ok(MeshDecode {
         outcomes,
-        features: design_records
-            .into_iter()
-            .flat_map(|design| design.features)
-            .collect(),
+        features: design_records.into_iter().flatten().collect(),
     })
 }
 
@@ -2270,7 +2260,7 @@ mod tests {
             &mut no_asset,
         )
         .expect("complete typed mesh graph");
-        let [feature] = design.features.as_slice() else {
+        let [feature] = design.as_slice() else {
             panic!("one mesh feature");
         };
         assert_eq!(feature.scope().record().record_index(), 109);
@@ -2313,7 +2303,7 @@ mod tests {
             &mut no_asset,
         )
         .expect("empty mesh registry");
-        assert!(design.features.is_empty());
+        assert!(design.is_empty());
     }
 
     #[test]
@@ -2352,7 +2342,7 @@ mod tests {
             &mut no_asset,
         )
         .expect("no mesh collection");
-        assert!(design.features.is_empty());
+        assert!(design.is_empty());
     }
 
     #[test]
@@ -2366,7 +2356,7 @@ mod tests {
             &mut no_asset,
         )
         .expect("two-body mesh feature graph");
-        let [feature] = design.features.as_slice() else {
+        let [feature] = design.as_slice() else {
             panic!("one mesh feature");
         };
         let [first, second] = feature.bodies() else {
@@ -2399,7 +2389,7 @@ mod tests {
             &mut asset,
         )
         .expect("textured mesh graph");
-        let textures = design.features[0].texture_table.resources();
+        let textures = design[0].texture_table.resources();
         assert_eq!(textures.len(), 2);
         assert_eq!(textures[0].flags, 2);
         assert_eq!(textures[0].file.filename(), "mesh-a.png");
@@ -2453,7 +2443,7 @@ mod tests {
             &mut asset,
         )
         .expect("shared texture filename record");
-        let textures = design.features[0].texture_table.resources();
+        let textures = design[0].texture_table.resources();
         assert_eq!(textures.len(), 2);
         assert_eq!(textures[0].file.record(), textures[1].file.record());
         assert_eq!(textures[0].asset, textures[1].asset);
