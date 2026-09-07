@@ -220,13 +220,13 @@ impl<'a> Section<'a> {
     }
 
     pub(crate) fn display_name(self) -> String {
-        self.name().map_or_else(
-            || match self {
-                Self::Block(block) => format!("block@{}", block.offset),
-                Self::Compound(_) => unreachable!("compound streams are named"),
-            },
-            str::to_string,
-        )
+        match self {
+            Self::Block(block) => block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            Self::Compound(stream) => stream.path.clone(),
+        }
     }
 
     pub(crate) fn ordinal(self) -> usize {
