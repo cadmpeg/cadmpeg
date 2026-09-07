@@ -8,7 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::design::feature_project::ScopeHistoryGraph;
+use crate::design::feature_project::{ScopeHistoryBinding, ScopeHistoryGraph};
 
 #[test]
 fn work_point_history_state_keys_are_history_qualified() {
@@ -23,11 +23,10 @@ fn work_point_history_state_keys_are_history_qualified() {
         2,
     );
     let graph = ScopeHistoryGraph {
-        histories_present: true,
-        bound_histories: HashMap::from([
+        binding: ScopeHistoryBinding::Bound(HashMap::from([
             (scope_a.id.clone(), "f3d:history#a".to_owned()),
             (scope_b.id.clone(), "f3d:history#b".to_owned()),
-        ]),
+        ])),
         component_namespaces: HashMap::from([
             (
                 scope_a.id.clone(),

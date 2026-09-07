@@ -302,10 +302,14 @@ enum ComponentHistoryNamespace {
     Component(u64),
 }
 
+enum ScopeHistoryBinding {
+    Absent,
+    Bound(HashMap<String, String>),
+}
+
 /// History-state index qualified by component-local Design and ASM history.
 pub(crate) struct ScopeHistoryGraph<'a> {
-    histories_present: bool,
-    bound_histories: HashMap<String, String>,
+    binding: ScopeHistoryBinding,
     component_namespaces: HashMap<String, ComponentHistoryNamespace>,
     scopes_by_state:
         HashMap<(String, ComponentHistoryNamespace, String, i64), Vec<&'a DesignParameterScope>>,
@@ -319,13 +323,16 @@ impl<'a> ScopeHistoryGraph<'a> {
         component_naming_spaces: &[crate::records::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
-        let bound_histories = crate::history::bind_scope_histories(
-            scopes,
-            body_bindings,
-            body_recipe_operands,
-            histories,
-        );
-        let histories_present = !histories.is_empty();
+        let binding = if histories.is_empty() {
+            ScopeHistoryBinding::Absent
+        } else {
+            ScopeHistoryBinding::Bound(crate::history::bind_scope_histories(
+                scopes,
+                body_bindings,
+                body_recipe_operands,
+                histories,
+            ))
+        };
         let component_namespaces = scopes
             .iter()
             .filter_map(|scope| {
@@ -339,13 +346,14 @@ impl<'a> ScopeHistoryGraph<'a> {
             else {
                 continue;
             };
-            let history_id = if histories_present {
-                let Some(history_id) = bound_histories.get(&scope.id) else {
-                    continue;
-                };
-                history_id.clone()
-            } else {
-                String::new()
+            let history_id = match &binding {
+                ScopeHistoryBinding::Absent => String::new(),
+                ScopeHistoryBinding::Bound(bound) => {
+                    let Some(history_id) = bound.get(&scope.id) else {
+                        continue;
+                    };
+                    history_id.clone()
+                }
             };
             let Some(component_namespace) = component_namespaces.get(&scope.id) else {
                 continue;
@@ -361,8 +369,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                 .push(scope);
         }
         Self {
-            histories_present,
-            bound_histories,
+            binding,
             component_namespaces,
             scopes_by_state,
         }
@@ -387,10 +394,9 @@ impl<'a> ScopeHistoryGraph<'a> {
     }
 
     fn history_id(&self, scope: &DesignParameterScope) -> Option<&str> {
-        if self.histories_present {
-            self.bound_histories.get(&scope.id).map(String::as_str)
-        } else {
-            Some("")
+        match &self.binding {
+            ScopeHistoryBinding::Absent => Some(""),
+            ScopeHistoryBinding::Bound(bound) => bound.get(&scope.id).map(String::as_str),
         }
     }
 
