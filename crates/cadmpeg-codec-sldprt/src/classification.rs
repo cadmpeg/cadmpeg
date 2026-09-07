@@ -107,7 +107,14 @@ pub(crate) struct NativeObjectClass {
 
 impl NativeObjectClass {
     pub(crate) fn feature(self) -> Option<FeatureClass> {
-        use NativeClassKind::*;
+        use NativeClassKind::{
+            Auxiliary, Chamfer, CircularPattern, Combine, CosmeticThread, CurvePattern, DeleteBody,
+            Dimension, Extrusion, Fillet, Helix, HoleWizard, LengthParameter, LinearPattern, Loft,
+            LoftCut, MirrorPattern, Operation, OriginProfileFeature, PlanarSurface, ProfileFeature,
+            Reference, ReferenceAxis, ReferencePlane, Revolution, Sketch, SketchBlockDefinition,
+            SketchBlockInstance, SketchEntity, SketchRelation, SurfaceExtrusion, SurfaceLoft,
+            Sweep, SweepCut, SweepReferenceSurface, Thicken, TreeNode, Unknown,
+        };
         Some(match self.kind {
             Operation(feature) => feature,
             Extrusion | SurfaceExtrusion => FeatureClass::Extrude,
