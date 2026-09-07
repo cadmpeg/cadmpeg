@@ -92,11 +92,11 @@ fn explicit_single_body_merges_disconnected_components() {
 fn face_admission_diagnostics_record_unresolved_boundary_operands() {
     let resolved = crate::topology::HalfEdgeId {
         curve_id: 10,
-        side: 0,
+        side: crate::topology::Side::Zero,
     };
     let unresolved = crate::topology::HalfEdgeId {
         curve_id: 11,
-        side: 1,
+        side: crate::topology::Side::One,
     };
     let loop_record = crate::topology::Loop {
         face_id: 5,
@@ -309,12 +309,12 @@ fn closed_component_counts_two_uses_of_one_face() {
         (
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             crate::topology::HalfEdge {
                 id: crate::topology::HalfEdgeId {
                     curve_id: 7,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 face_id: 5,
                 next: None,
@@ -323,12 +323,12 @@ fn closed_component_counts_two_uses_of_one_face() {
         (
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             crate::topology::HalfEdge {
                 id: crate::topology::HalfEdgeId {
                     curve_id: 7,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 face_id: 5,
                 next: None,
@@ -345,11 +345,11 @@ fn closed_component_counts_two_uses_of_one_face() {
         &BTreeSet::from([
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
         ]),
         &half_edges,
@@ -359,7 +359,7 @@ fn closed_component_counts_two_uses_of_one_face() {
         &BTreeSet::from([7]),
         &BTreeSet::from([crate::topology::HalfEdgeId {
             curve_id: 7,
-            side: 0,
+            side: crate::topology::Side::Zero,
         }]),
         &half_edges,
         &[5],
@@ -379,7 +379,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         half_edges: (0_u32..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: first_curve + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -461,21 +461,30 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         face_id: 5,
         half_edges: [10_u32, 11]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     };
     let inner = crate::topology::Loop {
         face_id: 5,
         half_edges: [20_u32, 21]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     };
     let bindings = [(10, 1, 2), (11, 2, 1), (20, 3, 4), (21, 4, 3)]
         .into_iter()
         .map(|(curve_id, start_vertex_id, end_vertex_id)| {
             crate::topology::HalfEdgeVertexIncidence {
-                half_edge: crate::topology::HalfEdgeId { curve_id, side: 0 },
+                half_edge: crate::topology::HalfEdgeId {
+                    curve_id,
+                    side: crate::topology::Side::Zero,
+                },
                 start_vertex_id,
                 end_vertex_id: Some(end_vertex_id),
             }
@@ -608,7 +617,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     scan.topology.half_edges = [10_u32, 11, 12]
         .into_iter()
         .map(|curve_id| crate::topology::HalfEdge {
-            id: crate::topology::HalfEdgeId { curve_id, side: 0 },
+            id: crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            },
             face_id: 5,
             next: None,
         })
@@ -616,7 +628,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             [10_u32, 11, 12]
                 .into_iter()
                 .map(|curve_id| crate::topology::HalfEdge {
-                    id: crate::topology::HalfEdgeId { curve_id, side: 1 },
+                    id: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::One,
+                    },
                     face_id: 0,
                     next: None,
                 }),
@@ -626,7 +641,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         face_id: 5,
         half_edges: [10_u32, 11, 12]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     });
     scan.topology
@@ -640,7 +658,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .zip([10_u32, 11, 12])
         .map(|(id, curve_id)| crate::topology::TopologicalVertex {
             id,
-            half_edges: vec![crate::topology::HalfEdgeId { curve_id, side: 0 }],
+            half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            }],
         })
         .collect();
     let endpoint_pairs = [(10, 1, 2), (11, 2, 3), (12, 3, 1)];
@@ -649,12 +670,18 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .flat_map(|(curve_id, start, end)| {
             [
                 crate::topology::HalfEdgeVertexIncidence {
-                    half_edge: crate::topology::HalfEdgeId { curve_id, side: 0 },
+                    half_edge: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::Zero,
+                    },
                     start_vertex_id: start,
                     end_vertex_id: Some(end),
                 },
                 crate::topology::HalfEdgeVertexIncidence {
-                    half_edge: crate::topology::HalfEdgeId { curve_id, side: 1 },
+                    half_edge: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::One,
+                    },
                     start_vertex_id: end,
                     end_vertex_id: Some(start),
                 },

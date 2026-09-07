@@ -1863,7 +1863,7 @@ pub(in super::super) fn transfer_native_brep(
                     let id = coedge_ids[index].clone();
                     let twin = HalfEdgeId {
                         curve_id: half_edge.curve_id,
-                        side: 1 - half_edge.side,
+                        side: half_edge.side.flip(),
                     };
                     let radial_next = if emitted_half_edges.contains(&twin) {
                         CoedgeId::mint(format!(
@@ -2009,10 +2009,9 @@ pub(in super::super) fn transfer_native_brep(
                         edge: EdgeId::mint(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
                             .expect("identity grammar"),
                         radial_next,
-                        sense: if half_edge.side == 0 {
-                            Sense::Forward
-                        } else {
-                            Sense::Reversed
+                        sense: match half_edge.side {
+                            crate::topology::Side::Zero => Sense::Forward,
+                            crate::topology::Side::One => Sense::Reversed,
                         },
                         pcurves,
                         use_curve: None,

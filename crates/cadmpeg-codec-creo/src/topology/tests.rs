@@ -34,15 +34,15 @@ fn builds_closed_face_side_rings_without_guessing() {
         vec![
             HalfEdgeId {
                 curve_id: 1,
-                side: 0
+                side: crate::topology::Side::Zero
             },
             HalfEdgeId {
                 curve_id: 2,
-                side: 0
+                side: crate::topology::Side::Zero
             },
             HalfEdgeId {
                 curve_id: 3,
-                side: 0
+                side: crate::topology::Side::Zero
             }
         ]
     );
@@ -75,7 +75,7 @@ fn withholds_ambiguous_successors() {
     assert!(half_edges.iter().any(|edge| edge.id
         == HalfEdgeId {
             curve_id: 1,
-            side: 0
+            side: crate::topology::Side::Zero
         }
         && edge.next.is_none()));
     assert!(loops.is_empty());
@@ -87,7 +87,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 1,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             face_id: 10,
             next: None,
@@ -95,18 +95,18 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 1,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             face_id: 20,
             next: Some(HalfEdgeId {
                 curve_id: 2,
-                side: 0,
+                side: crate::topology::Side::Zero,
             }),
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 2,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             face_id: 20,
             next: None,
@@ -114,7 +114,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 2,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             face_id: 10,
             next: None,
@@ -126,11 +126,11 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         == vec![
             HalfEdgeId {
                 curve_id: 1,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             HalfEdgeId {
                 curve_id: 2,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
         ]));
 }
@@ -141,7 +141,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             face_id: 10,
             next: None,
@@ -149,7 +149,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             face_id: 20,
             next: None,
@@ -157,7 +157,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 8,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             face_id: 10,
             next: None,
@@ -165,7 +165,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 8,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             face_id: 30,
             next: None,
@@ -176,11 +176,11 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         half_edges: vec![
             HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             HalfEdgeId {
                 curve_id: 8,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
         ],
     };
@@ -198,7 +198,7 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 7,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 start_vertex_id: 10,
                 end_vertex_id: Some(20),
@@ -206,7 +206,7 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 7,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 start_vertex_id: 20,
                 end_vertex_id: reverse_end,
@@ -228,7 +228,7 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
         HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             start_vertex_id: 10,
             end_vertex_id: None,
@@ -236,7 +236,7 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
         HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             start_vertex_id: 20,
             end_vertex_id: None,
@@ -286,11 +286,11 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
         vec![
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0
+                side: crate::topology::Side::Zero
             },
             crate::topology::HalfEdgeId {
                 curve_id: 8,
-                side: 1
+                side: crate::topology::Side::One
             },
         ]
     );
@@ -302,7 +302,7 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
             incidence.half_edge
                 == crate::topology::HalfEdgeId {
                     curve_id: 7,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 }
         })
         .expect("half-edge incidence");

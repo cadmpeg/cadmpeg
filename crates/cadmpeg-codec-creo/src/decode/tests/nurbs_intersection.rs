@@ -24,7 +24,7 @@ fn topology_row(id: u32, faces: [u32; 2]) -> CurveTopologyRow {
     }
 }
 
-fn half_edge(curve_id: u32, side: u8, face_id: u32) -> HalfEdge {
+fn half_edge(curve_id: u32, side: crate::topology::Side, face_id: u32) -> HalfEdge {
     HalfEdge {
         id: HalfEdgeId { curve_id, side },
         face_id,
@@ -34,7 +34,7 @@ fn half_edge(curve_id: u32, side: u8, face_id: u32) -> HalfEdge {
 
 fn incidence(
     curve_id: u32,
-    side: u8,
+    side: crate::topology::Side,
     start_vertex_id: u32,
     end_vertex_id: u32,
 ) -> HalfEdgeVertexIncidence {
@@ -68,14 +68,14 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
         .collect();
     scan.curves.topology_rows = vec![topology_row(10, [0, 0]), topology_row(20, [1, 2])];
     scan.topology.half_edges = vec![
-        half_edge(10, 0, 0),
-        half_edge(10, 1, 0),
-        half_edge(20, 0, 1),
-        half_edge(20, 1, 2),
-        half_edge(30, 0, 3),
-        half_edge(30, 1, 0),
-        half_edge(31, 0, 4),
-        half_edge(31, 1, 0),
+        half_edge(10, crate::topology::Side::Zero, 0),
+        half_edge(10, crate::topology::Side::One, 0),
+        half_edge(20, crate::topology::Side::Zero, 1),
+        half_edge(20, crate::topology::Side::One, 2),
+        half_edge(30, crate::topology::Side::Zero, 3),
+        half_edge(30, crate::topology::Side::One, 0),
+        half_edge(31, crate::topology::Side::Zero, 4),
+        half_edge(31, crate::topology::Side::One, 0),
     ];
     scan.topology.vertices = vec![
         TopologicalVertex {
@@ -83,19 +83,19 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
             half_edges: vec![
                 HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 HalfEdgeId {
                     curve_id: 20,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 HalfEdgeId {
                     curve_id: 30,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 HalfEdgeId {
                     curve_id: 31,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
             ],
         },
@@ -104,20 +104,20 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
             half_edges: vec![
                 HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 HalfEdgeId {
                     curve_id: 20,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
             ],
         },
     ];
     scan.topology.half_edge_vertex_incidence = vec![
-        incidence(10, 0, 1, 2),
-        incidence(10, 1, 2, 1),
-        incidence(20, 0, 1, 2),
-        incidence(20, 1, 2, 1),
+        incidence(10, crate::topology::Side::Zero, 1, 2),
+        incidence(10, crate::topology::Side::One, 2, 1),
+        incidence(20, crate::topology::Side::Zero, 1, 2),
+        incidence(20, crate::topology::Side::One, 2, 1),
     ];
     scan
 }

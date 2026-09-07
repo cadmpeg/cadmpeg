@@ -2055,7 +2055,7 @@ mod tests {
             face_id: 10,
             half_edges: vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             }],
         });
         let mut ir = CadIr::empty();

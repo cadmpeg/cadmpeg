@@ -367,7 +367,7 @@ mod tests {
             HalfEdge {
                 id: HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 face_id: 1,
                 next: None,
@@ -375,7 +375,7 @@ mod tests {
             HalfEdge {
                 id: HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 face_id: 2,
                 next: None,
@@ -386,14 +386,14 @@ mod tests {
                 id: 1,
                 half_edges: vec![HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 }],
             },
             TopologicalVertex {
                 id: 2,
                 half_edges: vec![HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 }],
             },
         ];
@@ -401,7 +401,7 @@ mod tests {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 start_vertex_id: 1,
                 end_vertex_id: Some(2),
@@ -409,7 +409,7 @@ mod tests {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 start_vertex_id: 2,
                 end_vertex_id: Some(1),

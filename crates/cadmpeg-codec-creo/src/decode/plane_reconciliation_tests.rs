@@ -183,7 +183,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         face_id: 5,
         half_edges: vec![crate::topology::HalfEdgeId {
             curve_id: 11,
-            side: 0,
+            side: crate::topology::Side::Zero,
         }],
     });
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -266,7 +266,10 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         face_id: 5,
         half_edges: [11, 12]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     });
     let mut ir = cadmpeg_ir::CadIr::empty();

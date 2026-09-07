@@ -1163,7 +1163,7 @@ fn planar_loop_containment_selects_one_outer_boundary() {
         half_edges: (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -1173,7 +1173,7 @@ fn planar_loop_containment_selects_one_outer_boundary() {
         .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: vertex,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             start_vertex_id: vertex,
             end_vertex_id: Some(if vertex % 4 == 0 {
@@ -1236,7 +1236,7 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
         half_edges: (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -1246,7 +1246,7 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
         .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: vertex,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             start_vertex_id: vertex,
             end_vertex_id: Some(if vertex % 4 == 0 {

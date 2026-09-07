@@ -288,7 +288,7 @@ pub(super) struct CreoFeatureChoiceFieldRecord {
 pub(super) struct CreoHalfEdgeRecord {
     pub(super) id: String,
     pub(super) curve_id: u32,
-    pub(super) side: u8,
+    pub(super) side: crate::topology::Side,
     pub(super) face_id: u32,
     pub(super) next: Option<CreoHalfEdgeRef>,
     pub(super) offset: usize,

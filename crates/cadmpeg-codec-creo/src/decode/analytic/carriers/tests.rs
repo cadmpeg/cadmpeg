@@ -291,7 +291,7 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         half_edges: (0..8)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -300,7 +300,7 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         half_edges: (0..3)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -356,7 +356,7 @@ fn parameter_loop_classifier_orders_unique_outer() {
         half_edges: (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -365,7 +365,7 @@ fn parameter_loop_classifier_orders_unique_outer() {
         half_edges: (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -411,7 +411,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
         face_id: 5,
         half_edges: vec![crate::topology::HalfEdgeId {
             curve_id: 11,
-            side: 0,
+            side: crate::topology::Side::Zero,
         }],
     });
 

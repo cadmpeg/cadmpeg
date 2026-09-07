@@ -446,7 +446,7 @@ pub(crate) enum CreoFeatureFieldValue {
 #[derive(Serialize, Clone)]
 pub(crate) struct CreoHalfEdgeRef {
     pub(crate) curve_id: u32,
-    pub(crate) side: u8,
+    pub(crate) side: crate::topology::Side,
 }
 
 #[derive(Serialize)]

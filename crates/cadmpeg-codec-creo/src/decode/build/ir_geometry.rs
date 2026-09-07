@@ -725,7 +725,7 @@ mod tests {
             face_id: 5,
             half_edges: vec![crate::topology::HalfEdgeId {
                 curve_id: 10,
-                side: 0,
+                side: crate::topology::Side::Zero,
             }],
         });
 
