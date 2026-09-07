@@ -477,8 +477,8 @@ mod tests {
     fn wire_members_preserve_flat_fields_and_reject_mixed_membership() {
         use serde_value::Value;
 
-        let edge = EdgeId::mint("asm:edge#1").expect("edge id");
-        let vertex = VertexId::mint("asm:vertex#2").expect("vertex id");
+        let edge = EdgeId::mint("asm:test:edge#1").expect("edge id");
+        let vertex = VertexId::mint("asm:test:vertex#2").expect("vertex id");
         let edge_value = serde_value::to_value(&edge).expect("edge wire");
         let vertex_value = serde_value::to_value(&vertex).expect("vertex wire");
         for (members, fields) in [
