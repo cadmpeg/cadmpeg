@@ -225,7 +225,7 @@ pub(crate) fn take_knot_table(
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = Vec::with_capacity(expansion.expanded_len);
+    let mut expanded = Vec::with_capacity(expansion.expanded_len());
     for (value, &run_length) in values.iter().zip(&expansion.expanded_run_lengths) {
         for _ in 0..run_length {
             expanded.push(*value);

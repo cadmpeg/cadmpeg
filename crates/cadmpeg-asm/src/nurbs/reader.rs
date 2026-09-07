@@ -134,8 +134,13 @@ const MAX_EXPANDED_NURBS_KNOTS: usize = MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1;
 /// Checked expansion metadata for one unique-knot multiplicity table.
 pub(crate) struct KnotExpansionLayout {
     pub(crate) n_poles: usize,
-    pub(crate) expanded_len: usize,
     pub(crate) expanded_run_lengths: Vec<usize>,
+}
+
+impl KnotExpansionLayout {
+    pub(crate) fn expanded_len(&self) -> usize {
+        self.expanded_run_lengths.iter().sum()
+    }
 }
 
 pub(crate) fn checked_knot_layout(
@@ -166,7 +171,6 @@ pub(crate) fn checked_knot_layout(
     let derived_max = n_poles.checked_add(degree)?.checked_add(1)?;
     (expanded_len <= derived_max).then_some(KnotExpansionLayout {
         n_poles,
-        expanded_len,
         expanded_run_lengths,
     })
 }
@@ -199,7 +203,7 @@ pub(crate) fn read_knots(
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = Vec::with_capacity(expansion.expanded_len);
+    let mut expanded = Vec::with_capacity(expansion.expanded_len());
     for (kv, &run_length) in knots.iter().zip(&expansion.expanded_run_lengths) {
         for _ in 0..run_length {
             expanded.push(*kv);
