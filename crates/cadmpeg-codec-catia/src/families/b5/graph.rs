@@ -382,6 +382,40 @@ pub enum B5Surface {
     },
 }
 
+/// An offset result carrier kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B5OffsetCarrierKind {
+    /// The cache carrier form.
+    Cache,
+    /// The cylinder carrier form.
+    Cylinder,
+    /// The sphere carrier form.
+    Sphere,
+    /// The torus carrier form.
+    Torus,
+    /// The plane carrier form.
+    Plane,
+    /// The rollingball carrier form.
+    RollingBall,
+    /// The extrusion carrier form.
+    Extrusion,
+}
+
+impl B5OffsetCarrierKind {
+    fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x01 => Some(Self::Cache),
+            0x05 => Some(Self::Cylinder),
+            0x09 => Some(Self::Sphere),
+            0x0d => Some(Self::Torus),
+            0x15 => Some(Self::Plane),
+            0x19 => Some(Self::RollingBall),
+            0x21 => Some(Self::Extrusion),
+            _ => None,
+        }
+    }
+}
+
 /// A `b5 03 30` offset construction with an explicit result carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5OffsetSurface {
@@ -394,7 +428,7 @@ pub struct B5OffsetSurface {
     /// Signed offset distance in millimetres.
     pub distance: f64,
     /// Native carrier-kind discriminator.
-    pub carrier_kind: u8,
+    pub carrier_kind: B5OffsetCarrierKind,
     /// Ordered native U and V bounds.
     pub parameter_bounds: [[f64; 2]; 2],
 }
@@ -2959,7 +2993,7 @@ fn parse_offset_surface_fields(record: &B5Record) -> Option<B5OffsetSurface> {
     let source_surface = wire::object_ref(&record.payload, &mut position, true)?;
     let distance = scalar(&record.payload, position)?;
     position += 8;
-    let carrier_kind = *record.payload.get(position)?;
+    let carrier_kind = B5OffsetCarrierKind::from_byte(*record.payload.get(position)?)?;
     position += 1;
     let [u0, u1, v0, v1] = line_values::<4>(&record.payload, position)?;
     position += 32;
@@ -2987,7 +3021,7 @@ fn parse_offset_surface(
         carrier_kind,
         parameter_bounds: [[u0, u1], [v0, v1]],
     } = parse_offset_surface_fields(record)?;
-    if carrier_kind == 0x21 {
+    if carrier_kind == B5OffsetCarrierKind::Extrusion {
         if let (Some(source), Some(carrier)) = (
             extrusion_surfaces.get(&source_surface),
             extrusion_surfaces.get(&carrier_surface),
@@ -3011,21 +3045,21 @@ fn parse_offset_surface(
     let expected_kind = match surfaces.get(&carrier_surface) {
         Some(carrier @ B5Surface::Plane { .. }) => {
             analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(0x15)?
+                .then_some(B5OffsetCarrierKind::Plane)?
         }
         Some(carrier @ B5Surface::Cylinder { .. }) => {
             analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(0x05)?
+                .then_some(B5OffsetCarrierKind::Cylinder)?
         }
         Some(carrier @ B5Surface::Sphere { .. }) => {
             analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(0x09)?
+                .then_some(B5OffsetCarrierKind::Sphere)?
         }
         Some(carrier @ B5Surface::Torus { .. }) => {
             analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(0x0d)?
+                .then_some(B5OffsetCarrierKind::Torus)?
         }
-        Some(B5Surface::RollingBall { .. }) => 0x19,
+        Some(B5Surface::RollingBall { .. }) => B5OffsetCarrierKind::RollingBall,
         Some(B5Surface::Unknown {
             family: 0xb5,
             class: 0x2c,
@@ -3044,14 +3078,16 @@ fn parse_offset_surface(
                 {
                     return None;
                 }
-                return (carrier_kind == 0x21).then_some(B5OffsetSurface {
-                    object_id,
-                    carrier_surface,
-                    source_surface,
-                    distance,
-                    carrier_kind,
-                    parameter_bounds: [[u0, u1], [v0, v1]],
-                });
+                return (carrier_kind == B5OffsetCarrierKind::Extrusion).then_some(
+                    B5OffsetSurface {
+                        object_id,
+                        carrier_surface,
+                        source_surface,
+                        distance,
+                        carrier_kind,
+                        parameter_bounds: [[u0, u1], [v0, v1]],
+                    },
+                );
             }
             let cache = parse_offset_cache(records.get(&carrier_surface)?)?;
             let source = surfaces.get(&source_surface)?;
@@ -3065,7 +3101,7 @@ fn parse_offset_surface(
             {
                 return None;
             }
-            0x01
+            B5OffsetCarrierKind::Cache
         }
     };
     (carrier_kind == expected_kind).then_some(B5OffsetSurface {
@@ -3394,7 +3430,8 @@ fn contextual_offset_extrusion_bounds(
     };
     let mut resolved = None;
     for construction in offset_constructions.iter().filter(|construction| {
-        construction.carrier_surface == carrier_surface && construction.carrier_kind == 0x21
+        construction.carrier_surface == carrier_surface
+            && construction.carrier_kind == B5OffsetCarrierKind::Extrusion
     }) {
         let source_extrusion = extrusion_surfaces.get(&construction.source_surface)?;
         let bounds = [

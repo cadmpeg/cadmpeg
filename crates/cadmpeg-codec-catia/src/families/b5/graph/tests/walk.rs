@@ -856,7 +856,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         carrier_surface: 8,
         source_surface: 10,
         distance: -1.5,
-        carrier_kind: 0x21,
+        carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
         parameter_bounds: [[-5.0, 6.0], [2.0, 9.0]],
     };
     let mut carrier_payload = vec![0x81, 0x84];

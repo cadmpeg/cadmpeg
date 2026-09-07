@@ -134,7 +134,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             carrier_surface: 31,
             source_surface: 50,
             distance: 1.0,
-            carrier_kind: 2,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
             parameter_bounds: [[0.0, 1.0], [0.0, 1.0]],
         },
     )]);
@@ -181,7 +181,7 @@ fn surface_closure_follows_aliases_to_native_constructions() {
             carrier_surface: 30,
             source_surface: 40,
             distance: 2.0,
-            carrier_kind: 2,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
             parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
         },
     )]);
