@@ -132,7 +132,7 @@ mod tests {
         assert_eq!(frame.control(), 0xff);
         assert_eq!(frame.offsets(), [114, 116, 119, 121, 124, 126, 129, 131]);
         assert_eq!(
-            frame.members().each_ref().map(|(token, _)| token.value()),
+            frame.members().each_ref().map(|(token, ())| token.value()),
             [0, 256, 1, 512, 2, 768, 3, 1024]
         );
         let relocated = frame.clone().relocate(1000).unwrap();
