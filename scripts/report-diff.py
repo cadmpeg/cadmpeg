@@ -8,8 +8,8 @@
     --limit N     max output lines, hard cap             (default: 100)
     --top N       max offenders/diff rows per list       (default: 10)
     --stems KIND  machine-readable mode (needs DIR_B): print ONLY the full
-                  stem list, one per line, for piping into cadir-grep.py /
-                  cadmpeg query / decode loops. No cap, notes go to stderr.
+                  stem list, one per line, for cadmpeg query or decode loops.
+                  No cap, notes go to stderr.
                   KIND: regressed | improved | unchanged | only-a | only-b
 
 Examples:
@@ -17,8 +17,8 @@ Examples:
     python3 scripts/report-diff.py ~/side2/tmp/sldprt-l6/current-reports-v3/ \\
         ~/side2/tmp/sldprt-l6/post-cone-reports-v1/
     python3 scripts/report-diff.py --stems regressed sweep-v14/ sweep-v15/ |
-        while read s; do python3 scripts/cadir-grep.py --list arenas.features \\
-            "sweep-v15/$s.cadir.json"; done
+        while IFS= read -r s; do cadmpeg query item \\
+            "sweep-v15/$s.cadir.json" native.sldprt.features --head 100; done
 
 Each summary prints a `fingerprint:` of the content (stems + per-file status/
 loss counts) — identical fingerprints mean two dirs hold the same sweep.
