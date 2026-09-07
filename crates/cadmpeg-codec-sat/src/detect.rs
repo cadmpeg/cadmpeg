@@ -16,22 +16,22 @@ use std::collections::BTreeMap;
 use crate::dialect::{terminator_line, Family, StreamEvidence, TextEvidence};
 
 /// The stream encoding a byte prefix selects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum StreamKind {
     /// `ASM BinaryFile4`/`ASM BinaryFile8` SAB.
-    AsmBinary,
+    AsmBinary(KernelHeader),
     /// `ACIS BinaryFile` 32-bit SAB.
-    AcisBinary,
+    AcisBinary(KernelHeader),
     /// Text header lines.
     Text,
 }
 
 pub(crate) fn classify(prefix: &[u8]) -> Option<StreamKind> {
-    if asm_header::has_asm_magic(prefix) {
-        return Some(StreamKind::AsmBinary);
+    if let Some(header) = asm_header::parse(prefix) {
+        return Some(StreamKind::AsmBinary(header));
     }
-    if acis_header::has_acis_magic(prefix) {
-        return Some(StreamKind::AcisBinary);
+    if let Some(header) = acis_header::parse(prefix) {
+        return Some(StreamKind::AcisBinary(header));
     }
     if looks_like_text_stream(prefix) {
         return Some(StreamKind::Text);
@@ -60,12 +60,12 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
 }
 
 pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
-    match classify(prefix) {
-        Some(StreamKind::AsmBinary | StreamKind::AcisBinary) => Confidence::High,
-        // The text opening is a weak signature shared with other numeric
-        // text files, so detection defers to stronger magics.
-        Some(StreamKind::Text) => Confidence::Medium,
-        None => Confidence::No,
+    if asm_header::has_asm_magic(prefix) || acis_header::has_acis_magic(prefix) {
+        Confidence::High
+    } else if looks_like_text_stream(prefix) {
+        Confidence::Medium
+    } else {
+        Confidence::No
     }
 }
 
@@ -109,12 +109,10 @@ pub(crate) fn inspect(
     };
     // Inspect classifies from the same evidence decode would read, so the two
     // report the same `sat:` row and the same admission for the same bytes.
-    let (matched, kernel) = match kind {
-        StreamKind::AsmBinary => {
-            let header = asm_header::parse(bytes)
-                .expect("StreamKind::AsmBinary guarantees the ASM header magic");
-            let framed = asm_header::record_stream_start_with_header(bytes, &header).is_some();
-            header_attributes(&header, Family::Asm, &mut attributes);
+    let (matched, kernel) = match &kind {
+        StreamKind::AsmBinary(header) => {
+            let framed = asm_header::record_stream_start_with_header(bytes, header).is_some();
+            header_attributes(header, Family::Asm, &mut attributes);
             if header.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -124,21 +122,19 @@ pub(crate) fn inspect(
             }
             let evidence = StreamEvidence::Binary {
                 family: Family::Asm,
-                header: &header,
+                header,
                 framed,
             };
             crate::dialect::layers(&evidence)
         }
-        StreamKind::AcisBinary => {
-            let header = acis_header::parse(bytes)
-                .expect("StreamKind::AcisBinary guarantees the ACIS header magic");
-            let framed = acis_header::record_stream_start_with_header(bytes, &header).is_some();
+        StreamKind::AcisBinary(header) => {
+            let framed = acis_header::record_stream_start_with_header(bytes, header).is_some();
             let evidence = StreamEvidence::Binary {
                 family: Family::Acis,
-                header: &header,
+                header,
                 framed,
             };
-            header_attributes(&header, Family::Acis, &mut attributes);
+            header_attributes(header, Family::Acis, &mut attributes);
             if header.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -182,8 +178,8 @@ pub(crate) fn inspect(
         vec![ContainerEntry {
             name: "stream".to_string(),
             role: match kind {
-                StreamKind::AsmBinary => ContainerRole::Brep,
-                StreamKind::AcisBinary => ContainerRole::AcisBinary,
+                StreamKind::AsmBinary(_) => ContainerRole::Brep,
+                StreamKind::AcisBinary(_) => ContainerRole::AcisBinary,
                 StreamKind::Text => ContainerRole::BrepText,
             },
             compression: EntryCompression::Stored,

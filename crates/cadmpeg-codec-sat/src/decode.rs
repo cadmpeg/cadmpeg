@@ -22,21 +22,20 @@ use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
-        Some(StreamKind::AsmBinary) => decode_asm_binary(ctx, bytes),
+        Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
-        Some(StreamKind::AcisBinary) => decode_acis_binary(ctx, bytes),
+        Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, header),
         None => Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         )),
     }
 }
 
-pub(crate) fn decode_asm_binary(
+fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    header: KernelHeader,
 ) -> Result<Decoded, CodecError> {
-    let header =
-        asm_header::parse(bytes).expect("StreamKind::AsmBinary guarantees the ASM header magic");
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
@@ -78,12 +77,11 @@ pub(crate) fn decode_asm_binary(
     build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
 
-pub(crate) fn decode_acis_binary(
+fn decode_acis_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    header: KernelHeader,
 ) -> Result<Decoded, CodecError> {
-    let header =
-        acis_header::parse(bytes).expect("StreamKind::AcisBinary guarantees the ACIS header magic");
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
