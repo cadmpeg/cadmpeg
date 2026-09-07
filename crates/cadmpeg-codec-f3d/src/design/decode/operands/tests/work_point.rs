@@ -48,7 +48,7 @@ fn direct_sketch_point_selection_reads_owner_and_persistent_ids() {
     bytes.extend_from_slice(&0u32.to_le_bytes());
     indexed_header(&mut bytes, b"288", record_index + 4);
 
-    let selection = parse_work_point_sketch_point_frame(&bytes, record_index, 0, "338")
+    let selection = parse_work_point_sketch_point_frame(&bytes, record_index, 0)
         .expect("direct sketch-point selection");
     assert_eq!(selection.sketch_record_index, 1627);
     assert_eq!(selection.point_persistent_id, 379);

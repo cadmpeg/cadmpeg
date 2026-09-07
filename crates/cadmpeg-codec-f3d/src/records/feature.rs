@@ -4550,7 +4550,7 @@ pub struct DesignWorkPointPlaneSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointSketchPointSelection {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
     pub asset_id: String,
     /// Byte offset of the asset identifier's UTF-16LE code units.

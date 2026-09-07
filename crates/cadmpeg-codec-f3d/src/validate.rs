@@ -4001,13 +4001,8 @@ fn valid_work_point_construction(
                 Some(records::feature::DesignWorkPointInputCarrier::SketchPoint { selection }) => {
                     valid_design_guid(&selection.asset_id)
                         && valid_design_guid(&selection.context_id)
-                        && selection.class_tag.len() == 3
-                        && selection
-                            .class_tag
-                            .bytes()
-                            .all(|byte| byte.is_ascii_digit())
                         && header.is_some_and(|header| {
-                            header.class_tag.as_str() == selection.class_tag
+                            header.class_tag == selection.class_tag
                                 && selection.asset_id_offset > header.byte_offset
                         })
                         && selection.context_id_offset > selection.asset_id_offset

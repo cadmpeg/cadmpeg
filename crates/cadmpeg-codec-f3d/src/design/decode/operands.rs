@@ -338,12 +338,9 @@ pub fn bind_work_point_input_carriers(
                 }));
                 continue;
             }
-            if let Some(selection) = parse_work_point_sketch_point_frame(
-                bytes,
-                input.record_index,
-                header.byte_offset,
-                header.class_tag.as_str(),
-            ) {
+            if let Some(selection) =
+                parse_work_point_sketch_point_frame(bytes, input.record_index, header.byte_offset)
+            {
                 let point_matches = sketch_points
                     .iter()
                     .filter(|point| {
@@ -355,7 +352,7 @@ pub fn bind_work_point_input_carriers(
                 if let [point] = point_matches.as_slice() {
                     input.carrier = Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
                         selection: DesignWorkPointSketchPointSelection {
-                            class_tag: selection.class_tag,
+                            class_tag: header.class_tag.clone(),
                             asset_id: selection.asset_id,
                             asset_id_offset: selection.asset_id_offset,
                             context_id: selection.context_id,
@@ -3124,7 +3121,6 @@ pub(crate) fn entity_selection_matches_curve(
 /// Direct sketch-point identity carried by a `WorkPoint` input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WorkPointSketchPointFrame {
-    class_tag: String,
     asset_id: String,
     asset_id_offset: u64,
     context_id: String,
@@ -3149,7 +3145,6 @@ fn parse_work_point_sketch_point_frame(
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
-    class_tag: &str,
 ) -> Option<WorkPointSketchPointFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
@@ -3198,7 +3193,6 @@ fn parse_work_point_sketch_point_frame(
         identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
     )?);
     Some(WorkPointSketchPointFrame {
-        class_tag: class_tag.to_owned(),
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
