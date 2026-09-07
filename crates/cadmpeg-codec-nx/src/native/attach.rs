@@ -3439,19 +3439,28 @@ fn attach_feature_operations(
         });
         let delete_projection = deletes_body
             .then(|| {
-                delete_body_feature_definition(
-                    body_references.get(label.id.as_str()).copied(),
-                    offset_store_bodies_by_operation
-                        .get(label.id.as_str())
-                        .and_then(|uses| match uses.as_slice() {
-                            [(object_index, data_block)] => {
-                                Some((*object_index, data_block.as_str()))
-                            }
-                            _ => None,
-                        }),
+                let field = body_references
+                    .get(label.id.as_str())
+                    .copied()
+                    .map(DeleteBodyField::Native)
+                    .or_else(|| {
+                        offset_store_bodies_by_operation
+                            .get(label.id.as_str())
+                            .and_then(|uses| match uses.as_slice() {
+                                [(object_index, data_block)] => {
+                                    Some(DeleteBodyField::OffsetStore {
+                                        object_index: *object_index,
+                                        data_block,
+                                    })
+                                }
+                                _ => None,
+                            })
+                    })?;
+                Some(delete_body_feature_definition(
+                    field,
                     &body_alias_roots,
                     &bodies_by_object_index,
-                )
+                ))
             })
             .flatten();
         let extract_body_projection = (label.value == "EXTRACT_BODY").then(|| {
@@ -8251,47 +8260,49 @@ pub(crate) fn boolean_feature_definition(
     }
 }
 
+enum DeleteBodyField<'a> {
+    Native(u32),
+    OffsetStore {
+        object_index: u32,
+        data_block: &'a str,
+    },
+}
+
 /// Project `DELETE` as body deletion only when its bounded operation record
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
-    body_object_index: Option<u32>,
-    offset_store_body: Option<(u32, &str)>,
+    field: DeleteBodyField<'_>,
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
-    let selection = if let Some(body) = body_object_index {
-        feature_body_selection(
+) -> FeatureDefinition {
+    let bodies = match field {
+        DeleteBodyField::Native(body) => match feature_body_selection(
             &[body],
             body_alias_roots,
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
-        )
-        .into_selection()
-    } else if let Some((object_index, data_block)) = offset_store_body {
-        BodySelection::Local {
-            bodies: vec![data_block.to_string()],
-            native: format!("nx:om-object-index#{object_index}"),
-        }
-    } else {
-        return None;
-    };
-    let bodies = match selection {
-        BodySelection::Native(native) => {
-            let body = body_object_index.expect("native DELETE selection has a body index");
-            BodySelection::Local {
+        ) {
+            FeatureBodySelection::Native(native) => BodySelection::Local {
                 bodies: vec![format!("nx:om-body-object#{body}")],
                 native,
-            }
-        }
-        selection => selection,
+            },
+            selection => selection.into_selection(),
+        },
+        DeleteBodyField::OffsetStore {
+            object_index,
+            data_block,
+        } => BodySelection::Local {
+            bodies: vec![data_block.to_string()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
     };
-    Some(FeatureDefinition::DeleteBody {
+    FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    })
+    }
 }
 
 /// Project the exact source body of an `EXTRACT_BODY` operation.
