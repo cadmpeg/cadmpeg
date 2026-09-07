@@ -808,18 +808,18 @@ pub(crate) fn metadata_record(typecode: u32, data: Vec<u8>) -> (Vec<u8>, crate::
 }
 
 pub(crate) fn set_test_units(scan: &mut crate::container::Scan<'_>, scale: f64) {
+    let unit = match scale {
+        1.0 => settings::UnitSystem::Standard(settings::StandardUnit::Millimeters),
+        25.4 => settings::UnitSystem::Standard(settings::StandardUnit::Inches),
+        _ => settings::UnitSystem::custom(scale / 1000.0, String::new())
+            .expect("valid test unit scale"),
+    };
     scan.metadata.settings.units = Some(settings::UnitsAndTolerances {
-        version: 1,
-        unit_value: 2,
-        unit: settings::UnitSystem::Standard(2),
-        millimeters_per_unit: Some(scale),
+        unit,
         absolute_tolerance: 0.01,
-        absolute_tolerance_millimeters: Some(0.01 * scale),
         angular_tolerance: 0.1,
         relative_tolerance: 0.01,
-        distance_display_mode: None,
-        distance_display_precision: None,
-        source: settings::SourceRange { range: 0..0 },
+        distance_display: None,
     });
 }
 

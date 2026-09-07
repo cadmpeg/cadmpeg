@@ -181,49 +181,187 @@ pub(crate) struct PreviewDescriptor {
     pub(crate) compressed: bool,
 }
 
+/// Standard unit codes admitted by the archive grammar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub(crate) enum StandardUnit {
+    Microns = 1,
+    Millimeters = 2,
+    Centimeters = 3,
+    Meters = 4,
+    Kilometers = 5,
+    Microinches = 6,
+    Mils = 7,
+    Inches = 8,
+    Feet = 9,
+    Miles = 10,
+    Angstroms = 12,
+    Nanometers = 13,
+    Decimeters = 14,
+    Dekameters = 15,
+    Hectometers = 16,
+    Megameters = 17,
+    Gigameters = 18,
+    Yards = 19,
+    PrinterPoints = 20,
+    PrinterPicas = 21,
+    NauticalMiles = 22,
+    AstronomicalUnits = 23,
+    LightYears = 24,
+    Parsecs = 25,
+}
+
+impl StandardUnit {
+    fn from_value(value: i32) -> Option<Self> {
+        Some(match value {
+            1 => Self::Microns,
+            2 => Self::Millimeters,
+            3 => Self::Centimeters,
+            4 => Self::Meters,
+            5 => Self::Kilometers,
+            6 => Self::Microinches,
+            7 => Self::Mils,
+            8 => Self::Inches,
+            9 => Self::Feet,
+            10 => Self::Miles,
+            12 => Self::Angstroms,
+            13 => Self::Nanometers,
+            14 => Self::Decimeters,
+            15 => Self::Dekameters,
+            16 => Self::Hectometers,
+            17 => Self::Megameters,
+            18 => Self::Gigameters,
+            19 => Self::Yards,
+            20 => Self::PrinterPoints,
+            21 => Self::PrinterPicas,
+            22 => Self::NauticalMiles,
+            23 => Self::AstronomicalUnits,
+            24 => Self::LightYears,
+            25 => Self::Parsecs,
+            _ => return None,
+        })
+    }
+
+    pub(crate) fn value(self) -> i32 {
+        self as i32
+    }
+
+    fn millimeters_per_unit(self) -> f64 {
+        match self {
+            Self::Microns => 0.001,
+            Self::Millimeters => 1.0,
+            Self::Centimeters => 10.0,
+            Self::Meters => 1000.0,
+            Self::Kilometers => 1_000_000.0,
+            Self::Microinches => 0.000_025_4,
+            Self::Mils => 0.0254,
+            Self::Inches => 25.4,
+            Self::Feet => 304.8,
+            Self::Miles => 1_609_344.0,
+            Self::Angstroms => 0.000_000_1,
+            Self::Nanometers => 0.000_001,
+            Self::Decimeters => 100.0,
+            Self::Dekameters => 10_000.0,
+            Self::Hectometers => 100_000.0,
+            Self::Megameters => 1_000_000_000.0,
+            Self::Gigameters => 1_000_000_000_000.0,
+            Self::Yards => 914.4,
+            Self::PrinterPoints => 0.352_777_777_777_777_8,
+            Self::PrinterPicas => 4.233_333_333_333_333,
+            Self::NauticalMiles => 1_852_000.0,
+            Self::AstronomicalUnits => 149_597_870_000_000.0,
+            Self::LightYears => 9.460_730_472_580_8e18,
+            Self::Parsecs => 3.085_677_58e19,
+        }
+    }
+}
+
+/// A custom unit whose meter and millimeter scales are finite and positive.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CustomUnit {
+    meters_per_unit: f64,
+    name: String,
+}
+
+impl CustomUnit {
+    pub(crate) fn meters_per_unit(&self) -> f64 {
+        self.meters_per_unit
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// The standard and custom Rhino unit systems.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum UnitSystem {
-    /// No unit system.
     None,
-    /// A standard unit identified by its archive value.
-    Standard(u8),
-    /// A custom unit system.
-    Custom {
-        /// Meters per archive unit.
-        meters_per_unit: f64,
-        /// Custom display name.
-        name: String,
-    },
-    /// An explicitly unset unit system.
+    Standard(StandardUnit),
+    Custom(CustomUnit),
     Unset,
+}
+
+impl UnitSystem {
+    pub(crate) fn custom(meters_per_unit: f64, name: String) -> Option<Self> {
+        let millimeters_per_unit = meters_per_unit * 1000.0;
+        (meters_per_unit.is_finite()
+            && meters_per_unit > 0.0
+            && millimeters_per_unit.is_finite()
+            && millimeters_per_unit > 0.0)
+            .then_some(Self::Custom(CustomUnit {
+                meters_per_unit,
+                name,
+            }))
+    }
+
+    pub(crate) fn value(&self) -> i32 {
+        match self {
+            Self::None => 0,
+            Self::Standard(unit) => unit.value(),
+            Self::Custom(_) => 11,
+            Self::Unset => 255,
+        }
+    }
+
+    fn millimeters_per_unit(&self) -> Option<f64> {
+        match self {
+            Self::None | Self::Unset => None,
+            Self::Standard(unit) => Some(unit.millimeters_per_unit()),
+            Self::Custom(unit) => Some(unit.meters_per_unit * 1000.0),
+        }
+    }
+}
+
+/// Display mode and precision are introduced together at units version 101.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DistanceDisplay {
+    pub(crate) mode: i32,
+    pub(crate) precision: i32,
 }
 
 /// Units and tolerances.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UnitsAndTolerances {
-    /// Structure version.
-    pub(crate) version: i32,
-    /// Raw unit enum.
-    pub(crate) unit_value: i32,
-    /// Unit system.
     pub(crate) unit: UnitSystem,
-    /// Millimeters per archive unit.
-    pub(crate) millimeters_per_unit: Option<f64>,
     /// Absolute tolerance in native archive units.
     pub(crate) absolute_tolerance: f64,
-    /// Absolute tolerance resolved to millimeters for a later IR transfer.
-    pub(crate) absolute_tolerance_millimeters: Option<f64>,
     /// Angular tolerance, never scaled.
     pub(crate) angular_tolerance: f64,
     /// Relative tolerance, never scaled.
     pub(crate) relative_tolerance: f64,
-    /// Distance display mode.
-    pub(crate) distance_display_mode: Option<i32>,
-    /// Distance display precision.
-    pub(crate) distance_display_precision: Option<i32>,
-    /// Source range.
-    pub(crate) source: SourceRange,
+    pub(crate) distance_display: Option<DistanceDisplay>,
+}
+
+impl UnitsAndTolerances {
+    pub(crate) fn millimeters_per_unit(&self) -> Option<f64> {
+        self.unit.millimeters_per_unit()
+    }
+
+    pub(crate) fn absolute_tolerance_millimeters(&self) -> Option<f64> {
+        self.millimeters_per_unit()
+            .map(|scale| self.absolute_tolerance * scale)
+    }
 }
 
 /// One plugin reference stored in the settings plugin list.
@@ -1011,33 +1149,7 @@ fn parse_application(data: &[u8], record: &Record) -> Result<Application, Framin
 }
 
 pub(crate) fn standard_scale(value: i32) -> Option<f64> {
-    Some(match value {
-        1 => 0.001,
-        2 => 1.0,
-        3 => 10.0,
-        4 => 1000.0,
-        5 => 1_000_000.0,
-        6 => 0.000_025_4,
-        7 => 0.0254,
-        8 => 25.4,
-        9 => 304.8,
-        10 => 1_609_344.0,
-        12 => 0.000_000_1,
-        13 => 0.000_001,
-        14 => 100.0,
-        15 => 10_000.0,
-        16 => 100_000.0,
-        17 => 1_000_000_000.0,
-        18 => 1_000_000_000_000.0,
-        19 => 914.4,
-        20 => 0.352_777_777_777_777_8,
-        21 => 4.233_333_333_333_333,
-        22 => 1_852_000.0,
-        23 => 149_597_870_000_000.0,
-        24 => 9.460_730_472_580_8e18,
-        25 => 3.085_677_58e19,
-        _ => return None,
-    })
+    StandardUnit::from_value(value).map(StandardUnit::millimeters_per_unit)
 }
 
 pub(crate) fn parse_units(
@@ -1045,18 +1157,10 @@ pub(crate) fn parse_units(
     record: &Record,
 ) -> Result<UnitsAndTolerances, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    parse_units_reader(
-        &mut reader,
-        SourceRange {
-            range: record.range.clone(),
-        },
-    )
+    parse_units_reader(&mut reader)
 }
 
-fn parse_units_reader(
-    reader: &mut BoundedReader<'_>,
-    source: SourceRange,
-) -> Result<UnitsAndTolerances, FramingError> {
+fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndTolerances, FramingError> {
     let version = reader.i32()?;
     let legacy = version == 1;
     if !legacy && !(100..200).contains(&version) {
@@ -1097,87 +1201,52 @@ fn parse_units_reader(
             "relative tolerance must be in (0, 1)",
         ));
     }
-    let mode = (!legacy && version >= 101)
-        .then(|| reader.i32())
-        .transpose()?;
-    let precision = (!legacy && version >= 101)
-        .then(|| reader.i32())
-        .transpose()?;
-    let custom_scale = (!legacy && version >= 102)
-        .then(|| reader.f64())
-        .transpose()?;
-    let custom_name = if !legacy && version >= 102 {
-        Some(utf16(reader)?)
+    let distance_display = if !legacy && version >= 101 {
+        Some(DistanceDisplay {
+            mode: reader.i32()?,
+            precision: reader.i32()?,
+        })
+    } else {
+        None
+    };
+    let custom = if !legacy && version >= 102 {
+        Some((reader.f64()?, utf16(reader)?))
     } else {
         None
     };
     let unit = match unit_value {
         0 => UnitSystem::None,
-        11 => UnitSystem::Custom {
-            meters_per_unit: custom_scale.ok_or_else(|| {
+        11 => {
+            let (scale, name) = custom.ok_or_else(|| {
                 FramingError::structural(reader.position(), "custom unit has no scale")
-            })?,
-            name: custom_name.unwrap_or_default(),
-        },
+            })?;
+            UnitSystem::custom(scale, name).ok_or_else(|| {
+                FramingError::structural(reader.position(), "custom unit scale is invalid")
+            })?
+        }
         255 => UnitSystem::Unset,
-        value if standard_scale(value).is_some() => UnitSystem::Standard(
-            u8::try_from(value)
-                .map_err(|_| FramingError::structural(reader.position(), "unit value overflow"))?,
-        ),
-        _ => {
+        value => StandardUnit::from_value(value)
+            .map(UnitSystem::Standard)
+            .ok_or_else(|| {
+                FramingError::structural(reader.position(), "unknown unit enum value")
+            })?,
+    };
+    if let Some(scale) = unit.millimeters_per_unit() {
+        let scaled_absolute = absolute * scale;
+        if !scaled_absolute.is_finite() || scaled_absolute <= 0.0 {
             return Err(FramingError::structural(
                 reader.position(),
-                "unknown unit enum value",
-            ))
+                "scaled absolute tolerance is invalid",
+            ));
         }
-    };
-    let scale = match &unit {
-        UnitSystem::Standard(value) => standard_scale(i32::from(*value)),
-        UnitSystem::Custom {
-            meters_per_unit, ..
-        } if meters_per_unit.is_finite()
-            && *meters_per_unit > 0.0
-            && (*meters_per_unit * 1000.0).is_finite()
-            && *meters_per_unit * 1000.0 > 0.0 =>
-        {
-            Some(*meters_per_unit * 1000.0)
-        }
-        UnitSystem::None | UnitSystem::Unset => None,
-        UnitSystem::Custom { .. } => {
-            return Err(FramingError::structural(
-                reader.position(),
-                "custom unit scale is invalid",
-            ))
-        }
-    };
-    if scale.is_some_and(|factor| !factor.is_finite() || factor <= 0.0) {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unit scale is invalid",
-        ));
-    }
-    let absolute_tolerance_millimeters = scale
-        .map(|factor| absolute * factor)
-        .filter(|value| value.is_finite() && *value > 0.0);
-    if scale.is_some() && absolute_tolerance_millimeters.is_none() {
-        return Err(FramingError::structural(
-            reader.position(),
-            "scaled absolute tolerance is invalid",
-        ));
     }
     finish(reader, "units")?;
     Ok(UnitsAndTolerances {
-        version,
-        unit_value,
         unit,
-        millimeters_per_unit: scale,
         absolute_tolerance: absolute,
-        absolute_tolerance_millimeters,
         angular_tolerance: angular,
         relative_tolerance: relative,
-        distance_display_mode: mode,
-        distance_display_precision: precision,
-        source,
+        distance_display,
     })
 }
 
@@ -1542,10 +1611,10 @@ pub(crate) fn parse_settings_attributes(
     let current_line_pattern_index = reader.i32()?;
     let current_linetype_source = reader.i32()?;
     let page_units = if version.1 >= 1 {
-        let (mut payload, page_range) =
+        let (mut payload, _page_range) =
             anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
         anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
-        let value = parse_units_reader(&mut payload, SourceRange { range: page_range })?;
+        let value = parse_units_reader(&mut payload)?;
         Some(value)
     } else {
         None

@@ -562,7 +562,7 @@ impl<'a> DecodeContext<'a> {
         let units = self.scan.metadata.settings.units.as_ref()?;
         match units.unit {
             crate::settings::UnitSystem::None => Some(1.0),
-            _ => units.millimeters_per_unit,
+            _ => units.millimeters_per_unit(),
         }
     }
 
@@ -5656,7 +5656,7 @@ pub(crate) fn seal_for_test(
 fn build_ir(scan: &Scan<'_>) -> CadIr {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
-        if let Some(linear) = source_units.absolute_tolerance_millimeters {
+        if let Some(linear) = source_units.absolute_tolerance_millimeters() {
             ir.tolerances.linear = linear;
         }
         ir.tolerances.angular = source_units.angular_tolerance;
@@ -5669,28 +5669,26 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
     let mut attributes = BTreeMap::new();
     let settings = &scan.metadata.settings;
     if let Some(units) = &settings.units {
-        attributes.insert("unit_value".to_string(), units.unit_value.to_string());
+        attributes.insert("unit_value".to_string(), units.unit.value().to_string());
         attributes.insert(
             "unit_system".to_string(),
             match &units.unit {
                 crate::settings::UnitSystem::None => "none".to_string(),
                 crate::settings::UnitSystem::Unset => "unset".to_string(),
-                crate::settings::UnitSystem::Standard(value) => format!("standard:{value}"),
-                crate::settings::UnitSystem::Custom { name, .. } => format!("custom:{name}"),
+                crate::settings::UnitSystem::Standard(value) => {
+                    format!("standard:{}", value.value())
+                }
+                crate::settings::UnitSystem::Custom(unit) => format!("custom:{}", unit.name()),
             },
         );
-        if let crate::settings::UnitSystem::Custom {
-            meters_per_unit,
-            name,
-        } = &units.unit
-        {
-            attributes.insert("custom_unit_name".to_string(), name.clone());
+        if let crate::settings::UnitSystem::Custom(unit) = &units.unit {
+            attributes.insert("custom_unit_name".to_string(), unit.name().to_string());
             attributes.insert(
                 "custom_meters_per_unit".to_string(),
-                meters_per_unit.to_string(),
+                unit.meters_per_unit().to_string(),
             );
         }
-        if let Some(scale) = units.millimeters_per_unit {
+        if let Some(scale) = units.millimeters_per_unit() {
             attributes.insert("millimeters_per_unit".to_string(), scale.to_string());
         }
         attributes.insert(
@@ -5700,7 +5698,7 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
         attributes.insert(
             "absolute_tolerance_millimeters".to_string(),
             units
-                .absolute_tolerance_millimeters
+                .absolute_tolerance_millimeters()
                 .map_or_else(|| "unresolved".to_string(), |value| value.to_string()),
         );
         attributes.insert(
@@ -5711,13 +5709,14 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
             "relative_tolerance".to_string(),
             units.relative_tolerance.to_string(),
         );
-        if let Some(mode) = units.distance_display_mode {
-            attributes.insert("distance_display_mode".to_string(), mode.to_string());
-        }
-        if let Some(precision) = units.distance_display_precision {
+        if let Some(display) = units.distance_display {
+            attributes.insert(
+                "distance_display_mode".to_string(),
+                display.mode.to_string(),
+            );
             attributes.insert(
                 "distance_display_precision".to_string(),
-                precision.to_string(),
+                display.precision.to_string(),
             );
         }
     }

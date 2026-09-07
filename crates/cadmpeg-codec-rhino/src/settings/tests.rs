@@ -60,9 +60,9 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     body.extend(0.001_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(&data, &record).expect("required invariant");
-    assert_eq!(units.millimeters_per_unit, Some(25.4));
+    assert_eq!(units.millimeters_per_unit(), Some(25.4));
     assert_eq!(units.absolute_tolerance, 0.5);
-    assert_eq!(units.absolute_tolerance_millimeters, Some(12.7));
+    assert_eq!(units.absolute_tolerance_millimeters(), Some(12.7));
     assert_eq!(units.angular_tolerance, 0.01);
     assert_eq!(units.relative_tolerance, 0.001);
 
@@ -93,10 +93,15 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
     body.extend([0xde, 0xad]);
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(&data, &record).expect("future units version");
-    assert_eq!(units.version, 103);
-    assert_eq!(units.unit, settings::UnitSystem::Standard(8));
-    assert_eq!(units.distance_display_precision, Some(6));
-    assert_eq!(units.millimeters_per_unit, Some(25.4));
+    assert_eq!(
+        units.unit,
+        settings::UnitSystem::Standard(settings::StandardUnit::Inches)
+    );
+    assert_eq!(
+        units.distance_display.map(|display| display.precision),
+        Some(6)
+    );
+    assert_eq!(units.millimeters_per_unit(), Some(25.4));
 }
 
 #[test]
@@ -284,7 +289,7 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
         attributes
             .page_units
             .as_ref()
-            .and_then(|value| value.distance_display_precision),
+            .and_then(|value| value.distance_display.map(|display| display.precision)),
         Some(6)
     );
     assert_eq!(

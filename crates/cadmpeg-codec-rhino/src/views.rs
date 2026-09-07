@@ -1253,7 +1253,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
         .settings
         .units
         .as_ref()
-        .and_then(|value| value.millimeters_per_unit)
+        .and_then(|value| value.millimeters_per_unit())
         .unwrap_or(1.0);
     let mut views = Vec::new();
     let mut cplanes = Vec::new();

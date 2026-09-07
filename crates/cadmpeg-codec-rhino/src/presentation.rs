@@ -3807,7 +3807,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
         .settings
         .units
         .as_ref()
-        .and_then(|units| units.millimeters_per_unit)
+        .and_then(|units| units.millimeters_per_unit())
         .unwrap_or(1.0);
     let mut groups = Vec::new();
     let mut materials = Vec::new();

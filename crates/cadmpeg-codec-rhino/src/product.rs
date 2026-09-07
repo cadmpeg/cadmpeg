@@ -201,7 +201,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         .settings
         .units
         .as_ref()
-        .and_then(|units| units.millimeters_per_unit);
+        .and_then(|units| units.millimeters_per_unit());
     let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
     let mut definition_ids = std::collections::HashSet::new();
     for definition in &scan.definitions.definitions {
