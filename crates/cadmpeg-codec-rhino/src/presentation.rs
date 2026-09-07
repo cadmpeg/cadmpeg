@@ -162,6 +162,8 @@ struct MaterialFresnelSettings {
     index_of_refraction: f64,
 }
 
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
 fn serialize_material_fresnel<S: serde::Serializer>(
     settings: &Option<MaterialFresnelSettings>,
     serializer: S,
