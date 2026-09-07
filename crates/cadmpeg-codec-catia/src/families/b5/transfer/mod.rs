@@ -97,9 +97,21 @@ struct OwnershipPlan {
 }
 
 struct OrientedLoop {
-    member_order: Vec<usize>,
-    reversed: Vec<bool>,
-    pcurve_reversed: Vec<bool>,
+    flipped: bool,
+    members: Vec<OrientedLoopMember>,
+}
+
+#[derive(Clone, Copy)]
+struct OrientedLoopMember {
+    reversed: bool,
+    pcurve_reversed: bool,
+}
+
+impl OrientedLoop {
+    fn member_order(&self) -> impl DoubleEndedIterator<Item = usize> + '_ {
+        let n = self.members.len();
+        (0..n).map(move |i| if self.flipped { n - 1 - i } else { i })
+    }
 }
 
 /// Cross-pass id tables and resolved geometry plans shared between the emit

@@ -1005,12 +1005,43 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
     )
     .expect("required invariant");
-    assert_eq!(orientation[&1].member_order, vec![0]);
-    assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
-    assert_eq!(orientation[&1].reversed, vec![false]);
-    assert_eq!(orientation[&2].reversed, vec![true; 3]);
-    assert_eq!(orientation[&1].pcurve_reversed, vec![false]);
-    assert_eq!(orientation[&2].pcurve_reversed, vec![true, false, true]);
+    assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
+    assert_eq!(
+        orientation[&2].member_order().collect::<Vec<_>>(),
+        vec![2, 1, 0]
+    );
+    assert_eq!(
+        orientation[&1]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
+        vec![false]
+    );
+    assert_eq!(
+        orientation[&2]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
+        vec![true; 3]
+    );
+    assert_eq!(
+        orientation[&1]
+            .members
+            .iter()
+            .map(|member| member.pcurve_reversed)
+            .collect::<Vec<_>>(),
+        vec![false]
+    );
+    assert_eq!(
+        orientation[&2]
+            .members
+            .iter()
+            .map(|member| member.pcurve_reversed)
+            .collect::<Vec<_>>(),
+        vec![true, false, true]
+    );
 
     graph.loops = BTreeMap::from([
         (1, loop_(1, vec![1, 3])),
