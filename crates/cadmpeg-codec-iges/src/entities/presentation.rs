@@ -2,7 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
-use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Subordinate, UseFlag};
+use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -545,17 +545,23 @@ pub(super) fn project(
         .filter_map(|body| {
             let sequence = source_sequence(body.id.as_str())?;
             let entry = entries.get(&sequence)?;
-            resolve(entry.color)
-                .map(|appearance| (body.id.clone(), sequence, appearance, entry.status.blank()))
+            resolve(entry.color).map(|appearance| {
+                (
+                    body.id.clone(),
+                    sequence,
+                    appearance,
+                    entry.status.is_visible(),
+                )
+            })
         })
         .collect::<Vec<_>>();
-    for (body_id, sequence, (appearance_id, color), blank) in body_assignments {
+    for (body_id, sequence, (appearance_id, color), visible) in body_assignments {
         appearance(ir, appearance_id.clone(), None, color);
         let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
             continue;
         };
         body.color = Some(color);
-        body.visible = Some(blank == Some(BlankStatus::Visible));
+        body.visible = Some(visible);
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: format!("iges:model:appearance-binding#body-D{sequence}")
                 .try_into()
@@ -572,7 +578,7 @@ pub(super) fn project(
         if body.visible.is_none() {
             body.visible = source_sequence(body.id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
-                .map(|entry| entry.status.blank() == Some(BlankStatus::Visible));
+                .map(|entry| entry.status.is_visible());
         }
     }
 

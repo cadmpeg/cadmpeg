@@ -2,7 +2,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{BlankStatus, Hierarchy, Subordinate, UseFlag};
+use crate::directory::{Hierarchy, Subordinate, UseFlag};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -46,7 +46,7 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
 fn early_dialects_left_pad_right_justified_status_numbers() {
     for global_table in [GlobalTable::Legacy, GlobalTable::V4_0, GlobalTable::V5_0] {
         let status = status(*b"     201", global_table).unwrap();
-        assert_eq!(status.blank(), Some(BlankStatus::Visible));
+        assert!(status.is_visible());
         assert_eq!(status.subordinate(), Some(Subordinate::Independent));
         assert_eq!(status.use_flag(), Some(UseFlag::Definition));
         assert_eq!(status.hierarchy(), Some(Hierarchy::GlobalDefer));

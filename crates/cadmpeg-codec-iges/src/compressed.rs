@@ -14,19 +14,70 @@ const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
 const MAX_SEQUENCE: u32 = 9_999_999;
-const OMITTED_FIELDS: [usize; 4] = [2, 10, 11, 20];
+
+#[derive(Debug, Clone, Copy)]
+enum CompressedField {
+    EntityType,
+    Structure,
+    LineFont,
+    Level,
+    View,
+    Transform,
+    LabelDisplay,
+    Status,
+    LineWeight,
+    Color,
+    ParameterLineCount,
+    Form,
+    ReservedFirst,
+    ReservedSecond,
+    Label,
+    Subscript,
+}
+
+impl CompressedField {
+    fn number(self) -> usize {
+        match self {
+            Self::EntityType => 1,
+            Self::Structure => 3,
+            Self::LineFont => 4,
+            Self::Level => 5,
+            Self::View => 6,
+            Self::Transform => 7,
+            Self::LabelDisplay => 8,
+            Self::Status => 9,
+            Self::LineWeight => 12,
+            Self::Color => 13,
+            Self::ParameterLineCount => 14,
+            Self::Form => 15,
+            Self::ReservedFirst => 16,
+            Self::ReservedSecond => 17,
+            Self::Label => 18,
+            Self::Subscript => 19,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DirectoryFields([Vec<u8>; 16]);
+
+impl DirectoryFields {
+    fn get(&self, field: CompressedField) -> &[u8] {
+        &self.0[field as usize]
+    }
+}
 
 #[derive(Debug, Clone)]
 struct DataEntity {
     sequence: u32,
-    fields: [Option<Vec<u8>>; 21],
+    fields: DirectoryFields,
     parameter_lines: Vec<Vec<u8>>,
 }
 
 #[derive(Debug)]
 struct ParsedDirectoryRecord {
     sequence: u32,
-    specs: Vec<(usize, Vec<u8>)>,
+    specs: Vec<(CompressedField, Vec<u8>)>,
     next: usize,
 }
 
@@ -203,7 +254,7 @@ fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize
     Ok((value, end))
 }
 
-fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(usize, Vec<u8>)>, CodecError> {
+fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, CodecError> {
     let mut specs = Vec::new();
     let mut specified = [false; 21];
     let mut cursor = 0_usize;
@@ -225,16 +276,34 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(usize, Vec<u8>)>, CodecError> 
             .map_err(|_| malformed("Directory field number is not ASCII"))?
             .parse::<usize>()
             .map_err(|_| malformed("Directory field number is out of range"))?;
-        if !(1..=20).contains(&field) {
-            return Err(malformed(format!(
-                "Directory field number {field} is outside 1 through 20"
-            )));
-        }
-        if OMITTED_FIELDS.contains(&field) {
-            return Err(malformed(format!(
-                "Directory field {field} is redundant in Compressed ASCII"
-            )));
-        }
+        let compressed_field = match field {
+            1 => CompressedField::EntityType,
+            3 => CompressedField::Structure,
+            4 => CompressedField::LineFont,
+            5 => CompressedField::Level,
+            6 => CompressedField::View,
+            7 => CompressedField::Transform,
+            8 => CompressedField::LabelDisplay,
+            9 => CompressedField::Status,
+            12 => CompressedField::LineWeight,
+            13 => CompressedField::Color,
+            14 => CompressedField::ParameterLineCount,
+            15 => CompressedField::Form,
+            16 => CompressedField::ReservedFirst,
+            17 => CompressedField::ReservedSecond,
+            18 => CompressedField::Label,
+            19 => CompressedField::Subscript,
+            2 | 10 | 11 | 20 => {
+                return Err(malformed(format!(
+                    "Directory field {field} is redundant in Compressed ASCII"
+                )));
+            }
+            _ => {
+                return Err(malformed(format!(
+                    "Directory field number {field} is outside 1 through 20"
+                )));
+            }
+        };
         if specified[field] {
             return Err(malformed(format!(
                 "Directory field {field} is specified more than once"
@@ -255,7 +324,7 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(usize, Vec<u8>)>, CodecError> 
                 "Directory field {field} contains a non-printable byte"
             )));
         }
-        specs.push((field, value));
+        specs.push((compressed_field, value));
     }
     Ok(specs)
 }
@@ -308,31 +377,39 @@ fn parse_directory_record(
 }
 
 fn apply_field_specs(
-    previous: &[Option<Vec<u8>>; 21],
-    specs: Vec<(usize, Vec<u8>)>,
-    first: bool,
-) -> Result<[Option<Vec<u8>>; 21], CodecError> {
-    let mut fields = previous.clone();
-    for (field, value) in specs {
-        fields[field] = Some(value);
+    previous: Option<&DirectoryFields>,
+    specs: Vec<(CompressedField, Vec<u8>)>,
+) -> Result<DirectoryFields, CodecError> {
+    if let Some(previous) = previous {
+        let mut fields = previous.clone();
+        for (field, value) in specs {
+            fields.0[field as usize] = value;
+        }
+        return Ok(fields);
     }
-    if first
-        && (1..=20)
-            .filter(|field| !OMITTED_FIELDS.contains(field))
-            .any(|field| fields[field].is_none())
-    {
+    let mut fields: [Option<Vec<u8>>; 16] = std::array::from_fn(|_| None);
+    for (field, value) in specs {
+        fields[field as usize] = Some(value);
+    }
+    let [Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7), Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15)] =
+        fields
+    else {
         return Err(malformed(
             "the first Data record does not specify every non-redundant Directory field",
         ));
-    }
-    Ok(fields)
+    };
+    Ok(DirectoryFields([
+        f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15,
+    ]))
 }
 
-fn field_i64(fields: &[Option<Vec<u8>>; 21], field: usize, name: &str) -> Result<i64, CodecError> {
-    let bytes = fields
-        .get(field)
-        .and_then(Option::as_deref)
-        .ok_or_else(|| malformed(format!("Directory field {field} ({name}) is absent")))?;
+fn field_i64(
+    fields: &DirectoryFields,
+    field: CompressedField,
+    name: &str,
+) -> Result<i64, CodecError> {
+    let bytes = fields.get(field);
+    let field = field.number();
     let text = std::str::from_utf8(bytes)
         .map_err(|_| malformed(format!("Directory field {field} ({name}) is not ASCII")))?
         .trim();
@@ -346,13 +423,6 @@ fn field_i64(fields: &[Option<Vec<u8>>; 21], field: usize, name: &str) -> Result
             "Directory field {field} ({name}) is not a decimal integer"
         ))
     })
-}
-
-fn field_bytes(fields: &[Option<Vec<u8>>; 21], field: usize) -> Result<&[u8], CodecError> {
-    fields
-        .get(field)
-        .and_then(Option::as_deref)
-        .ok_or_else(|| malformed(format!("Directory field {field} is absent")))
 }
 
 fn fixed_field(field: usize, bytes: &[u8]) -> Result<[u8; 8], CodecError> {
@@ -416,28 +486,28 @@ fn append_directory_cards(
     entity: &DataEntity,
     parameter_start: u32,
 ) -> Result<(), CodecError> {
-    let entity_type = field_bytes(&entity.fields, 1)?;
+    let entity_type = entity.fields.get(CompressedField::EntityType);
     let first_fields = [
         fixed_field(1, entity_type)?,
         fixed_number(i64::from(parameter_start))?,
-        fixed_field(3, field_bytes(&entity.fields, 3)?)?,
-        fixed_field(4, field_bytes(&entity.fields, 4)?)?,
-        fixed_field(5, field_bytes(&entity.fields, 5)?)?,
-        fixed_field(6, field_bytes(&entity.fields, 6)?)?,
-        fixed_field(7, field_bytes(&entity.fields, 7)?)?,
-        fixed_field(8, field_bytes(&entity.fields, 8)?)?,
-        fixed_field(9, field_bytes(&entity.fields, 9)?)?,
+        fixed_field(3, entity.fields.get(CompressedField::Structure))?,
+        fixed_field(4, entity.fields.get(CompressedField::LineFont))?,
+        fixed_field(5, entity.fields.get(CompressedField::Level))?,
+        fixed_field(6, entity.fields.get(CompressedField::View))?,
+        fixed_field(7, entity.fields.get(CompressedField::Transform))?,
+        fixed_field(8, entity.fields.get(CompressedField::LabelDisplay))?,
+        fixed_field(9, entity.fields.get(CompressedField::Status))?,
     ];
     let second_fields = [
         fixed_field(11, entity_type)?,
-        fixed_field(12, field_bytes(&entity.fields, 12)?)?,
-        fixed_field(13, field_bytes(&entity.fields, 13)?)?,
-        fixed_field(14, field_bytes(&entity.fields, 14)?)?,
-        fixed_field(15, field_bytes(&entity.fields, 15)?)?,
-        fixed_field(16, field_bytes(&entity.fields, 16)?)?,
-        fixed_field(17, field_bytes(&entity.fields, 17)?)?,
-        fixed_field(18, field_bytes(&entity.fields, 18)?)?,
-        fixed_field(19, field_bytes(&entity.fields, 19)?)?,
+        fixed_field(12, entity.fields.get(CompressedField::LineWeight))?,
+        fixed_field(13, entity.fields.get(CompressedField::Color))?,
+        fixed_field(14, entity.fields.get(CompressedField::ParameterLineCount))?,
+        fixed_field(15, entity.fields.get(CompressedField::Form))?,
+        fixed_field(16, entity.fields.get(CompressedField::ReservedFirst))?,
+        fixed_field(17, entity.fields.get(CompressedField::ReservedSecond))?,
+        fixed_field(18, entity.fields.get(CompressedField::Label))?,
+        fixed_field(19, entity.fields.get(CompressedField::Subscript))?,
     ];
     let mut first = [b' '; CARD_DATA_WIDTH];
     let mut second = [b' '; CARD_DATA_WIDTH];
@@ -505,17 +575,20 @@ fn parameter_record_terminator(
 fn parse_data_entity(
     lines: &[&[u8]],
     start: usize,
-    previous: &[Option<Vec<u8>>; 21],
-    first: bool,
+    previous: Option<&DirectoryFields>,
     parameter_delimiter: u8,
     record_delimiter: u8,
 ) -> Result<(DataEntity, usize), CodecError> {
     let directory = parse_directory_record(lines, start, record_delimiter)?;
-    let fields = apply_field_specs(previous, directory.specs, first)?;
+    let fields = apply_field_specs(previous, directory.specs)?;
     let sequence = directory.sequence;
     let mut cursor = directory.next;
-    let entity_type = field_i64(&fields, 1, "entity type")?;
-    let line_count = field_i64(&fields, 14, "Parameter Data line count")?;
+    let entity_type = field_i64(&fields, CompressedField::EntityType, "entity type")?;
+    let line_count = field_i64(
+        &fields,
+        CompressedField::ParameterLineCount,
+        "Parameter Data line count",
+    )?;
     let line_count = usize::try_from(line_count)
         .map_err(|_| malformed("Parameter Data line count is negative or out of range"))?;
     let mut parameter_lines = Vec::new();
@@ -662,7 +735,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
     let global_cards = lines[global_begin..data_begin].to_vec();
     let (parameter_delimiter, record_delimiter) = compressed_delimiters(&global_cards)?;
-    let mut previous = std::array::from_fn(|_| None);
+    let mut previous = None;
     let mut entities = Vec::new();
     let mut data_cursor = data_begin;
     let mut expected_sequence = 1_u32;
@@ -670,8 +743,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         let (entity, next) = parse_data_entity(
             &lines,
             data_cursor,
-            &previous,
-            entities.is_empty(),
+            previous.as_ref(),
             parameter_delimiter,
             record_delimiter,
         )?;
@@ -684,7 +756,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         expected_sequence = expected_sequence
             .checked_add(2)
             .ok_or_else(|| malformed("Directory sequence overflows"))?;
-        previous.clone_from(&entity.fields);
+        previous = Some(entity.fields.clone());
         entities.push(entity);
         data_cursor = next;
     }

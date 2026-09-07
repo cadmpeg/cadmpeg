@@ -3,7 +3,7 @@
 
 use super::ReferenceOrigin;
 use crate::directory::{DirectoryEntry, SourceStatus};
-use crate::graph::expectation::ReferenceExpectation;
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -51,7 +51,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             1,
             0,
             i64::from(maximum),
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         Some(maximum)
@@ -61,7 +61,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             1,
             1,
             i64::from(maximum) + 1,
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         None
@@ -71,7 +71,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             2,
             0,
             -i64::from(maximum),
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         Some(maximum)
@@ -81,7 +81,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             2,
             1,
             -i64::from(maximum) - 1,
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         None
@@ -102,6 +102,47 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             .map(|edge| edge.resolution)
             .collect::<Vec<_>>(),
         vec![Resolution::Resolved, Resolution::OutOfRange]
+    );
+}
+
+#[test]
+fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
+    let directory = [directory_entry(1, 116)];
+    let resolver = ParameterResolver::new(&directory);
+    assert_eq!(
+        resolver.resolve(
+            1,
+            1,
+            3,
+            ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+            |target| target.entity_type == 124,
+        ),
+        None
+    );
+    assert_eq!(
+        resolver.resolve_negative(
+            1,
+            2,
+            -3,
+            ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
+            |target| target.entity_type == 310 && target.form == 0,
+        ),
+        None
+    );
+    let mut graph = BTreeMap::new();
+    resolver.append_to(&mut graph);
+    let source = point_file();
+    let scan = crate::card::scan(&source).unwrap();
+    let messages = super::losses(&graph, &scan, &[])
+        .into_iter()
+        .map(|note| note.message)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        [
+            "IGES Directory Entry D1 Parameter pointer 3 has Dangling resolution; expected type-124-transformation",
+            "IGES Directory Entry D1 Parameter pointer -3 has Dangling resolution; expected type-310-form-0-font-definition",
+        ]
     );
 }
 
@@ -141,7 +182,10 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
                     raw_pointer: i64::from(target),
                     target: Some(format!("iges:entity:directory#{target}")),
                     resolution: Resolution::Resolved,
-                    expected: ReferenceExpectation::Type124,
+                    expected: ReferenceExpectation::Type {
+                        entity_type: 124,
+                        forms: vec![],
+                    },
                 }],
             )
         })

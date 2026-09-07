@@ -24,22 +24,6 @@ pub(crate) struct SourceStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BlankStatus {
-    Visible,
-    Blanked,
-}
-
-impl BlankStatus {
-    pub(crate) fn parse(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::Visible),
-            1 => Some(Self::Blanked),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Hierarchy {
     GlobalTopDown,
     GlobalDefer,
@@ -104,8 +88,9 @@ impl UseFlag {
 }
 
 impl SourceStatus {
-    pub(crate) fn blank(self) -> Option<BlankStatus> {
-        BlankStatus::parse(self.blank)
+    /// Whether the source blank status is visible (00).
+    pub(crate) fn is_visible(self) -> bool {
+        self.blank == 0
     }
 
     pub(crate) fn subordinate(self) -> Option<Subordinate> {

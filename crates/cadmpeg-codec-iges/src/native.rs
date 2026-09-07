@@ -2,9 +2,7 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::{CardScan, ScannedLine, Section};
-use crate::directory::{
-    BlankStatus, DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag,
-};
+use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
     resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
@@ -13,12 +11,12 @@ use crate::entities::structure::{
     array_base_type, flow_join_target_valid, signal_string_geometry_target,
 };
 use crate::global::{RealPrecision, ResolvedGlobal};
-use crate::graph::expectation::ReferenceExpectation;
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
-    TrailingPointerAnalysis,
+    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, TextNodeLayout, Token,
+    TokenValue, TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -1556,8 +1554,8 @@ pub(crate) struct NativeEntity {
     status: SourceStatus,
     line_weight: i64,
     color: i64,
-    reserved: Vec<Vec<u8>>,
-    label: Vec<u8>,
+    reserved: [[u8; 8]; 2],
+    label: [u8; 8],
     subscript: i64,
     #[serde(flatten, serialize_with = "serialize_parameter_lines")]
     parameter_lines: Option<std::ops::Range<u32>>,
@@ -2042,7 +2040,11 @@ pub(crate) fn store(
                         entry.sequence,
                         pointer.token_index,
                         pointer.raw_pointer,
-                        ReferenceExpectation::Type212OrType312OrType402,
+                        ReferenceExpectation::AnyOf {
+                            first: 212,
+                            second: 312,
+                            rest: vec![402],
+                        },
                         |target| matches!(target.entity_type, 212 | 312 | 402),
                     )
                 })
@@ -2057,7 +2059,11 @@ pub(crate) fn store(
                         entry.sequence,
                         pointer.token_index,
                         pointer.raw_pointer,
-                        ReferenceExpectation::Type316OrType322OrType406OrType422,
+                        ReferenceExpectation::AnyOf {
+                            first: 316,
+                            second: 322,
+                            rest: vec![406, 422],
+                        },
                         |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
                     )
                 })
@@ -2089,8 +2095,8 @@ pub(crate) fn store(
                 status: entry.status,
                 line_weight: entry.line_weight,
                 color: entry.color,
-                reserved: entry.reserved.iter().map(|value| value.to_vec()).collect(),
-                label: entry.label.to_vec(),
+                reserved: entry.reserved,
+                label: entry.label,
                 subscript: entry.subscript,
                 parameter_lines: parameters.map(|record| record.line_range.clone()),
                 parameter_bytes: parameters
@@ -2246,7 +2252,7 @@ pub(crate) fn store(
         .map(|entry| NativeDisplayAttributes {
             id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
-            visible: entry.status.blank() == Some(BlankStatus::Visible),
+            visible: entry.status.is_visible(),
             line_font: resolve_display_ref(
                 references,
                 entry.sequence,
@@ -2343,7 +2349,10 @@ pub(crate) fn store(
                             entry.sequence,
                             3,
                             value,
-                            ReferenceExpectation::Type310Form0,
+                            ReferenceExpectation::Type {
+                                entity_type: 310,
+                                forms: vec![0],
+                            },
                             |target| target.entity_type == 310 && target.form == 0,
                         )
                     })
@@ -2439,7 +2448,10 @@ pub(crate) fn store(
                             entry.sequence,
                             3,
                             value,
-                            ReferenceExpectation::Type310Form0,
+                            ReferenceExpectation::Type {
+                                entity_type: 310,
+                                forms: vec![0],
+                            },
                             |target| target.entity_type == 310 && target.form == 0,
                         )
                     })
@@ -2563,7 +2575,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            ReferenceExpectation::CurveEntity,
+                            ReferenceExpectation::Named(ExpectationLabel::CurveEntity),
                             |target| {
                                 matches!(
                                     target.entity_type,
@@ -2603,9 +2615,13 @@ pub(crate) fn store(
                                     2 + index,
                                     value,
                                     if entry.form == 1 {
-                                        ReferenceExpectation::ConstructiveSolidOrType186
+                                        ReferenceExpectation::Named(
+                                            ExpectationLabel::ConstructiveSolidOrType186,
+                                        )
                                     } else {
-                                        ReferenceExpectation::ConstructiveSolid
+                                        ReferenceExpectation::Named(
+                                            ExpectationLabel::ConstructiveSolid,
+                                        )
                                     },
                                     |target| {
                                         matches!(
@@ -2657,7 +2673,10 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            ReferenceExpectation::Type180Form0Or1,
+                            ReferenceExpectation::Type {
+                                entity_type: 180,
+                                forms: vec![0, 1],
+                            },
                             |target| target.entity_type == 180 && matches!(target.form, 0 | 1),
                         )
                     })
@@ -2694,9 +2713,13 @@ pub(crate) fn store(
                                     2 + index,
                                     sequence,
                                     if entry.form == 1 {
-                                        ReferenceExpectation::ConstructiveSolidOrType186
+                                        ReferenceExpectation::Named(
+                                            ExpectationLabel::ConstructiveSolidOrType186,
+                                        )
                                     } else {
-                                        ReferenceExpectation::ConstructiveSolid
+                                        ReferenceExpectation::Named(
+                                            ExpectationLabel::ConstructiveSolid,
+                                        )
                                     },
                                     |target| {
                                         matches!(
@@ -2795,9 +2818,12 @@ pub(crate) fn store(
                             1,
                             sequence,
                             if entry.form == 1 {
-                                ReferenceExpectation::Type186
+                                ReferenceExpectation::Type {
+                                    entity_type: 186,
+                                    forms: vec![],
+                                }
                             } else {
-                                ReferenceExpectation::ConstructiveSolid
+                                ReferenceExpectation::Named(ExpectationLabel::ConstructiveSolid)
                             },
                             |target| {
                                 if entry.form == 1 {
@@ -3119,7 +3145,11 @@ pub(crate) fn store(
                             entry.sequence,
                             14,
                             sequence,
-                            ReferenceExpectation::Type320OrType420,
+                            ReferenceExpectation::AnyOf {
+                                first: 320,
+                                second: 420,
+                                rest: vec![],
+                            },
                             |target| matches!(target.entity_type, 320 | 420),
                         )
                     })
@@ -3146,7 +3176,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            ReferenceExpectation::ArrayBaseEntity,
+                            ReferenceExpectation::Named(ExpectationLabel::ArrayBaseEntity),
                             |target| array_base_type(target.entity_type, target.form),
                         )
                     })
@@ -3188,7 +3218,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            ReferenceExpectation::ArrayBaseEntity,
+                            ReferenceExpectation::Named(ExpectationLabel::ArrayBaseEntity),
                             |target| array_base_type(target.entity_type, target.form),
                         )
                     })
@@ -3500,57 +3530,47 @@ pub(crate) fn store(
                         }
                     }
                     8 => {
-                        let layout = record.and_then(signal_string_layout);
-                        let signal_name_count = layout.map_or(0, |layout| layout.signal_name_count);
-                        let connection_count = layout.map_or(0, |layout| layout.connection_count);
-                        let schematic_count = layout.map_or(0, |layout| layout.schematic_count);
-                        let physical_count = layout.map_or(0, |layout| layout.physical_count);
-                        let signal_names_start =
-                            layout.map_or(0, |layout| layout.signal_names_start);
-                        let connections_start = layout.map_or(0, |layout| layout.connections_start);
-                        let schematic_start = layout.map_or(0, |layout| layout.schematic_start);
-                        let physical_start = layout.map_or(0, |layout| layout.physical_start);
-                        let connections = (0..connection_count)
-                            .map(|offset| {
-                                let index = connections_start + offset;
-                                record
-                                    .and_then(|record| record.integer(index))
-                                    .and_then(|sequence| {
-                                        parameter_resolver.resolve_type(
-                                            entry.sequence,
-                                            index,
-                                            sequence,
-                                            402,
-                                            &[11],
-                                        )
-                                    })
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                            })
-                            .collect();
-                        let geometry_links = |start, count| {
-                            (0..count)
-                                .map(|offset| {
-                                    let index = start + offset;
-                                    record
-                                        .and_then(|record| record.integer(index))
-                                        .and_then(|sequence| {
-                                            parameter_resolver.resolve(
-                                                entry.sequence,
-                                                index,
-                                                sequence,
-                                                ReferenceExpectation::SignalStringGeometry,
-                                                |target| {
-                                                    signal_string_geometry_target(
-                                                        target.entity_type,
-                                                        target.form,
+                        let fields = record.and_then(|record| {
+                            signal_string_layout(record).map(|layout| (record, layout))
+                        });
+                        let (signal_names, connections, schematic_entities, physical_entities) =
+                            match fields {
+                                Some((record, layout)) => {
+                                    let connections = layout.connections()
+                                        .map(|index| {
+                                            record.integer(index)
+                                                .and_then(|sequence| {
+                                                    parameter_resolver.resolve_type(
+                                                        entry.sequence, index, sequence, 402, &[11],
                                                     )
-                                                },
-                                            )
+                                                })
+                                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                                         })
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
-                                .collect::<Vec<_>>()
-                        };
+                                        .collect();
+                                    let geometry_links = |indices: std::ops::Range<usize>| {
+                                        indices.map(|index| {
+                                            record.integer(index)
+                                                .and_then(|sequence| {
+                                                    parameter_resolver.resolve(
+                                                        entry.sequence,
+                                                        index,
+                                                        sequence,
+                                                        ReferenceExpectation::Named(ExpectationLabel::SignalStringGeometry),
+                                                        |target| signal_string_geometry_target(target.entity_type, target.form),
+                                                    )
+                                                })
+                                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                        }).collect::<Vec<_>>()
+                                    };
+                                    (
+                                        layout.signal_names().map(|index| record.string(index).map(<[u8]>::to_vec)).collect(),
+                                        connections,
+                                        geometry_links(layout.schematic()),
+                                        geometry_links(layout.physical()),
+                                    )
+                                }
+                                None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+                            };
                         NativeAssociativity::LegacySignalString {
                             id,
                             source_entity,
@@ -3558,25 +3578,15 @@ pub(crate) fn store(
                             declared_connection_count: record.and_then(|record| record.integer(2)),
                             declared_schematic_count: record.and_then(|record| record.integer(3)),
                             declared_physical_count: record.and_then(|record| record.integer(4)),
-                            signal_names: (0..signal_name_count)
-                                .map(|offset| {
-                                    record
-                                        .and_then(|record| {
-                                            record.string(signal_names_start + offset)
-                                        })
-                                        .map(<[u8]>::to_vec)
-                                })
-                                .collect(),
+                            signal_names,
                             connections,
-                            schematic_entities: geometry_links(schematic_start, schematic_count),
-                            physical_entities: geometry_links(physical_start, physical_count),
+                            schematic_entities,
+                            physical_entities,
                         }
                     }
                     10 => {
                         let layout = record.and_then(text_node_layout);
-                        let geometry_count = layout.map_or(0, |layout| layout.geometry_count);
-                        let geometry_start = layout.map_or(0, |layout| layout.geometry_start);
-                        let description_start = layout.map(|layout| layout.description_start);
+                        let description_start = layout.as_ref().map(TextNodeLayout::description_start);
                         let font_characteristic = description_start.and_then(|index| {
                             record.and_then(|record| record.integer_or(index + 2, 1))
                         });
@@ -3588,7 +3598,9 @@ pub(crate) fn store(
                                     entry.sequence,
                                     index + 2,
                                     value,
-                                    ReferenceExpectation::Type310Form0FontDefinition,
+                                    ReferenceExpectation::Named(
+                                        ExpectationLabel::Type310Form0FontDefinition,
+                                    ),
                                     |target| target.entity_type == 310 && target.form == 0,
                                 )
                             })
@@ -3599,9 +3611,8 @@ pub(crate) fn store(
                             declared_geometry_count: record.and_then(|record| record.integer(1)),
                             declared_text_description_count: record
                                 .and_then(|record| record.integer(2)),
-                            geometry: (0..geometry_count)
-                                .map(|offset| {
-                                    let index = geometry_start + offset;
+                            geometry: layout.iter().flat_map(TextNodeLayout::geometry)
+                                .map(|index| {
                                     record
                                         .and_then(|record| record.integer(index))
                                         .and_then(|sequence| {
@@ -3641,40 +3652,35 @@ pub(crate) fn store(
                         }
                     }
                     11 => {
-                        let layout = record.and_then(connect_node_layout);
-                        let point_count = layout.map_or(0, |layout| layout.point_count);
-                        let points_start = layout.map_or(0, |layout| layout.points_start);
-                        let data_count = layout.map_or(0, |layout| layout.data_count);
-                        let data_start = layout.map_or(0, |layout| layout.data_start);
+                        let fields = record.and_then(|record| {
+                            connect_node_layout(record).map(|layout| (record, layout))
+                        });
+                        let (points, data) = match fields {
+                            Some((record, layout)) => {
+                                let points = layout.points().map(|index| {
+                                    record.integer(index)
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve_type(
+                                                entry.sequence, index, sequence, 116, &[0],
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                }).collect();
+                                let data = layout.data().map(|index| {
+                                    record.token(index)
+                                        .map_or(TokenValue::Omitted, |item| item.value.clone())
+                                }).collect();
+                                (points, data)
+                            }
+                            None => (Vec::new(), Vec::new()),
+                        };
                         NativeAssociativity::LegacyConnectNode {
                             id,
                             source_entity,
                             declared_point_count: record.and_then(|record| record.integer(1)),
                             declared_data_count: record.and_then(|record| record.integer(2)),
-                            points: (0..point_count)
-                                .map(|offset| {
-                                    let index = points_start + offset;
-                                    record
-                                        .and_then(|record| record.integer(index))
-                                        .and_then(|sequence| {
-                                            parameter_resolver.resolve_type(
-                                                entry.sequence,
-                                                index,
-                                                sequence,
-                                                116,
-                                                &[0],
-                                            )
-                                        })
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
-                                .collect(),
-                            data: (0..data_count)
-                                .map(|offset| {
-                                    record
-                                        .and_then(|record| record.token(data_start + offset))
-                                        .map_or(TokenValue::Omitted, |item| item.value.clone())
-                                })
-                                .collect(),
+                            points,
+                            data,
                         }
                     }
                     13 => {
@@ -3699,7 +3705,9 @@ pub(crate) fn store(
                                         entry.sequence,
                                         3,
                                         sequence,
-                                        ReferenceExpectation::DimensionEntity,
+                                        ReferenceExpectation::Named(
+                                            ExpectationLabel::DimensionEntity,
+                                        ),
                                         |target| {
                                             matches!(
                                                 target.entity_type,
@@ -3779,7 +3787,9 @@ pub(crate) fn store(
                                                 entry.sequence,
                                                 index,
                                                 sequence,
-                                                ReferenceExpectation::MatchingFlowAssociativity,
+                                                ReferenceExpectation::Named(
+                                                    ExpectationLabel::MatchingFlowAssociativity,
+                                                ),
                                                 |target| {
                                                     target.entity_type == 402
                                                         && target.form == entry.form
@@ -3804,9 +3814,14 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             if entry.form == 18 {
-                                                ReferenceExpectation::Type132OrGroup
+                                                ReferenceExpectation::Named(
+                                                    ExpectationLabel::Type132OrGroup,
+                                                )
                                             } else {
-                                                ReferenceExpectation::Type132
+                                                ReferenceExpectation::Type {
+                                                    entity_type: 132,
+                                                    forms: vec![],
+                                                }
                                             },
                                             |target| {
                                                 target.entity_type == 132
@@ -3830,7 +3845,9 @@ pub(crate) fn store(
                                             entry.sequence,
                                             index,
                                             sequence,
-                                            ReferenceExpectation::NonAssociativityOrType402Form7,
+                                            ReferenceExpectation::Named(
+                                                ExpectationLabel::NonAssociativityOrType402Form7,
+                                            ),
                                             flow_join_target_valid,
                                         )
                                     })
@@ -3857,9 +3874,16 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             if entry.form == 18 {
-                                                ReferenceExpectation::Type312OrType212
+                                                ReferenceExpectation::AnyOf {
+                                                    first: 312,
+                                                    second: 212,
+                                                    rest: vec![],
+                                                }
                                             } else {
-                                                ReferenceExpectation::Type312
+                                                ReferenceExpectation::Type {
+                                                    entity_type: 312,
+                                                    forms: vec![],
+                                                }
                                             },
                                             |target| {
                                                 target.entity_type == 312
@@ -3884,9 +3908,15 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             if entry.form == 18 {
-                                                ReferenceExpectation::Type402Form11Or18
+                                                ReferenceExpectation::Type {
+                                                    entity_type: 402,
+                                                    forms: vec![11, 18],
+                                                }
                                             } else {
-                                                ReferenceExpectation::Type402Form20
+                                                ReferenceExpectation::Type {
+                                                    entity_type: 402,
+                                                    forms: vec![20],
+                                                }
                                             },
                                             |target| {
                                                 target.entity_type == 402
@@ -3948,7 +3978,9 @@ pub(crate) fn store(
                                         entry.sequence,
                                         3,
                                         sequence,
-                                        ReferenceExpectation::DimensionEntity,
+                                        ReferenceExpectation::Named(
+                                            ExpectationLabel::DimensionEntity,
+                                        ),
                                         |target| {
                                             matches!(
                                                 target.entity_type,
@@ -4728,7 +4760,10 @@ pub(crate) fn store(
                                 entry.sequence,
                                 start + 3,
                                 color,
-                                ReferenceExpectation::Type314Form0,
+                                ReferenceExpectation::Type {
+                                    entity_type: 314,
+                                    forms: vec![0],
+                                },
                                 |target| target.entity_type == 314 && target.form == 0,
                             );
                         }
@@ -4819,7 +4854,10 @@ pub(crate) fn store(
                                 entry.sequence,
                                 start + 3,
                                 color,
-                                ReferenceExpectation::Type314Form0,
+                                ReferenceExpectation::Type {
+                                    entity_type: 314,
+                                    forms: vec![0],
+                                },
                                 |target| target.entity_type == 314 && target.form == 0,
                             );
                         }
@@ -4831,7 +4869,10 @@ pub(crate) fn store(
                                 entry.sequence,
                                 start + 4,
                                 line_font,
-                                ReferenceExpectation::Type304Form1Or2,
+                                ReferenceExpectation::Type {
+                                    entity_type: 304,
+                                    forms: vec![1, 2],
+                                },
                                 |target| target.entity_type == 304 && matches!(target.form, 1 | 2),
                             );
                         }
@@ -4956,7 +4997,9 @@ pub(crate) fn store(
                                     entry.sequence,
                                     annotation_count_index + 1 + index,
                                     sequence,
-                                    ReferenceExpectation::DrawingSpaceAnnotation,
+                                    ReferenceExpectation::Named(
+                                        ExpectationLabel::DrawingSpaceAnnotation,
+                                    ),
                                     |target| {
                                         target.status.use_flag() == Some(UseFlag::Annotation)
                                             && target.status.is_physically_dependent()

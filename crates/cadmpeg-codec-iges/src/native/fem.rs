@@ -2,7 +2,7 @@
 //! Typed native records for the IGES finite-element entity family.
 
 use crate::directory::DirectoryEntry;
-use crate::graph::expectation::ReferenceExpectation;
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
@@ -209,7 +209,7 @@ fn resolve_note(
             source,
             index,
             raw_pointer?,
-            ReferenceExpectation::Type212GeneralNote,
+            ReferenceExpectation::Named(ExpectationLabel::Type212GeneralNote),
             |target| target.entity_type == 212 && FEM_NOTE_FORMS.contains(&target.form),
         )
         .map(resolved_id)
@@ -226,7 +226,7 @@ fn resolve_transformation(
             source,
             index,
             raw_pointer,
-            ReferenceExpectation::Type124Transformation,
+            ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
             |target| target.entity_type == 124,
         )
         .map(resolved_id)
@@ -600,7 +600,9 @@ fn nodal_load_constraint(
                         sequence,
                         index,
                         record_integer(record, index)?,
-                        ReferenceExpectation::Type406Form11OrType212GeneralNote,
+                        ReferenceExpectation::Named(
+                            ExpectationLabel::Type406Form11OrType212GeneralNote,
+                        ),
                         |target| {
                             (target.entity_type == 406 && target.form == 11)
                                 || (target.entity_type == 212
