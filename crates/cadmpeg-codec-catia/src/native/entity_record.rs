@@ -686,7 +686,33 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
 mod tests {
     use super::*;
     use crate::native::{CatiaEntityReference, CatiaNative};
-    use crate::test_support::standard_catpart_with_formula_relation;
+    use crate::test_support::{
+        object_graph_record, sequential_entity_backed_object_graph,
+        standard_catpart_with_formula_relation,
+    };
+
+    #[test]
+    fn wire_rejects_noncanonical_entity_frame_lengths() {
+        let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+        let native = CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
+        let entity = &native.entity_records[0];
+        let wire = serde_json::to_value(entity).expect("entity record serializes");
+        assert_eq!(
+            serde_json::from_value::<CatiaEntityRecord>(wire.clone())
+                .expect("derived frame lengths match the entity body"),
+            *entity,
+        );
+        for field in ["definition_len", "value_len", "byte_len"] {
+            let mut invalid_wire = wire.clone();
+            let length = invalid_wire[field]
+                .as_u64()
+                .expect("frame length is unsigned");
+            invalid_wire[field] = serde_json::json!(length + 1);
+            let error = serde_json::from_value::<CatiaEntityRecord>(invalid_wire)
+                .expect_err("frame length must match the body bytes");
+            assert!(error.to_string().contains(field), "{error}");
+        }
+    }
 
     #[test]
     fn wire_rejects_competing_object_productions() {

@@ -1759,7 +1759,7 @@ mod tests {
                     second_reference_offset: 24,
                 }
                 .try_into()
-                .unwrap()
+                .expect("reference signature fixture has matching references and instructions")
             )
         );
 
