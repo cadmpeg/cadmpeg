@@ -167,11 +167,11 @@ pub(super) fn push_brep_transfer_note(
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            Some(if samples.is_empty() {
-                format!("{}={}", reason.label(), count)
-            } else {
-                format!("{}={} (sample faces: {samples})", reason.label(), count)
-            })
+            Some(format!(
+                "{}={} (sample faces: {samples})",
+                reason.label(),
+                count
+            ))
         })
         .collect::<Vec<_>>()
         .join(", ");

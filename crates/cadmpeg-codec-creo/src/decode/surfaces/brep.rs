@@ -218,6 +218,7 @@ impl BrepTransferDiagnostics {
             .push(FaceAdmissionDiagnostic { reason, detail });
     }
 
+    /// The rejection count and bounded detail samples for a reason.
     pub(in super::super) fn evidence(
         &self,
         reason: FaceAdmissionRejection,
