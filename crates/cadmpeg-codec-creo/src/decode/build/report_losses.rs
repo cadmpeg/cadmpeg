@@ -134,18 +134,15 @@ pub(super) fn push_brep_transfer_note(
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
 ) {
-    let rejected_face_count = diagnostics
-        .rejected_faces
-        .values()
-        .map(|evidence| evidence.count)
-        .sum::<usize>();
+    let rejected_face_count = diagnostics.face_rejection_diagnostics.len();
     let rejection_details = FaceAdmissionRejection::ALL
         .into_iter()
         .filter_map(|reason| {
-            let evidence = diagnostics.rejected_faces.get(&reason)?;
-            let samples = evidence
-                .sample_details
-                .iter()
+            let (count, samples) = diagnostics.evidence(reason);
+            if count == 0 {
+                return None;
+            }
+            let samples = samples
                 .map(|detail| {
                     let half_edges = detail
                         .boundary_half_edges
@@ -170,25 +167,11 @@ pub(super) fn push_brep_transfer_note(
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            let samples = if samples.is_empty() {
-                evidence
-                    .sample_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            } else {
-                samples
-            };
-            Some(if samples.is_empty() {
-                format!("{}={}", reason.label(), evidence.count)
-            } else {
-                format!(
-                    "{}={} (sample faces: {samples})",
-                    reason.label(),
-                    evidence.count
-                )
-            })
+            Some(format!(
+                "{}={} (sample faces: {samples})",
+                reason.label(),
+                count
+            ))
         })
         .collect::<Vec<_>>()
         .join(", ");

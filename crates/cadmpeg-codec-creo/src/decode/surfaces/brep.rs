@@ -186,13 +186,6 @@ impl FaceAdmissionDetail {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(in super::super) struct FaceAdmissionEvidence {
-    pub(in super::super) count: usize,
-    pub(in super::super) sample_ids: Vec<u32>,
-    pub(in super::super) sample_details: Vec<FaceAdmissionDetail>,
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) candidate_face_count: usize,
@@ -202,7 +195,6 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) boundary_curve_missing_incidence_count: usize,
     pub(in super::super) boundary_curve_unsolved_vertex_count: usize,
     pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
-    pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
     pub(in super::super) face_rejection_diagnostics: Vec<FaceAdmissionDiagnostic>,
     pub(in super::super) legacy_nonvisible_face_reference_count: usize,
     pub(in super::super) body_count_mismatch: bool,
@@ -223,18 +215,24 @@ impl BrepTransferDiagnostics {
         detail: FaceAdmissionDetail,
     ) {
         self.face_rejection_diagnostics
-            .push(FaceAdmissionDiagnostic {
-                reason,
-                detail: detail.clone(),
-            });
-        let evidence = self.rejected_faces.entry(reason).or_default();
-        evidence.count += 1;
-        if evidence.sample_ids.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_ids.push(detail.face_id);
-        }
-        if evidence.sample_details.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_details.push(detail);
-        }
+            .push(FaceAdmissionDiagnostic { reason, detail });
+    }
+
+    /// The rejection count and bounded detail samples for a reason.
+    pub(in super::super) fn evidence(
+        &self,
+        reason: FaceAdmissionRejection,
+    ) -> (usize, impl Iterator<Item = &FaceAdmissionDetail>) {
+        let matching = self
+            .face_rejection_diagnostics
+            .iter()
+            .filter(move |diagnostic| diagnostic.reason == reason);
+        (
+            matching.clone().count(),
+            matching
+                .take(FACE_REJECTION_SAMPLE_LIMIT)
+                .map(|diagnostic| &diagnostic.detail),
+        )
     }
 
     pub(in super::super) fn face_admission_rejection_records(
@@ -524,18 +522,10 @@ impl BrepTransferDiagnostics {
         );
         coverage.record(
             crate::coverage::BREP_REJECTED_FACE_COUNT,
-            self.rejected_faces
-                .values()
-                .map(|evidence| evidence.count)
-                .sum(),
+            self.face_rejection_diagnostics.len(),
         );
         for reason in FaceAdmissionRejection::ALL {
-            coverage.record(
-                reason.coverage_key(),
-                self.rejected_faces
-                    .get(&reason)
-                    .map_or(0, |evidence| evidence.count),
-            );
+            coverage.record(reason.coverage_key(), self.evidence(reason).0);
         }
         coverage.record(
             crate::coverage::BREP_BODY_COUNT_MISMATCH_COUNT,
@@ -1087,7 +1077,7 @@ pub(in super::super) fn transfer_native_brep(
         else {
             continue;
         };
-        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
             if let Some(endpoints) = endpoints {
                 native_pcurves
                     .entry((pcurve.curve_id, face_id))
@@ -2053,7 +2043,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             id,
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                axis: Vector3::new(
+                    frame.unit_vector()[0],
+                    frame.unit_vector()[1],
+                    frame.unit_vector()[2],
+                ),
                 ref_direction: Vector3::new(
                     frame.ref_direction[0],
                     frame.ref_direction[1],
@@ -2080,15 +2074,18 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
                     .map_or_else(
-                        || frame.origin[frame.axis_index] + frame.axis_sign * ordinate,
-                        |plane| plane.origin[frame.axis_index],
+                        || {
+                            frame.origin[frame.axis_index.index()]
+                                + frame.axis_sign.scale() * ordinate
+                        },
+                        |plane| plane.origin[frame.axis_index.index()],
                     );
             let (center, _, _) = fc05_model_frame(
                 frame.axis_index,
                 cap_offset,
                 pair.center_row_frame,
                 pair.reference_direction_row_frame,
-                frame.axis_sign,
+                frame.axis_sign.scale(),
             );
             let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
                 .expect("identity grammar");
@@ -2111,7 +2108,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 id,
                 geometry: CurveGeometry::Circle {
                     center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    axis: Vector3::new(
+                        frame.unit_vector()[0],
+                        frame.unit_vector()[1],
+                        frame.unit_vector()[2],
+                    ),
                     ref_direction: Vector3::new(
                         frame.ref_direction[0],
                         frame.ref_direction[1],

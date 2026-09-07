@@ -1041,33 +1041,33 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .count();
             if generated_cylinder_count == 1 {
                 if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
-                    return Some((frame, "reference_circle_pair_cylinder_frame"));
+                    return Some((frame, CylinderFrameMechanism::ReferenceCirclePair));
                 }
             }
             let envelope = record.type24_scalar_frame_round_envelope()?;
             reference_cap_bound_round_frame(envelope, &circles)
-                .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
+                .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap))
         };
         let (frame, mechanism) = if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
             };
-            (frame, "selector_corner_interval_cylinder")
+            (frame, CylinderFrameMechanism::SelectorCornerInterval)
         } else if let Some(frame) = round_edge_frame {
-            (frame, "round_edge_endpoint_cylinder")
+            (frame, CylinderFrameMechanism::RoundEdgeEndpoint)
         } else if let Some(frame) = support_tangent_frame {
-            (frame, "support_tangent_cylinder")
+            (frame, CylinderFrameMechanism::SupportTangent)
         } else if inline_non_plane {
             let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
             };
-            (frame, "inline_positional_surface_row")
+            (frame, CylinderFrameMechanism::InlinePositionalSurfaceRow)
         } else if let Some(frame) = round_support_frame {
-            (frame, "round_support_envelope_cylinder")
+            (frame, CylinderFrameMechanism::RoundSupportEnvelope)
         } else if let Some(frame) = axial_interval_corner_frame {
-            (frame, "axial_interval_corner_cylinder")
+            (frame, CylinderFrameMechanism::AxialIntervalCorner)
         } else if let Some(frame) = record.positional_cylinder_frame() {
-            (frame, "positional_cylinder_frame")
+            (frame, CylinderFrameMechanism::PositionalCylinderFrame)
         } else {
             let Some(frame) = reference_bound_frame() else {
                 continue;
@@ -1077,19 +1077,9 @@ pub(in super::super) fn transfer_positional_cylinders(
         let stored_frame_agrees = record
             .positional_cylinder_frame()
             .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame));
-        let witnessed_frame_replaces_stored = matches!(
-            mechanism,
-            "round_edge_endpoint_cylinder" | "support_tangent_cylinder"
-        );
+        let witnessed_frame_replaces_stored = mechanism.replaces_stored_frame();
         let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
-            && (feature_class != Some(SchemaClass::Round)
-                || matches!(
-                    mechanism,
-                    "inline_positional_surface_row"
-                        | "selector_corner_interval_cylinder"
-                        | "round_edge_endpoint_cylinder"
-                        | "support_tangent_cylinder"
-                ));
+            && (feature_class != Some(SchemaClass::Round) || mechanism.row_local_under_round());
         if feature_class == Some(SchemaClass::Hole)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
                 !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius)
@@ -1142,7 +1132,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             &id,
             "VisibGeom",
             row.offset as u64,
-            mechanism,
+            mechanism.label(),
             Exactness::Derived,
         );
         ir.model.surfaces.push(Surface {
@@ -1169,9 +1159,50 @@ pub(in super::super) fn transfer_positional_cylinders(
         });
         summary.transferred += 1;
         summary.round_edge_transferred_carriers +=
-            usize::from(mechanism == "round_edge_endpoint_cylinder");
+            usize::from(mechanism == CylinderFrameMechanism::RoundEdgeEndpoint);
     }
     summary
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CylinderFrameMechanism {
+    ReferenceCirclePair,
+    RoundReferenceCap,
+    SelectorCornerInterval,
+    RoundEdgeEndpoint,
+    SupportTangent,
+    InlinePositionalSurfaceRow,
+    RoundSupportEnvelope,
+    AxialIntervalCorner,
+    PositionalCylinderFrame,
+}
+
+impl CylinderFrameMechanism {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::ReferenceCirclePair => "reference_circle_pair_cylinder_frame",
+            Self::RoundReferenceCap => "round_reference_cap_cylinder_frame",
+            Self::SelectorCornerInterval => "selector_corner_interval_cylinder",
+            Self::RoundEdgeEndpoint => "round_edge_endpoint_cylinder",
+            Self::SupportTangent => "support_tangent_cylinder",
+            Self::InlinePositionalSurfaceRow => "inline_positional_surface_row",
+            Self::RoundSupportEnvelope => "round_support_envelope_cylinder",
+            Self::AxialIntervalCorner => "axial_interval_corner_cylinder",
+            Self::PositionalCylinderFrame => "positional_cylinder_frame",
+        }
+    }
+    const fn replaces_stored_frame(self) -> bool {
+        matches!(self, Self::RoundEdgeEndpoint | Self::SupportTangent)
+    }
+    const fn row_local_under_round(self) -> bool {
+        matches!(
+            self,
+            Self::InlinePositionalSurfaceRow
+                | Self::SelectorCornerInterval
+                | Self::RoundEdgeEndpoint
+                | Self::SupportTangent
+        )
+    }
 }
 
 pub(in super::super) fn reference_circle_pair_cylinder_frame(

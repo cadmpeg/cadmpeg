@@ -119,12 +119,30 @@ pub(super) struct CreoFeatureReferenceNameRecord {
     pub(super) offset: usize,
 }
 
-#[derive(Serialize)]
 pub(super) struct CreoFamilyTableRecord {
-    pub(super) id: &'static str,
-    pub(super) pointer_kind: &'static str,
-    pub(super) table_entity_id: Option<u32>,
+    pointer: crate::container::FamilyTablePointer,
     pub(super) offset: usize,
+}
+
+impl CreoFamilyTableRecord {
+    /// The fixed driver-table record identity.
+    pub(super) const ID: &'static str = "creo:family_info:driver_table#root";
+}
+
+impl Serialize for CreoFamilyTableRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("CreoFamilyTableRecord", 4)?;
+        record.serialize_field("id", Self::ID)?;
+        let (kind, entity_id) = match self.pointer {
+            crate::container::FamilyTablePointer::Null => ("null", None),
+            crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
+        };
+        record.serialize_field("pointer_kind", kind)?;
+        record.serialize_field("table_entity_id", &entity_id)?;
+        record.serialize_field("offset", &self.offset)?;
+        record.end()
+    }
 }
 
 #[derive(Serialize)]
@@ -2415,19 +2433,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
                             interpolation_points_body: spline.interpolation_points_body.clone(),
-                            endpoint_tangents: spline
-                                .endpoint_tangents
-                                .as_ref()
-                                .map(|field| field.value),
-                            endpoint_tangents_body: spline
-                                .endpoint_tangents
-                                .as_ref()
-                                .map(|field| field.body.clone()),
-                            parameters: spline.parameters.as_ref().map(|field| field.value.clone()),
-                            parameters_body: spline
-                                .parameters
-                                .as_ref()
-                                .map(|field| field.body.clone()),
+                            endpoint_tangents: spline.endpoint_tangents.clone(),
+                            parameters: spline.parameters.clone(),
                             offset: spline.offset,
                         }
                     }
@@ -2447,9 +2454,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|dimension| CreoSketchDimension {
                     external_id: dimension.external_id,
                     dimension_type: dimension.dimension_type,
-                    value: dimension.value.resolved(),
+                    value: dimension.value.clone(),
                     value_body: dimension.value_body.clone(),
-                    unresolved_value_token: dimension.value.unresolved_token().map(<[u8]>::to_vec),
                     unit: match dimension.unit() {
                         crate::feature::DimensionUnit::Radians => "radians",
                         crate::feature::DimensionUnit::Millimeters => "millimeters",
@@ -2615,14 +2621,8 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
 
 pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
     let record = scan.framing.family_table?;
-    let (pointer_kind, table_entity_id) = match record.pointer {
-        crate::container::FamilyTablePointer::Null => ("null", None),
-        crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
-    };
     Some(CreoFamilyTableRecord {
-        id: "creo:family_info:driver_table#root",
-        pointer_kind,
-        table_entity_id,
+        pointer: record.pointer,
         offset: record.offset,
     })
 }

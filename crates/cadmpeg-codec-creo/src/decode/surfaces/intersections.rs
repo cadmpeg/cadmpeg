@@ -144,20 +144,20 @@ pub(in super::super) fn carrier_intersection_curve(
         (CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
         | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane)) => {
             let normal = normalized(plane.normal)?;
-            let axis = normalized(cone.axis)?;
+            let axis = normalized(cone.axis())?;
             let alignment = dot(normal, axis);
-            let slope = cone.half_angle.tan();
+            let slope = cone.half_angle().tan();
             if circular_cone(cone) && slope.abs() > EPS_CONE_SLOPE_NONZERO {
                 let apex: [f64; 3] = std::array::from_fn(|index| {
-                    cone.origin[index] - (cone.radius / slope) * axis[index]
+                    cone.origin()[index] - (cone.radius() / slope) * axis[index]
                 });
                 let plane_distance = dot(
                     normal,
                     std::array::from_fn(|index| apex[index] - plane.origin[index]),
                 );
-                let scale = cone.radius.max(1.0);
+                let scale = cone.radius().max(1.0);
                 if plane_distance.abs() <= EPS_CARRIER_AGREEMENT * scale
-                    && (alignment.abs() - cone.half_angle.sin()).abs() <= EPS_AXIS_ORTHO
+                    && (alignment.abs() - cone.half_angle().sin()).abs() <= EPS_AXIS_ORTHO
                 {
                     let direction = normalized(std::array::from_fn(|index| {
                         axis[index] - alignment * normal[index]
@@ -181,15 +181,15 @@ pub(in super::super) fn carrier_intersection_curve(
             if (alignment.abs() - 1.0).abs() <= EPS_AXIS_ORTHO {
                 let axial = dot(
                     axis,
-                    std::array::from_fn(|index| plane.origin[index] - cone.origin[index]),
+                    std::array::from_fn(|index| plane.origin[index] - cone.origin()[index]),
                 );
-                let radius = (cone.radius + axial * cone.half_angle.tan()).abs();
+                let radius = (cone.radius() + axial * cone.half_angle().tan()).abs();
                 if radius <= EPS_RADIUS_NONZERO {
                     return None;
                 }
                 let center: [f64; 3] =
-                    std::array::from_fn(|index| cone.origin[index] + axial * axis[index]);
-                let reference = normalized(cone.ref_direction)?;
+                    std::array::from_fn(|index| cone.origin()[index] + axial * axis[index]);
+                let reference = normalized(cone.ref_direction())?;
                 let (geometry, tag) = if circular_cone(cone) {
                     (
                         CurveGeometry::Circle {
@@ -207,7 +207,7 @@ pub(in super::super) fn carrier_intersection_curve(
                             axis: Vector3::new(normal[0], normal[1], normal[2]),
                             major_direction: Vector3::new(reference[0], reference[1], reference[2]),
                             major_radius: radius,
-                            minor_radius: radius * cone.ratio,
+                            minor_radius: radius * cone.ratio(),
                         },
                         "plane_cone_parallel_ellipse",
                     )
@@ -387,24 +387,24 @@ pub(in super::super) fn carrier_intersection_curve(
             if !circular_cone(cone) {
                 return None;
             }
-            let cone_axis = normalized(cone.axis)?;
+            let cone_axis = normalized(cone.axis())?;
             let relative: [f64; 3] =
-                std::array::from_fn(|index| sphere.center[index] - cone.origin[index]);
+                std::array::from_fn(|index| sphere.center[index] - cone.origin()[index]);
             let axial = dot(relative, cone_axis);
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * cone_axis[index]);
-            let scale = cone.radius.max(sphere.radius).max(1.0);
+            let scale = cone.radius().max(sphere.radius).max(1.0);
             if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
                 return None;
             }
-            let slope = cone.half_angle.tan();
+            let slope = cone.half_angle().tan();
             if slope.abs() <= EPS_CONE_SLOPE_NONZERO {
                 return None;
             }
             let quadratic = 1.0 + slope * slope;
-            let linear = 2.0 * (cone.radius * slope - axial);
+            let linear = 2.0 * (cone.radius() * slope - axial);
             let constant =
-                cone.radius * cone.radius + axial * axial - sphere.radius * sphere.radius;
+                cone.radius() * cone.radius() + axial * axial - sphere.radius * sphere.radius;
             let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
             let discriminant_scale = linear
                 .abs()
@@ -416,13 +416,14 @@ pub(in super::super) fn carrier_intersection_curve(
                 return None;
             }
             let cone_parameter = -linear / (2.0 * quadratic);
-            let radius = (cone.radius + cone_parameter * slope).abs();
+            let radius = (cone.radius() + cone_parameter * slope).abs();
             if radius <= EPS_RADIUS_NONZERO * scale {
                 return None;
             }
-            let center: [f64; 3] =
-                std::array::from_fn(|index| cone.origin[index] + cone_parameter * cone_axis[index]);
-            let reference = normalized(cone.ref_direction)?;
+            let center: [f64; 3] = std::array::from_fn(|index| {
+                cone.origin()[index] + cone_parameter * cone_axis[index]
+            });
+            let reference = normalized(cone.ref_direction())?;
             Some((
                 CurveGeometry::Circle {
                     center: Point3::new(center[0], center[1], center[2]),

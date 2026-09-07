@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: numbered intersect.
 
+use crate::decode::sketch::axis::SectionAxis;
+
 use super::parameter_slot;
 use crate::decode::analytic::{ConeEquation, PlaneEquation};
 use crate::decode::build::has_transferred_geometry;
@@ -138,13 +140,16 @@ fn numbered_intersect_name_identifies_section_shape_feature() {
 
 #[test]
 fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
-    let cone = |origin, axis| ConeEquation {
-        origin,
-        axis,
-        ref_direction: [0.0, 0.0, 1.0],
-        radius: 0.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
+    let cone = |origin, axis| {
+        ConeEquation::new(
+            origin,
+            axis,
+            [0.0, 0.0, 1.0],
+            0.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone")
     };
     let cones = [
         cone([10.5, 0.0, 0.0], [-1.0, 0.0, 0.0]),
@@ -168,7 +173,17 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
     assert_eq!(equal_distance_chamfer_setback(&cones, &supports), Some(0.5));
 
     let mut non_equal = cones;
-    non_equal[1].origin[0] = -10.25;
+    let mut origin = non_equal[1].origin();
+    origin[0] = -10.25;
+    non_equal[1] = ConeEquation::new(
+        origin,
+        non_equal[1].axis(),
+        non_equal[1].ref_direction(),
+        non_equal[1].radius(),
+        non_equal[1].ratio(),
+        non_equal[1].half_angle(),
+    )
+    .expect("valid test cone");
     assert_eq!(equal_distance_chamfer_setback(&non_equal, &supports), None);
 }
 
@@ -275,7 +290,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
             &[],
             &BTreeSet::new(),
         ),
-        Some(0)
+        Some(SectionAxis::U)
     );
 
     let mut centered_endpoint_carrier = definition;
@@ -303,7 +318,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
             &[],
             &BTreeSet::new(),
         ),
-        Some(0)
+        Some(SectionAxis::U)
     );
 }
 
@@ -532,49 +547,54 @@ fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
 #[test]
 fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_on_conflict() {
     let mut sum = SectionCoordinateEquation::default();
-    sum.add_point(1, 0, 1.0);
-    sum.add_point(2, 0, 1.0);
+    sum.add_point(1, SectionAxis::U, 1.0);
+    sum.add_point(2, SectionAxis::U, 1.0);
     sum.rhs = 10.0;
     let mut difference = SectionCoordinateEquation::default();
-    difference.add_point(1, 0, 1.0);
-    difference.add_point(2, 0, -1.0);
+    difference.add_point(1, SectionAxis::U, 1.0);
+    difference.add_point(2, SectionAxis::U, -1.0);
     difference.rhs = 2.0;
     assert_eq!(
         solve_section_coordinate_equations(
             &[
                 sum,
                 difference,
-                SectionCoordinateEquation::point_value(1, 1, 3.0),
-                SectionCoordinateEquation::point_value(2, 1, 4.0),
+                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
+                SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
             ],
             &BTreeMap::new(),
         ),
         BTreeMap::from([(1, [Some(6.0), Some(3.0)]), (2, [Some(4.0), Some(4.0)]),])
     );
 
-    let stored = BTreeMap::from([((1, 0), 1.0), ((1, 1), 3.0)]);
+    let stored = BTreeMap::from([((1, SectionAxis::U), 1.0), ((1, SectionAxis::V), 3.0)]);
     assert_eq!(
         solve_section_coordinate_equations(
             &[
-                SectionCoordinateEquation::point_value(1, 0, 1.0),
-                SectionCoordinateEquation::point_value(1, 0, 2.0),
-                SectionCoordinateEquation::point_value(1, 1, 3.0),
+                SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
+                SectionCoordinateEquation::point_value(1, SectionAxis::U, 2.0),
+                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
             ],
             &stored,
         ),
         BTreeMap::from([(1, [Some(1.0), Some(3.0)])])
     );
-    let stored = BTreeMap::from([((1, 0), 1.0), ((1, 1), 3.0), ((2, 0), 2.0), ((2, 1), 4.0)]);
+    let stored = BTreeMap::from([
+        ((1, SectionAxis::U), 1.0),
+        ((1, SectionAxis::V), 3.0),
+        ((2, SectionAxis::U), 2.0),
+        ((2, SectionAxis::V), 4.0),
+    ]);
     assert_eq!(
         solve_section_coordinate_equations(
             &[
-                SectionCoordinateEquation::point_value(1, 0, 1.0),
-                SectionCoordinateEquation::point_value(1, 1, 3.0),
-                SectionCoordinateEquation::point_value(2, 0, 2.0),
-                SectionCoordinateEquation::point_value(2, 1, 4.0),
-                SectionCoordinateEquation::point_difference(1, 3, 0, 0.0),
-                SectionCoordinateEquation::point_difference(2, 3, 0, 0.0),
-                SectionCoordinateEquation::point_value(3, 1, 5.0),
+                SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
+                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
+                SectionCoordinateEquation::point_value(2, SectionAxis::U, 2.0),
+                SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
+                SectionCoordinateEquation::point_difference(1, 3, SectionAxis::U, 0.0),
+                SectionCoordinateEquation::point_difference(2, 3, SectionAxis::U, 0.0),
+                SectionCoordinateEquation::point_value(3, SectionAxis::V, 5.0),
             ],
             &stored,
         ),
@@ -587,8 +607,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     assert_eq!(
         solve_section_coordinate_equations(
             &[
-                SectionCoordinateEquation::point_value(3, 0, 1.0e12),
-                SectionCoordinateEquation::point_value(3, 1, -1.0e12),
+                SectionCoordinateEquation::point_value(3, SectionAxis::U, 1.0e12),
+                SectionCoordinateEquation::point_value(3, SectionAxis::V, -1.0e12),
             ],
             &BTreeMap::new(),
         ),
@@ -596,7 +616,11 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     );
     assert_eq!(
         solve_section_coordinate_equations(
-            &[SectionCoordinateEquation::point_value(4, 0, 7.0)],
+            &[SectionCoordinateEquation::point_value(
+                4,
+                SectionAxis::U,
+                7.0
+            )],
             &BTreeMap::new(),
         ),
         BTreeMap::from([(4, [Some(7.0), None])])
@@ -606,23 +630,27 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
 #[test]
 fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     let equations = [
-        SectionCoordinateEquation::point_value(1, 0, 0.0),
-        SectionCoordinateEquation::point_value(2, 0, 10.0),
+        SectionCoordinateEquation::point_value(1, SectionAxis::U, 0.0),
+        SectionCoordinateEquation::point_value(2, SectionAxis::U, 10.0),
     ];
-    let stored = BTreeMap::from([((1, 0), 0.0), ((2, 0), 10.0)]);
+    let stored = BTreeMap::from([((1, SectionAxis::U), 0.0), ((2, SectionAxis::U), 10.0)]);
     assert_eq!(
         solve_unsigned_dimension_coordinates(
             &equations,
             &stored,
-            &[(1, 3, 0, 3.0), (3, 2, 0, 7.0)],
+            &[(1, 3, SectionAxis::U, 3.0), (3, 2, SectionAxis::U, 7.0)],
         ),
-        BTreeMap::from([((3, 0), 3.0)])
+        BTreeMap::from([((3, SectionAxis::U), 3.0)])
     );
     assert_eq!(
         solve_unsigned_dimension_coordinates(
-            &[SectionCoordinateEquation::point_value(1, 0, 0.0)],
-            &BTreeMap::from([((1, 0), 0.0)]),
-            &[(1, 2, 0, 3.0)],
+            &[SectionCoordinateEquation::point_value(
+                1,
+                SectionAxis::U,
+                0.0
+            )],
+            &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
+            &[(1, 2, SectionAxis::U, 3.0)],
         ),
         BTreeMap::new()
     );
@@ -1890,15 +1918,15 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
     let center = [11.0, 13.0];
     let reference = [0.6, 0.8];
     assert_eq!(
-        fc05_model_frame(0, 17.0, center, reference, -1.0),
+        fc05_model_frame(crate::decode::axis::Axis::X, 17.0, center, reference, -1.0),
         ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
     );
     assert_eq!(
-        fc05_model_frame(1, 17.0, center, reference, -1.0),
+        fc05_model_frame(crate::decode::axis::Axis::Y, 17.0, center, reference, -1.0),
         ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
     );
     assert_eq!(
-        fc05_model_frame(2, 17.0, center, reference, -1.0),
+        fc05_model_frame(crate::decode::axis::Axis::Z, 17.0, center, reference, -1.0),
         ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
     );
 }

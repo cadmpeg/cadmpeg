@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section geometry conversion from live and saved section entities.
 
+use super::axis::SectionAxis;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
@@ -175,13 +177,13 @@ pub(crate) fn resolved_section_reference_line_geometry(
     };
     let fixed_coordinate = section_line_entity_fixed_coordinate(definition, segment.external_id)?;
     let [Some(first), Some(second)] =
-        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate])
+        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate.index()])
     else {
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
     ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale).then(|| {
-        if fixed_coordinate == 0 {
+        if fixed_coordinate == SectionAxis::U {
             SketchGeometry::ReferenceLine {
                 origin: Point2::new(first, 0.0),
                 direction: Point2::new(0.0, 1.0),
@@ -693,11 +695,7 @@ pub(crate) fn saved_section_missing_line_geometry(
     let [missing] = missing.as_slice() else {
         return None;
     };
-    let fixed_coordinate = match missing.vertical_horizontal {
-        Some(0) => 0,
-        Some(1) => 1,
-        _ => return None,
-    };
+    let fixed_coordinate = SectionAxis::from_selector(missing.vertical_horizontal?)?;
 
     let geometries = semantic_saved_section_entities(definition)
         .filter_map(saved_section_entity_geometry)
@@ -752,7 +750,8 @@ pub(crate) fn saved_section_missing_line_geometry(
         .chain(end)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    ((start[fixed_coordinate] - end[fixed_coordinate]).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+    ((start[fixed_coordinate.index()] - end[fixed_coordinate.index()]).abs()
+        <= EPS_PARAMETER_AGREEMENT * scale)
         .then_some(())?;
     Some((
         missing.offset,

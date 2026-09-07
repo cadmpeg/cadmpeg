@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
+use crate::decode::axis::Axis;
 use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -52,19 +53,19 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
         }
         CarrierEquation::Cone(cone) => {
             let (Some(axis), Some(x_axis)) =
-                (normalized(cone.axis), normalized(cone.ref_direction))
+                (normalized(cone.axis()), normalized(cone.ref_direction()))
             else {
                 return false;
             };
-            if cone.ratio <= 0.0 || !cone.ratio.is_finite() || dot(axis, x_axis).abs() > EPS_ORTHO {
+            if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return false;
             }
             let y_axis = cross(axis, x_axis);
-            let relative = std::array::from_fn(|index| point[index] - cone.origin[index]);
+            let relative = std::array::from_fn(|index| point[index] - cone.origin()[index]);
             let axial = dot(relative, axis);
-            let radius = cone.radius + axial * cone.half_angle.tan();
+            let radius = cone.radius() + axial * cone.half_angle().tan();
             let radial_x = dot(relative, x_axis);
-            let radial_y = dot(relative, y_axis) / cone.ratio;
+            let radial_y = dot(relative, y_axis) / cone.ratio();
             (radial_x.hypot(radial_y) - radius.abs()).abs()
                 <= EPS_ON_CARRIER * radius.abs().max(1.0)
         }
@@ -736,7 +737,7 @@ fn fc05_cylinder_branch_witnesses(
             let frame = fc05_cap_pair_model_frame(scan, pair)?;
             let legacy = super::equations::CylinderEquation {
                 origin: frame.origin,
-                axis: frame.axis,
+                axis: frame.unit_vector(),
                 ref_direction: frame.ref_direction,
                 radius: pair.radius_mm,
             };
@@ -781,8 +782,9 @@ fn fc05_cylinder_branch_witnesses(
         let ([(_, cap)], [cylinder_id]) = (planes.as_slice(), cylinders.as_slice()) else {
             continue;
         };
-        let Some(axis_index) =
-            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+        let Some(axis_index) = Axis::ALL
+            .into_iter()
+            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_AXIS)
         else {
             continue;
         };
@@ -792,13 +794,13 @@ fn fc05_cylinder_branch_witnesses(
             .map_or(
                 (
                     circle.sample_direction_row_frame,
-                    cap.normal[axis_index].signum(),
+                    cap.normal[axis_index.index()].signum(),
                 ),
                 |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
             );
         let (origin, axis, ref_direction) = fc05_model_frame(
             axis_index,
-            cap.origin[axis_index],
+            cap.origin[axis_index.index()],
             circle.center_row_frame,
             reference,
             axis_sign,

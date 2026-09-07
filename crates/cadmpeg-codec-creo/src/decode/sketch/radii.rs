@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved section radii and intersection carriers.
 
+use super::axis::SectionAxis;
+
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -464,19 +466,14 @@ pub(crate) fn section_arc_carrier(
     Some((center, radius))
 }
 
-#[derive(Clone)]
-pub(crate) struct SectionIntersectionCarrier {
-    pub(crate) geometry: SketchGeometry,
-}
-
 pub(crate) fn section_axis_line_carrier_with_points(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)).then_some(())?;
     let fixed_coordinate = match segment.directions {
-        [Some(0), _, _] => 0,
-        [_, Some(0), _] => 1,
+        [Some(0), _, _] => SectionAxis::U,
+        [_, Some(0), _] => SectionAxis::V,
         _ => return None,
     };
     section_fixed_coordinate_line_carrier(variable_points, segment, fixed_coordinate)
@@ -485,21 +482,23 @@ pub(crate) fn section_axis_line_carrier_with_points(
 pub(crate) fn section_fixed_coordinate_line_carrier(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
-    fixed_coordinate: usize,
+    fixed_coordinate: SectionAxis,
 ) -> Option<SketchGeometry> {
-    (matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)) && fixed_coordinate < 2)
-        .then_some(())?;
+    (matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))).then_some(())?;
     let endpoint = |id| variable_points.get(&id);
     let [first, second] = segment.point_ids().map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
     };
-    let (Some(first), Some(second)) = (first[fixed_coordinate], second[fixed_coordinate]) else {
+    let (Some(first), Some(second)) = (
+        first[fixed_coordinate.index()],
+        second[fixed_coordinate.index()],
+    ) else {
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
     ((first - second).abs() <= EPS_RADIUS_AGREEMENT * scale).then(|| {
-        if fixed_coordinate == 0 {
+        if fixed_coordinate == SectionAxis::U {
             SketchGeometry::ReferenceLine {
                 origin: Point2::new(first, 0.0),
                 direction: Point2::new(0.0, 1.0),
@@ -537,14 +536,14 @@ pub(crate) fn section_axis_reference_line_geometry(
     if !section_degenerate_axis_line(definition, segment) {
         return section_proven_axis_line_carrier(definition, variable_points, segment);
     }
-    let fixed_coordinate = usize::try_from(segment.vertical_horizontal?).ok()?;
+    let fixed_coordinate = SectionAxis::from_selector(segment.vertical_horizontal?)?;
     let values = segment
         .point_ids()
         .iter()
         .filter_map(|point| {
             variable_points
                 .get(point)?
-                .get(fixed_coordinate)
+                .get(fixed_coordinate.index())
                 .copied()
                 .flatten()
         })
@@ -565,7 +564,7 @@ pub(crate) fn section_axis_reference_line_geometry(
         .iter()
         .all(|candidate| (*candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
         .then_some(())?;
-    let (origin, direction) = if fixed_coordinate == 0 {
+    let (origin, direction) = if fixed_coordinate == SectionAxis::U {
         (Point2::new(value, 0.0), Point2::new(0.0, 1.0))
     } else {
         (Point2::new(0.0, value), Point2::new(1.0, 0.0))
@@ -580,27 +579,25 @@ pub(crate) fn section_segment_intersection_carrier_with_missing_line(
     segment: &crate::feature::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<SectionIntersectionCarrier> {
+) -> Option<SketchGeometry> {
     if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
         definition,
         points,
         segment,
         missing_line,
     ) {
-        return Some(SectionIntersectionCarrier { geometry });
+        return Some(geometry);
     }
     if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
-        return Some(SectionIntersectionCarrier { geometry });
+        return Some(geometry);
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
-    Some(SectionIntersectionCarrier {
-        geometry: SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length(radius),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
-        },
+    Some(SketchGeometry::Arc {
+        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+        radius: Length(radius),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::TAU),
     })
 }
 

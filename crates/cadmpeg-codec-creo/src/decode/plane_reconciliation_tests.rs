@@ -702,7 +702,7 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
     };
 
     let frame = fc05_cap_pair_model_frame(&scan, &pair).expect("unit cap-span frame");
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.unit_vector(), [0.0, 1.0, 0.0]);
     assert!((frame.origin[0] - 2.0).abs() <= EPS_FC05_FRAME_TEST);
     assert!((frame.origin[1] - 87.5368).abs() <= EPS_FC05_FRAME_TEST);
     assert!((frame.origin[2] - 3.0).abs() <= EPS_FC05_FRAME_TEST);
@@ -715,7 +715,7 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
     };
     let reversed_frame =
         fc05_cap_pair_model_frame(&scan, &reversed).expect("reversed unit cap-span frame");
-    assert_eq!(reversed_frame.axis, [0.0, -1.0, 0.0]);
+    assert_eq!(reversed_frame.unit_vector(), [0.0, -1.0, 0.0]);
     assert!((reversed_frame.origin[1] + 49.5368).abs() <= EPS_FC05_FRAME_TEST);
 }
 

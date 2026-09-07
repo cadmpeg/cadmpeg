@@ -449,7 +449,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
             &[],
             &BTreeSet::new(),
         ),
-        Some(1)
+        Some(crate::decode::sketch::axis::SectionAxis::V)
     );
     let conflicting = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(4.0), Some(3.0)])]);
     assert_eq!(

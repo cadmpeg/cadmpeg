@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section-equation coordinate constraints and linear solvers.
 
+use super::axis::SectionAxis;
+
 use crate::feature::definitions::VariableType;
 use cadmpeg_core::decode::alloc_filled;
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,16 +21,52 @@ const EPS_DISCRIMINANT_SCALE: f64 = 1.0e-12;
 const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
+struct PositiveDistance(f64);
+
+impl PositiveDistance {
+    fn new(value: f64) -> Option<Self> {
+        (value.is_finite() && value > 0.0).then_some(Self(value))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SectionSixDistance {
+    Measured(PositiveDistance),
+    ActiveIncomplete,
+    Inactive(Option<PositiveDistance>),
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct SectionFunctionSixDistance {
     pub(crate) first: u32,
     pub(crate) second: u32,
     pub(crate) radius: SectionScalarVariable,
-    pub(crate) distance: Option<f64>,
-    pub(crate) coordinate_distance: Option<f64>,
-    pub(crate) points_complete: bool,
+    distance: SectionSixDistance,
     pub(crate) equation_id: u32,
     pub(crate) offset: usize,
-    pub(crate) active: bool,
+}
+
+impl SectionFunctionSixDistance {
+    fn coordinate_distance(self) -> Option<f64> {
+        match self.distance {
+            SectionSixDistance::Measured(distance) => Some(distance.0),
+            SectionSixDistance::ActiveIncomplete | SectionSixDistance::Inactive(_) => None,
+        }
+    }
+
+    /// The distance for an equation with both endpoints resolved.
+    pub(crate) fn constraint_distance(self) -> Option<f64> {
+        match self.distance {
+            SectionSixDistance::Measured(distance) => Some(distance.0),
+            SectionSixDistance::Inactive(distance) => distance.map(|distance| distance.0),
+            SectionSixDistance::ActiveIncomplete => None,
+        }
+    }
+
+    /// Whether the equation is enabled.
+    pub(crate) fn active(self) -> bool {
+        !matches!(self.distance, SectionSixDistance::Inactive(_))
+    }
 }
 
 pub(crate) fn section_equation_function_six_distance_values(
@@ -38,8 +76,7 @@ pub(crate) fn section_equation_function_six_distance_values(
 ) -> Vec<(SectionScalarVariable, f64)> {
     section_equation_function_six_distance_rows(definition, coordinates, ambiguous_point_ids)
         .into_iter()
-        .filter(|equation| equation.active)
-        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance?)))
+        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?)))
         .collect()
 }
 
@@ -113,7 +150,7 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 .ok()?;
             let radius_value =
                 reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
-            let stored_distance = radius_value.filter(|value| value.is_finite() && *value > 0.0);
+            let stored_distance = radius_value.and_then(PositiveDistance::new);
             if radius_value.is_some() && stored_distance.is_none() {
                 return None;
             }
@@ -125,36 +162,34 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 .get(&second_u.key)
                 .and_then(|point| Some([point[0]?, point[1]?]));
             let points_complete = first_point.is_some() && second_point.is_some();
-            let (distance, coordinate_distance) = if active {
+            let distance = if active {
                 match (first_point, second_point) {
                     (Some(first), Some(second)) => {
                         let delta = [second[0] - first[0], second[1] - first[1]];
-                        let distance = delta[0].hypot(delta[1]);
-                        if !distance.is_finite() || distance <= 0.0 {
-                            return None;
-                        }
+                        let distance = PositiveDistance::new(delta[0].hypot(delta[1]))?;
                         if stored_distance
-                            .is_some_and(|stored| !approximately_equal(stored, distance))
+                            .is_some_and(|stored| !approximately_equal(stored.0, distance.0))
                         {
                             return None;
                         }
-                        (Some(distance), Some(distance))
+                        SectionSixDistance::Measured(distance)
                     }
-                    _ => (stored_distance, None),
+                    _ => SectionSixDistance::ActiveIncomplete,
                 }
             } else {
-                (stored_distance, None)
+                SectionSixDistance::Inactive(if points_complete {
+                    stored_distance
+                } else {
+                    None
+                })
             };
             Some(SectionFunctionSixDistance {
                 first: first_u.key,
                 second: second_u.key,
                 radius: (radius.variable_type, radius.key),
                 distance,
-                coordinate_distance,
-                points_complete,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active,
             })
         })
         .collect()
@@ -164,7 +199,7 @@ pub(crate) fn section_equation_function_six_distance_rows(
 pub(crate) struct SectionUnsignedCoordinateDistance {
     pub(crate) first: u32,
     pub(crate) second: u32,
-    pub(crate) coordinate: usize,
+    pub(crate) coordinate: SectionAxis,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
     pub(crate) equation_id: u32,
@@ -286,7 +321,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
             Some(SectionUnsignedCoordinateDistance {
                 first: first.key,
                 second: second.key,
-                coordinate: usize::from(first.variable_type == VariableType::V),
+                coordinate: SectionAxis::from_variable(first.variable_type)?,
                 scalar: (dimension.variable_type, dimension.key),
                 value,
                 equation_id: equation.equation_id,
@@ -600,7 +635,7 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
         .collect()
 }
 
-pub(crate) type SectionCoordinateVariable = (u32, usize);
+pub(crate) type SectionCoordinateVariable = (u32, SectionAxis);
 
 #[derive(Clone, Default)]
 pub(crate) struct SectionCoordinateEquation {
@@ -609,14 +644,19 @@ pub(crate) struct SectionCoordinateEquation {
 }
 
 impl SectionCoordinateEquation {
-    pub(crate) fn point_value(point: u32, coordinate: usize, value: f64) -> Self {
+    pub(crate) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> Self {
         let mut equation = Self::default();
         equation.add_point(point, coordinate, 1.0);
         equation.rhs = value;
         equation
     }
 
-    pub(crate) fn point_difference(first: u32, second: u32, coordinate: usize, delta: f64) -> Self {
+    pub(crate) fn point_difference(
+        first: u32,
+        second: u32,
+        coordinate: SectionAxis,
+        delta: f64,
+    ) -> Self {
         let mut equation = Self::default();
         equation.add_point(first, coordinate, -1.0);
         equation.add_point(second, coordinate, 1.0);
@@ -627,7 +667,7 @@ impl SectionCoordinateEquation {
     pub(crate) fn source_difference(
         first: SectionPointSource,
         second: SectionPointSource,
-        coordinate: usize,
+        coordinate: SectionAxis,
         delta: f64,
     ) -> Self {
         let mut equation = Self::default();
@@ -637,19 +677,19 @@ impl SectionCoordinateEquation {
         equation
     }
 
-    pub(crate) fn add_point(&mut self, point: u32, coordinate: usize, coefficient: f64) {
+    pub(crate) fn add_point(&mut self, point: u32, coordinate: SectionAxis, coefficient: f64) {
         *self.terms.entry((point, coordinate)).or_default() += coefficient;
     }
 
     pub(crate) fn add_source(
         &mut self,
         source: SectionPointSource,
-        coordinate: usize,
+        coordinate: SectionAxis,
         coefficient: f64,
     ) {
         match source {
             SectionPointSource::Point(point) => self.add_point(point, coordinate, coefficient),
-            SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate],
+            SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate.index()],
         }
     }
 }
@@ -657,7 +697,7 @@ impl SectionCoordinateEquation {
 pub(crate) fn solve_unsigned_dimension_coordinates(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
-    distances: &[(u32, u32, usize, f64)],
+    distances: &[(u32, u32, SectionAxis, f64)],
 ) -> BTreeMap<SectionCoordinateVariable, f64> {
     const MAX_SIGNED_BRANCHES: usize = 4096;
     if distances.is_empty() {
@@ -771,7 +811,10 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
             let candidate = solve_section_coordinate_equations(&branched, stored_coordinates);
             let mut values = stored_coordinates.clone();
             for (point, coordinates) in &candidate {
-                for (coordinate, value) in coordinates.iter().copied().enumerate() {
+                for (coordinate, value) in SectionAxis::ALL
+                    .into_iter()
+                    .zip(coordinates.iter().copied())
+                {
                     if let Some(value) = value {
                         values.insert((*point, coordinate), value);
                     }
@@ -804,7 +847,7 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
             if valid {
                 let mut candidate_values = BTreeMap::new();
                 for (point, coordinates) in candidate {
-                    for (coordinate, value) in coordinates.into_iter().enumerate() {
+                    for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates) {
                         let variable = (point, coordinate);
                         if let (Some(global), Some(value)) = (indices.get(&variable), value) {
                             if component.contains(global)
@@ -850,7 +893,7 @@ pub(crate) fn section_equal_length_coordinate_values(
             .first
             .into_iter()
             .chain(constraint.second)
-            .flat_map(|point| [(point, 0), (point, 1)])
+            .flat_map(|point| [(point, SectionAxis::U), (point, SectionAxis::V)])
             .collect::<BTreeSet<_>>();
         let missing = variables
             .iter()
@@ -858,7 +901,7 @@ pub(crate) fn section_equal_length_coordinate_values(
             .filter(|variable| {
                 coordinates
                     .get(&variable.0)
-                    .and_then(|point| point[variable.1])
+                    .and_then(|point| point[variable.1.index()])
                     .is_none()
             })
             .collect::<Vec<_>>();
@@ -866,14 +909,16 @@ pub(crate) fn section_equal_length_coordinate_values(
             continue;
         };
 
-        let component = |first: u32, second: u32, coordinate: usize| -> Option<(f64, f64)> {
+        let component = |first: u32, second: u32, coordinate: SectionAxis| -> Option<(f64, f64)> {
             let value = |point: u32| {
                 if (point, coordinate) == *missing {
                     Some((1.0, 0.0))
                 } else {
                     coordinates
                         .get(&point)
-                        .and_then(|coordinates| coordinates.get(coordinate).copied().flatten())
+                        .and_then(|coordinates| {
+                            coordinates.get(coordinate.index()).copied().flatten()
+                        })
                         .map(|value| (0.0, value))
                 }
             };
@@ -885,22 +930,22 @@ pub(crate) fn section_equal_length_coordinate_values(
             ))
         };
         let Some((first_u_coefficient, first_u_value)) =
-            component(constraint.first[0], constraint.first[1], 0)
+            component(constraint.first[0], constraint.first[1], SectionAxis::U)
         else {
             continue;
         };
         let Some((first_v_coefficient, first_v_value)) =
-            component(constraint.first[0], constraint.first[1], 1)
+            component(constraint.first[0], constraint.first[1], SectionAxis::V)
         else {
             continue;
         };
         let Some((second_u_coefficient, second_u_value)) =
-            component(constraint.second[0], constraint.second[1], 0)
+            component(constraint.second[0], constraint.second[1], SectionAxis::U)
         else {
             continue;
         };
         let Some((second_v_coefficient, second_v_value)) =
-            component(constraint.second[0], constraint.second[1], 1)
+            component(constraint.second[0], constraint.second[1], SectionAxis::V)
         else {
             continue;
         };
@@ -1083,7 +1128,7 @@ pub(crate) fn solve_section_coordinate_equations(
     }
     let mut points = BTreeMap::<u32, [Option<f64>; 2]>::new();
     for ((point, coordinate), value) in solved {
-        points.entry(point).or_insert([None; 2])[coordinate] = Some(value);
+        points.entry(point).or_insert([None; 2])[coordinate.index()] = Some(value);
     }
     points
 }

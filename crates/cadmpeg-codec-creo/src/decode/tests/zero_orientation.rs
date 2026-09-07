@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: zero orientation.
 
+use crate::decode::sweep::pcurves::RevolutionBoundary;
+
 use super::with_decode_ctx;
 use crate::decode::analytic::{
     ordered_face_loops, ordered_planar_face_loops, point_on_carrier, solve_carriers,
@@ -14,7 +16,6 @@ use crate::decode::feature_history::{
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
-    SectionIntersectionCarrier,
 };
 use crate::decode::sketch_transfer::{
     materialized_saved_section_external_ids, resolved_profile_chains,
@@ -293,11 +294,9 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
 #[test]
 fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
-    let line = |start: [f64; 2], end: [f64; 2]| SectionIntersectionCarrier {
-        geometry: SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        },
+    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),
@@ -1095,7 +1094,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Nurbs(surface.clone()),
         &axis,
         segment.2,
-        true,
+        RevolutionBoundary::Start,
     )
     .expect("start boundary pcurve");
     let end_pcurve = revolution_profile_boundary_pcurve(
@@ -1104,7 +1103,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Nurbs(surface.clone()),
         &axis,
         segment.3,
-        false,
+        RevolutionBoundary::End,
     )
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
@@ -1561,14 +1560,17 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
 
 #[test]
 fn coaxial_cone_torus_components_support_edges_and_vertices() {
-    let cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     let secant_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],
         axis: [0.0, 0.0, 1.0],
@@ -1683,22 +1685,28 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
 
 #[test]
 fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
-    let first = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
-    let second = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: 0.5_f64.atan(),
-    });
+    let first = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
+    let second = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            4.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .expect("valid test cone"),
+    );
     let candidates = coaxial_cones_section_candidates(first, second);
     assert_eq!(candidates.len(), 2);
     assert!(matches!(
@@ -1716,14 +1724,17 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(vertex[1].abs() < 1.0e-12);
     assert!((vertex[2] - 4.0).abs() < 1.0e-12);
 
-    let reversed = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, -1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: 0.5_f64.atan(),
-    });
+    let reversed = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+            4.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .expect("valid test cone"),
+    );
     let reversed_candidates = coaxial_cones_section_candidates(first, reversed);
     assert_eq!(reversed_candidates.len(), 2);
     assert!(reversed_candidates.iter().any(|(geometry, _)| matches!(
@@ -1733,25 +1744,44 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                 && (radius - 10.0 / 3.0).abs() < 1.0e-12
     )));
     assert!(coaxial_cones_section_candidates(first, first).is_empty());
-    let shifted = CarrierEquation::Cone(ConeEquation {
-        origin: [1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: 0.5_f64.atan(),
-    });
+    let shifted = CarrierEquation::Cone(
+        ConeEquation::new(
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            4.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .expect("valid test cone"),
+    );
     assert!(coaxial_cones_section_candidates(first, shifted).is_empty());
 
     let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
         unreachable!();
     };
-    elliptical_first_equation.ratio = 0.5;
+    elliptical_first_equation = ConeEquation::new(
+        elliptical_first_equation.origin(),
+        elliptical_first_equation.axis(),
+        elliptical_first_equation.ref_direction(),
+        elliptical_first_equation.radius(),
+        0.5,
+        elliptical_first_equation.half_angle(),
+    )
+    .expect("valid test cone");
     let elliptical_first = CarrierEquation::Cone(elliptical_first_equation);
     let CarrierEquation::Cone(mut elliptical_second_equation) = second else {
         unreachable!();
     };
-    elliptical_second_equation.ratio = 0.5;
+    elliptical_second_equation = ConeEquation::new(
+        elliptical_second_equation.origin(),
+        elliptical_second_equation.axis(),
+        elliptical_second_equation.ref_direction(),
+        elliptical_second_equation.radius(),
+        0.5,
+        elliptical_second_equation.half_angle(),
+    )
+    .expect("valid test cone");
     let elliptical_second = CarrierEquation::Cone(elliptical_second_equation);
     let candidates = coaxial_cones_section_candidates(elliptical_first, elliptical_second);
     assert_eq!(candidates.len(), 2);
@@ -1778,12 +1808,27 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         assert!(point_on_carrier(point, elliptical_first));
         assert!(point_on_carrier(point, elliptical_second));
     }
-    elliptical_second_equation.ref_direction = [0.0, 1.0, 0.0];
+    elliptical_second_equation = ConeEquation::new(
+        elliptical_second_equation.origin(),
+        elliptical_second_equation.axis(),
+        [0.0, 1.0, 0.0],
+        elliptical_second_equation.radius(),
+        elliptical_second_equation.ratio(),
+        elliptical_second_equation.half_angle(),
+    )
+    .expect("valid test cone");
     let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
     assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame).is_empty());
 
-    elliptical_second_equation.ratio = 2.0;
-    elliptical_second_equation.half_angle = 0.25_f64.atan();
+    elliptical_second_equation = ConeEquation::new(
+        elliptical_second_equation.origin(),
+        elliptical_second_equation.axis(),
+        elliptical_second_equation.ref_direction(),
+        elliptical_second_equation.radius(),
+        2.0,
+        0.25_f64.atan(),
+    )
+    .expect("valid test cone");
     let reciprocal_swapped = CarrierEquation::Cone(elliptical_second_equation);
     let candidates = coaxial_cones_section_candidates(elliptical_first, reciprocal_swapped);
     assert_eq!(candidates.len(), 2);

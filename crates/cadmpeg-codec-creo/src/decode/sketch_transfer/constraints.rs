@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section constraint reconciliation, incidence, and dimension emission.
 
+use crate::decode::sketch::axis::SectionAxis;
+
 use crate::decode::sketch::equations_scalar::SectionScalarVariable;
 use crate::feature::definitions::SolverSubtable;
 
@@ -494,10 +496,25 @@ pub(in super::super) fn native_section_segment_radius_definition(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SegmentRadiusField {
+    Primary,
+    Secondary,
+}
+
+impl SegmentRadiusField {
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Primary => "radius",
+            Self::Secondary => "radius2",
+        }
+    }
+}
+
 struct SectionSegmentRadiusBinding {
     suffix: String,
     external_id: u32,
-    field: &'static str,
+    field: SegmentRadiusField,
     ordinal: u32,
     offset: usize,
     typed_circle: Option<(u32, ParameterId)>,
@@ -515,8 +532,8 @@ fn section_segment_radius_bindings(
     for segment in segments.rows.ordinary() {
         let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
-            ("radius", segment.radius_ref),
-            ("radius2", segment.radius2_ref),
+            (SegmentRadiusField::Primary, segment.radius_ref),
+            (SegmentRadiusField::Secondary, segment.radius2_ref),
         ] {
             let Some(ordinal) = ordinal else {
                 continue;
@@ -554,7 +571,7 @@ fn section_segment_radius_bindings(
         bindings.push(SectionSegmentRadiusBinding {
             suffix,
             external_id: segment.external_id,
-            field: "radius",
+            field: SegmentRadiusField::Primary,
             ordinal: segment.radius_ref,
             offset: segment.offset,
             typed_circle,
@@ -563,8 +580,8 @@ fn section_segment_radius_bindings(
     for segment in segments.rows.opaque() {
         let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
-            ("radius", segment.radius_ref),
-            ("radius2", segment.radius2_ref),
+            (SegmentRadiusField::Primary, segment.radius_ref),
+            (SegmentRadiusField::Secondary, segment.radius2_ref),
         ] {
             let Some(ordinal) = ordinal else {
                 continue;
@@ -601,10 +618,10 @@ fn section_segment_radius_constraint(
                 sketch,
                 entity.clone(),
                 binding.external_id,
-                binding.field,
+                binding.field.key(),
                 binding.ordinal,
             ),
-            if binding.field == "radius2" {
+            if binding.field == SegmentRadiusField::Secondary {
                 "segtab-radius2"
             } else {
                 "segtab-radius"
@@ -681,7 +698,7 @@ fn reconcile_section_segment_radius_constraint(
         sketch,
         sketch_entity_id(sketch, &binding.suffix),
         binding.external_id,
-        binding.field,
+        binding.field.key(),
         binding.ordinal,
     );
     reconcile_constraint_entity_references(constraint_definition, emitted)
@@ -897,13 +914,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
     section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
         .into_iter()
         .filter_map(|equation| {
-            if !equation.points_complete {
-                return None;
-            }
-            let distance = equation.distance?;
-            if !distance.is_finite() || distance <= 0.0 {
-                return None;
-            }
+            let distance = equation.constraint_distance()?;
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
             let parameter = section_equation_dimension_parameter(
@@ -926,7 +937,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     },
                     name: None,
                     driving: None,
-                    active: Some(equation.active),
+                    active: Some(equation.active()),
                     virtual_space: None,
                     visible: None,
                     orientation: None,
@@ -966,9 +977,8 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
         let first = section_point_locus(definition, sketch, equation.first)?;
         let second = section_point_locus(definition, sketch, equation.second)?;
         let axis = match equation.coordinate {
-            0 => SketchCoordinateAxis::U,
-            1 => SketchCoordinateAxis::V,
-            _ => return None,
+            SectionAxis::U => SketchCoordinateAxis::U,
+            SectionAxis::V => SketchCoordinateAxis::V,
         };
         Some((
             SketchConstraint {
@@ -1311,9 +1321,8 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
             let axis = match equation.axis {
-                0 => SketchCoordinateAxis::U,
-                1 => SketchCoordinateAxis::V,
-                _ => return None,
+                SectionAxis::U => SketchCoordinateAxis::U,
+                SectionAxis::V => SketchCoordinateAxis::V,
             };
             Some((
                 SketchConstraint {
@@ -1460,17 +1469,16 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
             return None;
         }
         let definition = match equation.coordinate {
-            0 => SketchConstraintDefinition::HorizontalDistance {
+            SectionAxis::U => SketchConstraintDefinition::HorizontalDistance {
                 first,
                 second,
                 parameter,
             },
-            1 => SketchConstraintDefinition::VerticalDistance {
+            SectionAxis::V => SketchConstraintDefinition::VerticalDistance {
                 first,
                 second,
                 parameter,
             },
-            _ => return None,
         };
         Some((
             SketchConstraint {
@@ -1519,17 +1527,16 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
             )?
             .1;
             let definition = match equation.coordinate {
-                0 => SketchConstraintDefinition::HorizontalDistance {
+                SectionAxis::U => SketchConstraintDefinition::HorizontalDistance {
                     first,
                     second,
                     parameter,
                 },
-                1 => SketchConstraintDefinition::VerticalDistance {
+                SectionAxis::V => SketchConstraintDefinition::VerticalDistance {
                     first,
                     second,
                     parameter,
                 },
-                _ => return None,
             };
             Some((
                 SketchConstraint {
@@ -1891,17 +1898,20 @@ pub(in super::super) fn section_dimension_constraints(
                                         };
                                     if let Some(coordinate) = coordinate {
                                         return Some(match coordinate {
-                                            0 => SketchConstraintDefinition::HorizontalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            },
-                                            1 => SketchConstraintDefinition::VerticalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            },
-                                            _ => return None,
+                                            SectionAxis::U => {
+                                                SketchConstraintDefinition::HorizontalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                }
+                                            }
+                                            SectionAxis::V => {
+                                                SketchConstraintDefinition::VerticalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                }
+                                            }
                                         });
                                     }
                                 }
@@ -1912,17 +1922,20 @@ pub(in super::super) fn section_dimension_constraints(
                                 section_point_locus(definition, sketch, second_id),
                             ) {
                                 return Some(match coordinate {
-                                    0 => SketchConstraintDefinition::HorizontalDistance {
-                                        first,
-                                        second,
-                                        parameter,
-                                    },
-                                    1 => SketchConstraintDefinition::VerticalDistance {
-                                        first,
-                                        second,
-                                        parameter,
-                                    },
-                                    _ => return None,
+                                    SectionAxis::U => {
+                                        SketchConstraintDefinition::HorizontalDistance {
+                                            first,
+                                            second,
+                                            parameter,
+                                        }
+                                    }
+                                    SectionAxis::V => {
+                                        SketchConstraintDefinition::VerticalDistance {
+                                            first,
+                                            second,
+                                            parameter,
+                                        }
+                                    }
                                 });
                             }
                         }

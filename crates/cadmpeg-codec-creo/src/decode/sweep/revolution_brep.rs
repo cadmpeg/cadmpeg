@@ -13,7 +13,7 @@ use super::super::uniqueness::{
 };
 use super::pcurves::{
     add_extrusion_pcurve, revolution_face_sense, revolution_profile_boundary_pcurve,
-    revolved_brep_surface,
+    revolved_brep_surface, RevolutionBoundary,
 };
 use super::profiles::{extrusion_profile_signed_area, resolved_sketch_profiles};
 use super::surfaces::revolved_section_circle;
@@ -102,11 +102,19 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let next = (index + 1) % profile.len();
             (vertex_curves[index].is_some() || vertex_curves[next].is_some())
                 && [
-                    (segment.2, vertex_curves[index].is_some(), true),
-                    (segment.3, vertex_curves[next].is_some(), false),
+                    (
+                        segment.2,
+                        vertex_curves[index].is_some(),
+                        RevolutionBoundary::Start,
+                    ),
+                    (
+                        segment.3,
+                        vertex_curves[next].is_some(),
+                        RevolutionBoundary::End,
+                    ),
                 ]
                 .into_iter()
-                .all(|(section_point, present, at_start)| {
+                .all(|(section_point, present, boundary)| {
                     !present
                         || revolution_profile_boundary_pcurve(
                             transform,
@@ -114,7 +122,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                             &surface_geometries[index],
                             &axis,
                             section_point,
-                            at_start,
+                            boundary,
                         )
                         .is_some()
                 })
@@ -215,35 +223,35 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             });
             let mut loops = Vec::new();
             for (boundary, vertex_index, section_point, sense) in [
-                ("start", index, *start, Sense::Reversed),
-                ("end", next, *end, Sense::Forward),
+                (RevolutionBoundary::Start, index, *start, Sense::Reversed),
+                (RevolutionBoundary::End, next, *end, Sense::Forward),
             ] {
                 let Some(edge_id) = edges[vertex_index].clone() else {
                     continue;
                 };
-                let loop_id = LoopId::mint(format!("{prefix}:loop:{index}:{boundary}"))
+                let boundary_key = boundary.key();
+                let loop_id = LoopId::mint(format!("{prefix}:loop:{index}:{boundary_key}"))
                     .expect("identity grammar");
-                let coedge_id = CoedgeId::mint(format!("{prefix}:coedge:{index}:{boundary}"))
+                let coedge_id = CoedgeId::mint(format!("{prefix}:coedge:{index}:{boundary_key}"))
                     .expect("identity grammar");
-                let radial_index = if boundary == "start" {
-                    (index + count - 1) % count
-                } else {
-                    next
+                let radial_index = match boundary {
+                    RevolutionBoundary::Start => (index + count - 1) % count,
+                    RevolutionBoundary::End => next,
                 };
-                let radial_boundary = if boundary == "start" { "end" } else { "start" };
+                let radial_boundary = boundary.opposite().key();
                 let pcurve_geometry = revolution_profile_boundary_pcurve(
                     transform,
                     &profile[index],
                     &surface_geometry,
                     &axis,
                     section_point,
-                    boundary == "start",
+                    boundary,
                 )
                 .expect("revolution boundary was prevalidated");
                 let pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
-                    PcurveId::mint(format!("{prefix}:pcurve:{index}:{boundary}"))
+                    PcurveId::mint(format!("{prefix}:pcurve:{index}:{boundary_key}"))
                         .expect("identity grammar"),
                     transform.offset,
                     pcurve_geometry,
