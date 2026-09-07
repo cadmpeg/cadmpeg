@@ -793,11 +793,12 @@ mod tests {
 
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
+    use crate::feature::definitions::FeatureSolverTableHeader;
     use crate::feature::{
         FeatureCircleSegment, FeatureDefinition, FeatureDimension, FeatureDimensionTable,
         FeaturePointSegment, FeatureRelation, FeatureRelationTable, FeatureSectionPoint,
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-        FeatureSolverTableHeader, FeatureVariableRow, FeatureVariableTable,
+        FeatureVariableRow, FeatureVariableTable,
     };
 
     fn incomplete_segment_definition() -> FeatureDefinition {
@@ -863,49 +864,50 @@ mod tests {
                 declared_count: 1,
                 entity_ref: None,
                 rows: Vec::new(),
-                skamps: vec![
-                    FeatureSkamp {
-                        id: 1,
-                        kind: 0,
-                        flags: 0,
-                        status: 1,
-                        items: vec![
-                            FeatureSkampItem {
-                                entity_id: 7,
-                                sense: 2,
-                            },
-                            FeatureSkampItem {
-                                entity_id: 7,
-                                sense: 3,
-                            },
-                        ],
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: FeatureSolverTableHeader {
+                        declared_count: 2,
+                        entity_ref: 0,
                         offset: 0,
                     },
-                    FeatureSkamp {
-                        id: 2,
-                        kind: 3,
-                        flags: 0,
-                        status: 1,
-                        items: vec![
-                            FeatureSkampItem {
-                                entity_id: 8,
-                                sense: 0,
-                            },
-                            FeatureSkampItem {
-                                entity_id: 7,
-                                sense: 2,
-                            },
-                        ],
-                        offset: 1,
-                    },
-                ],
-                skamp_header: Some(FeatureSolverTableHeader {
-                    declared_count: 2,
-                    entity_ref: 0,
-                    offset: 0,
+                    rows: vec![
+                        FeatureSkamp {
+                            id: 1,
+                            kind: 0,
+                            flags: 0,
+                            status: 1,
+                            items: vec![
+                                FeatureSkampItem {
+                                    entity_id: 7,
+                                    sense: 2,
+                                },
+                                FeatureSkampItem {
+                                    entity_id: 7,
+                                    sense: 3,
+                                },
+                            ],
+                            offset: 0,
+                        },
+                        FeatureSkamp {
+                            id: 2,
+                            kind: 3,
+                            flags: 0,
+                            status: 1,
+                            items: vec![
+                                FeatureSkampItem {
+                                    entity_id: 8,
+                                    sense: 0,
+                                },
+                                FeatureSkampItem {
+                                    entity_id: 7,
+                                    sense: 2,
+                                },
+                            ],
+                            offset: 1,
+                        },
+                    ],
                 }),
-                triples: Vec::new(),
-                triples_header: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,
@@ -1604,10 +1606,8 @@ mod tests {
                     body: Vec::new(),
                     offset: 0,
                 }],
-                skamps: Vec::new(),
-                skamp_header: None,
-                triples: Vec::new(),
-                triples_header: None,
+                skamps: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,

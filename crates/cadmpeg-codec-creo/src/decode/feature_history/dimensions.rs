@@ -126,30 +126,13 @@ pub(in super::super) fn feature_relation_table_missing_rows(
         .map_or(0, |expected| expected.saturating_sub(table.rows.len()))
 }
 
-pub(in super::super) fn feature_solver_table_complete(
-    header: Option<&crate::feature::FeatureSolverTableHeader>,
-    row_count: usize,
-) -> bool {
-    header.map_or(row_count == 0, |header| {
-        usize::try_from(header.declared_count).ok() == Some(row_count)
-    })
-}
-
-pub(in super::super) fn feature_solver_table_missing_rows(
-    header: Option<&crate::feature::FeatureSolverTableHeader>,
-    row_count: usize,
-) -> usize {
-    header.map_or(0, |header| {
-        usize::try_from(header.declared_count)
-            .unwrap_or(usize::MAX)
-            .saturating_sub(row_count)
-    })
-}
-
 pub(in super::super) fn feature_skamp_table_complete(
     table: &crate::feature::FeatureRelationTable,
 ) -> bool {
-    feature_solver_table_complete(table.skamp_header.as_ref(), table.skamps.len())
+    table
+        .skamps
+        .as_ref()
+        .is_none_or(|table| table.is_complete())
 }
 
 pub(in super::super) fn feature_dimension_parameter_layout(

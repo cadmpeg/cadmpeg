@@ -41,11 +41,23 @@ pub(super) fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T
 
 pub(super) fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
     let relations = definition.relations.as_mut().expect("relations");
+    let count = u32::try_from(relations.skamps().len()).expect("skamp count");
     relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
-        .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+        .declared_count = count;
+}
+
+pub(super) fn declared_solver_rows<T>(
+    table: &mut Option<crate::feature::definitions::SolverSubtable<T>>,
+) -> &mut Vec<T> {
+    match table {
+        Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) => rows,
+        _ => panic!("fixture requires a declared solver table"),
+    }
 }
 
 pub(super) fn synchronize_segment_count(definition: &mut crate::feature::FeatureDefinition) {

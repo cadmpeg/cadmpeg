@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SKAMP solver constraint emission and locus compatibility.
 
-use super::super::feature_history::feature_solver_table_complete;
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
     section_entity_external_ids, section_skamp_active, section_skamp_center_entity,
@@ -26,11 +25,13 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     let Some(relations) = &definition.relations else {
         return Vec::new();
     };
-    let complete_skamps =
-        feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len());
+    let complete_skamps = relations
+        .skamps
+        .as_ref()
+        .is_none_or(|table| table.is_complete());
     let skamp_id_counts =
         relations
-            .skamps
+            .skamps()
             .iter()
             .fold(BTreeMap::<u32, usize>::new(), |mut counts, skamp| {
                 *counts.entry(skamp.id).or_default() += 1;
@@ -41,7 +42,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         || section_entities.clone(),
         |geometry| {
             relations
-                .skamps
+                .skamps()
                 .iter()
                 .flat_map(|skamp| &skamp.items)
                 .map(|item| item.entity_id)
@@ -50,17 +51,18 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         },
     );
     relations
-        .skamps
+        .skamps()
         .iter()
         .filter_map(|skamp| {
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
             let joined_equation_id = if unique_skamp_id
-                && feature_solver_table_complete(
-                    relations.triples_header.as_ref(),
-                    relations.triples.len(),
-                ) {
-                let mut equation_ids = relations
+                && relations
                     .triples
+                    .as_ref()
+                    .is_none_or(|table| table.is_complete())
+            {
+                let mut equation_ids = relations
+                    .triples()
                     .iter()
                     .filter(|triple| triple.skamp_id == Some(skamp.id))
                     .filter_map(|triple| triple.equation_id);

@@ -145,25 +145,25 @@ pub(crate) fn sketch_table_headers(
             table.rows.len(),
             table.offset,
         );
-        if let Some(header) = &table.skamp_header {
+        if let Some(header) = table.skamps.as_ref().and_then(|table| table.header()) {
             push(
                 "solver_incidences",
                 Some(header.declared_count),
                 Some(header.entity_ref),
                 None,
                 Vec::new(),
-                table.skamps.len(),
+                table.skamps().len(),
                 header.offset,
             );
         }
-        if let Some(header) = &table.triples_header {
+        if let Some(header) = table.triples.as_ref().and_then(|table| table.header()) {
             push(
                 "relation_triples",
                 Some(header.declared_count),
                 Some(header.entity_ref),
                 None,
                 Vec::new(),
-                table.triples.len(),
+                table.triples().len(),
                 header.offset,
             );
         }

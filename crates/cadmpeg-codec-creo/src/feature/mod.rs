@@ -26,8 +26,8 @@ pub use definitions::{
     FeatureOrderTable, FeatureParameterFrameKind, FeaturePointSegment, FeatureReferenceLineSegment,
     FeatureRelation, FeatureRelationTable, FeatureRelationTriple, FeatureSavedArc,
     FeatureSavedEntity, FeatureSavedLine, FeatureSavedSpline, FeatureSection3d, FeatureSegment,
-    FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-    FeatureSolverTableHeader, FeatureTrimEntity, FeatureVariableRow, OutlinePhase, TrimEntityKind,
+    FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem, FeatureTrimEntity,
+    FeatureVariableRow, OutlinePhase, TrimEntityKind,
 };
 pub(crate) use definitions::{FeatureEquation, FeatureVariableTable};
 #[cfg(test)]

@@ -627,8 +627,8 @@ fn relation_table_retains_solver_children_after_an_invalid_row() {
     assert_eq!(relations.declared_count, 3);
     assert_eq!(relations.entity_ref, Some(106));
     assert!(relations.rows.is_empty());
-    assert_eq!(relations.skamps.len(), 1);
-    assert_eq!(relations.skamps[0].id, 5);
+    assert_eq!(relations.skamps().len(), 1);
+    assert_eq!(relations.skamps()[0].id, 5);
 }
 
 #[test]
@@ -887,22 +887,26 @@ fn positional_definition_preserves_its_named_solver_tables() {
     );
     let relations = definitions[1].relations.as_ref().expect("relations");
 
-    assert_eq!(relations.skamps.len(), 1);
-    assert_eq!(relations.skamps[0].id, 5);
+    assert_eq!(relations.skamps().len(), 1);
+    assert_eq!(relations.skamps()[0].id, 5);
     assert_eq!(
         relations
-            .skamp_header
+            .skamps
             .as_ref()
+            .expect("skamp table")
+            .header()
             .expect("skamp header")
             .declared_count,
         1
     );
-    assert_eq!(relations.triples.len(), 1);
-    assert_eq!(relations.triples[0].relation_id, Some(7));
+    assert_eq!(relations.triples().len(), 1);
+    assert_eq!(relations.triples()[0].relation_id, Some(7));
     assert_eq!(
         relations
-            .triples_header
+            .triples
             .as_ref()
+            .expect("triples table")
+            .header()
             .expect("triples header")
             .declared_count,
         1

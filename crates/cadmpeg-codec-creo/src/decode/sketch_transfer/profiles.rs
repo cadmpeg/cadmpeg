@@ -281,7 +281,7 @@ pub(in super::super) fn solver_only_section_entities(
     definition
         .relations
         .iter()
-        .flat_map(|relations| &relations.skamps)
+        .flat_map(|relations| relations.skamps())
         .flat_map(|skamp| {
             skamp
                 .items
@@ -407,7 +407,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         .relations
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| &relations.skamps)
+        .flat_map(|relations| relations.skamps())
     {
         for item in &skamp.items {
             if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
@@ -674,14 +674,15 @@ mod tests {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
-                skamps: vec![midpoint(target, 7)],
-                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                    declared_count: 1,
-                    entity_ref: 0,
-                    offset: 0,
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: crate::feature::definitions::FeatureSolverTableHeader {
+                        declared_count: 1,
+                        entity_ref: 0,
+                        offset: 0,
+                    },
+                    rows: vec![midpoint(target, 7)],
                 }),
-                triples: Vec::new(),
-                triples_header: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,
@@ -723,7 +724,15 @@ mod tests {
     #[test]
     fn type_zero_point_locus_establishes_unique_native_point_family() {
         let mut opaque_target = definition(101, true);
-        opaque_target.relations.as_mut().expect("relations").skamps[0].kind = 0;
+        opaque_target
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .as_mut()
+            .expect("skamp table")
+            .rows_mut()[0]
+            .kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&opaque_target, 101),
             Some(SectionEntityIncidenceFamily::Point)
@@ -734,7 +743,10 @@ mod tests {
             .relations
             .as_mut()
             .expect("relations")
-            .skamps[0]
+            .skamps
+            .as_mut()
+            .expect("skamp table")
+            .rows_mut()[0]
             .kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&solver_only_target, 201),
@@ -752,7 +764,15 @@ mod tests {
         let segments = definition.segments.as_mut().expect("segments");
         segments.opaque_rows.push(opaque(101));
         segments.declared_count += 1;
-        definition.relations.as_mut().expect("relations").skamps[0].kind = 0;
+        definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .as_mut()
+            .expect("skamp table")
+            .rows_mut()[0]
+            .kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
             None
@@ -779,7 +799,7 @@ mod tests {
             .expect("segments")
             .declared_count += 1;
         let relations = definition.relations.as_mut().expect("relations");
-        relations.skamps.extend([
+        crate::decode::tests::declared_solver_rows(&mut relations.skamps).extend([
             crate::feature::FeatureSkamp {
                 id: 0,
                 kind: 0,
@@ -815,11 +835,7 @@ mod tests {
                 offset: 24,
             },
         ]);
-        relations
-            .skamp_header
-            .as_mut()
-            .expect("skamp header")
-            .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+        crate::decode::tests::synchronize_skamp_count(&mut definition);
 
         assert_eq!(
             solver_only_section_entity_family(&definition, 21),

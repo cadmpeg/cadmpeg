@@ -2,8 +2,7 @@
 //! Section constraint reconciliation, incidence, and dimension emission.
 
 use super::super::feature_history::{
-    feature_relation_table_complete, feature_solver_table_complete,
-    resolved_feature_dimension_parameter,
+    feature_relation_table_complete, resolved_feature_dimension_parameter,
 };
 use super::super::sketch::{
     approximately_equal, resolved_section_coordinates, saved_section_coordinate_witnesses,
@@ -279,13 +278,19 @@ pub(in super::super) fn joined_relation_incidence_link(
     let Some(relations) = &definition.relations else {
         return None;
     };
-    if !feature_solver_table_complete(relations.triples_header.as_ref(), relations.triples.len())
-        || !feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len())
+    if !relations
+        .triples
+        .as_ref()
+        .is_none_or(|table| table.is_complete())
+        || !relations
+            .skamps
+            .as_ref()
+            .is_none_or(|table| table.is_complete())
     {
         return None;
     }
     let joins = relations
-        .triples
+        .triples()
         .iter()
         .filter(|triple| triple.relation_id == Some(relation_id))
         .filter_map(|triple| triple.skamp_id.map(|incidence_id| (triple, incidence_id)))
@@ -294,7 +299,7 @@ pub(in super::super) fn joined_relation_incidence_link(
         return None;
     };
     let incidences = relations
-        .skamps
+        .skamps()
         .iter()
         .filter(|skamp| skamp.id == *incidence_id)
         .collect::<Vec<_>>();
@@ -335,13 +340,19 @@ pub(in super::super) fn section_solver_equation_is_disabled(
     let Some(relations) = &definition.relations else {
         return false;
     };
-    if !feature_solver_table_complete(relations.triples_header.as_ref(), relations.triples.len())
-        || !feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len())
+    if !relations
+        .triples
+        .as_ref()
+        .is_none_or(|table| table.is_complete())
+        || !relations
+            .skamps
+            .as_ref()
+            .is_none_or(|table| table.is_complete())
     {
         return false;
     }
     let incidence_ids = relations
-        .triples
+        .triples()
         .iter()
         .filter(|triple| triple.equation_id == Some(equation_id))
         .filter_map(|triple| triple.skamp_id)
@@ -350,7 +361,7 @@ pub(in super::super) fn section_solver_equation_is_disabled(
         return false;
     };
     let incidences = relations
-        .skamps
+        .skamps()
         .iter()
         .filter(|skamp| skamp.id == *incidence_id)
         .collect::<Vec<_>>();
@@ -2172,10 +2183,8 @@ mod tests {
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![relation.clone()],
-                skamps: Vec::new(),
-                skamp_header: None,
-                triples: Vec::new(),
-                triples_header: None,
+                skamps: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,

@@ -939,15 +939,91 @@ pub struct FeatureRelationTable {
     /// Complete positional relation rows in stored order.
     pub rows: Vec<FeatureRelation>,
     /// Section-entity incidence records used by solver equations.
-    pub skamps: Vec<FeatureSkamp>,
-    /// Count, class, and source location of `skamp_ptr`.
-    pub skamp_header: Option<FeatureSolverTableHeader>,
+    pub skamps: Option<SolverSubtable<FeatureSkamp>>,
     /// Joins between relation, equation, and incidence identifiers.
-    pub triples: Vec<FeatureRelationTriple>,
-    /// Count, class, and source location of `triples_ptr`.
-    pub triples_header: Option<FeatureSolverTableHeader>,
+    pub triples: Option<SolverSubtable<FeatureRelationTriple>>,
     /// Byte offset of the `relat_ptr` label in the original stream.
     pub offset: usize,
+}
+
+/// A solver table declaration with retained rows, or rows with no decoded declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SolverSubtable<T> {
+    Declared {
+        header: FeatureSolverTableHeader,
+        rows: Vec<T>,
+    },
+    Unframed(NonEmptySolverRows<T>),
+}
+
+/// Retained rows without a decoded table declaration. The collection is nonempty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonEmptySolverRows<T>(Vec<T>);
+
+impl<T> SolverSubtable<T> {
+    pub fn from_parts(header: Option<FeatureSolverTableHeader>, rows: Vec<T>) -> Option<Self> {
+        match header {
+            Some(header) => Some(Self::Declared { header, rows }),
+            None if rows.is_empty() => None,
+            None => Some(Self::Unframed(NonEmptySolverRows(rows))),
+        }
+    }
+
+    pub fn header(&self) -> Option<&FeatureSolverTableHeader> {
+        match self {
+            Self::Declared { header, .. } => Some(header),
+            Self::Unframed(_) => None,
+        }
+    }
+
+    pub fn header_mut(&mut self) -> Option<&mut FeatureSolverTableHeader> {
+        match self {
+            Self::Declared { header, .. } => Some(header),
+            Self::Unframed(_) => None,
+        }
+    }
+
+    pub fn rows(&self) -> &[T] {
+        match self {
+            Self::Declared { rows, .. } => rows,
+            Self::Unframed(rows) => &rows.0,
+        }
+    }
+
+    pub fn rows_mut(&mut self) -> &mut [T] {
+        match self {
+            Self::Declared { rows, .. } => rows,
+            Self::Unframed(rows) => &mut rows.0,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        match self {
+            Self::Declared { header, rows } => {
+                usize::try_from(header.declared_count).ok() == Some(rows.len())
+            }
+            Self::Unframed(_) => false,
+        }
+    }
+
+    pub fn missing_rows(&self) -> usize {
+        match self {
+            Self::Declared { header, rows } => usize::try_from(header.declared_count)
+                .unwrap_or(usize::MAX)
+                .saturating_sub(rows.len()),
+            Self::Unframed(_) => 0,
+        }
+    }
+}
+
+impl FeatureRelationTable {
+    pub fn skamps(&self) -> &[FeatureSkamp] {
+        self.skamps.as_ref().map_or(&[], SolverSubtable::rows)
+    }
+
+    pub fn triples(&self) -> &[FeatureRelationTriple] {
+        self.triples.as_ref().map_or(&[], SolverSubtable::rows)
+    }
 }
 
 /// Header identity for a counted solver subtable.
@@ -5021,10 +5097,14 @@ pub(crate) fn relation_table(
         declared_count,
         entity_ref,
         rows,
-        skamps: feature_skamps(payload, start, end),
-        skamp_header: named_solver_table_header(payload, b"skamp_ptr\0", start, end),
-        triples: feature_relation_triples(payload, start, end),
-        triples_header: named_solver_table_header(payload, b"triples_ptr\0", start, end),
+        skamps: SolverSubtable::from_parts(
+            named_solver_table_header(payload, b"skamp_ptr\0", start, end),
+            feature_skamps(payload, start, end),
+        ),
+        triples: SolverSubtable::from_parts(
+            named_solver_table_header(payload, b"triples_ptr\0", start, end),
+            feature_relation_triples(payload, start, end),
+        ),
         offset: table,
     })
 }
@@ -5127,10 +5207,8 @@ pub(crate) fn positional_relation_table(
         declared_count,
         entity_ref: Some(table_class),
         rows,
-        skamps: Vec::new(),
-        skamp_header: None,
-        triples: Vec::new(),
-        triples_header: None,
+        skamps: None,
+        triples: None,
         offset: table,
     })
 }
@@ -6296,32 +6374,46 @@ pub(crate) fn definitions_in_ranges(
             replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
             replay_triples_class = named_array_class(payload, b"triples_ptr\0", start, schema_end);
         } else if let Some(table) = &mut relations {
-            if table.skamp_header.is_none() {
+            if table
+                .skamps
+                .as_ref()
+                .and_then(SolverSubtable::header)
+                .is_none()
+            {
                 if let Some(header) = named_solver_table_header(payload, b"skamp_ptr\0", start, end)
                 {
-                    table.skamps = feature_skamps(payload, start, end);
-                    table.skamp_header = Some(header);
-                } else {
-                    table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
-                        positional_feature_skamps(payload, start, end, table_class)
+                    table.skamps = Some(SolverSubtable::Declared {
+                        header,
+                        rows: feature_skamps(payload, start, end),
                     });
-                    table.skamp_header = replay_skamp_class.and_then(|table_class| {
-                        positional_solver_table_header(payload, start, end, table_class)
+                } else {
+                    table.skamps = replay_skamp_class.and_then(|table_class| {
+                        SolverSubtable::from_parts(
+                            positional_solver_table_header(payload, start, end, table_class),
+                            positional_feature_skamps(payload, start, end, table_class),
+                        )
                     });
                 }
             }
-            if table.triples_header.is_none() {
+            if table
+                .triples
+                .as_ref()
+                .and_then(SolverSubtable::header)
+                .is_none()
+            {
                 if let Some(header) =
                     named_solver_table_header(payload, b"triples_ptr\0", start, end)
                 {
-                    table.triples = feature_relation_triples(payload, start, end);
-                    table.triples_header = Some(header);
-                } else {
-                    table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
-                        positional_relation_triples(payload, start, end, table_class)
+                    table.triples = Some(SolverSubtable::Declared {
+                        header,
+                        rows: feature_relation_triples(payload, start, end),
                     });
-                    table.triples_header = replay_triples_class.and_then(|table_class| {
-                        positional_solver_table_header(payload, start, end, table_class)
+                } else {
+                    table.triples = replay_triples_class.and_then(|table_class| {
+                        SolverSubtable::from_parts(
+                            positional_solver_table_header(payload, start, end, table_class),
+                            positional_relation_triples(payload, start, end, table_class),
+                        )
                     });
                 }
             }

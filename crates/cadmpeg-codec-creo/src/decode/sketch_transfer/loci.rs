@@ -1089,7 +1089,7 @@ pub(in super::super) fn complete_section_skamps(
         .relations
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| &relations.skamps)
+        .flat_map(|relations| relations.skamps())
 }
 
 pub(in super::super) fn active_complete_section_skamps(
@@ -1375,71 +1375,72 @@ mod tests {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
-                skamps: vec![
-                    skamp(
-                        1,
-                        5,
-                        vec![
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 101,
-                                sense: 0,
-                            },
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 201,
-                                sense: 0,
-                            },
-                        ],
-                    ),
-                    skamp(
-                        2,
-                        0,
-                        vec![
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 102,
-                                sense: 2,
-                            },
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 202,
-                                sense: 0,
-                            },
-                        ],
-                    ),
-                    skamp(
-                        3,
-                        0,
-                        vec![
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 102,
-                                sense: 4,
-                            },
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 203,
-                                sense: 0,
-                            },
-                        ],
-                    ),
-                    skamp(
-                        4,
-                        0,
-                        vec![
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 103,
-                                sense: 2,
-                            },
-                            crate::feature::FeatureSkampItem {
-                                entity_id: 204,
-                                sense: 0,
-                            },
-                        ],
-                    ),
-                ],
-                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                    declared_count: 4,
-                    entity_ref: 1,
-                    offset: 0,
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: crate::feature::definitions::FeatureSolverTableHeader {
+                        declared_count: 4,
+                        entity_ref: 1,
+                        offset: 0,
+                    },
+                    rows: vec![
+                        skamp(
+                            1,
+                            5,
+                            vec![
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 101,
+                                    sense: 0,
+                                },
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 201,
+                                    sense: 0,
+                                },
+                            ],
+                        ),
+                        skamp(
+                            2,
+                            0,
+                            vec![
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 102,
+                                    sense: 2,
+                                },
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 202,
+                                    sense: 0,
+                                },
+                            ],
+                        ),
+                        skamp(
+                            3,
+                            0,
+                            vec![
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 102,
+                                    sense: 4,
+                                },
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 203,
+                                    sense: 0,
+                                },
+                            ],
+                        ),
+                        skamp(
+                            4,
+                            0,
+                            vec![
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 103,
+                                    sense: 2,
+                                },
+                                crate::feature::FeatureSkampItem {
+                                    entity_id: 204,
+                                    sense: 0,
+                                },
+                            ],
+                        ),
+                    ],
                 }),
-                triples: Vec::new(),
-                triples_header: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,
@@ -1508,26 +1509,30 @@ mod tests {
             },
         );
         let relations = decoded_arc.relations.as_mut().expect("relations");
-        relations.skamps.push(crate::feature::FeatureSkamp {
-            id: 5,
-            kind: 5,
-            flags: 0,
-            status: 1,
-            items: vec![
-                crate::feature::FeatureSkampItem {
-                    entity_id: 104,
-                    sense: 0,
-                },
-                crate::feature::FeatureSkampItem {
-                    entity_id: 205,
-                    sense: 0,
-                },
-            ],
-            offset: 105,
-        });
+        crate::decode::tests::declared_solver_rows(&mut relations.skamps).push(
+            crate::feature::FeatureSkamp {
+                id: 5,
+                kind: 5,
+                flags: 0,
+                status: 1,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 104,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 205,
+                        sense: 0,
+                    },
+                ],
+                offset: 105,
+            },
+        );
         relations
-            .skamp_header
+            .skamps
             .as_mut()
+            .expect("skamp table")
+            .header_mut()
             .expect("skamp header")
             .declared_count += 1;
         let decoded_arc_item = crate::feature::FeatureSkampItem {
@@ -1598,30 +1603,31 @@ mod tests {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
-                skamps: vec![crate::feature::FeatureSkamp {
-                    id: 1,
-                    kind: 0,
-                    flags: 0,
-                    status: 0,
-                    items: vec![
-                        crate::feature::FeatureSkampItem {
-                            entity_id: 99,
-                            sense: 0,
-                        },
-                        crate::feature::FeatureSkampItem {
-                            entity_id: 12,
-                            sense: 2,
-                        },
-                    ],
-                    offset: 1,
-                }],
-                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                    declared_count: 1,
-                    entity_ref: 0,
-                    offset: 0,
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: crate::feature::definitions::FeatureSolverTableHeader {
+                        declared_count: 1,
+                        entity_ref: 0,
+                        offset: 0,
+                    },
+                    rows: vec![crate::feature::FeatureSkamp {
+                        id: 1,
+                        kind: 0,
+                        flags: 0,
+                        status: 0,
+                        items: vec![
+                            crate::feature::FeatureSkampItem {
+                                entity_id: 99,
+                                sense: 0,
+                            },
+                            crate::feature::FeatureSkampItem {
+                                entity_id: 12,
+                                sense: 2,
+                            },
+                        ],
+                        offset: 1,
+                    }],
                 }),
-                triples: Vec::new(),
-                triples_header: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,

@@ -1973,17 +1973,21 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut relations.rows {
             row.offset += section_offset;
         }
-        if let Some(header) = &mut relations.skamp_header {
-            header.offset += section_offset;
+        if let Some(table) = &mut relations.skamps {
+            if let Some(header) = table.header_mut() {
+                header.offset += section_offset;
+            }
+            for row in table.rows_mut() {
+                row.offset += section_offset;
+            }
         }
-        for row in &mut relations.skamps {
-            row.offset += section_offset;
-        }
-        if let Some(header) = &mut relations.triples_header {
-            header.offset += section_offset;
-        }
-        for row in &mut relations.triples {
-            row.offset += section_offset;
+        if let Some(table) = &mut relations.triples {
+            if let Some(header) = table.header_mut() {
+                header.offset += section_offset;
+            }
+            for row in table.rows_mut() {
+                row.offset += section_offset;
+            }
         }
     }
     if let Some(saved) = &mut definition.saved_section {

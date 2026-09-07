@@ -17,8 +17,8 @@ use super::super::coverage::{
 };
 use super::super::feature_history::{
     feature_relation_table_expected_rows, feature_relation_table_missing_rows,
-    feature_solver_table_missing_rows, transfer_resolved_extrusion_vertex_orbit_curves,
-    transfer_resolved_revolution_surfaces, transfer_resolved_revolution_vertex_orbit_curves,
+    transfer_resolved_extrusion_vertex_orbit_curves, transfer_resolved_revolution_surfaces,
+    transfer_resolved_revolution_vertex_orbit_curves,
 };
 use super::super::sketch_transfer::transfer_sketches;
 use super::super::surfaces::{
@@ -146,7 +146,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .definitions
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| relations.skamps.len())
+        .map(|relations| relations.skamps().len())
         .sum::<usize>();
     let missing_feature_skamp_row_count = scan
         .features
@@ -154,10 +154,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| {
-            feature_solver_table_missing_rows(
-                relations.skamp_header.as_ref(),
-                relations.skamps.len(),
-            )
+            relations
+                .skamps
+                .as_ref()
+                .map_or(0, |table| table.missing_rows())
         })
         .sum::<usize>();
     let skamp_constraint_coverage =
@@ -188,7 +188,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .definitions
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| relations.triples.len())
+        .map(|relations| relations.triples().len())
         .sum::<usize>();
     let missing_feature_relation_triple_row_count = scan
         .features
@@ -196,10 +196,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| {
-            feature_solver_table_missing_rows(
-                relations.triples_header.as_ref(),
-                relations.triples.len(),
-            )
+            relations
+                .triples
+                .as_ref()
+                .map_or(0, |table| table.missing_rows())
         })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(

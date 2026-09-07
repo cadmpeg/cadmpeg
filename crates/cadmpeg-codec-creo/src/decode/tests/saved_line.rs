@@ -2,8 +2,9 @@
 //! Tests: saved line.
 
 use super::{
-    extruded_segment_surface, placed_section_curve_geometry, section_segment_intersection_carrier,
-    section_skamp_constraints, trimmed_section_segment_geometry,
+    declared_solver_rows, extruded_segment_surface, placed_section_curve_geometry,
+    section_segment_intersection_carrier, section_skamp_constraints,
+    trimmed_section_segment_geometry,
 };
 use crate::decode::sketch::{
     is_full_circle_geometry, resolved_section_coordinates, resolved_section_points,
@@ -290,38 +291,42 @@ fn saved_line_joins_through_order_table() {
             body: Vec::new(),
             offset: 28,
         }],
-        skamps: vec![crate::feature::FeatureSkamp {
-            id: 5,
-            kind: 99,
-            flags: 0,
-            status: 1,
-            items: vec![
-                crate::feature::FeatureSkampItem {
-                    entity_id: 42,
-                    sense: 4,
-                },
-                crate::feature::FeatureSkampItem {
-                    entity_id: 99,
-                    sense: 0,
-                },
-            ],
-            offset: 30,
-        }],
-        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 1,
-            entity_ref: 1,
-            offset: 29,
+        skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 1,
+                offset: 29,
+            },
+            rows: vec![crate::feature::FeatureSkamp {
+                id: 5,
+                kind: 99,
+                flags: 0,
+                status: 1,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 42,
+                        sense: 4,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 99,
+                        sense: 0,
+                    },
+                ],
+                offset: 30,
+            }],
         }),
-        triples: vec![crate::feature::FeatureRelationTriple {
-            relation_id: Some(7),
-            equation_id: Some(11),
-            skamp_id: Some(5),
-            offset: 31,
-        }],
-        triples_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 1,
-            entity_ref: 2,
-            offset: 31,
+        triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 2,
+                offset: 31,
+            },
+            rows: vec![crate::feature::FeatureRelationTriple {
+                relation_id: Some(7),
+                equation_id: Some(11),
+                skamp_id: Some(5),
+                offset: 31,
+            }],
         }),
         offset: 28,
     });
@@ -348,7 +353,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .triples[0]
+        .triples
+        .as_mut()
+        .expect("triples table")
+        .rows_mut()[0]
         .relation_id = None;
     let equation_only_constraints = section_skamp_constraints(
         &equation_only_incidence,
@@ -367,7 +375,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .triples[0]
+        .triples
+        .as_mut()
+        .expect("triples table")
+        .rows_mut()[0]
         .equation_id = None;
     let missing_equation_constraints = section_skamp_constraints(
         &missing_equation,
@@ -383,17 +394,19 @@ fn saved_line_joins_through_order_table() {
         .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
     let mut duplicate_equation = equation_only_incidence.clone();
     let duplicate_equation_relations = duplicate_equation.relations.as_mut().expect("relations");
-    duplicate_equation_relations
-        .triples
-        .push(crate::feature::FeatureRelationTriple {
+    declared_solver_rows(&mut duplicate_equation_relations.triples).push(
+        crate::feature::FeatureRelationTriple {
             relation_id: None,
             equation_id: Some(11),
             skamp_id: Some(5),
             offset: 32,
-        });
+        },
+    );
     duplicate_equation_relations
-        .triples_header
+        .triples
         .as_mut()
+        .expect("triples table")
+        .header_mut()
         .expect("triples header")
         .declared_count = 2;
     let duplicate_equation_constraints = section_skamp_constraints(
@@ -452,23 +465,22 @@ fn saved_line_joins_through_order_table() {
             && operand.native_field.as_deref() == Some("equation_id")
             && operand.object_index == 11
     }));
+    declared_solver_rows(&mut native_join.relations.as_mut().expect("relations").triples).push(
+        crate::feature::FeatureRelationTriple {
+            relation_id: Some(7),
+            equation_id: None,
+            skamp_id: Some(5),
+            offset: 32,
+        },
+    );
     native_join
         .relations
         .as_mut()
         .expect("relations")
         .triples
-        .push(crate::feature::FeatureRelationTriple {
-            relation_id: Some(7),
-            equation_id: None,
-            skamp_id: Some(5),
-            offset: 32,
-        });
-    native_join
-        .relations
         .as_mut()
-        .expect("relations")
-        .triples_header
-        .as_mut()
+        .expect("triples table")
+        .header_mut()
         .expect("triples header")
         .declared_count = 2;
     let ambiguous_join_constraints =
@@ -486,7 +498,7 @@ fn saved_line_joins_through_order_table() {
         .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
     let mut solver_families = constrained.clone();
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 0,
         flags: 0,
@@ -511,7 +523,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 99,
@@ -526,7 +541,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .status = 0;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
@@ -536,7 +554,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .items[0]
         .sense = 4;
     assert_eq!(
@@ -547,21 +568,27 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .items[0]
         .sense = 2;
     solver_families
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .status = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 1,
         flags: 0,
@@ -596,7 +623,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0];
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0];
     unary.kind = 2;
     unary.status = 1;
     assert!(matches!(
@@ -610,7 +640,7 @@ fn saved_line_joins_through_order_table() {
         SketchConstraintDefinition::Vertical { .. }
     ));
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 0,
         flags: 0,
@@ -635,7 +665,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .status = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
@@ -664,13 +697,13 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .items[0];
     let line_item = &solver_families
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .items[1];
     assert!(section_skamp_point_locus(
         &solver_families,
@@ -694,7 +727,7 @@ fn saved_line_joins_through_order_table() {
         solver_constraints[0].0.definition
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 6,
         flags: 0,
@@ -712,8 +745,10 @@ fn saved_line_joins_through_order_table() {
         offset: 33,
     }];
     family_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -722,7 +757,11 @@ fn saved_line_joins_through_order_table() {
     );
     let mut disabled_line_family = solver_families.clone();
     let disabled_line_relations = disabled_line_family.relations.as_mut().expect("relations");
-    disabled_line_relations.skamps[0] = crate::feature::FeatureSkamp {
+    disabled_line_relations
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0] = crate::feature::FeatureSkamp {
         id: 7,
         kind: 5,
         flags: 0,
@@ -771,20 +810,23 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations");
-    disabled_circular_relations.skamps = vec![crate::feature::FeatureSkamp {
-        id: 8,
-        kind: 99,
-        flags: 0,
-        status: 0,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 101,
-            sense: 4,
-        }],
-        offset: 35,
-    }];
+    *declared_solver_rows(&mut disabled_circular_relations.skamps) =
+        vec![crate::feature::FeatureSkamp {
+            id: 8,
+            kind: 99,
+            flags: 0,
+            status: 0,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 4,
+            }],
+            offset: 35,
+        }];
     disabled_circular_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -792,7 +834,7 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps.push(crate::feature::FeatureSkamp {
+    declared_solver_rows(&mut family_relations.skamps).push(crate::feature::FeatureSkamp {
         id: 7,
         kind: 5,
         flags: 0,
@@ -810,8 +852,10 @@ fn saved_line_joins_through_order_table() {
         offset: 34,
     });
     family_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
@@ -820,13 +864,15 @@ fn saved_line_joins_through_order_table() {
     );
     let mut duplicate_incidence = constrained.clone();
     let duplicate_relations = duplicate_incidence.relations.as_mut().expect("relations");
-    let mut duplicate = duplicate_relations.skamps[0].clone();
+    let mut duplicate = duplicate_relations.skamps()[0].clone();
     duplicate.status = 34;
     duplicate.offset = 32;
-    duplicate_relations.skamps.push(duplicate);
+    declared_solver_rows(&mut duplicate_relations.skamps).push(duplicate);
     duplicate_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 2;
     assert!(relation_incidence_entities(
@@ -835,7 +881,15 @@ fn saved_line_joins_through_order_table() {
         7,
     )
     .is_empty());
-    constrained.relations.as_mut().expect("relations").skamps[0].status = 34;
+    constrained
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
+        .status = 34;
     assert!(relation_incidence_entities(
         &constrained,
         &SketchId("creo:model:sketch#5".to_string()),
@@ -1728,14 +1782,15 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
             declared_count: 2,
             entity_ref: None,
             rows: Vec::new(),
-            skamps: vec![horizontal, parallel],
-            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                declared_count: 2,
-                entity_ref: 70,
-                offset: 45,
+            skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                header: crate::feature::definitions::FeatureSolverTableHeader {
+                    declared_count: 2,
+                    entity_ref: 70,
+                    offset: 45,
+                },
+                rows: vec![horizontal, parallel],
             }),
-            triples: Vec::new(),
-            triples_header: None,
+            triples: None,
             offset: 44,
         }),
         saved_section: None,
@@ -1755,7 +1810,10 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         .relations
         .as_mut()
         .expect("solver relations")
-        .skamps[1]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[1]
         .status = 34;
     assert_eq!(
         trimmed_section_segment_geometry(
@@ -1785,7 +1843,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
     .is_none());
 
     let relations = definition.relations.as_mut().expect("solver relations");
-    relations.skamps.push(crate::feature::FeatureSkamp {
+    declared_solver_rows(&mut relations.skamps).push(crate::feature::FeatureSkamp {
         id: 3,
         kind: 2,
         flags: 0,
@@ -1797,8 +1855,10 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         offset: 60,
     });
     relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("solver header")
         .declared_count = 3;
     assert!(trimmed_section_segment_geometry(

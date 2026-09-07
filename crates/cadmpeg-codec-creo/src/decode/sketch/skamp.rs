@@ -853,24 +853,25 @@ mod tests {
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
-            skamps: vec![crate::feature::FeatureSkamp {
-                id: 1,
-                kind: 1,
-                flags: 0,
-                status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
-                    entity_id: 99,
-                    sense: 0,
+            skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                header: crate::feature::definitions::FeatureSolverTableHeader {
+                    declared_count: 1,
+                    entity_ref: 0,
+                    offset: 0,
+                },
+                rows: vec![crate::feature::FeatureSkamp {
+                    id: 1,
+                    kind: 1,
+                    flags: 0,
+                    status: 1,
+                    items: vec![crate::feature::FeatureSkampItem {
+                        entity_id: 99,
+                        sense: 0,
+                    }],
+                    offset: 0,
                 }],
-                offset: 0,
-            }],
-            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                declared_count: 1,
-                entity_ref: 0,
-                offset: 0,
             }),
-            triples: Vec::new(),
-            triples_header: None,
+            triples: None,
             offset: 0,
         });
         assert!(section_line_entity_fixed_coordinate_with_unique_rows(
@@ -938,24 +939,25 @@ mod tests {
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
-            skamps: vec![crate::feature::FeatureSkamp {
-                id: 1,
-                kind: 1,
-                flags: 0,
-                status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
-                    entity_id: 10,
-                    sense: 0,
+            skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                header: crate::feature::definitions::FeatureSolverTableHeader {
+                    declared_count: 1,
+                    entity_ref: 0,
+                    offset: 0,
+                },
+                rows: vec![crate::feature::FeatureSkamp {
+                    id: 1,
+                    kind: 1,
+                    flags: 0,
+                    status: 1,
+                    items: vec![crate::feature::FeatureSkampItem {
+                        entity_id: 10,
+                        sense: 0,
+                    }],
+                    offset: 0,
                 }],
-                offset: 0,
-            }],
-            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                declared_count: 1,
-                entity_ref: 0,
-                offset: 0,
             }),
-            triples: Vec::new(),
-            triples_header: None,
+            triples: None,
             offset: 0,
         });
         assert_eq!(

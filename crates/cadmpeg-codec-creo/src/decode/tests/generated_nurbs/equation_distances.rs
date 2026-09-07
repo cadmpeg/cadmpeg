@@ -268,29 +268,33 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
-        skamps: vec![crate::feature::FeatureSkamp {
-            id: 900,
-            kind: 0,
-            flags: 0,
-            status: 0,
-            items: Vec::new(),
-            offset: 900,
-        }],
-        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 1,
-            entity_ref: 901,
-            offset: 900,
+        skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 901,
+                offset: 900,
+            },
+            rows: vec![crate::feature::FeatureSkamp {
+                id: 900,
+                kind: 0,
+                flags: 0,
+                status: 0,
+                items: Vec::new(),
+                offset: 900,
+            }],
         }),
-        triples: vec![crate::feature::FeatureRelationTriple {
-            relation_id: None,
-            equation_id: Some(equation_id),
-            skamp_id: Some(900),
-            offset: 902,
-        }],
-        triples_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 1,
-            entity_ref: 903,
-            offset: 902,
+        triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 903,
+                offset: 902,
+            },
+            rows: vec![crate::feature::FeatureRelationTriple {
+                relation_id: None,
+                equation_id: Some(equation_id),
+                skamp_id: Some(900),
+                offset: 902,
+            }],
         }),
         offset: 899,
     });

@@ -2490,7 +2490,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             skamps: definition
                 .relations
                 .iter()
-                .flat_map(|table| &table.skamps)
+                .flat_map(|table| table.skamps())
                 .map(|skamp| CreoSketchSkamp {
                     id: skamp.id,
                     kind: skamp.kind,
@@ -2510,7 +2510,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             relation_triples: definition
                 .relations
                 .iter()
-                .flat_map(|table| &table.triples)
+                .flat_map(|table| table.triples())
                 .map(|triple| CreoSketchRelationTriple {
                     relation: triple.relation_id,
                     equation: triple.equation_id,

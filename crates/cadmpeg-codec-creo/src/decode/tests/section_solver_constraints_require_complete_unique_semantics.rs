@@ -10,7 +10,10 @@ use cadmpeg_ir::sketches::{
     SketchLocus, SketchNativeOperand,
 };
 
-use super::{section_skamp_constraints, synchronize_segment_count, synchronize_skamp_count};
+use super::{
+    declared_solver_rows, section_skamp_constraints, synchronize_segment_count,
+    synchronize_skamp_count,
+};
 use crate::decode::records::sketch_section_point_records;
 use crate::decode::sketch::{
     resolved_section_coordinates, resolved_section_points, resolved_section_radii,

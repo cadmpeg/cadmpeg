@@ -851,27 +851,37 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(relations.rows[1].used, 1);
     assert_eq!(relations.rows[1].dimension_id, 42);
     assert_eq!(relations.rows[1].relation_type, 3);
-    assert_eq!(relations.skamps.len(), 1);
-    assert_eq!(relations.skamps[0].id, 5);
-    assert_eq!(relations.skamps[0].kind, 2);
-    assert_eq!(relations.skamps[0].items[0].entity_id, 42);
-    assert_eq!(relations.skamps[0].items[0].sense, 1);
-    let skamp_header = relations.skamp_header.as_ref().expect("skamp header");
+    assert_eq!(relations.skamps().len(), 1);
+    assert_eq!(relations.skamps()[0].id, 5);
+    assert_eq!(relations.skamps()[0].kind, 2);
+    assert_eq!(relations.skamps()[0].items[0].entity_id, 42);
+    assert_eq!(relations.skamps()[0].items[0].sense, 1);
+    let skamp_header = relations
+        .skamps
+        .as_ref()
+        .expect("skamp table")
+        .header()
+        .expect("skamp header");
     assert_eq!(skamp_header.declared_count, 1);
     assert_eq!(skamp_header.entity_ref, 107);
     assert!(relations.offset < skamp_header.offset);
-    assert!(skamp_header.offset <= relations.skamps[0].offset);
-    assert_eq!(relations.triples.len(), 2);
-    assert_eq!(relations.triples[0].relation_id, Some(7));
-    assert_eq!(relations.triples[0].equation_id, Some(8));
-    assert_eq!(relations.triples[0].skamp_id, Some(5));
-    assert_eq!(relations.triples[1].relation_id, None);
-    assert_eq!(relations.triples[1].equation_id, Some(9));
-    let triples_header = relations.triples_header.as_ref().expect("triples header");
+    assert!(skamp_header.offset <= relations.skamps()[0].offset);
+    assert_eq!(relations.triples().len(), 2);
+    assert_eq!(relations.triples()[0].relation_id, Some(7));
+    assert_eq!(relations.triples()[0].equation_id, Some(8));
+    assert_eq!(relations.triples()[0].skamp_id, Some(5));
+    assert_eq!(relations.triples()[1].relation_id, None);
+    assert_eq!(relations.triples()[1].equation_id, Some(9));
+    let triples_header = relations
+        .triples
+        .as_ref()
+        .expect("triples table")
+        .header()
+        .expect("triples header");
     assert_eq!(triples_header.declared_count, 2);
     assert_eq!(triples_header.entity_ref, 109);
     assert!(skamp_header.offset < triples_header.offset);
-    assert!(triples_header.offset <= relations.triples[0].offset);
+    assert!(triples_header.offset <= relations.triples()[0].offset);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -945,13 +955,13 @@ fn scan_decodes_extended_solver_incidences() {
         .as_ref()
         .expect("relat_ptr");
 
-    assert_eq!(relations.skamps.len(), 2);
-    assert_eq!(relations.skamps[1].id, 0x4001);
-    assert_eq!(relations.skamps[1].kind, 14);
-    assert_eq!(relations.skamps[1].flags, 0x4000);
-    assert_eq!(relations.skamps[1].status, 34);
+    assert_eq!(relations.skamps().len(), 2);
+    assert_eq!(relations.skamps()[1].id, 0x4001);
+    assert_eq!(relations.skamps()[1].kind, 14);
+    assert_eq!(relations.skamps()[1].flags, 0x4000);
+    assert_eq!(relations.skamps()[1].status, 34);
     assert_eq!(
-        relations.skamps[1]
+        relations.skamps()[1]
             .items
             .iter()
             .map(|item| (item.entity_id, item.sense))
