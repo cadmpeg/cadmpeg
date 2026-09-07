@@ -176,10 +176,10 @@ fn uuid_list(
     Ok((values, next))
 }
 
-fn array<T>(
-    reader: &mut BoundedReader<'_>,
+fn array<'a, T>(
+    reader: &mut BoundedReader<'a>,
     element_size: usize,
-    mut read: impl FnMut(&mut BoundedReader<'_>) -> Result<T, FramingError>,
+    mut read: impl FnMut(&mut BoundedReader<'a>) -> Result<T, FramingError>,
 ) -> Result<Vec<T>, FramingError> {
     let count = count(reader, element_size)?;
     let mut values = Vec::with_capacity(count);
@@ -401,14 +401,14 @@ fn poly_edge(
         reader.skip(segment_next - reader.position())?;
         segments.push(segment);
     }
-    let parameters = array(&mut reader, 8, |reader| reader.f64())?;
+    let parameters = array(&mut reader, 8, BoundedReader::f64)?;
     let evaluation_mode = reader.i32()?;
     reader.skip_remaining()?;
     Ok((
         HistoryPolyEdge {
             polyedge: PolyEdge {
-                segments,
                 parameters,
+                segments,
             },
             evaluation_mode,
         },
@@ -459,8 +459,8 @@ fn subd_edge_chain(
     }
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
-    let edge_ids = array(&mut reader, 4, |reader| reader.u32())?;
-    let orientations = array(&mut reader, 1, |reader| reader.u8())?;
+    let edge_ids = array(&mut reader, 4, BoundedReader::u32)?;
+    let orientations = array(&mut reader, 1, BoundedReader::u8)?;
     let edges = if edge_ids.len() != count || orientations.len() != count {
         warnings.push(
             "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
@@ -539,10 +539,10 @@ fn parse_value_with_warnings(
     let payload = reader.position()..reader.end();
     let value = match type_code {
         0 => Value::None,
-        1 => Value::Booleans(array(&mut reader, 1, |reader| reader.bool())?),
-        2 => Value::Integers(array(&mut reader, 4, |reader| reader.i32())?),
-        3 => Value::Doubles(array(&mut reader, 8, |reader| reader.f64())?),
-        4 => Value::Colors(array(&mut reader, 4, |reader| reader.array())?),
+        1 => Value::Booleans(array(&mut reader, 1, BoundedReader::bool)?),
+        2 => Value::Integers(array(&mut reader, 4, BoundedReader::i32)?),
+        3 => Value::Doubles(array(&mut reader, 8, BoundedReader::f64)?),
+        4 => Value::Colors(array(&mut reader, 4, BoundedReader::array)?),
         5 => Value::Points(array(&mut reader, 24, point)?),
         6 => Value::Vectors(array(&mut reader, 24, vector)?),
         7 => Value::Transforms(array(&mut reader, 128, xform)?),
@@ -690,17 +690,17 @@ fn value_text(value: &Value) -> Option<String> {
             .join(";"),
         Value::Points(values) => values
             .iter()
-            .map(|value| list(&value.0))
+            .map(|value| list(value.0))
             .collect::<Vec<_>>()
             .join(";"),
         Value::Vectors(values) => values
             .iter()
-            .map(|value| list(&value.0))
+            .map(|value| list(value.0))
             .collect::<Vec<_>>()
             .join(";"),
         Value::Transforms(values) => values
             .iter()
-            .map(|value| list(&value.0))
+            .map(|value| list(value.0))
             .collect::<Vec<_>>()
             .join(";"),
         Value::Strings(values) => values.join("\u{1f}"),
@@ -731,8 +731,8 @@ fn evaluation_properties(
     properties: &mut BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}.type"), value.parameter_type.to_string());
-    properties.insert(format!("{prefix}.component"), list(&value.component));
-    properties.insert(format!("{prefix}.parameters"), list(&value.parameters));
+    properties.insert(format!("{prefix}.component"), list(value.component));
+    properties.insert(format!("{prefix}.parameters"), list(value.parameters));
     for (index, interval) in value.intervals.iter().enumerate() {
         if let Some(interval) = interval {
             properties.insert(format!("{prefix}.interval_{index}"), list(interval));
@@ -746,12 +746,12 @@ fn object_reference_properties(
     properties: &mut BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}.object_id"), value.object_id.to_string());
-    properties.insert(format!("{prefix}.component"), list(&value.component));
+    properties.insert(format!("{prefix}.component"), list(value.component));
     properties.insert(
         format!("{prefix}.geometry_type"),
         value.geometry_type.to_string(),
     );
-    properties.insert(format!("{prefix}.point"), list(&value.point.0));
+    properties.insert(format!("{prefix}.point"), list(value.point.0));
     properties.insert(format!("{prefix}.osnap_mode"), value.osnap_mode.to_string());
     evaluation_properties(
         &format!("{prefix}.evaluation"),
@@ -768,7 +768,7 @@ fn object_reference_properties(
             format!("{path}.reference_id"),
             instance.reference_id.to_string(),
         );
-        properties.insert(format!("{path}.transform"), list(&instance.transform.0));
+        properties.insert(format!("{path}.transform"), list(instance.transform.0));
         properties.insert(
             format!("{path}.definition_id"),
             instance.definition_id.to_string(),
@@ -778,7 +778,7 @@ fn object_reference_properties(
             instance.geometry_index.to_string(),
         );
         if let Some(evaluation) = &instance.evaluation {
-            properties.insert(format!("{path}.component"), list(&evaluation.component));
+            properties.insert(format!("{path}.component"), list(evaluation.component));
             evaluation_properties(
                 &format!("{path}.evaluation"),
                 &evaluation.parameter,
@@ -1158,20 +1158,18 @@ fn structured_value_properties(
                         format!("{segment_key}.reversed"),
                         segment.reversed.to_string(),
                     );
-                    properties.insert(format!("{segment_key}.full_domain"), list(&segment.domain));
+                    properties.insert(format!("{segment_key}.full_domain"), list(segment.domain));
                     properties.insert(
                         format!("{segment_key}.sub_domain"),
-                        list(&segment.reference.sub_domain),
+                        list(segment.reference.sub_domain),
                     );
                     properties.insert(
                         format!("{segment_key}.proxy_domain"),
-                        list(&segment.proxy_domain),
+                        list(segment.proxy_domain),
                     );
                     if let Some(domains) = &segment.reference.domains {
-                        properties
-                            .insert(format!("{segment_key}.edge_domain"), list(&domains.edge));
-                        properties
-                            .insert(format!("{segment_key}.trim_domain"), list(&domains.trim));
+                        properties.insert(format!("{segment_key}.edge_domain"), list(domains.edge));
+                        properties.insert(format!("{segment_key}.trim_domain"), list(domains.trim));
                     }
                 }
             }
