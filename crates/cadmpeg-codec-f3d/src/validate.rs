@@ -6150,8 +6150,6 @@ fn validate_body_recipe_operands<'a>(
                 tail.offset >= operand.context_id_offset
                     && tail.offset.saturating_add(4) <= operand.next_byte_offset
             })
-            && valid_design_guid(&operand.asset_id)
-            && valid_design_guid(&operand.context_id)
             && recipe.is_some_and(|recipe| {
                 let selector_is_valid = recipe.design.as_ref().is_some_and(|design| {
                     let design_id = &design.id;

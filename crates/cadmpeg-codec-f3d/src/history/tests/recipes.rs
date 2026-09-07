@@ -496,9 +496,15 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         record_index: 2,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 
@@ -637,9 +643,15 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         record_index: 21,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 
@@ -841,9 +853,15 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         record_index: 21,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 

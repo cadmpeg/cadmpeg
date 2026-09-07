@@ -1964,11 +1964,11 @@ pub struct DesignBodyRecipeOperand {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the persistent selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: String,
+    pub context_id: DesignGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Raw four-byte selector-tail member after the fixed `u32 2`.
@@ -2072,9 +2072,9 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
-            asset_id: wire.asset_id,
+            asset_id: wire.asset_id.try_into()?,
             asset_id_offset: wire.asset_id_offset,
-            context_id: wire.context_id,
+            context_id: wire.context_id.try_into()?,
             context_id_offset: wire.context_id_offset,
             selector_tail: Located::from_wire(
                 wire.selector_tail,
@@ -2104,9 +2104,9 @@ impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
             record_index: record.record_index,
             byte_offset: record.byte_offset,
             class_tag: record.class_tag.into(),
-            asset_id: record.asset_id,
+            asset_id: record.asset_id.into(),
             asset_id_offset: record.asset_id_offset,
-            context_id: record.context_id,
+            context_id: record.context_id.into(),
             context_id_offset: record.context_id_offset,
             selector_tail: record.selector_tail.map(|tail| tail.value),
             selector_tail_offset: record.selector_tail.map(|tail| tail.offset),

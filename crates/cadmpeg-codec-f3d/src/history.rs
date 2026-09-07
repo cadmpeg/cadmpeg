@@ -1333,7 +1333,13 @@ fn combine_recipe_family_tool_slots(
     operands: &[crate::records::topology::DesignBodyRecipeOperand],
     recipes: &[crate::records::ConstructionRecipe],
 ) -> Option<Vec<i64>> {
-    type FamilyKey = (String, String, u64, u32, String);
+    type FamilyKey = (
+        crate::records::DesignGuidText,
+        crate::records::DesignGuidText,
+        u64,
+        u32,
+        String,
+    );
     type FamilyMember = (u32, Option<i64>, BTreeSet<i64>);
 
     if tool_record_indices.is_empty()

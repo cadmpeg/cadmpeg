@@ -3712,9 +3712,9 @@ fn parse_body_recipe_operand_frame_with_index(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        asset_id,
+        asset_id: asset_id.try_into().ok()?,
         asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
-        context_id,
+        context_id: context_id.try_into().ok()?,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         selector_tail: Some(crate::records::Located {
             value: selector_tail,

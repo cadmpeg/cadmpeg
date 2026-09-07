@@ -3150,7 +3150,7 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 }
 
 /// A hyphenated hexadecimal GUID with its original letter case.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "String"))]
 #[serde(try_from = "String", into = "String")]

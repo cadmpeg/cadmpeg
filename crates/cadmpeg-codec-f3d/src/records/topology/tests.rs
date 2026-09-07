@@ -27,7 +27,7 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
 
 #[test]
 fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
-    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"asset","asset_id_offset":100,"context_id":"context","context_id_offset":150"#;
+    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":100,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150"#;
     let suffix = r#","references":[],"nested_record_index":5,"nested_record_index_offset":80,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
     for fields in [
         "",
@@ -50,6 +50,17 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         )
         .expect_err("partial selector tail location");
         assert!(error.to_string().contains("selector_tail"));
+    }
+    for guid in [
+        "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+    ] {
+        let error = serde_json::from_str::<crate::records::topology::DesignBodyRecipeOperand>(
+            &format!("{prefix}{suffix}").replace(guid, "not-a-guid"),
+        )
+        .expect_err("non-GUID body recipe identity")
+        .to_string();
+        assert!(error.contains("GUID"), "{error}");
     }
 }
 
