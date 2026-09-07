@@ -150,42 +150,33 @@ fn walk(
             truncated = true;
             break;
         }
-        results.push(result_value(doc, start, &[], *start));
+        results.push(result_value(doc, *start, &[]));
         if hops == 0 {
             continue;
         }
 
-        let mut queue: VecDeque<(NodeRef, Vec<Value>, Vec<NodeRef>)> = VecDeque::new();
-        queue.push_back((*start, Vec::new(), vec![*start]));
+        let mut queue: VecDeque<Vec<AdjEdge>> = VecDeque::new();
+        queue.push_back(Vec::new());
 
-        while let Some((node, path, visited)) = queue.pop_front() {
-            if path.len() >= hops {
-                continue;
-            }
+        while let Some(path) = queue.pop_front() {
+            let node = path.last().map_or(*start, |edge| edge.to);
             let neighbors = match adj.get(node.arena).and_then(|row| row.get(node.rec)) {
                 Some(edges) => edges.as_slice(),
                 None => &[],
             };
             for edge in neighbors {
-                if visited.contains(&edge.to) {
+                if edge.to == *start || path.iter().any(|step| step.to == edge.to) {
                     continue;
                 }
                 if results.len() >= max_paths {
                     truncated = true;
                     break;
                 }
-                let step = json!({
-                    "from": doc.locator(node.arena, node.rec),
-                    "field": edge.field,
-                    "to": doc.locator(edge.to.arena, edge.to.rec),
-                });
                 let mut next_path = path.clone();
-                next_path.push(step);
-                results.push(result_value(doc, start, &next_path, edge.to));
+                next_path.push(edge.clone());
+                results.push(result_value(doc, *start, &next_path));
                 if next_path.len() < hops {
-                    let mut next_visited = visited.clone();
-                    next_visited.push(edge.to);
-                    queue.push_back((edge.to, next_path, next_visited));
+                    queue.push_back(next_path);
                 }
             }
             if truncated {
@@ -200,10 +191,23 @@ fn walk(
     WalkOutcome { results, truncated }
 }
 
-fn result_value(doc: &CadirDocument, start: &NodeRef, path: &[Value], node: NodeRef) -> Value {
+fn result_value(doc: &CadirDocument, start: NodeRef, path: &[AdjEdge]) -> Value {
+    let mut node = start;
+    let steps: Vec<Value> = path
+        .iter()
+        .map(|edge| {
+            let step = json!({
+                "from": doc.locator(node.arena, node.rec),
+                "field": edge.field,
+                "to": doc.locator(edge.to.arena, edge.to.rec),
+            });
+            node = edge.to;
+            step
+        })
+        .collect();
     json!({
         "start": doc.locator(start.arena, start.rec),
-        "path": path,
+        "path": steps,
         "record": doc.arenas()[node.arena].records[node.rec],
     })
 }
