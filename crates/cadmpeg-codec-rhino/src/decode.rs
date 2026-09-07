@@ -3753,7 +3753,6 @@ struct BrepCarrierDraft {
     c3: BTreeMap<i32, cadmpeg_ir::ids::CurveId>,
     surfaces: BTreeMap<i32, cadmpeg_ir::ids::SurfaceId>,
     plane_parameterizations: BTreeMap<i32, crate::surfaces::PlaneParameterization>,
-    child_failed: bool,
     child_cause: Option<String>,
 }
 
@@ -3848,7 +3847,6 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
     let mut c3 = BTreeMap::new();
     let mut surfaces = BTreeMap::new();
     let mut plane_parameterizations = BTreeMap::new();
-    let mut child_failed = false;
     let mut child_cause = None;
     for (kind, slots) in [
         ("render", &raw.render_meshes),
@@ -3930,11 +3928,9 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                 c3.insert(index as i32, id);
             }
             Ok(_) => {
-                child_failed = true;
                 child_cause = Some(format!("C3 slot {index} is not a curve"));
             }
             Err(error) => {
-                child_failed = true;
                 child_cause = Some(format!("C3 slot {index}: {error}"));
             }
         }
@@ -4005,16 +4001,13 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                     surfaces.insert(index as i32, id);
                 }
                 Err(error) => {
-                    child_failed = true;
                     child_cause = Some(format!("surface slot {index}: {error}"));
                 }
             },
             Ok(_) => {
-                child_failed = true;
                 child_cause = Some(format!("surface slot {index} is not a surface"));
             }
             Err(error) => {
-                child_failed = true;
                 child_cause = Some(format!("surface slot {index}: {error}"));
             }
         }
@@ -4024,7 +4017,6 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
         c3,
         surfaces,
         plane_parameterizations,
-        child_failed,
         child_cause,
     }
 }
@@ -4056,7 +4048,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         c3,
         surfaces,
         plane_parameterizations,
-        child_failed,
         child_cause,
     } = stage_brep_carriers(BrepCarrierInput {
         expand,
@@ -4070,11 +4061,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         scale,
         mesh_budget,
     });
-    if child_failed {
-        return Ok(finish_brep_fallback(
-            staged,
-            child_cause.unwrap_or_else(|| "child geometry decode failed".to_string()),
-        ));
+    if let Some(cause) = child_cause {
+        return Ok(finish_brep_fallback(staged, cause));
     }
     let (c2, pcurves, pcurve_warnings) =
         decode_pcurves(data, archive, raw, key, &plane_parameterizations);
