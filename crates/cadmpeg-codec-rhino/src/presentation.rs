@@ -492,13 +492,11 @@ struct V5DimensionStyleExtraRecord {
 #[derive(Debug, Default, Serialize)]
 struct FontRecord {
     characteristics: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    legacy_italic: Option<bool>,
+    #[serde(flatten)]
+    weight: FontWeight,
     windows_logfont_name: String,
     postscript_name: String,
     obsolete_description: String,
-    windows_logfont_weight: Option<i32>,
-    apple_weight_trait: Option<f64>,
     point_size: Option<f64>,
     family_name: String,
     locale_name: String,
@@ -512,6 +510,38 @@ struct FontRecord {
     english_face_name: String,
     panose: Option<[u8; 10]>,
     quartet_member: Option<u8>,
+}
+
+#[derive(Debug, Default)]
+enum FontWeight {
+    #[default]
+    Unspecified,
+    Legacy {
+        windows: i32,
+        italic: bool,
+    },
+    Modern {
+        windows: i32,
+        apple: f64,
+    },
+}
+
+impl Serialize for FontWeight {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        let (windows, apple) = match self {
+            Self::Unspecified => (None, None),
+            Self::Legacy { windows, italic } => {
+                map.serialize_entry("legacy_italic", italic)?;
+                (Some(*windows), None)
+            }
+            Self::Modern { windows, apple } => (Some(*windows), Some(*apple)),
+        };
+        map.serialize_entry("windows_logfont_weight", &windows)?;
+        map.serialize_entry("apple_weight_trait", &apple)?;
+        map.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -3833,8 +3863,10 @@ fn parse_font(
         font.obsolete_description = utf16(&mut value)?;
     }
     if minor >= 2 {
-        font.windows_logfont_weight = Some(value.i32()?);
-        font.apple_weight_trait = Some(read_finite(&mut value, "Apple font weight trait")?);
+        font.weight = FontWeight::Modern {
+            windows: value.i32()?,
+            apple: read_finite(&mut value, "Apple font weight trait")?,
+        };
     }
     if minor >= 3 {
         font.point_size = Some(read_finite(&mut value, "font point size")?);
@@ -3927,7 +3959,7 @@ fn parse_text_style(
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {
-            font.windows_logfont_weight = Some(reader.i32()?);
+            let windows = reader.i32()?;
             let italic = reader.i32()?;
             if !matches!(italic, 0 | 1) {
                 return Err(FramingError::structural(
@@ -3936,7 +3968,10 @@ fn parse_text_style(
                 ));
             }
             let _linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
-            font.legacy_italic = Some(italic != 0);
+            font.weight = FontWeight::Legacy {
+                windows,
+                italic: italic != 0,
+            };
         }
         let id = if packed & 0x0f >= 2 {
             uuid(&mut reader)?
@@ -5239,9 +5274,15 @@ mod tests {
         .expect("valid legacy text style");
         assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.font.windows_logfont_name, "Helvetica Neue");
-        assert_eq!(value.font.windows_logfont_weight, Some(700));
+        assert!(matches!(
+            value.font.weight,
+            FontWeight::Legacy { windows: 700, .. }
+        ));
         assert_eq!(value.font.characteristics, 0);
-        assert_eq!(value.font.legacy_italic, Some(true));
+        assert!(matches!(
+            value.font.weight,
+            FontWeight::Legacy { italic: true, .. }
+        ));
         assert_eq!(value.source_offset, 42);
     }
 
