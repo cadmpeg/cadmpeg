@@ -2450,8 +2450,12 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
                             interpolation_points_body: spline.interpolation_points_body.clone(),
-                            endpoint_tangents: spline.endpoint_tangents.clone(),
-                            parameters: spline.parameters.clone(),
+                            endpoint_tangents: crate::decode::native_records::SplineTangents(
+                                spline.endpoint_tangents.clone(),
+                            ),
+                            parameters: crate::decode::native_records::SplineParameters(
+                                spline.parameters.clone(),
+                            ),
                             offset: spline.offset,
                         }
                     }
