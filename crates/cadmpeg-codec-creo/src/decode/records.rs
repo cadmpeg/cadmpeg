@@ -2434,19 +2434,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
                             interpolation_points_body: spline.interpolation_points_body.clone(),
-                            endpoint_tangents: spline
-                                .endpoint_tangents
-                                .as_ref()
-                                .map(|field| field.value),
-                            endpoint_tangents_body: spline
-                                .endpoint_tangents
-                                .as_ref()
-                                .map(|field| field.body.clone()),
-                            parameters: spline.parameters.as_ref().map(|field| field.value.clone()),
-                            parameters_body: spline
-                                .parameters
-                                .as_ref()
-                                .map(|field| field.body.clone()),
+                            endpoint_tangents: spline.endpoint_tangents.clone(),
+                            parameters: spline.parameters.clone(),
                             offset: spline.offset,
                         }
                     }
@@ -2466,9 +2455,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|dimension| CreoSketchDimension {
                     external_id: dimension.external_id,
                     dimension_type: dimension.dimension_type,
-                    value: dimension.value.resolved(),
+                    value: dimension.value.clone(),
                     value_body: dimension.value_body.clone(),
-                    unresolved_value_token: dimension.value.unresolved_token().map(<[u8]>::to_vec),
                     unit: match dimension.unit() {
                         crate::feature::DimensionUnit::Radians => "radians",
                         crate::feature::DimensionUnit::Millimeters => "millimeters",
