@@ -13,6 +13,7 @@ use super::pcurves::{
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
@@ -31,7 +32,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -77,15 +78,20 @@ pub(super) fn emit_topology(
         .collect();
     let valid_edge_xmts: BTreeSet<u32> = valid_fin_xmts
         .iter()
-        .filter_map(|xmt| graph.get(17, *xmt)?.fin_fields().map(|fields| fields.edge))
+        .filter_map(|xmt| {
+            graph
+                .get(NodeKind::Fin, *xmt)?
+                .fin_fields()
+                .map(|fields| fields.edge)
+        })
         .collect();
     let valid_vertex_xmts: BTreeSet<u32> = valid_fin_xmts
         .iter()
         .flat_map(|xmt| {
-            let fields = graph.get(17, *xmt).and_then(Node::fin_fields);
+            let fields = graph.get(NodeKind::Fin, *xmt).and_then(Node::fin_fields);
             let partner_vertex = fields
                 .filter(|fields| fields.other > 1)
-                .and_then(|fields| graph.get(17, fields.other))
+                .and_then(|fields| graph.get(NodeKind::Fin, fields.other))
                 .and_then(Node::fin_fields)
                 .map(|fields| fields.vertex);
             [fields.map(|fields| fields.vertex), partner_vertex]
@@ -101,7 +107,7 @@ pub(super) fn emit_topology(
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
         let id = BodyId::mint(format!("{prefix}:body#{body_xmt}")).expect("identity grammar");
-        if let Some(node) = graph.get(12, body_xmt) {
+        if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(annotations, &id, source_stream, node, "BODY");
         } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
             shell
@@ -142,7 +148,7 @@ pub(super) fn emit_topology(
         } else {
             let region = RegionId::mint(format!("{prefix}:region#{}", fields.region))
                 .expect("identity grammar");
-            if let Some(region_node) = graph.get(19, fields.region) {
+            if let Some(region_node) = graph.get(NodeKind::Region, fields.region) {
                 annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
                 annotations
@@ -198,7 +204,7 @@ pub(super) fn emit_topology(
     let mut vertices = BTreeMap::new();
     let mut vertex_positions = BTreeMap::new();
     for node in graph
-        .of_kind(18)
+        .of_kind(NodeKind::Vertex)
         .filter(|node| valid_vertex_xmts.contains(&node.xmt))
     {
         let Some(fields) = node.vertex_fields() else {
@@ -250,13 +256,13 @@ pub(super) fn emit_topology(
     let mut curve_point_cache = CurvePointCache::default();
     let mut edges = BTreeMap::new();
     for node in graph
-        .of_kind(16)
+        .of_kind(NodeKind::Edge)
         .filter(|node| valid_edge_xmts.contains(&node.xmt))
     {
         let Some(fields) = node.edge_fields() else {
             continue;
         };
-        let Some(fin) = graph.get(17, fields.fin) else {
+        let Some(fin) = graph.get(NodeKind::Fin, fields.fin) else {
             continue;
         };
         let Some(fin_fields) = fin.fin_fields() else {
@@ -369,7 +375,7 @@ pub(super) fn emit_topology(
         } else {
             fin_fields.forward
         };
-        let Some(end_fields) = graph.get(17, end_fin).and_then(Node::fin_fields) else {
+        let Some(end_fields) = graph.get(NodeKind::Fin, end_fin).and_then(Node::fin_fields) else {
             continue;
         };
         let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
@@ -439,7 +445,7 @@ pub(super) fn emit_topology(
         .collect();
     let mut faces = BTreeMap::new();
     for node in graph
-        .of_kind(14)
+        .of_kind(NodeKind::Face)
         .filter(|node| valid_face_xmts.contains(&node.xmt))
     {
         let Some(fields) = node.face_fields() else {
@@ -460,7 +466,7 @@ pub(super) fn emit_topology(
             id: id.clone(),
             shell: shell.clone(),
             surface,
-            sense: sense(Some(fields.sense)),
+            sense: fields.sense,
             loops: Vec::new().into(),
             name: None,
             color: None,
@@ -480,14 +486,14 @@ pub(super) fn emit_topology(
     for &loop_xmt in valid_loop_rings.keys() {
         let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
             graph
-                .get(17, *fin_xmt)
+                .get(NodeKind::Fin, *fin_xmt)
                 .and_then(Node::fin_fields)
                 .is_some_and(|fields| edges.contains_key(&fields.edge))
         });
         if !ring_resolves {
             continue;
         }
-        let Some(node) = graph.get(15, loop_xmt) else {
+        let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
         };
         let Some(fields) = node.loop_fields() else {
@@ -520,7 +526,7 @@ pub(super) fn emit_topology(
         .iter()
         .filter(|xmt| {
             graph
-                .get(17, **xmt)
+                .get(NodeKind::Fin, **xmt)
                 .and_then(Node::fin_fields)
                 .is_some_and(|fields| loops.contains_key(&fields.loop_xmt))
         })
@@ -563,12 +569,12 @@ pub(super) fn emit_topology(
         let valid_pcurve_fins = fin_ids
             .keys()
             .filter_map(|fin_xmt| {
-                let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
+                let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
                 let edge = edges.get(&fields.edge)?;
                 let support = graph
-                    .get(15, fields.loop_xmt)
+                    .get(NodeKind::Loop, fields.loop_xmt)
                     .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get(14, loop_.face))
+                    .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
                     .and_then(Node::face_fields)
                     .and_then(|face| surfaces.get(&face.surface))?;
                 let carrier = pcurves
@@ -613,12 +619,12 @@ pub(super) fn emit_topology(
                 if valid_pcurve_fins.contains(fin_xmt) {
                     return None;
                 }
-                let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
+                let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
                 let edge = edges.get(&fields.edge)?;
                 let support = graph
-                    .get(15, fields.loop_xmt)
+                    .get(NodeKind::Loop, fields.loop_xmt)
                     .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get(14, loop_.face))
+                    .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
                     .and_then(Node::face_fields)
                     .and_then(|face| surfaces.get(&face.surface))
                     .cloned()?;
@@ -645,7 +651,7 @@ pub(super) fn emit_topology(
     };
     let mut serialized_branch_pcurves = BTreeSet::new();
     for &fin_xmt in fin_ids.keys() {
-        let Some(node) = graph.get(17, fin_xmt) else {
+        let Some(node) = graph.get(NodeKind::Fin, fin_xmt) else {
             continue;
         };
         let Some(fields) = node.fin_fields() else {
@@ -670,9 +676,9 @@ pub(super) fn emit_topology(
         let partner = fin_ids.get(&fields.other).cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
         let support = graph
-            .get(15, fields.loop_xmt)
+            .get(NodeKind::Loop, fields.loop_xmt)
             .and_then(Node::loop_fields)
-            .and_then(|loop_| graph.get(14, loop_.face))
+            .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
             .and_then(Node::face_fields)
             .and_then(|face| surfaces.get(&face.surface))
             .cloned();
@@ -730,7 +736,7 @@ pub(super) fn emit_topology(
             owner_loop: loop_id.clone(),
             edge,
             radial_next,
-            sense: sense(Some(fields.sense)),
+            sense: fields.sense,
             pcurves: pcurve
                 .into_iter()
                 .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
@@ -820,7 +826,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
 ) {
     let unknown = UnknownId::mint(format!("nx:container:parasolid#{stream_index}"))
         .expect("identity grammar");
-    for face in graph.of_kind(14) {
+    for face in graph.of_kind(NodeKind::Face) {
         let Some(surface_xmt) = face.face_fields().map(|fields| fields.surface) else {
             continue;
         };
@@ -843,7 +849,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         surfaces.insert(surface_xmt, id);
     }
 
-    for edge in graph.of_kind(16) {
+    for edge in graph.of_kind(NodeKind::Edge) {
         let Some(curve_xmt) = edge.edge_fields().map(|fields| fields.curve) else {
             continue;
         };
@@ -1155,14 +1161,6 @@ fn orient_edge_range_for_geometry_with_budget(
     }
 }
 
-pub(crate) fn sense(byte: Option<u8>) -> Sense {
-    if byte == Some(b'-') {
-        Sense::Reversed
-    } else {
-        Sense::Forward
-    }
-}
-
 pub(crate) fn unknown_stream(
     ctx: &DecodeContext<'_>,
     si: usize,
@@ -1317,7 +1315,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     for (index, stream) in scan
         .streams
         .iter()
-        .filter(|stream| stream.kind == StreamKind::Deltas)
+        .filter(|stream| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
         let census = crate::deltas::walk(&stream.inflated);
@@ -1374,10 +1372,10 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
                 census.inline_schema_declarations.len().to_string(),
             );
         }
-        for (name, count) in census.full_counts {
+        for (name, count) in census.full_counts() {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }
-        for (name, count) in census.tombstone_counts {
+        for (name, count) in census.tombstone_counts() {
             attributes.insert(
                 format!("deltas.{index}.tombstone.{name}"),
                 count.to_string(),
@@ -1402,8 +1400,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: vec![1, 2, 3],
-            kind: StreamKind::Partition,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Partition,
+                schema: None,
+            },
         };
 
         assert!(matches!(

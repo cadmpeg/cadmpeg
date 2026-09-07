@@ -29,6 +29,7 @@ use super::support_uv::{
     IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
+use crate::framing::node_kind::NodeKind;
 use crate::geometry;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -61,7 +62,7 @@ pub(crate) fn ordered_point_candidates<'a>(
             .into_iter()
             .map(|point| (point.pos, point.position)),
         graph,
-        29..=29,
+        [NodeKind::Point],
         Node::point_position,
     )
 }
@@ -75,7 +76,13 @@ pub(crate) fn ordered_surface_candidates<'a>(
             .into_iter()
             .map(|surface| (surface.pos, surface.geometry)),
         graph,
-        50..=54,
+        [
+            NodeKind::Plane,
+            NodeKind::Cylinder,
+            NodeKind::Cone,
+            NodeKind::Sphere,
+            NodeKind::Torus,
+        ],
         Node::surface_geometry,
     )
 }
@@ -89,7 +96,7 @@ pub(crate) fn ordered_curve_candidates<'a>(
             .into_iter()
             .map(|curve| (curve.pos, curve.geometry)),
         graph,
-        30..=32,
+        [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
         Node::curve_geometry,
     )
 }
@@ -97,7 +104,7 @@ pub(crate) fn ordered_curve_candidates<'a>(
 pub(crate) fn ordered_fixed_candidates<T>(
     fallback: impl IntoIterator<Item = (usize, T)>,
     graph: &Graph,
-    kinds: std::ops::RangeInclusive<u8>,
+    kinds: impl IntoIterator<Item = NodeKind>,
     graph_value: impl Fn(&Node) -> Option<T>,
 ) -> Vec<(T, &Node)> {
     let mut candidates = BTreeMap::new();
@@ -110,7 +117,7 @@ pub(crate) fn ordered_fixed_candidates<T>(
         };
         candidates.insert(offset, (value, node));
     }
-    for node in kinds.flat_map(|kind| graph.of_kind(kind)) {
+    for node in kinds.into_iter().flat_map(|kind| graph.of_kind(kind)) {
         if let Some(value) = graph_value(node) {
             candidates.insert(node.pos, (value, node));
         }
@@ -156,7 +163,7 @@ pub(crate) fn try_decode_geometry(
         })
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             body_node_ids.extend(topology_body_node_ids(
                 si,
                 &parsed.stream(si).view_for_geometry().graph,
@@ -201,7 +208,7 @@ pub(crate) fn try_decode_geometry(
         .iter()
         .enumerate()
         .filter(|(si, stream)| {
-            stream.kind.is_parasolid()
+            stream.kind().is_parasolid()
                 && preselection
                     .as_ref()
                     .is_none_or(|(_, selected, _)| selected.contains(si))
@@ -242,7 +249,7 @@ pub(crate) fn try_decode_geometry(
     let mut completion_streams = Vec::new();
 
     for (si, stream) in scan.streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
+        if !stream.kind().is_parasolid() {
             continue;
         }
         adaptive_geometry_budget.clear_blend_frame_cache();
@@ -259,7 +266,7 @@ pub(crate) fn try_decode_geometry(
             let container_stream = annotations.stream("nx:container");
             annotations
                 .note(unknown.id(), container_stream, stream.file_offset as u64)
-                .tag(stream.kind.label());
+                .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
@@ -272,7 +279,7 @@ pub(crate) fn try_decode_geometry(
         } = parsed.parse_nurbs(si);
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
-        let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
+        let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
         completion_streams.push((si, source_stream));
         let graph = &view.graph;
@@ -606,8 +613,8 @@ pub(crate) fn try_decode_geometry(
                     let mut support_uv = validate_serialized_support_uv_with_index(
                         &model_index,
                         &surfaces_by_xmt,
-                        charted.supports,
-                        charted.samples.points(),
+                        [Some(charted.primary_support), charted.secondary_support],
+                        &charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.support_uv,
                         &serialized_support_uv_geometry_budget,
@@ -615,8 +622,8 @@ pub(crate) fn try_decode_geometry(
                     if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
                         &model_index,
                         &surfaces_by_xmt,
-                        charted.supports,
-                        charted.samples.points(),
+                        [Some(charted.primary_support), charted.secondary_support],
+                        &charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.ext_support_uv,
                         &serialized_support_uv_geometry_budget,
@@ -687,8 +694,8 @@ pub(crate) fn try_decode_geometry(
                     CurveGeometry::Nurbs(
                         NurbsCurve::new(
                             1,
-                            linear_knots(charted.samples.parameters()),
-                            charted.samples.points().to_vec(),
+                            linear_knots(&charted.samples.parameters()),
+                            charted.samples.points(),
                             None,
                             false,
                         )
@@ -727,23 +734,22 @@ pub(crate) fn try_decode_geometry(
                     .get(&construction.xmt)
                     .cloned()
                     .unwrap_or([None, None]);
+                let parameters = charted.samples.parameters();
                 let first = intersection_side(
                     &ir,
                     &surfaces_by_xmt,
-                    charted.supports[0],
+                    Some(charted.primary_support),
                     support_uv[0]
                         .as_deref()
-                        .filter(|uv| uv.len() == charted.samples.parameters().len())
-                        .map(|uv| (uv, charted.samples.parameters())),
+                        .map(|uv| (uv, parameters.as_slice())),
                 );
                 let second = intersection_side(
                     &ir,
                     &surfaces_by_xmt,
-                    charted.supports[1],
+                    charted.secondary_support,
                     support_uv[1]
                         .as_deref()
-                        .filter(|uv| uv.len() == charted.samples.parameters().len())
-                        .map(|uv| (uv, charted.samples.parameters())),
+                        .map(|uv| (uv, parameters.as_slice())),
                 );
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
@@ -1041,7 +1047,7 @@ pub(crate) fn try_decode_geometry(
         let container_stream = annotations.stream("nx:container");
         annotations
             .note(unknown.id(), container_stream, stream.file_offset as u64)
-            .tag(stream.kind.label());
+            .tag(stream.kind().label());
         annotations.exactness(unknown.id(), Exactness::Derived);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
@@ -1315,7 +1321,7 @@ pub(crate) fn topology_body_node_ids(
         .into_iter()
         .filter_map(|body_xmt| {
             let shells: BTreeSet<_> = graph
-                .of_kind(13)
+                .of_kind(NodeKind::Shell)
                 .filter(|shell| {
                     shell
                         .shell_fields()
@@ -1324,7 +1330,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|shell| shell.xmt)
                 .collect();
             let faces: Vec<_> = graph
-                .of_kind(14)
+                .of_kind(NodeKind::Face)
                 .filter(|face| {
                     face.face_fields()
                         .is_some_and(|fields| shells.contains(&fields.shell))
@@ -1332,7 +1338,7 @@ pub(crate) fn topology_body_node_ids(
                 .collect();
             let face_xmts: BTreeSet<_> = faces.iter().map(|face| face.xmt).collect();
             let loops: BTreeSet<_> = graph
-                .of_kind(15)
+                .of_kind(NodeKind::Loop)
                 .filter(|loop_| {
                     loop_
                         .loop_fields()
@@ -1341,7 +1347,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|loop_| loop_.xmt)
                 .collect();
             let fins: Vec<_> = graph
-                .of_kind(17)
+                .of_kind(NodeKind::Fin)
                 .filter(|fin| {
                     fin.fin_fields()
                         .is_some_and(|fields| loops.contains(&fields.loop_xmt))
@@ -1360,7 +1366,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|face| face.u32_at(4))
                 .collect::<Option<BTreeSet<_>>>()?;
             let edges = graph
-                .of_kind(16)
+                .of_kind(NodeKind::Edge)
                 .filter(|edge| edge_xmts.contains(&edge.xmt))
                 .collect::<Vec<_>>();
             if edges.len() != edge_xmts.len() {
@@ -1371,7 +1377,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|edge| edge.u32_at(4))
                 .collect::<Option<BTreeSet<_>>>()?;
             let vertices = graph
-                .of_kind(18)
+                .of_kind(NodeKind::Vertex)
                 .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
                 .collect::<Vec<_>>();
             if vertices.len() != vertex_xmts.len() {

@@ -24,15 +24,19 @@ impl TopologyAttributeKind {
         Self::Vertex,
     ];
 
-    pub(crate) fn code(self) -> u8 {
+    pub(crate) fn node_kind(self) -> crate::framing::node_kind::NodeKind {
         match self {
-            Self::Shell => 13,
-            Self::Face => 14,
-            Self::Loop => 15,
-            Self::Edge => 16,
-            Self::Fin => 17,
-            Self::Vertex => 18,
+            Self::Shell => crate::framing::node_kind::NodeKind::Shell,
+            Self::Face => crate::framing::node_kind::NodeKind::Face,
+            Self::Loop => crate::framing::node_kind::NodeKind::Loop,
+            Self::Edge => crate::framing::node_kind::NodeKind::Edge,
+            Self::Fin => crate::framing::node_kind::NodeKind::Fin,
+            Self::Vertex => crate::framing::node_kind::NodeKind::Vertex,
         }
+    }
+
+    pub(crate) fn code(self) -> u8 {
+        self.node_kind().code()
     }
 
     pub(crate) fn as_str(self) -> &'static str {
@@ -49,7 +53,7 @@ impl TopologyAttributeKind {
 
 impl From<TopologyAttributeKind> for u8 {
     fn from(kind: TopologyAttributeKind) -> Self {
-        kind.code()
+        kind.node_kind().code()
     }
 }
 

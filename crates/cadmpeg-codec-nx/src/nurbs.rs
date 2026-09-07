@@ -7,6 +7,7 @@
 //! weights cause the affected carrier to be omitted.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::deltas::record_family::RecordFamily;
@@ -69,7 +70,7 @@ fn decode_surfaces(
     descriptors: &BTreeMap<u32, SurfaceDescriptor>,
 ) -> Vec<Surface> {
     graph
-        .of_kind(124)
+        .of_kind(NodeKind::BSurface)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
@@ -175,7 +176,7 @@ fn decode_pcurves(
     descriptors: &BTreeMap<u32, CurveDescriptor>,
 ) -> Vec<Pcurve> {
     graph
-        .of_kind(134)
+        .of_kind(NodeKind::BCurve)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
@@ -259,7 +260,7 @@ fn decode_curves(
     descriptors: &BTreeMap<u32, CurveDescriptor>,
 ) -> Vec<Curve> {
     graph
-        .of_kind(134)
+        .of_kind(NodeKind::BCurve)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;

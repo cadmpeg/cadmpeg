@@ -9,6 +9,7 @@ use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
+use crate::framing::node_kind::NodeKind;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_ir::document::CadIr;
@@ -47,7 +48,7 @@ pub(crate) fn saved_offset_carriers(
         return BTreeMap::new();
     }
     let face_surfaces = graph
-        .of_kind(14)
+        .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)
         .map(|face| face.surface)
         .collect::<BTreeSet<_>>();
@@ -2193,10 +2194,10 @@ pub(crate) fn point_distance(first: Point3, second: Point3) -> f64 {
 pub(crate) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    surface_xmt: u32,
+    surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
     uv: Option<(&[[f64; 2]], &[f64])>,
 ) -> IntcurveSupportSide {
-    let surface = surfaces_by_xmt.get(&surface_xmt).cloned();
+    let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
     let pcurve = surface.as_ref().and_then(|surface_id| {
         let geometry = ir
             .model

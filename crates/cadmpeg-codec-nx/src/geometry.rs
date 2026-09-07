@@ -13,6 +13,7 @@
 //! Use [`crate::topology`] to resolve returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -104,11 +105,11 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
             p += 1;
             continue;
         }
-        let kind = stream[p + 1];
-        let Some(len) = fixed_len(kind) else {
+        let Ok(kind) = NodeKind::try_from(stream[p + 1]) else {
             p += 1;
             continue;
         };
+        let len = fixed_len(kind);
         if !is_analytic_kind(kind) {
             p += 1;
             continue;
@@ -135,8 +136,19 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
     out
 }
 
-fn is_analytic_kind(kind: u8) -> bool {
-    matches!(kind, 0x1d | 0x1e..=0x20 | 0x32..=0x36)
+fn is_analytic_kind(kind: NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Point
+            | NodeKind::Line
+            | NodeKind::Circle
+            | NodeKind::Ellipse
+            | NodeKind::Plane
+            | NodeKind::Cylinder
+            | NodeKind::Cone
+            | NodeKind::Sphere
+            | NodeKind::Torus
+    )
 }
 
 struct AnalyticCandidate {
@@ -147,12 +159,12 @@ struct AnalyticCandidate {
 fn analytic_candidate(
     stream: &[u8],
     pos: usize,
-    kind: u8,
+    kind: NodeKind,
     frame: FixedRecordFrame,
 ) -> Option<AnalyticCandidate> {
     let record_bytes = stream.get(pos..frame.end)?;
     let record = match kind {
-        0x1d => {
+        NodeKind::Point => {
             let mut at = pos + 8 + frame.shift;
             skip_sequence_at(stream, &mut at, 4)?;
             let xyz = vec3_be_at(stream, at)?;
@@ -163,10 +175,18 @@ fn analytic_candidate(
                     position: mm_point(xyz),
                 }))?
         }
-        0x32..=0x36 => decode_surface_record(record_bytes, kind, frame.shift + frame.payload_shift)
-            .map(|geometry| AnalyticRecord::Surface(DecodedSurface { pos, geometry }))?,
-        0x1e..=0x20 => decode_curve_record(record_bytes, kind, frame.shift + frame.payload_shift)
-            .map(|geometry| AnalyticRecord::Curve(DecodedCurve { pos, geometry }))?,
+        NodeKind::Plane
+        | NodeKind::Cylinder
+        | NodeKind::Cone
+        | NodeKind::Sphere
+        | NodeKind::Torus => {
+            decode_surface_record(record_bytes, kind, frame.shift + frame.payload_shift)
+                .map(|geometry| AnalyticRecord::Surface(DecodedSurface { pos, geometry }))?
+        }
+        NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse => {
+            decode_curve_record(record_bytes, kind, frame.shift + frame.payload_shift)
+                .map(|geometry| AnalyticRecord::Curve(DecodedCurve { pos, geometry }))?
+        }
         _ => return None,
     };
     Some(AnalyticCandidate { frame, record })
@@ -196,27 +216,31 @@ fn select_analytic_candidate(
 /// Decode a graph-owned analytic surface at its resolved payload shift.
 pub(crate) fn decode_surface_record(
     record: &[u8],
-    kind: u8,
+    kind: NodeKind,
     shift: usize,
 ) -> Option<SurfaceGeometry> {
     let b = shift;
     match kind {
-        0x32 => plane(record, b),
-        0x33 => cylinder(record, b),
-        0x34 => cone(record, b),
-        0x35 => sphere(record, b),
-        0x36 => torus(record, b),
+        NodeKind::Plane => plane(record, b),
+        NodeKind::Cylinder => cylinder(record, b),
+        NodeKind::Cone => cone(record, b),
+        NodeKind::Sphere => sphere(record, b),
+        NodeKind::Torus => torus(record, b),
         _ => None,
     }
 }
 
 /// Decode a graph-owned analytic curve at its resolved payload shift.
-pub(crate) fn decode_curve_record(record: &[u8], kind: u8, shift: usize) -> Option<CurveGeometry> {
+pub(crate) fn decode_curve_record(
+    record: &[u8],
+    kind: NodeKind,
+    shift: usize,
+) -> Option<CurveGeometry> {
     let b = shift;
     match kind {
-        0x1e => line(record, b),
-        0x1f => circle(record, b),
-        0x20 => ellipse(record, b),
+        NodeKind::Line => line(record, b),
+        NodeKind::Circle => circle(record, b),
+        NodeKind::Ellipse => ellipse(record, b),
         _ => None,
     }
 }

@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::framing::node_kind::NodeKind;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -53,7 +54,7 @@ fn topology_retains_shell_body_identity_without_body_record() {
     stream[body..body + 24].fill(0xff);
 
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.get(12, 2).is_none());
+    assert!(graph.get(NodeKind::Body, 2).is_none());
     assert_eq!(graph.body_shape_shells().len(), 1);
 
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -73,7 +74,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
     let fixed_nodes = crate::topology::Graph::parse(&stream)
         .nodes
         .values()
-        .filter(|node| node.kind != 17)
+        .filter(|node| node.kind != NodeKind::Fin)
         .map(|node| (node.pos, node.shift))
         .collect::<Vec<_>>();
     for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
@@ -89,7 +90,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
     assert!(graph
         .nodes
         .values()
-        .filter(|node| node.kind != 17)
+        .filter(|node| node.kind != NodeKind::Fin)
         .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
 
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -106,14 +107,16 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
 fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
     let mut stream = topology_partition_stream();
     let initial_graph = crate::topology::Graph::parse(&stream);
-    let face = initial_graph.get(14, 4).unwrap();
+    let face = initial_graph.get(NodeKind::Face, 4).unwrap();
     let node_id_offset = face.pos + 4 + face.shift;
     stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
     let graph = crate::topology::Graph::parse(&stream);
 
     assert_eq!(
-        graph.get(14, 4).and_then(crate::topology::Node::node_id),
+        graph
+            .get(NodeKind::Face, 4)
+            .and_then(crate::topology::Node::node_id),
         Some(u32::MAX)
     );
     assert_eq!(graph.body_shape_face_count(), 1);
@@ -125,7 +128,9 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
     let mut stream = topology_partition_stream();
     let initial_graph = Graph::parse(&stream);
     for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
-        let node = initial_graph.get(kind, xmt).unwrap();
+        let node = initial_graph
+            .get(NodeKind::try_from(kind).unwrap(), xmt)
+            .unwrap();
         let node_id_offset = node.pos + 4 + node.shift;
         stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
     }
@@ -134,7 +139,9 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
 
     for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
         assert_eq!(
-            graph.get(kind, xmt).and_then(|node| node.u32_at(4)),
+            graph
+                .get(NodeKind::try_from(kind).unwrap(), xmt)
+                .and_then(|node| node.u32_at(4)),
             Some(u32::MAX)
         );
     }
@@ -170,8 +177,8 @@ fn topology_rejects_unreferenced_high_identity_carrier() {
 
     let graph = Graph::parse(&stream);
 
-    assert!(graph.get(50, 99).is_none());
-    assert!(graph.get(30, 100).is_some());
+    assert!(graph.get(NodeKind::Plane, 99).is_none());
+    assert!(graph.get(NodeKind::Line, 100).is_some());
     assert!(graph.has_complete_body_topology());
 }
 
@@ -179,13 +186,16 @@ fn topology_rejects_unreferenced_high_identity_carrier() {
 fn topology_admits_high_identity_region_from_shell_ownership() {
     let mut stream = topology_partition_stream();
     let initial_graph = Graph::parse(&stream);
-    let region = initial_graph.get(19, 12).unwrap();
+    let region = initial_graph.get(NodeKind::Region, 12).unwrap();
     let node_id_offset = region.pos + 4 + region.shift;
     stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
     let graph = Graph::parse(&stream);
 
-    assert_eq!(graph.get(19, 12).and_then(Node::node_id), Some(u32::MAX));
+    assert_eq!(
+        graph.get(NodeKind::Region, 12).and_then(Node::node_id),
+        Some(u32::MAX)
+    );
     assert!(graph.has_complete_body_topology());
 }
 
@@ -193,14 +203,16 @@ fn topology_admits_high_identity_region_from_shell_ownership() {
 fn topology_closes_high_identity_procedural_surface_dependencies() {
     let mut stream = offset_surface_topology_partition_stream();
     let initial_graph = Graph::parse(&stream);
-    let offset = initial_graph.get(60, 12).unwrap();
+    let offset = initial_graph.get(NodeKind::OffsetSurface, 12).unwrap();
     let node_id_offset = offset.pos + 4 + offset.shift;
     stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
     let graph = Graph::parse(&stream);
 
     assert_eq!(
-        graph.get(60, 12).and_then(|node| node.u32_at(4)),
+        graph
+            .get(NodeKind::OffsetSurface, 12)
+            .and_then(|node| node.u32_at(4)),
         Some(u32::MAX)
     );
     assert_eq!(graph.offset_surfaces().len(), 1);
@@ -216,17 +228,26 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
 fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
     let mut stream = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&stream);
-    let face = graph.get(14, 4).unwrap();
+    let face = graph.get(NodeKind::Face, 4).unwrap();
     let node_id = face.node_id().unwrap();
-    assert_eq!(graph.unique_xmt_by_node_id(14, node_id), Some(4));
-    assert_eq!(graph.unique_xmt_by_node_id(16, node_id), Some(8));
+    assert_eq!(
+        graph.unique_xmt_by_node_id(NodeKind::Face, node_id),
+        Some(4)
+    );
+    assert_eq!(
+        graph.unique_xmt_by_node_id(NodeKind::Edge, node_id),
+        Some(8)
+    );
 
     let mut duplicate = face.bytes.clone();
     duplicate[3] = 39;
     stream.extend(duplicate);
     let graph = crate::topology::Graph::parse(&stream);
-    assert_eq!(graph.get(14, 39).and_then(Node::node_id), Some(node_id));
-    assert_eq!(graph.unique_xmt_by_node_id(14, node_id), None);
+    assert_eq!(
+        graph.get(NodeKind::Face, 39).and_then(Node::node_id),
+        Some(node_id)
+    );
+    assert_eq!(graph.unique_xmt_by_node_id(NodeKind::Face, node_id), None);
 }
 
 #[test]
@@ -254,7 +275,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     stream.extend(second_face);
 
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.get(19, 12).is_none());
+    assert!(graph.get(NodeKind::Region, 12).is_none());
     assert_eq!(graph.body_shape_shells().len(), 1);
     assert_eq!(graph.body_shape_face_count(), 2);
 
@@ -309,7 +330,10 @@ fn topology_accepts_fixed_record_envelope_escape() {
     stream.insert(fin + 2, 0xff);
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
-        graph.get(17, 7).unwrap().attribute_field_offset(),
+        graph
+            .get(NodeKind::Fin, 7)
+            .unwrap()
+            .attribute_field_offset(),
         Some(fin + 5)
     );
     assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
@@ -325,7 +349,10 @@ fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
     stream.insert(shell + 2, 0xff);
 
     let graph = crate::topology::Graph::parse(&stream);
-    assert_eq!(graph.get(13, 3).map(|node| node.pos), Some(shell));
+    assert_eq!(
+        graph.get(NodeKind::Shell, 3).map(|node| node.pos),
+        Some(shell)
+    );
     assert_eq!(graph.body_shape_shells().len(), 1);
     assert_eq!(graph.body_shape_face_count(), 1);
 }
@@ -342,7 +369,10 @@ fn topology_iterates_each_record_family_in_physical_order() {
 
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
-        graph.of_kind(29).map(|node| node.xmt).collect::<Vec<_>>(),
+        graph
+            .of_kind(NodeKind::Point)
+            .map(|node| node.xmt)
+            .collect::<Vec<_>>(),
         vec![77, 3]
     );
 }
@@ -354,7 +384,7 @@ fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     stream.extend(topology_partition_stream());
 
     let graph = crate::topology::Graph::parse(&stream);
-    let face = graph.get(14, 4).expect("valid later FACE");
+    let face = graph.get(NodeKind::Face, 4).expect("valid later FACE");
     assert!(face.pos >= 39);
     assert!(face.face_fields().is_some());
 }
@@ -367,7 +397,7 @@ fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     put_ref(&mut successor, 2, 3);
     stream.extend_from_slice(&successor);
     let graph = crate::topology::Graph::parse(&stream);
-    assert_eq!(graph.of_kind(12).count(), 2);
+    assert_eq!(graph.of_kind(NodeKind::Body).count(), 2);
     assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
     assert_eq!(graph.at_pos(26).map(|node| node.xmt), Some(3));
 }
@@ -413,8 +443,8 @@ fn topology_rejects_duplicate_fixed_record_identity() {
     first.extend(duplicate);
 
     let graph = crate::topology::Graph::parse(&first);
-    assert!(graph.get(29, 11).is_none());
-    assert!(graph.of_kind(29).next().is_none());
+    assert!(graph.get(NodeKind::Point, 11).is_none());
+    assert!(graph.of_kind(NodeKind::Point).next().is_none());
 }
 
 #[test]
@@ -433,20 +463,20 @@ fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
     stream.extend(duplicate);
 
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.get(13, 3).is_none());
+    assert!(graph.get(NodeKind::Shell, 3).is_none());
 }
 
 #[test]
 fn topology_rejects_overlapping_candidates_without_ranking() {
     let first = NodeCandidate {
-        kind: 29,
+        kind: NodeKind::Point,
         xmt: 11,
         pos: 0,
         shift: 0,
         end: 24,
     };
     let second = NodeCandidate {
-        kind: 29,
+        kind: NodeKind::Point,
         xmt: 12,
         pos: 8,
         shift: 0,
@@ -472,8 +502,8 @@ fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
     stream.extend(face);
 
     let graph = Graph::parse(&stream);
-    assert!(graph.get(14, 4).is_some());
-    assert!(graph.get(12, 14).is_none());
+    assert!(graph.get(NodeKind::Face, 4).is_some());
+    assert!(graph.get(NodeKind::Body, 14).is_none());
 }
 
 #[test]
@@ -489,30 +519,30 @@ fn topology_resolves_ownership_overlap_before_duplicate_identity() {
     stream.extend(successor);
 
     let graph = Graph::parse(&stream);
-    assert_eq!(graph.get(12, 7).map(|node| node.pos), Some(0));
-    assert_eq!(graph.get(12, 8).map(|node| node.pos), Some(24));
+    assert_eq!(graph.get(NodeKind::Body, 7).map(|node| node.pos), Some(0));
+    assert_eq!(graph.get(NodeKind::Body, 8).map(|node| node.pos), Some(24));
 }
 
 #[test]
 fn topology_retains_non_overlapping_ownership_records() {
     let graph = Graph::parse(&topology_partition_stream());
 
-    assert!(graph.get(12, 2).is_some());
-    assert!(graph.get(19, 12).is_some());
+    assert!(graph.get(NodeKind::Body, 2).is_some());
+    assert!(graph.get(NodeKind::Region, 12).is_some());
 }
 
 #[test]
 fn topology_resolves_overlap_before_duplicate_identity() {
     let stream = vec![0; 40];
     let outer = NodeCandidate {
-        kind: 29,
+        kind: NodeKind::Point,
         xmt: 11,
         pos: 0,
         shift: 0,
         end: 40,
     };
     let embedded = NodeCandidate {
-        kind: 29,
+        kind: NodeKind::Point,
         xmt: 11,
         pos: 8,
         shift: 0,
@@ -531,7 +561,7 @@ fn topology_resolves_overlap_before_duplicate_identity() {
 fn topology_rejects_status_framed_delta_as_fixed_record() {
     let graph = Graph::parse(&variable_status_framed_deltas_stream());
 
-    assert!(graph.of_kind(15).next().is_none());
+    assert!(graph.of_kind(NodeKind::Loop).next().is_none());
 }
 
 #[test]

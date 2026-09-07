@@ -29,6 +29,9 @@ use super::pcurves::{
     surface_parameters_for_fit_with_index_and_budget, EndpointWitnesses,
 };
 use super::MISSING_TOLERANCE;
+use crate::framing::node_kind::NodeKind;
+use crate::framing::xmt_reference::NonNullXmt;
+use crate::intersection::{SupportUv, SupportUvLane};
 use crate::topology::Graph;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -106,11 +109,13 @@ pub(super) fn new_support_uv_budget() -> SupportUvBudget<'static> {
 }
 
 pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
-    let mut knots = Vec::with_capacity(parameters.len() + 2);
-    knots.push(parameters[0]);
-    knots.extend_from_slice(parameters);
-    knots.push(*parameters.last().expect("non-empty chart parameters"));
-    knots
+    parameters
+        .first()
+        .into_iter()
+        .chain(parameters)
+        .chain(parameters.last())
+        .copied()
+        .collect()
 }
 
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
@@ -119,13 +124,13 @@ pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
 pub(crate) fn assign_ext11_support_uv_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    supports: [u32; 2],
+    supports: [Option<NonNullXmt>; 2],
     points: &[Point3],
     fit_tolerance: f64,
-    lanes: &[Option<Vec<[f64; 2]>>; 2],
+    lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
-    let surface_ids = supports.map(|support| surfaces_by_xmt.get(&support).cloned());
+) -> Option<SupportUv> {
+    let surface_ids = supports.map(|support| surfaces_by_xmt.get(&u32::from(support?)).cloned());
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return None;
     };
@@ -145,15 +150,15 @@ pub(crate) fn assign_ext11_support_uv_with_index(
 pub(crate) fn validate_serialized_support_uv_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    supports: [u32; 2],
+    supports: [Option<NonNullXmt>; 2],
     points: &[Point3],
     fit_tolerance: f64,
-    lanes: &[Option<Vec<[f64; 2]>>; 2],
+    lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> [Option<Vec<[f64; 2]>>; 2] {
+) -> SupportUv {
     std::array::from_fn(|side| {
-        let surface = surfaces_by_xmt.get(&supports[side])?;
-        let values = lanes[side].as_deref()?;
+        let surface = surfaces_by_xmt.get(&u32::from(supports[side]?))?;
+        let values = lanes[side].as_ref()?;
         let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance);
         support_uv_lane_matches_surface_with_budget(
             index,
@@ -163,7 +168,7 @@ pub(crate) fn validate_serialized_support_uv_with_index(
             Some(values),
             geometry_budget,
         )
-        .then(|| values.to_vec())
+        .then(|| values.clone())
     })
 }
 
@@ -172,10 +177,10 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
     surface: &SurfaceId,
     points: &[Point3],
     fit_tolerance: f64,
-    values: Option<&[[f64; 2]]>,
+    values: Option<&SupportUvLane>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> bool {
-    let Some(values) = values.filter(|values| values.len() == points.len()) else {
+    let Some(values) = values else {
         return false;
     };
     if values.len() > MAX_SUPPORT_UV_SAMPLES {
@@ -224,8 +229,8 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
     fit_tolerance: f64,
-    lanes: &[Option<Vec<[f64; 2]>>; 2],
-) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
+    lanes: &SupportUv,
+) -> Option<SupportUv> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     assign_ext11_support_uv_to_surfaces_with_index(
@@ -243,16 +248,16 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
     fit_tolerance: f64,
-    lanes: &[Option<Vec<[f64; 2]>>; 2],
+    lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
+) -> Option<SupportUv> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         support_uv_lane_matches_surface_with_budget(
             index,
             surface,
             points,
             fit_tolerance,
-            lanes[lane].as_deref(),
+            lanes[lane].as_ref(),
             geometry_budget,
         )
     };
@@ -295,8 +300,6 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
     assigned.iter().any(Option::is_some).then_some(assigned)
 }
 
-pub(crate) type SupportUvLanes = [Option<Vec<[f64; 2]>>; 2];
-
 /// Serialized support-UV lanes retained with one charted intersection.
 ///
 /// The values-array lanes and EXT11 chart lanes have different admission
@@ -306,20 +309,32 @@ pub(crate) type SupportUvLanes = [Option<Vec<[f64; 2]>>; 2];
 /// participate in EXT11 assignment.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct SerializedSupportUv {
-    pub(crate) values: SupportUvLanes,
-    pub(crate) ext11: SupportUvLanes,
+    pub(crate) values: SupportUv,
+    pub(crate) ext11: SupportUv,
 }
 
 #[cfg(test)]
 impl SerializedSupportUv {
-    pub(crate) fn from_values(values: SupportUvLanes) -> Self {
+    pub(crate) fn from_values(values: [Option<Vec<[f64; 2]>>; 2]) -> Self {
+        let values = values.map(|lane| {
+            lane.and_then(|values| {
+                let count = values.len();
+                SupportUvLane::new(values, count)
+            })
+        });
         Self {
             values,
             ext11: [None, None],
         }
     }
 
-    pub(crate) fn from_ext11(ext11: SupportUvLanes) -> Self {
+    pub(crate) fn from_ext11(ext11: [Option<Vec<[f64; 2]>>; 2]) -> Self {
+        let ext11 = ext11.map(|lane| {
+            lane.and_then(|values| {
+                let count = values.len();
+                SupportUvLane::new(values, count)
+            })
+        });
         Self {
             values: [None, None],
             ext11,
@@ -545,8 +560,8 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
-        let points = samples.points();
-        let parameters = samples.parameters();
+        let points = &samples.points();
+        let parameters = &samples.parameters();
         let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
             continue;
         };
@@ -749,8 +764,8 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         let mut lane_geometry_exhausted = false;
         for (procedural_id, samples, fit_tolerance, _) in pending {
-            let points = samples.points();
-            let parameters = samples.parameters();
+            let points = &samples.points();
+            let parameters = &samples.parameters();
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -912,8 +927,8 @@ fn complete_support_uv_wave(
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         for (procedural_id, samples, fit_tolerance, serialized) in pending {
-            let points = samples.points();
-            let parameters = samples.parameters();
+            let points = &samples.points();
+            let parameters = &samples.parameters();
             if support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -1029,74 +1044,76 @@ fn complete_support_uv_wave(
                     ));
                 let geometry_budget = &lane_geometry_budget;
                 let mut contact_seeds = BlendContactSeedCache::default();
-                let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
-                let mut all_parameters_certified = true;
-                for (point_index, point) in points.iter().enumerate() {
-                    if !support_budget.charge() {
-                        uv.clear();
-                        break;
-                    }
-                    let serialized_seeds = serialized_support_uv_seed_candidates(
-                        &surface.geometry,
-                        serialized,
-                        side,
-                        point_index,
-                    );
-                    let continuation_seed = uv.last().copied();
-                    let retained_pcurve_seed =
-                        pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index);
-                    let seed_candidates = ordered_support_uv_seed_candidates(
-                        serialized_seeds,
-                        retained_pcurve_seed,
-                        continuation_seed,
-                        linear_offset_surface,
-                    )
-                    .into_iter();
-                    let mut attempted_without_seed = false;
-                    let mut solved = None;
-                    for seed in seed_candidates {
-                        if seed.is_none() {
-                            if attempted_without_seed {
-                                continue;
-                            }
-                            attempted_without_seed = true;
+                let uv = (|| {
+                    let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
+                    let mut all_parameters_certified = true;
+                    for (point_index, point) in points.iter().enumerate() {
+                        if !support_budget.charge() {
+                            return None;
                         }
-                        let candidate = match &surface.geometry {
-                            SurfaceGeometry::Nurbs(nurbs) => {
-                                if let Some(seed) = seed {
-                                    nurbs_surface_parameter_within_tolerance_with_budget(
-                                        nurbs,
-                                        *point,
-                                        Some(seed),
-                                        effective_fit_tolerance,
-                                        geometry_budget,
-                                    )
-                                    .map(|parameters| (parameters, true))
-                                } else {
-                                    unseeded_nurbs_surface_parameters_with_index_and_budget(
-                                        &model_index,
-                                        surface_id,
-                                        &surface.geometry,
-                                        nurbs,
-                                        *point,
-                                        effective_fit_tolerance,
-                                        geometry_budget,
-                                    )
-                                    .map(|parameters| (parameters, true))
+                        let serialized_seeds = serialized_support_uv_seed_candidates(
+                            &surface.geometry,
+                            serialized,
+                            side,
+                            point_index,
+                        );
+                        let continuation_seed = uv.last().copied();
+                        let retained_pcurve_seed = pcurve_control_point_seed(
+                            context.sides[side].pcurve.as_ref(),
+                            point_index,
+                        );
+                        let seed_candidates = ordered_support_uv_seed_candidates(
+                            serialized_seeds,
+                            retained_pcurve_seed,
+                            continuation_seed,
+                            linear_offset_surface,
+                        )
+                        .into_iter();
+                        let mut attempted_without_seed = false;
+                        let mut solved = None;
+                        for seed in seed_candidates {
+                            if seed.is_none() {
+                                if attempted_without_seed {
+                                    continue;
                                 }
+                                attempted_without_seed = true;
                             }
-                            SurfaceGeometry::Procedural { .. } => {
-                                let solve_blend_parameters = if source_chart_available {
-                                    blend_surface_parameters_for_fit_with_source_continuation_and_budget
-                                } else {
-                                    blend_surface_parameters_for_fit_with_grid_and_budget
-                                };
-                                let solve_grid_parameters = if source_chart_available {
-                                    blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
-                                } else {
-                                    blend_surface_parameters_from_grid_for_fit_and_budget
-                                };
-                                source_chart_available
+                            let candidate = match &surface.geometry {
+                                SurfaceGeometry::Nurbs(nurbs) => {
+                                    if let Some(seed) = seed {
+                                        nurbs_surface_parameter_within_tolerance_with_budget(
+                                            nurbs,
+                                            *point,
+                                            Some(seed),
+                                            effective_fit_tolerance,
+                                            geometry_budget,
+                                        )
+                                        .map(|parameters| (parameters, true))
+                                    } else {
+                                        unseeded_nurbs_surface_parameters_with_index_and_budget(
+                                            &model_index,
+                                            surface_id,
+                                            &surface.geometry,
+                                            nurbs,
+                                            *point,
+                                            effective_fit_tolerance,
+                                            geometry_budget,
+                                        )
+                                        .map(|parameters| (parameters, true))
+                                    }
+                                }
+                                SurfaceGeometry::Procedural { .. } => {
+                                    let solve_blend_parameters = if source_chart_available {
+                                        blend_surface_parameters_for_fit_with_source_continuation_and_budget
+                                    } else {
+                                        blend_surface_parameters_for_fit_with_grid_and_budget
+                                    };
+                                    let solve_grid_parameters = if source_chart_available {
+                                        blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
+                                    } else {
+                                        blend_surface_parameters_from_grid_for_fit_and_budget
+                                    };
+                                    source_chart_available
                                     .then(|| {
                                         source_pcurve
                                             .zip(other_surface_id)
@@ -1231,28 +1248,27 @@ fn complete_support_uv_wave(
                                     )
                                     .map(|parameters| (parameters, true))
                                 })
+                                }
+                                geometry => analytic_surface_parameters(geometry, *point)
+                                    .map(|parameters| (parameters, false)),
+                            };
+                            if candidate.is_some() {
+                                solved = candidate;
+                                break;
                             }
-                            geometry => analytic_surface_parameters(geometry, *point)
-                                .map(|parameters| (parameters, false)),
-                        };
-                        if candidate.is_some() {
-                            solved = candidate;
-                            break;
                         }
+                        let (parameters, certified) = solved?;
+                        all_parameters_certified &= certified;
+                        uv.push(parameters);
                     }
-                    let Some((parameters, certified)) = solved else {
-                        uv.clear();
-                        break;
-                    };
-                    all_parameters_certified &= certified;
-                    uv.push(parameters);
-                }
-                if uv.len() != points.len() {
+                    Some((uv, all_parameters_certified))
+                })();
+                let Some((mut uv, all_parameters_certified)) = uv else {
                     lane_geometry_exhausted |= lane_geometry_budget.exhausted();
                     let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
                     failed_attempts.insert(attempt_key, source_pcurve.cloned());
                     continue;
-                }
+                };
                 if matches!(
                     surface.geometry,
                     SurfaceGeometry::Cylinder { .. }
@@ -1324,10 +1340,7 @@ fn complete_support_uv_wave(
                             }),
                         ];
                     }
-                    let parameter_range = [
-                        parameters[0],
-                        *parameters.last().expect("non-empty chart parameters"),
-                    ];
+                    let parameter_range = samples.parameter_range();
                     let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::new(
                         1,
                         linear_knots(parameters),
@@ -1505,8 +1518,8 @@ fn complete_coupled_support_uv(
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
-        let points = samples.points();
-        let parameters = samples.parameters();
+        let points = &samples.points();
+        let parameters = &samples.parameters();
         let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
             continue;
         };
@@ -1648,10 +1661,7 @@ fn complete_coupled_support_uv(
                                 }),
                             ]
                         });
-                let parameter_range = [
-                    parameters[0],
-                    *parameters.last().expect("non-empty chart parameters"),
-                ];
+                let parameter_range = samples.parameter_range();
                 let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::new(
                     1,
                     linear_knots(parameters),
@@ -2174,7 +2184,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
         let source_offset = source
             .graph
-            .get(17, fin_xmt)
+            .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| node.pos as u64);
         annotations
             .note(&pcurve_id, source.source_stream, source_offset)
@@ -2265,7 +2275,8 @@ mod tests {
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
-        let values = vec![[0.0, 0.0]; MAX_SUPPORT_UV_SAMPLES + 1];
+        let values =
+            SupportUvLane::new(vec![[0.0, 0.0]; MAX_SUPPORT_UV_SAMPLES + 1], points.len()).unwrap();
         let geometry_budget = GeometryWorkBudget::new(1);
 
         assert!(!support_uv_lane_matches_surface_with_budget(

@@ -62,7 +62,7 @@ fn prepare_topology_streams<'a>(
         }
     };
     for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
+        if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
             let census = crate::deltas::walk(&stream.inflated);
             if !census.records.is_empty() || !census.tombstones.is_empty() {
                 let merged = crate::deltas::merge_full_records_with_census(
@@ -120,7 +120,7 @@ pub(crate) fn pair_stream_indices(
 ) -> BTreeMap<usize, Vec<usize>> {
     let mut pairs = BTreeMap::<usize, Vec<usize>>::new();
     for (delta, stream) in streams.iter().enumerate() {
-        if stream.kind != StreamKind::Deltas
+        if stream.kind() != StreamKind::Deltas
             || eligible_deltas.is_some_and(|eligible| !eligible.contains(&delta))
         {
             continue;
@@ -130,7 +130,7 @@ pub(crate) fn pair_stream_indices(
             .enumerate()
             .rev()
             .find(|(_, candidate)| {
-                candidate.kind == StreamKind::Partition && candidate.schema == stream.schema
+                candidate.kind() == StreamKind::Partition && candidate.schema() == stream.schema()
             })
             .map(|(partition, _)| partition);
         if let Some(partition) = partition {
@@ -291,7 +291,7 @@ impl<'a> ParsedStreams<'a> {
         let mut streams = Vec::with_capacity(scan.streams.len());
         for (si, stream) in scan.streams.iter().enumerate() {
             let mut semantic_bytes = std::mem::take(&mut topology_streams[si].bytes);
-            let Some(point_layout) = stream.kind.chart_point_layout() else {
+            let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
                 let empty = Rc::new(StreamView::empty());
                 let empty_graph = Rc::clone(&empty.graph);
                 streams.push(StreamParse {
@@ -305,10 +305,11 @@ impl<'a> ParsedStreams<'a> {
                 });
                 continue;
             };
+            let point_layout = subtype.chart_point_layout();
             let paired = delta_pairs.get(&si);
             let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated;
             let mut residual = Vec::new();
-            if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&si) {
+            if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&si) {
                 if let Some(census) = topology_streams[si].delta_census.as_ref() {
                     residual.extend_from_slice(&crate::deltas::semantic_residual_with_census(
                         &stream.inflated,
@@ -402,8 +403,6 @@ impl<'a> ParsedStreams<'a> {
 mod tests {
     use crate::test_support::bspline_partition_stream;
 
-    use crate::parasolid::StreamKind;
-
     use super::*;
 
     #[test]
@@ -421,8 +420,10 @@ mod tests {
                 file_offset: 0,
                 consumed: 3,
                 inflated: vec![1, 2, 3],
-                kind: StreamKind::Partition,
-                schema: Some("schema".into()),
+                body: crate::parasolid::StreamBody::Parasolid {
+                    subtype: crate::parasolid::ParasolidSubtype::Partition,
+                    schema: Some("schema".into()),
+                },
             }],
         };
 
@@ -449,8 +450,10 @@ mod tests {
                 file_offset,
                 consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
                 inflated,
-                kind: StreamKind::Partition,
-                schema: Some("schema".into()),
+                body: crate::parasolid::StreamBody::Parasolid {
+                    subtype: crate::parasolid::ParasolidSubtype::Partition,
+                    schema: Some("schema".into()),
+                },
             }
         };
         let scan = crate::decode::Scan {
@@ -517,23 +520,50 @@ mod tests {
 
     #[test]
     fn segment_order_pairs_delta_across_intervening_non_history_stream() {
-        use crate::parasolid::{Stream, StreamKind};
+        use crate::parasolid::Stream;
         use std::collections::BTreeSet;
 
-        let stream = |kind, schema: Option<&str>, file_offset| Stream {
+        let stream = |subtype, schema: Option<&str>, file_offset| Stream {
             file_offset,
             consumed: 0,
             inflated: Vec::new(),
-            kind,
-            schema: schema.map(str::to_string),
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype,
+                schema: schema.map(str::to_string),
+            },
         };
         let streams = vec![
-            stream(StreamKind::Partition, Some("SCH_A"), 10),
-            stream(StreamKind::Preview, None, 20),
-            stream(StreamKind::Deltas, Some("SCH_A"), 30),
-            stream(StreamKind::Partition, Some("SCH_B"), 40),
-            stream(StreamKind::Deltas, Some("SCH_A"), 50),
-            stream(StreamKind::Deltas, Some("SCH_B"), 60),
+            stream(
+                crate::parasolid::ParasolidSubtype::Partition,
+                Some("SCH_A"),
+                10,
+            ),
+            Stream {
+                file_offset: 20,
+                consumed: 0,
+                inflated: Vec::new(),
+                body: crate::parasolid::StreamBody::Preview,
+            },
+            stream(
+                crate::parasolid::ParasolidSubtype::Deltas,
+                Some("SCH_A"),
+                30,
+            ),
+            stream(
+                crate::parasolid::ParasolidSubtype::Partition,
+                Some("SCH_B"),
+                40,
+            ),
+            stream(
+                crate::parasolid::ParasolidSubtype::Deltas,
+                Some("SCH_A"),
+                50,
+            ),
+            stream(
+                crate::parasolid::ParasolidSubtype::Deltas,
+                Some("SCH_B"),
+                60,
+            ),
         ];
         let eligible = BTreeSet::from([2usize, 5]);
         assert_eq!(

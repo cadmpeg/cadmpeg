@@ -552,10 +552,7 @@ fn intersection_chart_layout_is_selected_by_stream_kind() {
         chart.data.point_layout(),
         crate::intersection::ChartPointLayout::Ext11
     );
-    assert_eq!(
-        chart.data.native_parameters().map(<[f64]>::to_vec),
-        Some(vec![2.0, 5.0])
-    );
+    assert_eq!(chart.data.native_parameters(), Some(vec![2.0, 5.0]));
 }
 
 #[test]
@@ -590,5 +587,6 @@ fn intersection_support_order_follows_type_38_values_marker() {
     let [curve] = scan.curves.as_slice() else {
         panic!("one charted intersection");
     };
-    assert_eq!(curve.supports, [13, 6]);
+    assert_eq!(u32::from(curve.primary_support), 13);
+    assert_eq!(curve.secondary_support.map(u32::from), Some(6));
 }

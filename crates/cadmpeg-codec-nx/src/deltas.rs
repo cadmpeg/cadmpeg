@@ -2,6 +2,7 @@
 //! Walk status-byte-framed Parasolid deltas records.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU16;
 
@@ -233,15 +234,29 @@ pub struct Census {
     pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
     /// Complete schema-bound type-12 BODY states in source order.
     pub inline_body_states: Vec<InlineBodyState>,
-    /// Complete-record counts keyed by Parasolid family name.
-    pub full_counts: BTreeMap<&'static str, usize>,
-    /// Compact tombstone counts keyed by Parasolid family name.
-    pub tombstone_counts: BTreeMap<&'static str, usize>,
     /// Sum of all admitted event bytes.
     pub bytes_decoded: usize,
 }
 
 impl Census {
+    /// Complete-record counts keyed by Parasolid family name.
+    pub fn full_counts(&self) -> BTreeMap<&'static str, usize> {
+        let mut counts = BTreeMap::new();
+        for record in &self.records {
+            *counts.entry(record.family_name()).or_default() += 1;
+        }
+        counts
+    }
+
+    /// Compact tombstone counts keyed by Parasolid family name.
+    pub fn tombstone_counts(&self) -> BTreeMap<&'static str, usize> {
+        let mut counts = BTreeMap::new();
+        for tombstone in &self.tombstones {
+            *counts.entry(tombstone.kind.name()).or_default() += 1;
+        }
+        counts
+    }
+
     /// Return the sorted disjoint union of every admitted event byte span.
     pub(crate) fn covered_spans(&self) -> Vec<(usize, usize)> {
         merged_event_spans(self, true)
@@ -563,7 +578,6 @@ pub fn walk(stream: &[u8]) -> Census {
         .or_else(|| consume_intersection_data(stream, offset, intersection_schema_anchor_seen));
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
-            *census.full_counts.entry(record.family_name()).or_default() += 1;
             offset = record.end;
             value_boundary = true;
             census.records.push(record);
@@ -577,7 +591,6 @@ pub fn walk(stream: &[u8]) -> Census {
             value_boundary = false;
             continue;
         };
-        let name = record_kind.name();
         if kind == 12 {
             if let Some(revision) = body_revision_prefix(stream, offset) {
                 census.bytes_decoded += revision.prefix_end - revision.offset;
@@ -615,7 +628,6 @@ pub fn walk(stream: &[u8]) -> Census {
             });
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
             value_boundary = true;
             census.records.push(record);
@@ -626,7 +638,6 @@ pub fn walk(stream: &[u8]) -> Census {
             .flatten()
         {
             if xmt > 1 {
-                *census.tombstone_counts.entry(name).or_default() += 1;
                 census.tombstones.push(Tombstone {
                     kind: record_kind,
                     xmt,
@@ -1941,7 +1952,10 @@ pub(crate) fn merge_full_records_with_census(
     let deletions = tombstones
         .into_iter()
         .filter(|(key, tombstone)| {
-            graph.get(key.0, key.1).is_some()
+            NodeKind::try_from(key.0)
+                .ok()
+                .and_then(|kind| graph.get(kind, key.1))
+                .is_some()
                 && !topology_carriers.contains(&key.1)
                 && replacements
                     .get(key)
@@ -1953,7 +1967,10 @@ pub(crate) fn merge_full_records_with_census(
         let mut merged = partition.to_vec();
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
-                if let Some(node) = graph.get(kind, xmt) {
+                if let Some(node) = NodeKind::try_from(kind)
+                    .ok()
+                    .and_then(|kind| graph.get(kind, xmt))
+                {
                     merged[node.pos..node.end()].fill(0xff);
                 }
             }
@@ -2074,7 +2091,7 @@ fn count_unmatched_events(
         else {
             continue;
         };
-        if graph.get(kind, xmt).is_none()
+        if NodeKind::try_from(kind).ok().and_then(|kind| graph.get(kind, xmt)).is_none()
             && !events.iter().any(|event| {
                 matches!(event, MergeEvent::Full { offset: full_offset } if *full_offset < offset)
             })
@@ -2087,10 +2104,10 @@ fn count_unmatched_events(
 }
 
 fn mergeable_record(record: &Record, kind: u8) -> bool {
-    matches!(
-        kind,
-        12..=19 | 29..=32 | 38 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
-    ) && crate::topology::Graph::parse(&record.canonical_bytes)
+    let Ok(kind) = NodeKind::try_from(kind) else {
+        return false;
+    };
+    crate::topology::Graph::parse(&record.canonical_bytes)
         .get(kind, record.xmt)
         .is_some()
 }

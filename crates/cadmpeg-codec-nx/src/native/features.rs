@@ -4011,22 +4011,22 @@ fn body_history_partition_stream(
 ) -> Option<u32> {
     (binding.stream_kind == crate::parasolid::StreamKind::Plain).then_some(())?;
     let stream_ordinal = usize::try_from(binding.stream_ordinal).ok()?;
-    (streams.get(stream_ordinal)?.kind == crate::parasolid::StreamKind::Plain).then_some(())?;
+    (streams.get(stream_ordinal)?.kind() == crate::parasolid::StreamKind::Plain).then_some(())?;
     let partition_ordinal = streams
         .iter()
         .enumerate()
         .skip(stream_ordinal + 1)
         .find_map(|(ordinal, stream)| {
-            (stream.kind == crate::parasolid::StreamKind::Partition).then_some(ordinal)
+            (stream.kind() == crate::parasolid::StreamKind::Partition).then_some(ordinal)
         })?;
     let run_start = streams[..stream_ordinal]
         .iter()
-        .rposition(|stream| stream.kind != crate::parasolid::StreamKind::Plain)
+        .rposition(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
         .map_or(0, |ordinal| ordinal + 1);
     let run_streams = streams.get(run_start..partition_ordinal)?;
     run_streams
         .iter()
-        .all(|stream| stream.kind == crate::parasolid::StreamKind::Plain)
+        .all(|stream| stream.kind() == crate::parasolid::StreamKind::Plain)
         .then_some(())?;
     let mut run_bindings = Vec::with_capacity(run_streams.len());
     for ordinal in run_start..partition_ordinal {

@@ -7,8 +7,10 @@
 //! field validity gates after framing.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
 
+pub(crate) mod node_kind;
 pub(crate) mod xmt_reference;
 
 use crate::layout::analytic_common_header as analytic;
@@ -54,7 +56,7 @@ pub(crate) type FixedRecordCandidates = [Option<FixedRecordFrame>; 2];
 pub(crate) fn fixed_record_candidates(
     stream: &[u8],
     pos: usize,
-    kind: u8,
+    kind: NodeKind,
     len: usize,
 ) -> FixedRecordCandidates {
     let mut candidates = [None; 2];
@@ -72,7 +74,7 @@ pub(crate) fn fixed_record_candidates(
 fn complete_frame(
     stream: &[u8],
     pos: usize,
-    kind: u8,
+    kind: NodeKind,
     len: usize,
     xmt: u32,
     shift: usize,
@@ -106,10 +108,10 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     let Some(&kind) = stream.get(end + 1) else {
         return false;
     };
-    let Some(len) = fixed_len(kind) else {
+    let Ok(kind) = NodeKind::try_from(kind) else {
         return false;
     };
-    fixed_record_candidates(stream, end, kind, len)
+    fixed_record_candidates(stream, end, kind, fixed_len(kind))
         .iter()
         .flatten()
         .next()
@@ -163,8 +165,8 @@ pub(crate) fn read_xmt_width(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     Some((value, 2 + extra))
 }
 
-fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Option<usize> {
-    if kind == 14 {
+fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize) -> Option<usize> {
+    if kind == NodeKind::Face {
         let mut at = pos + face::ATTRIBUTES + header_shift;
         let start = at;
         read_and_advance(stream, &mut at)?;
@@ -174,7 +176,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
         skip_sequence_at(stream, &mut at, 5)?;
         return Some(at - start - 31);
     }
-    if kind == 16 {
+    if kind == NodeKind::Edge {
         let mut at = pos + edge::ATTRIBUTES + header_shift;
         let start = at;
         read_and_advance(stream, &mut at)?;
@@ -183,11 +185,11 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
         return Some(at - start - 24);
     }
     let (offset, before, trailing_bytes, after) = match kind {
-        13 => (shell::ATTRIBUTES, 8, 0, 0),
-        15 => (loop_node::ATTRIBUTES, 4, 0, 0),
-        17 => (fin::ATTRIBUTES, 9, 1, 0),
-        18 => (vertex::ATTRIBUTES, 5, 8, 1),
-        29 => (point::ATTRIBUTES, 4, 24, 0),
+        NodeKind::Shell => (shell::ATTRIBUTES, 8, 0, 0),
+        NodeKind::Loop => (loop_node::ATTRIBUTES, 4, 0, 0),
+        NodeKind::Fin => (fin::ATTRIBUTES, 9, 1, 0),
+        NodeKind::Vertex => (vertex::ATTRIBUTES, 5, 8, 1),
+        NodeKind::Point => (point::ATTRIBUTES, 4, 24, 0),
         _ => (0, 0, 0, 0),
     };
     if before != 0 {
@@ -201,7 +203,21 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
     }
     let compact_kind = matches!(
         kind,
-        30..=32 | 38 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
+        NodeKind::Line
+            | NodeKind::Circle
+            | NodeKind::Ellipse
+            | NodeKind::Intersection
+            | NodeKind::Plane
+            | NodeKind::Cylinder
+            | NodeKind::Cone
+            | NodeKind::Sphere
+            | NodeKind::Torus
+            | NodeKind::BlendSurface
+            | NodeKind::OffsetSurface
+            | NodeKind::BSurface
+            | NodeKind::TrimmedCurve
+            | NodeKind::BCurve
+            | NodeKind::SpCurve
     );
     if !compact_kind {
         return Some(0);
@@ -214,67 +230,66 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
     let common_extra = at - start - 11;
     let tail_start = at;
     match kind {
-        38 => {
+        NodeKind::Intersection => {
             skip_sequence_at(stream, &mut at, 6)?;
         }
-        56 => {
+        NodeKind::BlendSurface => {
             at += 1;
             skip_sequence_at(stream, &mut at, 3)?;
         }
-        60 => {
+        NodeKind::OffsetSurface => {
             at += 2;
             read_and_advance(stream, &mut at)?;
         }
-        124 | 134 => {
+        NodeKind::BSurface | NodeKind::BCurve => {
             skip_sequence_at(stream, &mut at, 2)?;
         }
-        133 => {
+        NodeKind::TrimmedCurve => {
             read_and_advance(stream, &mut at)?;
         }
-        137 => {
+        NodeKind::SpCurve => {
             skip_sequence_at(stream, &mut at, 3)?;
         }
         _ => {}
     }
     let compact_tail_len = match kind {
-        38 => 12,
-        56 => 7,
-        60 => 4,
-        124 | 134 => 4,
-        133 => 2,
-        137 => 6,
+        NodeKind::Intersection => 12,
+        NodeKind::BlendSurface => 7,
+        NodeKind::OffsetSurface => 4,
+        NodeKind::BSurface | NodeKind::BCurve => 4,
+        NodeKind::TrimmedCurve => 2,
+        NodeKind::SpCurve => 6,
         _ => 0,
     };
     Some(common_extra + at - tail_start - compact_tail_len)
 }
 
-pub(crate) fn fixed_len(kind: u8) -> Option<usize> {
-    Some(match kind {
-        12 => 24,
-        13 => shell::LEN,
-        14 => face::LEN,
-        15 => loop_node::LEN,
-        16 => edge::LEN,
-        17 => fin::LEN,
-        18 => vertex::LEN,
-        19 => 16,
-        29 => point::LEN,
-        30 => line::LEN,
-        31 => circle::LEN,
-        32 => ellipse::LEN,
-        38 => intersection::LEN,
-        50 => plane::LEN,
-        51 => cylinder::LEN,
-        52 => cone::LEN,
-        53 => sphere::LEN,
-        54 => torus::LEN,
-        56 => 66,
-        60 => offset_surf::LEN,
-        124 | 134 => 23,
-        133 => trimmed::LEN,
-        137 => sp_curve::LEN,
-        _ => return None,
-    })
+pub(crate) fn fixed_len(kind: NodeKind) -> usize {
+    match kind {
+        NodeKind::Body => 24,
+        NodeKind::Shell => shell::LEN,
+        NodeKind::Face => face::LEN,
+        NodeKind::Loop => loop_node::LEN,
+        NodeKind::Edge => edge::LEN,
+        NodeKind::Fin => fin::LEN,
+        NodeKind::Vertex => vertex::LEN,
+        NodeKind::Region => 16,
+        NodeKind::Point => point::LEN,
+        NodeKind::Line => line::LEN,
+        NodeKind::Circle => circle::LEN,
+        NodeKind::Ellipse => ellipse::LEN,
+        NodeKind::Intersection => intersection::LEN,
+        NodeKind::Plane => plane::LEN,
+        NodeKind::Cylinder => cylinder::LEN,
+        NodeKind::Cone => cone::LEN,
+        NodeKind::Sphere => sphere::LEN,
+        NodeKind::Torus => torus::LEN,
+        NodeKind::BlendSurface => 66,
+        NodeKind::OffsetSurface => offset_surf::LEN,
+        NodeKind::BSurface | NodeKind::BCurve => 23,
+        NodeKind::TrimmedCurve => trimmed::LEN,
+        NodeKind::SpCurve => sp_curve::LEN,
+    }
 }
 
 #[cfg(test)]

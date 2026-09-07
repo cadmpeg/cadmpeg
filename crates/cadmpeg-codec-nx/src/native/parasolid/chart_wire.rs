@@ -3,7 +3,7 @@
 
 use super::ParasolidChartRecord;
 use crate::intersection::chart_samples::{ChartPreamble, SourceChartData, MISSING_PARAMETER};
-use crate::intersection::{ChartFraming, ChartPointLayout, SupportUv};
+use crate::intersection::{ChartFraming, ChartPointLayout};
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,7 @@ pub(super) struct ChartWire {
     parameter_errors: [f64; 2],
     points: Vec<[f64; 3]>,
     native_parameters: Option<Vec<f64>>,
-    ext_support_uv: SupportUv,
+    ext_support_uv: [Option<Vec<[f64; 2]>>; 2],
     point_layout: ChartPointLayout,
     framing: ChartFraming,
     inflated_offset: u64,
@@ -45,8 +45,11 @@ impl From<ParasolidChartRecord> for ChartWire {
                 .iter()
                 .map(|point| [point.x, point.y, point.z])
                 .collect(),
-            native_parameters: value.data.native_parameters().map(<[f64]>::to_vec),
-            ext_support_uv: value.data.support_uv(),
+            native_parameters: value.data.native_parameters(),
+            ext_support_uv: value
+                .data
+                .support_uv()
+                .map(|lane| lane.map(|lane| lane.as_slice().to_vec())),
             point_layout: value.data.point_layout(),
             framing: value.framing,
             inflated_offset: value.inflated_offset,

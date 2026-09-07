@@ -182,7 +182,7 @@ pub(crate) use emit::orient_edge_range;
 #[allow(unused_imports)]
 pub(crate) use emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance,
-    retain_unresolved_topology_carriers, sense, source_meta, surface_tag, unknown_stream,
+    retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream,
 };
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
@@ -197,14 +197,14 @@ pub struct Scan<'a> {
 impl Scan<'_> {
     /// Count streams with the requested classification.
     pub fn count(&self, kind: StreamKind) -> usize {
-        self.streams.iter().filter(|s| s.kind == kind).count()
+        self.streams.iter().filter(|s| s.kind() == kind).count()
     }
 
     /// Return whether the file contains an inline Parasolid stream.
     ///
     /// NX assemblies may contain only references to external child parts.
     pub fn has_parasolid(&self) -> bool {
-        self.streams.iter().any(|s| s.kind.is_parasolid())
+        self.streams.iter().any(|s| s.kind().is_parasolid())
     }
 }
 
@@ -273,12 +273,12 @@ fn build_container_only_ir(
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             let source_stream = annotations.stream("nx:container");
             annotations
                 .note(unknown.id(), source_stream, stream.file_offset as u64)
-                .tag(stream.kind.label());
+                .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
         }
@@ -339,11 +339,11 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
         }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
+        if !stream.kind().is_parasolid() {
             body.losses
                 .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
-                    stream.kind.label()
+                    stream.kind().label()
                 )));
         }
     }
@@ -415,12 +415,12 @@ fn build_metadata_ir(
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             let source_stream = annotations.stream("nx:container");
             annotations
                 .note(unknown.id(), source_stream, stream.file_offset as u64)
-                .tag(stream.kind.label());
+                .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
         }

@@ -596,7 +596,7 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
             row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
             slot,
             stream_ordinal: stream_ordinal as u32,
-            stream_kind: stream.kind,
+            stream_kind: stream.kind(),
             wrapper_byte_len: wrapper.wrapper_byte_len as u32,
             source_offset: wrapper.wrapper_offset as u64,
         });

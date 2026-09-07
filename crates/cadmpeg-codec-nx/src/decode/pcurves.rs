@@ -24,6 +24,7 @@ use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots,
     parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
 };
+use crate::framing::node_kind::NodeKind;
 use crate::native::vector::{dot_vector, unit_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::WorkBudget;
@@ -3261,16 +3262,23 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         let mut blend_parameter_grids = BlendParameterGridCache::new();
         let mut candidates = Vec::new();
         for (&xmt, edge_id) in edges {
-            let Some(edge_fields) = graph.get(16, xmt).and_then(Node::edge_fields) else {
+            let Some(edge_fields) = graph.get(NodeKind::Edge, xmt).and_then(Node::edge_fields)
+            else {
                 continue;
             };
-            let Some(first_fin) = graph.get(17, edge_fields.fin).and_then(Node::fin_fields) else {
+            let Some(first_fin) = graph
+                .get(NodeKind::Fin, edge_fields.fin)
+                .and_then(Node::fin_fields)
+            else {
                 continue;
             };
             if edge_fields.curve != 1 || first_fin.curve_xmt != 1 || first_fin.other <= 1 {
                 continue;
             }
-            let Some(second_fin) = graph.get(17, first_fin.other).and_then(Node::fin_fields) else {
+            let Some(second_fin) = graph
+                .get(NodeKind::Fin, first_fin.other)
+                .and_then(Node::fin_fields)
+            else {
                 continue;
             };
             if second_fin.other != edge_fields.fin || second_fin.edge != xmt {
@@ -3392,7 +3400,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         };
         edge.curve = Some(curve_id.clone());
         annotations.derived(&edge_id, "curve");
-        if let Some(node) = graph.get(16, xmt) {
+        if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             annotations
                 .note(&curve_id, source_stream, node.pos as u64)
                 .tag("TOLERANT_EDGE_INTERSECTION");

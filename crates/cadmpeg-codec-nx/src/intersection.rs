@@ -19,7 +19,9 @@ use support_uv_values::{SupportUvPacking, SupportUvValues};
 
 use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
 
+use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
@@ -28,7 +30,31 @@ const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
-pub type SupportUv = [Option<Vec<[f64; 2]>>; 2];
+pub type SupportUv = [Option<SupportUvLane>; 2];
+
+/// Support parameters checked against their chart sample count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SupportUvLane(Vec<[f64; 2]>);
+
+impl SupportUvLane {
+    /// Construct one parameter pair per chart sample.
+    pub fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
+        (values.len() == sample_count).then_some(Self(values))
+    }
+
+    /// Ordered support parameter pairs.
+    pub fn as_slice(&self) -> &[[f64; 2]] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SupportUvLane {
+    type Target = [[f64; 2]];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
 
 /// Serialized framing of one `CHART_s` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,8 +194,10 @@ pub struct IntersectionCurve {
     pub xmt: u32,
     /// Six ordered construction references.
     pub references: [u32; 6],
-    /// Resolved primary and secondary support-surface references.
-    pub supports: [u32; 2],
+    /// Resolved primary support-surface reference.
+    pub primary_support: NonNullXmt,
+    /// Resolved secondary support-surface reference.
+    pub secondary_support: Option<NonNullXmt>,
     /// Type-tag offset of the construction record.
     pub pos: usize,
     /// Paired chart points in millimetres and native parameters.
@@ -415,8 +443,11 @@ fn scan_with_auxiliaries(
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, uv, bridges, graph)
-                            .filter(|supports| supports[1] > 1),
+                        construction_supports(construction, uv, bridges, graph).and_then(
+                            |(primary, secondary)| {
+                                Some([u32::from(primary), u32::from(secondary?)])
+                            },
+                        ),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
                             .filter(|witness| {
@@ -498,15 +529,18 @@ fn enrich(
             });
         }
     }
-    let supports =
+    let (primary_support, secondary_support) =
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
-        .map_or([None, None], SupportUvValues::support_uv);
+        .map_or([None, None], |values| {
+            values.support_uv(chart.samples.points().len())
+        });
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
-        supports,
+        primary_support,
+        secondary_support,
         pos: construction.pos,
         samples: chart.samples.clone(),
         fit_tolerance: chart.fit_tolerance,
@@ -520,7 +554,7 @@ fn construction_supports(
     uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Option<[u32; 2]> {
+) -> Option<(NonNullXmt, Option<NonNullXmt>)> {
     let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
     } else {
@@ -545,8 +579,8 @@ fn construction_supports(
         .copied()
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
         .filter(|secondary| *secondary != primary)
-        .unwrap_or(1);
-    (primary > 1).then_some([primary, secondary])
+        .and_then(|secondary| NonNullXmt::try_from(secondary).ok());
+    Some((NonNullXmt::try_from(primary).ok()?, secondary))
 }
 
 fn construction_has_endpoint_witnesses(
@@ -660,9 +694,18 @@ fn blend_bound_layout(
 }
 
 fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
-    [50, 51, 52, 53, 54, 56, 60, 124]
-        .into_iter()
-        .any(|kind| graph.get(kind, xmt).is_some())
+    [
+        NodeKind::Plane,
+        NodeKind::Cylinder,
+        NodeKind::Cone,
+        NodeKind::Sphere,
+        NodeKind::Torus,
+        NodeKind::BlendSurface,
+        NodeKind::OffsetSurface,
+        NodeKind::BSurface,
+    ]
+    .into_iter()
+    .any(|kind| graph.get(kind, xmt).is_some())
 }
 
 fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {
@@ -678,7 +721,9 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
             continue;
         }
         let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
-        let (samples, ext_support_uv) = source.data.into_samples(source.preamble);
+        let Some((samples, ext_support_uv)) = source.data.into_samples(source.preamble) else {
+            continue;
+        };
         let candidate = Chart {
             samples,
             fit_tolerance,
@@ -696,7 +741,7 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                         .samples
                         .points()
                         .iter()
-                        .zip(candidate.samples.points())
+                        .zip(candidate.samples.points().iter())
                         .all(|(first, second)| {
                             distance(*first, *second)
                                 <= entry.get().fit_tolerance.max(candidate.fit_tolerance)

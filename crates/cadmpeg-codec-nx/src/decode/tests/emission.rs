@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::framing::node_kind::NodeKind;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -306,7 +307,7 @@ fn decode_retains_topology_owned_point_at_origin() {
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
-            .get(29, 11)
+            .get(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position),
         Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
     );
@@ -405,7 +406,7 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
 
     assert_eq!(crate::geometry::surfaces(&stream).len(), 2);
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.get(50, 77).is_none());
+    assert!(graph.get(NodeKind::Plane, 77).is_none());
     assert!(crate::decode::ordered_surface_candidates(&stream, &graph).is_empty());
 }
 

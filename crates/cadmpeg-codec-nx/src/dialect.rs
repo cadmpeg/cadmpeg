@@ -99,13 +99,7 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
     let streams = scan
         .streams
         .iter()
-        .filter_map(|stream| {
-            stream
-                .kind
-                .is_parasolid()
-                .then_some(stream)
-                .and_then(|stream| stream.schema.as_deref().map(|schema| (stream, schema)))
-        })
+        .filter_map(|stream| stream.schema().map(|schema| (stream, schema)))
         .collect::<Vec<_>>();
     let extra = cadmpeg_parasolid::extra_layers(
         streams

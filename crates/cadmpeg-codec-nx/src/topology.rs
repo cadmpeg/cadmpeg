@@ -8,8 +8,10 @@
 //! from the graph.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
@@ -39,7 +41,7 @@ pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
 #[derive(Debug, Clone)]
 pub struct Node {
     /// Parasolid node type.
-    pub kind: u8,
+    pub kind: NodeKind,
     /// Stream-scoped XMT identifier.
     pub xmt: u32,
     /// Record type-tag offset in the inflated stream.
@@ -63,8 +65,8 @@ pub struct FaceFields {
     pub shell: u32,
     /// Surface-carrier reference.
     pub surface: u32,
-    /// Stored orientation byte.
-    pub sense: u8,
+    /// Decoded orientation.
+    pub sense: Sense,
 }
 
 /// Decoded fields needed from a sequentially framed EDGE record.
@@ -142,8 +144,8 @@ pub struct FinFields {
     pub other: u32,
     /// Curve carried by this fin.
     pub curve_xmt: u32,
-    /// Stored orientation byte.
-    pub sense: u8,
+    /// Decoded orientation.
+    pub sense: Sense,
 }
 
 /// Sequentially decoded VERTEX fields.
@@ -160,16 +162,29 @@ pub struct VertexFields {
 impl Node {
     /// Kernel node identity serialized by fixed topology families.
     pub fn node_id(&self) -> Option<u32> {
-        matches!(self.kind, 12..=16 | 18..=19)
-            .then(|| self.u32_at(4))
-            .flatten()
+        matches!(
+            self.kind,
+            NodeKind::Body
+                | NodeKind::Shell
+                | NodeKind::Face
+                | NodeKind::Loop
+                | NodeKind::Edge
+                | NodeKind::Vertex
+                | NodeKind::Region
+        )
+        .then(|| self.u32_at(4))
+        .flatten()
     }
 
     /// Inflated-stream offset of this topology record's attribute-list field.
     pub fn attribute_field_offset(&self) -> Option<usize> {
         match self.kind {
-            13..=16 | 18 => Some(self.pos + 8 + self.shift),
-            17 => Some(self.pos + 4 + self.shift),
+            NodeKind::Shell
+            | NodeKind::Face
+            | NodeKind::Loop
+            | NodeKind::Edge
+            | NodeKind::Vertex => Some(self.pos + 8 + self.shift),
+            NodeKind::Fin => Some(self.pos + 4 + self.shift),
             _ => None,
         }
     }
@@ -209,14 +224,17 @@ impl Node {
 
     /// Decode FACE fields while accumulating every preceding large-index shift.
     pub fn face_fields(&self) -> Option<FaceFields> {
-        (self.kind == 14).then_some(())?;
+        (self.kind == NodeKind::Face).then_some(())?;
         let mut at = 8 + self.shift;
         let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
-        let sense = *self.bytes.get(at)?;
-        matches!(sense, b'+' | b'-').then_some(())?;
+        let sense = match self.bytes.get(at) {
+            Some(b'+') => Sense::Forward,
+            Some(b'-') => Sense::Reversed,
+            _ => return None,
+        };
         Some(FaceFields {
             attributes,
             tolerance,
@@ -230,7 +248,7 @@ impl Node {
 
     /// Decode EDGE fields while accumulating every preceding large-index shift.
     pub fn edge_fields(&self) -> Option<EdgeFields> {
-        (self.kind == 16).then_some(())?;
+        (self.kind == NodeKind::Edge).then_some(())?;
         let mut at = 8 + self.shift;
         let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
@@ -246,7 +264,7 @@ impl Node {
 
     /// Decode SHELL references with cumulative large-index shifts.
     pub fn shell_fields(&self) -> Option<ShellFields> {
-        (self.kind == 13).then_some(())?;
+        (self.kind == NodeKind::Shell).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
         Some(ShellFields {
@@ -263,7 +281,7 @@ impl Node {
 
     /// Decode LOOP references with cumulative large-index shifts.
     pub fn loop_fields(&self) -> Option<LoopFields> {
-        (self.kind == 15).then_some(())?;
+        (self.kind == NodeKind::Loop).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
         Some(LoopFields {
@@ -276,11 +294,14 @@ impl Node {
 
     /// Decode FIN references with cumulative large-index shifts.
     pub fn fin_fields(&self) -> Option<FinFields> {
-        (self.kind == 17).then_some(())?;
+        (self.kind == NodeKind::Fin).then_some(())?;
         let mut at = 4 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 9)?;
-        let sense = *self.bytes.get(at)?;
-        matches!(sense, b'+' | b'-').then_some(())?;
+        let sense = match self.bytes.get(at) {
+            Some(b'+') => Sense::Forward,
+            Some(b'-') => Sense::Reversed,
+            _ => return None,
+        };
         Some(FinFields {
             attributes: refs[0],
             loop_xmt: refs[1],
@@ -296,7 +317,7 @@ impl Node {
 
     /// Decode VERTEX fields with cumulative large-index shifts.
     pub fn vertex_fields(&self) -> Option<VertexFields> {
-        (self.kind == 18).then_some(())?;
+        (self.kind == NodeKind::Vertex).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
@@ -309,7 +330,7 @@ impl Node {
 
     /// Decode a fully framed POINT position into model millimeters.
     pub fn point_position(&self) -> Option<Point3> {
-        (self.kind == 29).then_some(())?;
+        (self.kind == NodeKind::Point).then_some(())?;
         let mut at = 8 + self.shift;
         skip_sequence_at(&self.bytes, &mut at, 4)?;
         let xyz = vec3_be_at(&self.bytes, at)?;
@@ -320,39 +341,51 @@ impl Node {
 
     /// Decode this graph-owned fixed analytic surface carrier.
     pub fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
-        matches!(self.kind, 50..=54).then_some(())?;
+        matches!(
+            self.kind,
+            NodeKind::Plane
+                | NodeKind::Cylinder
+                | NodeKind::Cone
+                | NodeKind::Sphere
+                | NodeKind::Torus
+        )
+        .then_some(())?;
         let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
         crate::geometry::decode_surface_record(&self.bytes, self.kind, payload_shift)
     }
 
     /// Decode this graph-owned fixed analytic curve carrier.
     pub fn curve_geometry(&self) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
-        matches!(self.kind, 30..=32).then_some(())?;
+        matches!(
+            self.kind,
+            NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse
+        )
+        .then_some(())?;
         let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 
     fn reference_targets(&self) -> Vec<(ReferenceRole, u32)> {
         match self.kind {
-            13 => self.shell_fields().map_or_else(Vec::new, |fields| {
+            NodeKind::Shell => self.shell_fields().map_or_else(Vec::new, |fields| {
                 vec![
                     (ReferenceRole::Body, fields.body),
                     (ReferenceRole::Region, fields.region),
                 ]
             }),
-            14 => self.face_fields().map_or_else(Vec::new, |fields| {
+            NodeKind::Face => self.face_fields().map_or_else(Vec::new, |fields| {
                 vec![(ReferenceRole::Surface, fields.surface)]
             }),
-            16 => self.edge_fields().map_or_else(Vec::new, |fields| {
+            NodeKind::Edge => self.edge_fields().map_or_else(Vec::new, |fields| {
                 vec![(ReferenceRole::Curve, fields.curve)]
             }),
-            17 => self.fin_fields().map_or_else(Vec::new, |fields| {
+            NodeKind::Fin => self.fin_fields().map_or_else(Vec::new, |fields| {
                 vec![(ReferenceRole::Curve, fields.curve_xmt)]
             }),
-            18 => self.vertex_fields().map_or_else(Vec::new, |fields| {
+            NodeKind::Vertex => self.vertex_fields().map_or_else(Vec::new, |fields| {
                 vec![(ReferenceRole::Point, fields.point)]
             }),
-            56 => {
+            NodeKind::BlendSurface => {
                 let Some(mut at) = self.compact_tail_offset() else {
                     return Vec::new();
                 };
@@ -368,7 +401,7 @@ impl Node {
                     ]
                 })
             }
-            60 => {
+            NodeKind::OffsetSurface => {
                 let Some(mut at) = self.compact_tail_offset() else {
                     return Vec::new();
                 };
@@ -382,7 +415,7 @@ impl Node {
                     vec![(ReferenceRole::Surface, reference)]
                 })
             }
-            133 => {
+            NodeKind::TrimmedCurve => {
                 let Some(mut at) = self.compact_tail_offset() else {
                     return Vec::new();
                 };
@@ -390,7 +423,7 @@ impl Node {
                     vec![(ReferenceRole::Curve, reference)]
                 })
             }
-            137 => {
+            NodeKind::SpCurve => {
                 let Some(mut at) = self.compact_tail_offset() else {
                     return Vec::new();
                 };
@@ -410,10 +443,10 @@ impl Node {
 /// An index of supported records keyed by `(node type, XMT identifier)`.
 #[derive(Debug, Default)]
 pub struct Graph {
-    nodes: BTreeMap<(u8, u32), Node>,
-    by_pos: BTreeMap<usize, (u8, u32)>,
+    nodes: BTreeMap<(NodeKind, u32), Node>,
+    by_pos: BTreeMap<usize, (NodeKind, u32)>,
     /// Record keys grouped by kind in their physical stream order.
-    by_kind: BTreeMap<u8, Vec<(u8, u32)>>,
+    by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -526,7 +559,7 @@ pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
 
 impl Graph {
     pub(crate) fn composite_curves(&self) -> Vec<CompositeCurve> {
-        self.of_kind(38)
+        self.of_kind(NodeKind::Intersection)
             .filter_map(|node| {
                 let mut at = 8 + node.shift;
                 let header = read_sequence_at(&node.bytes, &mut at, 5)?;
@@ -639,7 +672,7 @@ pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
 
 impl Graph {
     pub(crate) fn blend_surfaces(&self) -> Vec<BlendSurface> {
-        self.of_kind(56)
+        self.of_kind(NodeKind::BlendSurface)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
@@ -675,7 +708,7 @@ pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
 
 impl Graph {
     pub(crate) fn offset_surfaces(&self) -> Vec<OffsetSurface> {
-        self.of_kind(60)
+        self.of_kind(NodeKind::OffsetSurface)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let discriminator =
@@ -709,7 +742,7 @@ pub fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
 
 impl Graph {
     pub(crate) fn surface_curves(&self) -> Vec<SurfaceCurve> {
-        self.of_kind(137)
+        self.of_kind(NodeKind::SpCurve)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
@@ -734,7 +767,7 @@ pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
 
 impl Graph {
     pub(crate) fn trimmed_curves(&self) -> Vec<TrimmedCurve> {
-        self.of_kind(133)
+        self.of_kind(NodeKind::TrimmedCurve)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
@@ -830,11 +863,11 @@ impl Graph {
             if stream[pos] != 0 {
                 continue;
             }
-            let kind = stream[pos + 1];
-            let Some(len) = fixed_len(kind) else {
+            let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
                 continue;
             };
-            let target = if matches!(kind, 12 | 19) {
+            let len = fixed_len(kind);
+            let target = if matches!(kind, NodeKind::Body | NodeKind::Region) {
                 &mut ownership_candidates
             } else {
                 &mut candidates
@@ -888,7 +921,7 @@ impl Graph {
     fn fixed_record_candidates(
         stream: &[u8],
         pos: usize,
-        kind: u8,
+        kind: NodeKind,
         len: usize,
         full_node_id_domain: bool,
     ) -> [Option<NodeCandidate>; 2] {
@@ -943,7 +976,7 @@ impl Graph {
     /// authoritative. Invalidate the identity instead of ranking candidates
     /// by topology shape, reference counts, or scan position.
     fn select_unique_candidates(candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
-        let mut by_key = BTreeMap::<(u8, u32), Option<NodeCandidate>>::new();
+        let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
         for node in candidates {
             match by_key.entry((node.kind, node.xmt)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -1017,7 +1050,7 @@ impl Graph {
     }
 
     /// Look up a node by record type and XMT identifier.
-    pub fn get(&self, kind: u8, xmt: u32) -> Option<&Node> {
+    pub fn get(&self, kind: NodeKind, xmt: u32) -> Option<&Node> {
         self.nodes.get(&(kind, xmt))
     }
 
@@ -1028,7 +1061,7 @@ impl Graph {
     }
 
     /// Iterate nodes of one record type in physical record order.
-    pub fn of_kind(&self, kind: u8) -> impl Iterator<Item = &Node> {
+    pub fn of_kind(&self, kind: NodeKind) -> impl Iterator<Item = &Node> {
         self.by_kind
             .get(&kind)
             .into_iter()
@@ -1037,7 +1070,7 @@ impl Graph {
     }
 
     /// Resolve one current XMT identity from a unique kernel node identity.
-    pub(crate) fn unique_xmt_by_node_id(&self, kind: u8, node_id: u32) -> Option<u32> {
+    pub(crate) fn unique_xmt_by_node_id(&self, kind: NodeKind, node_id: u32) -> Option<u32> {
         let mut matches = self
             .of_kind(kind)
             .filter(|node| node.node_id() == Some(node_id))
@@ -1051,18 +1084,18 @@ impl Graph {
     pub fn referenced_curve_xmts(&self) -> BTreeSet<u32> {
         let mut references = BTreeSet::new();
         references.extend(
-            self.of_kind(16)
+            self.of_kind(NodeKind::Edge)
                 .filter_map(Node::edge_fields)
                 .map(|fields| fields.curve)
                 .filter(|reference| *reference > 1),
         );
         references.extend(
-            self.of_kind(17)
+            self.of_kind(NodeKind::Fin)
                 .filter_map(Node::fin_fields)
                 .map(|fields| fields.curve_xmt)
                 .filter(|reference| *reference > 1),
         );
-        for node in self.of_kind(56) {
+        for node in self.of_kind(NodeKind::BlendSurface) {
             let Some(mut at) = node.compact_tail_offset() else {
                 continue;
             };
@@ -1077,7 +1110,7 @@ impl Graph {
                 references.insert(spine);
             }
         }
-        for node in self.of_kind(133) {
+        for node in self.of_kind(NodeKind::TrimmedCurve) {
             if let Some(reference) = node
                 .compact_tail_references(1)
                 .and_then(|items| items.first().copied())
@@ -1086,7 +1119,7 @@ impl Graph {
                 references.insert(reference);
             }
         }
-        for node in self.of_kind(137) {
+        for node in self.of_kind(NodeKind::SpCurve) {
             if let Some(reference) = node
                 .compact_tail_references(3)
                 .and_then(|items| items.get(2).copied())
@@ -1101,18 +1134,21 @@ impl Graph {
     /// Resolve the exact witnesses of the unique edge carrying a curve.
     pub fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
         let edges = self
-            .of_kind(16)
+            .of_kind(NodeKind::Edge)
             .filter_map(Node::edge_fields)
             .filter(|edge| edge.curve == curve_xmt)
             .collect::<Vec<_>>();
         let [edge] = edges.as_slice() else {
             return None;
         };
-        let first_fin = self.get(17, edge.fin)?.fin_fields()?;
-        let second_fin = self.get(17, first_fin.forward)?.fin_fields()?;
+        let first_fin = self.get(NodeKind::Fin, edge.fin)?.fin_fields()?;
+        let second_fin = self.get(NodeKind::Fin, first_fin.forward)?.fin_fields()?;
         let position = |vertex_xmt| {
-            let point_xmt = self.get(18, vertex_xmt)?.vertex_fields()?.point;
-            self.get(29, point_xmt)?.point_position()
+            let point_xmt = self
+                .get(NodeKind::Vertex, vertex_xmt)?
+                .vertex_fields()?
+                .point;
+            self.get(NodeKind::Point, point_xmt)?.point_position()
         };
         Some(CurveEdgeWitness {
             endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
@@ -1124,13 +1160,13 @@ impl Graph {
     pub fn referenced_carrier_xmts(&self) -> BTreeSet<u32> {
         let mut references = self.referenced_curve_xmts();
         references.extend(
-            self.of_kind(14)
+            self.of_kind(NodeKind::Face)
                 .filter_map(Node::face_fields)
                 .map(|fields| fields.surface)
                 .filter(|reference| *reference > 1),
         );
         references.extend(
-            self.of_kind(18)
+            self.of_kind(NodeKind::Vertex)
                 .filter_map(Node::vertex_fields)
                 .map(|fields| fields.point)
                 .filter(|reference| *reference > 1),
@@ -1140,7 +1176,7 @@ impl Graph {
 
     /// Return SHELL nodes whose ownership fields define a body shape.
     pub fn body_shape_shells(&self) -> Vec<&Node> {
-        self.of_kind(13)
+        self.of_kind(NodeKind::Shell)
             .filter(|shell| self.is_body_shape_shell(shell))
             .collect()
     }
@@ -1169,7 +1205,7 @@ impl Graph {
             }
         }
         reachable_fins.iter().all(|xmt| {
-            self.get(17, *xmt)
+            self.get(NodeKind::Fin, *xmt)
                 .and_then(Node::fin_fields)
                 .is_some_and(|fields| fields.other == 1 || reachable_fins.contains(&fields.other))
         })
@@ -1190,7 +1226,7 @@ impl Graph {
     /// the loop, and has reciprocal forward/backward links. Every FIN resolves
     /// its edge and vertex.
     pub fn face_loop_rings(&self, face_xmt: u32) -> Option<Vec<(u32, Vec<u32>)>> {
-        let face = self.get(14, face_xmt)?.face_fields()?;
+        let face = self.get(NodeKind::Face, face_xmt)?.face_fields()?;
         let mut loop_xmt = face.loop_xmt;
         let mut seen_loops = BTreeSet::new();
         let mut rings = Vec::new();
@@ -1198,7 +1234,7 @@ impl Graph {
             if !seen_loops.insert(loop_xmt) {
                 return None;
             }
-            let fields = self.get(15, loop_xmt)?.loop_fields()?;
+            let fields = self.get(NodeKind::Loop, loop_xmt)?.loop_fields()?;
             if fields.face != face_xmt {
                 return None;
             }
@@ -1219,17 +1255,17 @@ impl Graph {
                 return (current == first).then_some(ring);
             }
             ring.push(current);
-            let fields = self.get(17, current)?.fin_fields()?;
-            let vertex_resolves = self.get(18, fields.vertex).is_some()
+            let fields = self.get(NodeKind::Fin, current)?.fin_fields()?;
+            let vertex_resolves = self.get(NodeKind::Vertex, fields.vertex).is_some()
                 || (fields.vertex == 1 && fields.forward == current && fields.backward == current);
             if fields.loop_xmt != loop_xmt
-                || self.get(16, fields.edge).is_none()
+                || self.get(NodeKind::Edge, fields.edge).is_none()
                 || !vertex_resolves
             {
                 return None;
             }
             if fields.other != 1 {
-                let other = self.get(17, fields.other)?.fin_fields()?;
+                let other = self.get(NodeKind::Fin, fields.other)?.fin_fields()?;
                 if other.other != current || other.edge != fields.edge {
                     return None;
                 }
@@ -1239,7 +1275,7 @@ impl Graph {
                     return None;
                 }
             }
-            let next = self.get(17, fields.forward)?.fin_fields()?;
+            let next = self.get(NodeKind::Fin, fields.forward)?.fin_fields()?;
             if next.backward != current {
                 return None;
             }
@@ -1269,11 +1305,11 @@ impl Graph {
         let fields = shell.shell_fields()?;
         if fields.last_face != 1 {
             (fields.last_face == fields.first_face).then_some(())?;
-            self.get(14, fields.first_face)
+            self.get(NodeKind::Face, fields.first_face)
                 .and_then(Node::face_fields)
                 .filter(|face| face.shell == shell.xmt)?;
             let faces: Vec<_> = self
-                .of_kind(14)
+                .of_kind(NodeKind::Face)
                 .filter(|face| {
                     face.face_fields()
                         .is_some_and(|fields| fields.shell == shell.xmt)
@@ -1289,7 +1325,9 @@ impl Graph {
             if !visited.insert(face_xmt) {
                 return None;
             }
-            let face = self.get(14, face_xmt).and_then(Node::face_fields)?;
+            let face = self
+                .get(NodeKind::Face, face_xmt)
+                .and_then(Node::face_fields)?;
             if face.shell != shell.xmt {
                 return None;
             }
@@ -1300,13 +1338,26 @@ impl Graph {
 }
 
 impl ReferenceRole {
-    fn for_kind(kind: u8) -> Option<Self> {
+    fn for_kind(kind: NodeKind) -> Option<Self> {
         match kind {
-            12 => Some(Self::Body),
-            19 => Some(Self::Region),
-            29 => Some(Self::Point),
-            30..=32 | 38 | 133..=134 | 137 => Some(Self::Curve),
-            50..=54 | 56 | 60 | 124 => Some(Self::Surface),
+            NodeKind::Body => Some(Self::Body),
+            NodeKind::Region => Some(Self::Region),
+            NodeKind::Point => Some(Self::Point),
+            NodeKind::Line
+            | NodeKind::Circle
+            | NodeKind::Ellipse
+            | NodeKind::Intersection
+            | NodeKind::TrimmedCurve
+            | NodeKind::BCurve
+            | NodeKind::SpCurve => Some(Self::Curve),
+            NodeKind::Plane
+            | NodeKind::Cylinder
+            | NodeKind::Cone
+            | NodeKind::Sphere
+            | NodeKind::Torus
+            | NodeKind::BlendSurface
+            | NodeKind::OffsetSurface
+            | NodeKind::BSurface => Some(Self::Surface),
             _ => None,
         }
     }
@@ -1314,7 +1365,7 @@ impl ReferenceRole {
 
 #[derive(Debug, Clone, Copy)]
 struct NodeCandidate {
-    kind: u8,
+    kind: NodeKind,
     xmt: u32,
     pos: usize,
     shift: usize,
@@ -1344,7 +1395,7 @@ impl NodeCandidate {
 fn candidate_has_valid_family_framing(
     stream: &[u8],
     pos: usize,
-    kind: u8,
+    kind: NodeKind,
     shift: usize,
     end: usize,
     full_node_id_domain: bool,
@@ -1355,27 +1406,39 @@ fn candidate_has_valid_family_framing(
     // they cannot displace framed records before that graph proof exists.
     if matches!(
         kind,
-        13..=16
-            | 18..=19
-            | 29..=32
-            | 38
-            | 50..=54
-            | 56
-            | 60
-            | 124
-            | 133..=134
-            | 137
+        NodeKind::Shell
+            | NodeKind::Face
+            | NodeKind::Loop
+            | NodeKind::Edge
+            | NodeKind::Vertex
+            | NodeKind::Region
+            | NodeKind::Point
+            | NodeKind::Line
+            | NodeKind::Circle
+            | NodeKind::Ellipse
+            | NodeKind::Intersection
+            | NodeKind::Plane
+            | NodeKind::Cylinder
+            | NodeKind::Cone
+            | NodeKind::Sphere
+            | NodeKind::Torus
+            | NodeKind::BlendSurface
+            | NodeKind::OffsetSurface
+            | NodeKind::BSurface
+            | NodeKind::TrimmedCurve
+            | NodeKind::BCurve
+            | NodeKind::SpCurve
     ) && !full_node_id_domain
         && View::u32_be_at(bytes, 4 + shift).is_none_or(|node_id| node_id > 1_000_000)
     {
         return None;
     }
     match kind {
-        13 => {
+        NodeKind::Shell => {
             let mut at = 8 + shift;
             skip_sequence_at(bytes, &mut at, 8)?;
         }
-        14 => {
+        NodeKind::Face => {
             let mut at = 8 + shift;
             read_and_advance(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
@@ -1383,28 +1446,28 @@ fn candidate_has_valid_family_framing(
             skip_sequence_at(bytes, &mut at, 5)?;
             matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
         }
-        15 => {
+        NodeKind::Loop => {
             let mut at = 8 + shift;
             skip_sequence_at(bytes, &mut at, 4)?;
         }
-        16 => {
+        NodeKind::Edge => {
             let mut at = 8 + shift;
             read_and_advance(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
             skip_sequence_at(bytes, &mut at, 7)?;
         }
-        17 => {
+        NodeKind::Fin => {
             let mut at = 4 + shift;
             skip_sequence_at(bytes, &mut at, 9)?;
             matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
         }
-        18 => {
+        NodeKind::Vertex => {
             let mut at = 8 + shift;
             skip_sequence_at(bytes, &mut at, 5)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
         }
-        29 => {
+        NodeKind::Point => {
             let mut at = 8 + shift;
             skip_sequence_at(bytes, &mut at, 4)?;
             let point = vec3_be_at(bytes, at)?;

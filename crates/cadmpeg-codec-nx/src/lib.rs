@@ -107,6 +107,7 @@ pub use evaluation::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
 
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::container::{ContainerRole, EntryCompression};
 
 use std::collections::BTreeMap;
@@ -177,45 +178,45 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
-        attributes.insert("kind".to_string(), stream.kind.label().to_string());
-        if let Some(schema) = &stream.schema {
-            attributes.insert("schema".to_string(), schema.clone());
+        attributes.insert("kind".to_string(), stream.kind().label().to_string());
+        if let Some(schema) = stream.schema() {
+            attributes.insert("schema".to_string(), schema.to_owned());
         }
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             let graph = topology::Graph::parse(&stream.inflated);
             for (kind, name) in [
-                (12, "body"),
-                (13, "shell"),
-                (14, "face"),
-                (15, "loop"),
-                (16, "edge"),
-                (17, "fin"),
-                (18, "vertex"),
-                (19, "region"),
+                (NodeKind::Body, "body"),
+                (NodeKind::Shell, "shell"),
+                (NodeKind::Face, "face"),
+                (NodeKind::Loop, "loop"),
+                (NodeKind::Edge, "edge"),
+                (NodeKind::Fin, "fin"),
+                (NodeKind::Vertex, "vertex"),
+                (NodeKind::Region, "region"),
             ] {
                 attributes.insert(
                     format!("records.{name}"),
                     graph.of_kind(kind).count().to_string(),
                 );
             }
-            if stream.kind == parasolid::StreamKind::Partition {
+            if stream.kind() == parasolid::StreamKind::Partition {
                 let graph = topology::Graph::parse(&semantic_streams[si]);
                 for (kind, name) in [
-                    (12, "body"),
-                    (13, "shell"),
-                    (14, "face"),
-                    (15, "loop"),
-                    (16, "edge"),
-                    (17, "fin"),
-                    (18, "vertex"),
-                    (19, "region"),
+                    (NodeKind::Body, "body"),
+                    (NodeKind::Shell, "shell"),
+                    (NodeKind::Face, "face"),
+                    (NodeKind::Loop, "loop"),
+                    (NodeKind::Edge, "edge"),
+                    (NodeKind::Fin, "fin"),
+                    (NodeKind::Vertex, "vertex"),
+                    (NodeKind::Region, "region"),
                 ] {
                     attributes.insert(
                         format!("records.live.{name}"),
                         graph.of_kind(kind).count().to_string(),
                     );
                 }
-            } else if stream.kind == parasolid::StreamKind::Deltas {
+            } else if stream.kind() == parasolid::StreamKind::Deltas {
                 let census = deltas::walk(&stream.inflated);
                 if census.transmit_header.is_some() {
                     attributes.insert(
@@ -265,13 +266,13 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.inline_schema_declarations.len().to_string(),
                     );
                 }
-                for (family, count) in census.full_counts {
+                for (family, count) in census.full_counts() {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),
                         count.to_string(),
                     );
                 }
-                for (family, count) in census.tombstone_counts {
+                for (family, count) in census.tombstone_counts() {
                     attributes.insert(
                         format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
                         count.to_string(),
@@ -287,7 +288,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         };
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
-            role: if stream.kind.is_parasolid() {
+            role: if stream.kind().is_parasolid() {
                 ContainerRole::ParasolidStream
             } else {
                 ContainerRole::Preview
