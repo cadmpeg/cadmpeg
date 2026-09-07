@@ -2674,11 +2674,11 @@ fn sweep_spl_sur(
         for parameter in &mut parameters {
             *parameter = cur.take_f64()?;
         }
-        let formulas = (0..3)
-            .map(|_| law_formula(&mut cur))
-            .collect::<Option<Vec<_>>>()?
-            .try_into()
-            .ok()?;
+        let formulas = [
+            law_formula(&mut cur)?,
+            law_formula(&mut cur)?,
+            law_formula(&mut cur)?,
+        ];
         EmbeddedSweepSurfaceLayout::ProfileFirst {
             profile,
             spine,
