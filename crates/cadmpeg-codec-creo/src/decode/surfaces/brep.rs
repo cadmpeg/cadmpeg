@@ -1076,7 +1076,7 @@ pub(in super::super) fn transfer_native_brep(
         else {
             continue;
         };
-        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
             if let Some(endpoints) = endpoints {
                 native_pcurves
                     .entry((pcurve.curve_id, face_id))

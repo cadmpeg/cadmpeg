@@ -88,9 +88,25 @@ pub fn canonicalized_pcurve_endpoints(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct TwoChartEndpointSets {
-    pub paths: [Option<[[f64; 2]; 2]>; 2],
-    pub complete: bool,
+pub(crate) enum TwoChartEndpointSets {
+    Both([[[f64; 2]; 2]; 2]),
+    First([[f64; 2]; 2]),
+    Second([[f64; 2]; 2]),
+}
+
+impl TwoChartEndpointSets {
+    /// The endpoint path for each face.
+    pub(crate) fn paths(self) -> [Option<[[f64; 2]; 2]>; 2] {
+        match self {
+            Self::Both(paths) => paths.map(Some),
+            Self::First(path) => [Some(path), None],
+            Self::Second(path) => [None, Some(path)],
+        }
+    }
+
+    fn complete(self) -> bool {
+        matches!(self, Self::Both(_))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -155,14 +171,12 @@ fn map_two_chart_endpoint_sets(
     );
     let endpoint_sets =
         std::array::from_fn(|index| mapped_samples[index].as_ref().map(|_| canonical[index]));
-    let complete = endpoint_sets.iter().all(Option::is_some);
-    let endpoint_sets = endpoint_sets
-        .iter()
-        .any(Option::is_some)
-        .then_some(TwoChartEndpointSets {
-            paths: endpoint_sets,
-            complete,
-        });
+    let endpoint_sets = match endpoint_sets {
+        [Some(first), Some(second)] => Some(TwoChartEndpointSets::Both([first, second])),
+        [Some(first), None] => Some(TwoChartEndpointSets::First(first)),
+        [None, Some(second)] => Some(TwoChartEndpointSets::Second(second)),
+        [None, None] => None,
+    };
     let surface_mismatch =
         if let (Some(first_path), Some(second_path)) = (&mapped_samples[0], &mapped_samples[1]) {
             !first_path
@@ -587,7 +601,7 @@ pub fn reconcile_support_apex_cone_parameter_branches(
             &mut witnesses,
             &planes,
             pcurve.faces,
-            endpoint_sets.paths,
+            endpoint_sets.paths(),
         );
     }
 
@@ -902,7 +916,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             continue;
         };
         diagnostics.two_chart_mapped_records += 1;
-        if endpoint_sets.complete {
+        if endpoint_sets.complete() {
             diagnostics.two_chart_complete_records += 1;
         } else {
             diagnostics.two_chart_partial_records += 1;
@@ -921,7 +935,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let paths = pcurve
             .faces
             .into_iter()
-            .zip(endpoint_sets.paths)
+            .zip(endpoint_sets.paths())
             .enumerate()
             .filter_map(|(index, (face_id, endpoints))| {
                 (!ignored_surface_ids.contains(&face_id)).then_some((index, (face_id, endpoints?)))
@@ -931,7 +945,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             pcurve.curve_id,
             pcurve.faces,
             paths,
-            endpoint_sets.complete,
+            endpoint_sets.complete(),
             mapping.surface_mismatch,
         );
     }
@@ -1278,7 +1292,7 @@ pub fn transfer_analytic_pcurve_carriers(
             let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(scan, ir, pcurve) else {
                 continue;
             };
-            for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+            for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
                 if let Some(endpoints) = endpoints {
                     retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
                 }
@@ -1915,13 +1929,10 @@ mod tests {
 
         assert_eq!(
             mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
-            Some(TwoChartEndpointSets {
-                paths: [
-                    Some([[-0.01, 0.25], [1.01, 0.75]]),
-                    Some([[-0.01, 0.25], [1.01, 0.75]]),
-                ],
-                complete: true,
-            })
+            Some(TwoChartEndpointSets::Both([
+                [[-0.01, 0.25], [1.01, 0.75]],
+                [[-0.01, 0.25], [1.01, 0.75]],
+            ]))
         );
 
         pcurve.samples[1][1][0] = 0.6;
