@@ -1118,15 +1118,20 @@ fn parse_trim_chain_with_length_encoding(
 }
 
 #[derive(Debug, Clone, PartialEq)]
+enum TrimLengthLane {
+    Decoded(Vec<usize>),
+    PackedTwoStrip,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecordLayout {
     kind: u8,
     independent_count: usize,
     strip_count: usize,
-    lengths: Vec<usize>,
+    lane: TrimLengthLane,
     frame_vector: Option<[f64; 3]>,
     pub(crate) handle_offset: usize,
     pub(crate) handle_count: usize,
-    packed_two_strip_lengths: bool,
     pub(crate) end: usize,
 }
 
@@ -1217,8 +1222,10 @@ fn parse_trim_record_layout_with_length_encoding(
     if !packed_two_strip_lengths && primitive_count > bytes.len().saturating_sub(position) {
         return None;
     }
-    let mut lengths = Vec::with_capacity(primitive_count);
-    if !packed_two_strip_lengths {
+    let lane = if packed_two_strip_lengths {
+        TrimLengthLane::PackedTwoStrip
+    } else {
+        let mut lengths = Vec::with_capacity(primitive_count);
         for _ in 0..primitive_count {
             let length = if wide_u16be {
                 let value = View::u16_be_at(bytes, position)?;
@@ -1232,12 +1239,12 @@ fn parse_trim_record_layout_with_length_encoding(
         if 3usize.checked_mul(a)?.checked_add(lengths.iter().sum())? != handle_count {
             return None;
         }
-    }
+        TrimLengthLane::Decoded(lengths)
+    };
     let handle_offset = position;
-    let byte_count = if packed_two_strip_lengths {
-        2usize.checked_add(handle_count.checked_mul(width)?)?
-    } else {
-        handle_count.checked_mul(width)?
+    let byte_count = match &lane {
+        TrimLengthLane::PackedTwoStrip => 2usize.checked_add(handle_count.checked_mul(width)?)?,
+        TrimLengthLane::Decoded(_) => handle_count.checked_mul(width)?,
     };
     let end = handle_offset.checked_add(byte_count)?;
     bytes.get(handle_offset..end)?;
@@ -1245,11 +1252,10 @@ fn parse_trim_record_layout_with_length_encoding(
         kind,
         independent_count: a,
         strip_count: b,
-        lengths,
+        lane,
         frame_vector,
         handle_offset,
         handle_count,
-        packed_two_strip_lengths,
         end,
     })
 }
@@ -1274,15 +1280,18 @@ fn parse_trim_record_with_length_encoding(
 ) -> Option<TrimRecord> {
     let layout = parse_trim_record_layout_with_length_encoding(bytes, start, width, wide_u16be)?;
     let mut position = layout.handle_offset;
-    let mut lengths = layout.lengths;
-    if layout.packed_two_strip_lengths {
-        let packed = bytes.get(position..position + 2)?;
-        position += 2;
-        lengths = vec![usize::from(packed[0]), usize::from(packed[1])];
-        if lengths.iter().sum::<usize>() != layout.handle_count {
-            return None;
+    let lengths = match layout.lane {
+        TrimLengthLane::Decoded(lengths) => lengths,
+        TrimLengthLane::PackedTwoStrip => {
+            let packed = bytes.get(position..position + 2)?;
+            position += 2;
+            let lengths = vec![usize::from(packed[0]), usize::from(packed[1])];
+            if lengths.iter().sum::<usize>() != layout.handle_count {
+                return None;
+            }
+            lengths
         }
-    }
+    };
     let mut handles = Vec::with_capacity(layout.handle_count);
     for _ in 0..layout.handle_count {
         let handle = match width {
