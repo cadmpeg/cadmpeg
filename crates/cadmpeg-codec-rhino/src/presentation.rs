@@ -376,10 +376,66 @@ struct DimensionStyleRecord {
     dimension_line_extension_mm: f64,
     suppress_extension_line_1: bool,
     suppress_extension_line_2: bool,
-    parent_style_uuid: Option<String>,
-    controls: BTreeMap<String, serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    v5_extra: Option<V5DimensionStyleExtraRecord>,
+    #[serde(flatten)]
+    details: DimensionStyleDetails,
+}
+
+#[derive(Debug)]
+enum DimensionStyleDetails {
+    V5 {
+        controls: BTreeMap<String, serde_json::Value>,
+        extra: Option<V5DimensionStyleExtraRecord>,
+    },
+    Modern {
+        parent_style_uuid: Option<String>,
+        controls: BTreeMap<String, serde_json::Value>,
+    },
+}
+
+impl DimensionStyleDetails {
+    fn parent_style_uuid(&self) -> Option<&String> {
+        match self {
+            Self::V5 { extra, .. } => extra.as_ref()?.parent_style_uuid.as_ref(),
+            Self::Modern {
+                parent_style_uuid, ..
+            } => parent_style_uuid.as_ref(),
+        }
+    }
+
+    fn controls(&self) -> &BTreeMap<String, serde_json::Value> {
+        match self {
+            Self::V5 { controls, .. } | Self::Modern { controls, .. } => controls,
+        }
+    }
+}
+
+impl Serialize for DimensionStyleDetails {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let extra = match self {
+            Self::V5 { extra, .. } => extra.as_ref(),
+            Self::Modern { .. } => None,
+        };
+        let mut controls = self.controls().clone();
+        if let Some(extra) = extra {
+            controls.insert(
+                "v5_extra_dimension_scale".to_string(),
+                serde_json::json!(extra.dimension_scale),
+            );
+            controls.insert(
+                "v5_extra_dimension_scale_source".to_string(),
+                serde_json::json!(extra.dimension_scale_source),
+            );
+        }
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("parent_style_uuid", &self.parent_style_uuid())?;
+        map.serialize_entry("controls", &controls)?;
+        if let Some(extra) = extra {
+            map.serialize_entry("v5_extra", extra)?;
+        }
+        map.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -3018,19 +3074,6 @@ fn parse_v5_dimension_style(
         "v5_leader_arrow_type".to_string(),
         serde_json::json!(leader_arrow_type),
     );
-    let parent_style_uuid = extra
-        .as_ref()
-        .and_then(|value| value.parent_style_uuid.clone());
-    if let Some(value) = extra.as_ref() {
-        controls.insert(
-            "v5_extra_dimension_scale".to_string(),
-            serde_json::json!(value.dimension_scale),
-        );
-        controls.insert(
-            "v5_extra_dimension_scale_source".to_string(),
-            serde_json::json!(value.dimension_scale_source),
-        );
-    }
     let key = if id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -3067,9 +3110,7 @@ fn parse_v5_dimension_style(
         dimension_line_extension_mm,
         suppress_extension_line_1,
         suppress_extension_line_2,
-        parent_style_uuid,
-        controls,
-        v5_extra: extra,
+        details: DimensionStyleDetails::V5 { controls, extra },
     })
 }
 
@@ -3153,9 +3194,10 @@ fn parse_dimension_style(
         dimension_line_extension_mm,
         suppress_extension_line_1,
         suppress_extension_line_2,
-        parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
-        controls,
-        v5_extra: None,
+        details: DimensionStyleDetails::Modern {
+            parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
+            controls,
+        },
     })
 }
 
@@ -5183,15 +5225,24 @@ mod tests {
         assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.name, "dimension style");
         assert_eq!(value.extension_line_extension_mm, 1.0);
-        assert_eq!(value.controls["decimal_separator"], serde_json::json!(112));
-        assert_eq!(value.controls["use_kerning"], serde_json::json!(true));
-        assert_eq!(value.controls["line_space_scale"], serde_json::json!(1.75));
         assert_eq!(
-            value.controls["dimension_length_display"],
+            value.details.controls()["decimal_separator"],
+            serde_json::json!(112)
+        );
+        assert_eq!(
+            value.details.controls()["use_kerning"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value.details.controls()["line_space_scale"],
+            serde_json::json!(1.75)
+        );
+        assert_eq!(
+            value.details.controls()["dimension_length_display"],
             serde_json::json!(107)
         );
         assert_eq!(
-            value.controls["font_characteristics"]["byte_len"],
+            value.details.controls()["font_characteristics"]["byte_len"],
             serde_json::json!(24)
         );
         assert_eq!(value.source_offset, 321);
@@ -5202,8 +5253,14 @@ mod tests {
         let bytes = current_dimension_style_chunk();
         let value = parse_dimension_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 1.0, 654)
             .expect("dimension style with current minor");
-        assert_eq!(value.controls["use_kerning"], serde_json::json!(true));
-        assert_eq!(value.controls["line_space_scale"], serde_json::json!(1.75));
+        assert_eq!(
+            value.details.controls()["use_kerning"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value.details.controls()["line_space_scale"],
+            serde_json::json!(1.75)
+        );
         assert_eq!(value.source_offset, 654);
     }
 
@@ -5244,15 +5301,21 @@ mod tests {
         assert_eq!(value.length_factor, 15.0);
         assert_eq!(value.alternate_length_format, 17);
         assert_eq!(
-            value.parent_style_uuid,
+            value.details.parent_style_uuid().cloned(),
             Some(Uuid::from_canonical([0x11; 16]).to_string())
         );
-        assert_eq!(value.controls["v5_arrow_type"], serde_json::json!(7));
+        assert_eq!(
+            value.details.controls()["v5_arrow_type"],
+            serde_json::json!(7)
+        );
         assert_eq!(
             value.source_uuid,
             Some(Uuid::from_canonical([0x33; 16]).to_string())
         );
-        assert!(value.v5_extra.is_some());
+        assert!(matches!(
+            value.details,
+            DimensionStyleDetails::V5 { extra: Some(_), .. }
+        ));
 
         let mut minor_zero_body = Vec::new();
         minor_zero_body.extend([0; 16]);
