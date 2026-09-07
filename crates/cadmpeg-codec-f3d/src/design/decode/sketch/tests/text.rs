@@ -840,7 +840,7 @@ fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::reco
     crate::design::decode::sketch::decode_sketch_text_record(
         bytes,
         "Design/BulkStream.dat",
-        "329".into(),
+        crate::records::DesignClassTag::try_from("329".to_owned()).unwrap(),
         class_version,
         304,
         7,

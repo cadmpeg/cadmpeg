@@ -151,7 +151,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         id: "f3d:BulkStream.dat:text#20".into(),
         record_index: 20,
         owner_reference: 42,
-        class_tag: "376".into(),
+        class_tag: crate::records::DesignClassTag::try_from("376".to_owned()).unwrap(),
         class_version: 0,
         byte_offset: 20,
         entity_genesis: Some(0),

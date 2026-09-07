@@ -1606,7 +1606,7 @@ pub(crate) fn decode_sketch_texts_from_stream(
         }
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into()))?;
-        let class_tag = frame.class_tag.into();
+        let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
         if let Some(text) = decode_sketch_text_record(
             payload,
@@ -2173,7 +2173,7 @@ fn decode_indexed_sketch_text_record_tail(
 fn assemble_sketch_text(
     payload: &[u8],
     stream: &str,
-    class_tag: String,
+    class_tag: crate::records::DesignClassTag,
     class_version: u32,
     record_index: u32,
     byte_offset: usize,
@@ -2203,7 +2203,7 @@ fn assemble_sketch_text(
 pub(crate) fn decode_sketch_text_record(
     payload: &[u8],
     stream: &str,
-    class_tag: String,
+    class_tag: crate::records::DesignClassTag,
     class_version: u32,
     record_index: u32,
     byte_offset: usize,

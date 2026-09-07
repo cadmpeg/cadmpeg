@@ -6403,7 +6403,7 @@ pub struct SketchText {
     /// Owning sketch record index.
     pub owner_reference: u32,
     /// Source per-file dynamic ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Record version of this record's class, from its Design `MetaStream` type
     /// table. It selects the member sequence the record was written under.
     pub class_version: u32,
@@ -6576,7 +6576,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             class_version: wire.class_version,
             byte_offset: wire.byte_offset,
             entity_genesis: wire.entity_genesis,
@@ -6616,7 +6616,7 @@ impl From<SketchText> for SketchTextSerde {
             id: text.id,
             record_index: text.record_index,
             owner_reference: text.owner_reference,
-            class_tag: text.class_tag,
+            class_tag: text.class_tag.into(),
             class_version: text.class_version,
             byte_offset: text.byte_offset,
             entity_genesis: text.entity_genesis,

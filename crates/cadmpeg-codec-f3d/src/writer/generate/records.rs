@@ -780,7 +780,6 @@ fn encode_sketch_nurbs(
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(&text.class_tag, "sketch text")?;
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
         &text.raw_bytes,
         "Design/BulkStream.dat",
