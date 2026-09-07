@@ -502,7 +502,6 @@ fn revolution_nurbs(
     let angle_step = (angle[1] - angle[0]) / span_count as f64;
     let parameter_step = (parameter[1] - parameter[0]) / span_count as f64;
     let mut angular = Vec::with_capacity(angular_count);
-    let mut angular_weights = Vec::with_capacity(angular_count);
     let mut knots = Vec::with_capacity(angular_count + 3);
     for span in 0..span_count {
         let a0 = angle[0] + angle_step * span as f64;
@@ -511,12 +510,9 @@ fn revolution_nurbs(
         let middle_weight = ((a1 - a0) * 0.5).cos();
         if span == 0 {
             angular.push((a0, 1.0));
-            angular_weights.push(1.0);
         }
-        angular.push((middle, 1.0 / middle_weight));
-        angular_weights.push(middle_weight);
+        angular.push((middle, middle_weight));
         angular.push((a1, 1.0));
-        angular_weights.push(1.0);
         let t0 = parameter[0] + parameter_step * span as f64;
         let t1 = parameter[0] + parameter_step * (span + 1) as f64;
         if span == 0 {
@@ -541,7 +537,8 @@ fn revolution_nurbs(
     };
     let mut control_points = Vec::with_capacity(angular_count * profile_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
-    for ((theta, radial_scale), angular_weight) in angular.into_iter().zip(angular_weights) {
+    for (theta, angular_weight) in angular {
+        let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in profile
             .control_points()
             .iter()
@@ -815,15 +812,18 @@ fn read_curve_poles(
         let x = reader.f64()?;
         let y = reader.f64()?;
         let z = if dimension == 3 { reader.f64()? } else { 0.0 };
-        let weight = rational.then(|| reader.f64()).transpose()?;
+        let weight = weights
+            .as_mut()
+            .map(|target| reader.f64().map(|weight| (target, weight)))
+            .transpose()?;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(reader.position(), "NURBS pole is not finite"));
         }
-        let point = if let Some(weight) = weight {
+        let point = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             }
-            weights.as_mut().expect("rational weights").push(weight);
+            target.push(weight);
             [x / weight, y / weight, z / weight]
         } else {
             [x, y, z]
@@ -1000,15 +1000,18 @@ fn read_poles(
         let x = reader.f64()?;
         let y = reader.f64()?;
         let z = if dimension == 3 { reader.f64()? } else { 0.0 };
-        let weight = if rational { Some(reader.f64()?) } else { None };
+        let weight = weights
+            .as_mut()
+            .map(|target| reader.f64().map(|weight| (target, weight)))
+            .transpose()?;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(reader.position(), "NURBS pole is not finite"));
         }
-        let point = if let Some(weight) = weight {
+        let point = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             }
-            weights.as_mut().expect("rational weights").push(weight);
+            target.push(weight);
             [x / weight, y / weight, z / weight]
         } else {
             [x, y, z]
