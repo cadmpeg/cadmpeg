@@ -556,13 +556,13 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
             .effective_color,
         None
     );
-    assert!(
+    assert_eq!(
         parent[0]
             .identity()
             .expect("required invariant")
             .object_mode
-            & 0x0f
-            == IDEF_OBJECT_MODE
+            & 0x0f,
+        IDEF_OBJECT_MODE
     );
 }
 
