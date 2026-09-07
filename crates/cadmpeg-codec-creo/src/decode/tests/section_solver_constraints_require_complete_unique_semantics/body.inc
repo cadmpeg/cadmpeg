@@ -1,8 +1,7 @@
 {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -13,9 +12,8 @@
         offset: 40,
     };
     let arc = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([2, 3]),
         directions: [None; 3],
-        point_ids: [2, 3],
         center_id: Some(4),
         arc_orientation: Some(1),
         vertical_horizontal: None,
@@ -26,9 +24,8 @@
         offset: 41,
     };
     let point = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point,
+        kind: crate::feature::FeatureSegmentKind::Point(4),
         directions: [None; 3],
-        point_ids: [4, 4],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -39,9 +36,8 @@
         offset: 42,
     };
     let other_line = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([5, 6]),
         directions: [None; 3],
-        point_ids: [5, 6],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -52,9 +48,8 @@
         offset: 43,
     };
     let other_arc = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([5, 6]),
         directions: [None; 3],
-        point_ids: [5, 6],
         center_id: Some(7),
         arc_orientation: Some(1),
         vertical_horizontal: None,
@@ -1920,7 +1915,7 @@
         .iter_mut()
         .find(|segment| segment.external_id == 14)
         .expect("point")
-        .point_ids = [8, 8];
+        .kind = crate::feature::FeatureSegmentKind::Point(8);
     let midpoint_skamps = &mut arc_midpoint_definition
         .relations
         .as_mut()
@@ -3604,9 +3599,8 @@
         .expect("segments");
     point_segment.declared_count = 6;
     point_segment.rows.push(crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point,
+        kind: crate::feature::FeatureSegmentKind::Point(6),
         directions: [None; 3],
-        point_ids: [6, 6],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -3924,7 +3918,7 @@
         .as_mut()
         .expect("segments")
         .rows
-        .retain(|segment| !segment.point_ids.contains(&5));
+        .retain(|segment| !segment.point_ids().contains(&5));
     synchronize_segment_count(&mut separate_point_distance);
     assert!(matches!(
         section_dimension_constraints(
@@ -4120,7 +4114,7 @@
         .rows[1]
         .clone();
     incident.external_id = 2;
-    incident.point_ids = [9, 1];
+    incident.kind = crate::feature::FeatureSegmentKind::Arc([9, 1]);
     shared_vertex_definition
         .segments
         .as_mut()
@@ -4225,7 +4219,7 @@
         .rows
         .last_mut()
         .expect("duplicate")
-        .point_ids = [8, 9];
+        .kind = crate::feature::FeatureSegmentKind::Line([8, 9]);
     assert!(matches!(
         section_dimension_constraints(
             &duplicate_measured_segment,
@@ -4290,7 +4284,7 @@
         .expect("segments")
         .rows[1];
     legacy_arc.radius_ref = Some(0);
-    let [first_point, second_point] = legacy_arc.point_ids;
+    let [first_point, second_point] = legacy_arc.point_ids();
     let center = legacy_arc.center_id.expect("arc center");
     let legacy_radius_relation = &mut legacy_radius_definition
         .relations
@@ -4403,7 +4397,7 @@
         .expect("segments")
         .rows[1];
     type6_arc.radius_ref = Some(0);
-    let [type6_first_point, type6_second_point] = type6_arc.point_ids;
+    let [type6_first_point, type6_second_point] = type6_arc.point_ids();
     let type6_center = type6_arc.center_id.expect("arc center");
     let type6_relation = &mut type6_radius_definition
         .relations
@@ -4993,7 +4987,7 @@
     );
     let mut angular_dimension = definition.clone();
     let second_angular_line = &mut angular_dimension.segments.as_mut().expect("segments").rows[1];
-    second_angular_line.kind = crate::feature::FeatureSegmentKind::Line;
+    second_angular_line.kind = crate::feature::FeatureSegmentKind::Line(second_angular_line.point_ids());
     second_angular_line.center_id = None;
     second_angular_line.radius_ref = None;
     let angle_dimension = &mut angular_dimension
@@ -5224,9 +5218,8 @@
         .expect("segments")
         .rows
         .push(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([7, 8]),
             directions: [None; 3],
-            point_ids: [7, 8],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,

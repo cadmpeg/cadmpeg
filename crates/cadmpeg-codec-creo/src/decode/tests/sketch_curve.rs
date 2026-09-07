@@ -65,9 +65,8 @@ fn placed_extrusion_arc_defines_cylinder() {
         offset: 7,
     };
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: Some(3),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -116,9 +115,8 @@ fn placed_extrusion_arc_defines_cylinder() {
 #[test]
 fn segment_verhor_projection_is_closed_and_lossless() {
     let mut segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: Some(0),
@@ -158,7 +156,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     assert_eq!(operands[0].native_kind, "segtab_ptr");
     assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
     assert_eq!(operands[0].object_index, 12);
-    segment.kind = crate::feature::FeatureSegmentKind::Arc;
+    segment.kind = crate::feature::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
         section_segment_verhor_definition(&segment, &sketch, entity),
@@ -473,9 +471,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .rows
         .push(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Arc,
+            kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: Some(7),
             arc_orientation: Some(0),
             vertical_horizontal: None,

@@ -403,7 +403,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
         let common_points = entities
             .iter()
             .filter_map(|external_id| segments.unique_segment(*external_id))
-            .map(|segment| segment.point_ids.into_iter().collect::<BTreeSet<_>>())
+            .map(|segment| segment.point_ids().into_iter().collect::<BTreeSet<_>>())
             .reduce(|common, points| common.intersection(&points).copied().collect());
         if let Some(common_points) = common_points {
             let common_points = common_points.into_iter().collect::<Vec<_>>();
@@ -663,9 +663,8 @@ mod tests {
     #[test]
     fn trim_vertex_requires_exact_trim_entity_incidence() {
         let segment = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -748,7 +747,8 @@ mod tests {
 
         let mut shared_point = definition.clone();
         shared_point.trim_vertices = None;
-        shared_point.segments.as_mut().expect("segments").rows[1].point_ids = [2, 3];
+        shared_point.segments.as_mut().expect("segments").rows[1].kind =
+            crate::feature::FeatureSegmentKind::Line([2, 3]);
         shared_point
             .trim_entities
             .as_mut()
@@ -771,9 +771,8 @@ mod tests {
     #[test]
     fn incomplete_unique_trim_line_uses_stored_orientation() {
         let segment = crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: Some(1),

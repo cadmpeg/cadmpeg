@@ -46,9 +46,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: Some(3),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -162,9 +161,8 @@ fn profile_chain_follows_trim_vertex_incidence() {
         rows: [(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
             .into_iter()
             .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line(point_ids),
                 directions: [None; 3],
-                point_ids,
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,
@@ -227,9 +225,8 @@ fn profile_chain_follows_trim_vertex_incidence() {
         rows: [10, 11]
             .into_iter()
             .map(|external_id| crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc,
+                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: Some(3),
                 arc_orientation: Some(0),
                 vertical_horizontal: None,
@@ -272,9 +269,8 @@ fn profile_chain_follows_trim_vertex_incidence() {
         ]
         .into_iter()
         .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -362,9 +358,8 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: Some(0),
@@ -571,9 +566,8 @@ fn named_revolve_transfers_profile_axis() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,

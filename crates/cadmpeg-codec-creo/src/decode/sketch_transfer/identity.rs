@@ -87,7 +87,9 @@ pub(in super::super) fn saved_section_ordinary_geometry_allowed(
     count == 0
         || (count == 1
             && segments.rows.iter().any(|candidate| {
-                candidate.external_id == segment.external_id && candidate.kind == segment.kind
+                candidate.external_id == segment.external_id
+                    && std::mem::discriminant(&candidate.kind)
+                        == std::mem::discriminant(&segment.kind)
             }))
 }
 
@@ -106,7 +108,7 @@ pub(in super::super) fn saved_section_line_witness_allowed(
         .iter()
         .find(|segment| segment.external_id == external_id)
     {
-        return segment.kind == crate::feature::FeatureSegmentKind::Line
+        return matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
             && saved_section_ordinary_geometry_allowed(definition, segment);
     }
     saved_section_entity_fallback_allowed(definition, external_id)
@@ -404,9 +406,8 @@ mod tests {
 
     fn ordinary_line(external_id: u32) -> crate::feature::FeatureSegment {
         crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -484,7 +485,7 @@ mod tests {
 
         let mut ordinary_arc = segment_table();
         ordinary_arc.rows.push(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Arc,
+            kind: crate::feature::FeatureSegmentKind::Arc(line.point_ids()),
             ..line.clone()
         });
         assert!(!saved_section_line_witness_allowed(

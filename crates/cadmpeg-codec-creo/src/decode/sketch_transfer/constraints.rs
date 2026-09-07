@@ -41,10 +41,10 @@ pub(in super::super) fn section_segment_verhor_definition(
 ) -> Option<SketchConstraintDefinition> {
     let verhor = segment.vertical_horizontal?;
     match (segment.kind, verhor) {
-        (crate::feature::FeatureSegmentKind::Line, 0) => {
+        (crate::feature::FeatureSegmentKind::Line(_), 0) => {
             Some(SketchConstraintDefinition::Vertical { entity })
         }
-        (crate::feature::FeatureSegmentKind::Line, 1) => {
+        (crate::feature::FeatureSegmentKind::Line(_), 1) => {
             Some(SketchConstraintDefinition::Horizontal { entity })
         }
         _ => Some(native_section_segment_verhor_definition(
@@ -430,7 +430,7 @@ pub(in super::super) fn section_angular_entities(
             .iter()
             .filter(|segment| {
                 segment.external_id == external_id
-                    && segment.kind == crate::feature::FeatureSegmentKind::Line
+                    && matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
             })
             .collect::<Vec<_>>();
         (known_entities.contains(&external_id) && matching_segments.len() == 1)
@@ -687,7 +687,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
     let unique_segment_ids = unique_section_segment_external_ids(definition);
     let mut entities_by_radius = BTreeMap::<u32, Vec<u32>>::new();
     for segment in segments.rows.iter().filter(|segment| {
-        segment.kind == crate::feature::FeatureSegmentKind::Arc
+        matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
             && unique_segment_ids.contains(&segment.external_id)
     }) {
         if let Some(radius) = segment.radius_ref {
@@ -1349,10 +1349,10 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
             let matching_line_ids = segments
                 .iter()
                 .filter(|segment| {
-                    segment.kind == crate::feature::FeatureSegmentKind::Line
+                    matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
                         && unique_segment_ids.contains(&segment.external_id)
-                        && (segment.point_ids == [equation.first, equation.second]
-                            || segment.point_ids == [equation.second, equation.first])
+                        && (segment.point_ids() == [equation.first, equation.second]
+                            || segment.point_ids() == [equation.second, equation.first])
                 })
                 .map(|segment| segment.external_id)
                 .chain(
@@ -1774,9 +1774,9 @@ pub(in super::super) fn section_dimension_constraints(
                             return None;
                         }
                         let measured = unique_decoded_section_segment(definition, item.entity_id)?;
-                        if measured.kind == crate::feature::FeatureSegmentKind::Line
-                            && (measured.point_ids == [first_id, second_id]
-                                || measured.point_ids == [second_id, first_id])
+                        if matches!(measured.kind, crate::feature::FeatureSegmentKind::Line(_))
+                            && (measured.point_ids() == [first_id, second_id]
+                                || measured.point_ids() == [second_id, first_id])
                             && measured.vertical_horizontal == Some(expected_coordinate)
                             && known_entities.contains(&measured.external_id)
                         {
@@ -1812,7 +1812,9 @@ pub(in super::super) fn section_dimension_constraints(
                     };
                     let matching = segments
                         .iter()
-                        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+                        .filter(|segment| {
+                            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+                        })
                         .map(|segment| (segment.external_id, segment.radius_ref))
                         .chain(
                             definition
@@ -1851,17 +1853,19 @@ pub(in super::super) fn section_dimension_constraints(
                             let matching = segments
                                 .iter()
                                 .filter(|segment| {
-                                    segment.point_ids == [first_id, second_id]
-                                        || segment.point_ids == [second_id, first_id]
+                                    segment.point_ids() == [first_id, second_id]
+                                        || segment.point_ids() == [second_id, first_id]
                                 })
                                 .collect::<Vec<_>>();
                             if let [measured] = matching.as_slice() {
-                                if measured.kind == crate::feature::FeatureSegmentKind::Line
-                                    && known_entities.contains(&measured.external_id)
+                                if matches!(
+                                    measured.kind,
+                                    crate::feature::FeatureSegmentKind::Line(_)
+                                ) && known_entities.contains(&measured.external_id)
                                 {
                                     let entity = sketch_entity_id(sketch, measured.external_id);
                                     let [first, second] =
-                                        if measured.point_ids == [first_id, second_id] {
+                                        if measured.point_ids() == [first_id, second_id] {
                                             [
                                                 SketchLocus::Start(entity.clone()),
                                                 SketchLocus::End(entity),

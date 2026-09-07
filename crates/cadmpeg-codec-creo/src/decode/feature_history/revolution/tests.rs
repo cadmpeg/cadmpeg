@@ -37,9 +37,8 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,

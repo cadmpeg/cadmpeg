@@ -1148,12 +1148,11 @@ fn positional_trim_vertex_table_retains_an_empty_extent() {
 
 #[test]
 fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
-    let segment = |kind, point_ids, external_id| FeatureSegment {
+    let segment = |kind, external_id| FeatureSegment {
         kind,
         directions: [None; 3],
-        point_ids,
-        center_id: (kind == FeatureSegmentKind::Arc).then_some(4),
-        arc_orientation: (kind == FeatureSegmentKind::Arc).then_some(0),
+        center_id: matches!(kind, FeatureSegmentKind::Arc(_)).then_some(4),
+        arc_orientation: matches!(kind, FeatureSegmentKind::Arc(_)).then_some(0),
         vertical_horizontal: None,
         radius_ref: None,
         radius2_ref: None,
@@ -1166,8 +1165,8 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![
-            segment(FeatureSegmentKind::Line, [1, 2], 9),
-            segment(FeatureSegmentKind::Arc, [2, 3], 10),
+            segment(FeatureSegmentKind::Line([1, 2]), 9),
+            segment(FeatureSegmentKind::Arc([2, 3]), 10),
         ],
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
@@ -1257,10 +1256,9 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
 
 #[test]
 fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
-    let segment = |kind, point_ids, center_id, radius_ref, external_id| FeatureSegment {
+    let segment = |kind, center_id, radius_ref, external_id| FeatureSegment {
         kind,
         directions: [None; 3],
-        point_ids,
         center_id,
         arc_orientation: center_id.map(|_| 0),
         vertical_horizontal: None,
@@ -1313,8 +1311,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         };
 
     let bounded_unique = segment_table(vec![
-        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+        segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(5), Some(6), 10),
     ]);
     let bounded_unique_variables = variables(
         vec![
@@ -1360,8 +1358,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     );
 
     let secant = segment_table(vec![
-        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+        segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(5), Some(6), 10),
     ]);
     let secant_variables = variables(
         vec![
@@ -1376,8 +1374,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     assert!(entity_intersection(&[9, 10], Some(&secant), Some(&secant_variables)).is_none());
 
     let tangent_circles = segment_table(vec![
-        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+        segment(FeatureSegmentKind::Arc([1, 2]), Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(7), Some(8), 10),
     ]);
     let tangent_circle_variables = variables(
         vec![
@@ -1400,8 +1398,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     );
 
     let secant_circles = segment_table(vec![
-        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+        segment(FeatureSegmentKind::Arc([1, 2]), Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(7), Some(8), 10),
     ]);
     let secant_circle_variables = variables(
         vec![
@@ -1425,9 +1423,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
 #[test]
 fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
     let segment = |point_ids, external_id| FeatureSegment {
-        kind: FeatureSegmentKind::Line,
+        kind: FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,

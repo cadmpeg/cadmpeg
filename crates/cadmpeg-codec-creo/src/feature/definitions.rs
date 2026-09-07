@@ -248,24 +248,21 @@ pub struct FeatureEquationTable {
 /// Defined positional segment family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureSegmentKind {
-    /// Type `2` line segment.
-    Line,
-    /// Type `3` circular-arc segment.
-    Arc,
-    /// Type `5` isolated point entity.
-    Point,
+    /// Type `2` line segment with its endpoint IDs.
+    Line([u32; 2]),
+    /// Type `3` circular-arc segment with its endpoint IDs.
+    Arc([u32; 2]),
+    /// Type `5` isolated point entity with its point ID.
+    Point(u32),
 }
 
 /// One positional `segtab_ptr` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSegment {
-    /// Line or arc discriminator.
+    /// Segment family and its point identifiers.
     pub kind: FeatureSegmentKind,
     /// Three direction fields; control-range sentinels remain `None`.
     pub directions: [Option<u32>; 3],
-    /// Endpoint IDs into the section variable table. Point entities normalize
-    /// their single stored point identifier into both slots.
-    pub point_ids: [u32; 2],
     /// Arc center point ID, or `None` for the null sentinel.
     pub center_id: Option<u32>,
     /// Arc orientation field.
@@ -284,6 +281,16 @@ pub struct FeatureSegment {
     pub body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
+}
+
+impl FeatureSegment {
+    /// Endpoint slots into the section variable table. A point repeats its ID.
+    pub fn point_ids(&self) -> [u32; 2] {
+        match self.kind {
+            FeatureSegmentKind::Line(points) | FeatureSegmentKind::Arc(points) => points,
+            FeatureSegmentKind::Point(point) => [point; 2],
+        }
+    }
 }
 
 /// One circular type `10` `segtab_ptr` row.
@@ -2206,30 +2213,28 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
             return;
         }
     }
-    let kind = match row.kind {
-        2 => FeatureSegmentKind::Line,
-        3 => FeatureSegmentKind::Arc,
-        5 => FeatureSegmentKind::Point,
-        _ => {
-            segments.opaque_rows.push(row);
-            return;
-        }
-    };
+    if !matches!(row.kind, 2 | 3 | 5) {
+        segments.opaque_rows.push(row);
+        return;
+    }
     let Some(point0) = row.point_ids[0] else {
         return;
     };
-    let point1 = if kind == FeatureSegmentKind::Point {
-        point0
+    let kind = if row.kind == 5 {
+        FeatureSegmentKind::Point(point0)
     } else {
         let Some(point1) = row.point_ids[1] else {
             return;
         };
-        point1
+        if row.kind == 2 {
+            FeatureSegmentKind::Line([point0, point1])
+        } else {
+            FeatureSegmentKind::Arc([point0, point1])
+        }
     };
     segments.rows.push(FeatureSegment {
         kind,
         directions: row.directions,
-        point_ids: [point0, point1],
         center_id: row.center_id,
         arc_orientation: row.arc_orientation,
         vertical_horizontal: row.vertical_horizontal,
@@ -3067,7 +3072,7 @@ fn trim_endpoint_radius(
     points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<Option<f64>, ()> {
     let mut radii = Vec::new();
-    for point_id in segment.point_ids {
+    for point_id in segment.point_ids() {
         let Some([Some(u), Some(v)]) = points.get(&point_id).copied() else {
             continue;
         };
@@ -3127,9 +3132,9 @@ fn trim_carrier(
         (u.is_finite() && v.is_finite()).then_some([u, v])
     };
     match segment.kind {
-        FeatureSegmentKind::Line => {
-            let start = point(segment.point_ids[0])?;
-            let end = point(segment.point_ids[1])?;
+        FeatureSegmentKind::Line(_) => {
+            let start = point(segment.point_ids()[0])?;
+            let end = point(segment.point_ids()[1])?;
             let scale = start
                 .into_iter()
                 .chain(end)
@@ -3138,12 +3143,12 @@ fn trim_carrier(
             ((end[0] - start[0]).hypot(end[1] - start[1]) > TRIM_INTERSECTION_EPS * scale)
                 .then_some(TrimCarrier::Line { start, end })
         }
-        FeatureSegmentKind::Arc => {
+        FeatureSegmentKind::Arc(_) => {
             let center = point(segment.center_id?)?;
             let radius = trim_radius(segment, center, points, variables)?;
             Some(TrimCarrier::Circle { center, radius })
         }
-        FeatureSegmentKind::Point => None,
+        FeatureSegmentKind::Point(_) => None,
     }
 }
 
@@ -3308,9 +3313,9 @@ pub(crate) fn entity_intersection(
         .iter()
         .skip(1)
         .fold(
-            segments[0].point_ids.into_iter().collect::<BTreeSet<_>>(),
+            segments[0].point_ids().into_iter().collect::<BTreeSet<_>>(),
             |common, segment| {
-                let segment_points = segment.point_ids.into_iter().collect::<BTreeSet<_>>();
+                let segment_points = segment.point_ids().into_iter().collect::<BTreeSet<_>>();
                 common.intersection(&segment_points).copied().collect()
             },
         )
@@ -5533,9 +5538,9 @@ pub(crate) fn saved_positional_generated_entities(
         };
         let segment = generated_segments[&entity_id];
         let value_count = match segment.kind {
-            FeatureSegmentKind::Line => 6,
-            FeatureSegmentKind::Arc => 12,
-            FeatureSegmentKind::Point => continue,
+            FeatureSegmentKind::Line(_) => 6,
+            FeatureSegmentKind::Arc(_) => 12,
+            FeatureSegmentKind::Point(_) => continue,
         };
         if after_id > row_end {
             continue;
@@ -5590,7 +5595,7 @@ pub(crate) fn saved_positional_generated_entities(
             cursor = next;
         }
         if values.len() != value_count {
-            if segment.kind != FeatureSegmentKind::Arc
+            if !matches!(segment.kind, FeatureSegmentKind::Arc(_))
                 || values.len() > value_count
                 || (cursor != row_end && payload.get(cursor) != Some(&0xe3))
             {
@@ -5599,7 +5604,7 @@ pub(crate) fn saved_positional_generated_entities(
             values.resize(value_count, None);
         }
         match segment.kind {
-            FeatureSegmentKind::Line => {
+            FeatureSegmentKind::Line(_) => {
                 let endpoints = [
                     [values[0], values[1], values[2]],
                     [values[3], values[4], values[5]],
@@ -5633,7 +5638,7 @@ pub(crate) fn saved_positional_generated_entities(
                     }));
                 }
             }
-            FeatureSegmentKind::Arc => {
+            FeatureSegmentKind::Arc(_) => {
                 let body_end = saved_positional_body_end(payload, row_end);
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
@@ -5648,7 +5653,7 @@ pub(crate) fn saved_positional_generated_entities(
                     offset: row_start,
                 }));
             }
-            FeatureSegmentKind::Point => {}
+            FeatureSegmentKind::Point(_) => {}
         }
     }
     entities

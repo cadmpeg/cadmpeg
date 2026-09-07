@@ -18,7 +18,7 @@ pub(crate) fn section_line_fixed_coordinate(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<usize> {
     let segment = unique_section_skamp_segment(definition, segment.external_id)?;
-    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)).then_some(())?;
     section_line_entity_fixed_coordinate(definition, segment.external_id)
 }
 
@@ -106,7 +106,7 @@ fn section_line_direct_fixed_coordinates_with_mode(
         unique_section_skamp_segment(definition, entity_id)
     };
     let mut coordinates = segment
-        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
         .and_then(|segment| segment.vertical_horizontal)
         .and_then(|selector| match selector {
             0 => Some(0),
@@ -177,8 +177,9 @@ pub(crate) fn section_skamp_point_on_line(
     };
     let line_for_item = |item: &crate::feature::FeatureSkampItem| {
         unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
-            unique_decoded_section_segment(definition, item.entity_id)
-                .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+            unique_decoded_section_segment(definition, item.entity_id).filter(|segment| {
+                matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
+            })
         })
     };
     let pair = match skamp.kind {
@@ -186,8 +187,9 @@ pub(crate) fn section_skamp_point_on_line(
             .into_iter()
             .find_map(|(line_item, point_item)| {
                 let line = line_for_item(line_item)?;
-                (line_item.sense == 0 && line.kind == crate::feature::FeatureSegmentKind::Line)
-                    .then_some((line, selected_point_id(point_item)?))
+                (line_item.sense == 0
+                    && matches!(line.kind, crate::feature::FeatureSegmentKind::Line(_)))
+                .then_some((line, selected_point_id(point_item)?))
             }),
         9 => [(first, second), (second, first)]
             .into_iter()
@@ -195,7 +197,7 @@ pub(crate) fn section_skamp_point_on_line(
                 let line = line_for_item(line_item)?;
                 if line_item.sense != 0
                     || point_item.sense != 0
-                    || line.kind != crate::feature::FeatureSegmentKind::Line
+                    || !matches!(line.kind, crate::feature::FeatureSegmentKind::Line(_))
                     || !section_skamp_is_point(definition, point_item)
                 {
                     return None;
@@ -209,7 +211,7 @@ pub(crate) fn section_skamp_point_on_line(
     } else {
         section_line_entity_fixed_coordinate_with_unique_rows(definition, pair.0.external_id)?
     };
-    Some((pair.0.point_ids[0], pair.1, coordinate))
+    Some((pair.0.point_ids()[0], pair.1, coordinate))
 }
 
 pub(crate) fn section_skamp_saved_point_on_line(
@@ -287,9 +289,9 @@ pub(crate) fn section_skamp_axis_symmetry(
         section_line_entity_fixed_coordinate_with_unique_rows(definition, axis_item.entity_id)?;
     let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
     {
-        SectionSymmetryAxis::Point(segment.point_ids[0])
+        SectionSymmetryAxis::Point(segment.point_ids()[0])
     } else if let Some(segment) = unique_row {
-        SectionSymmetryAxis::Point(segment.point_ids[0])
+        SectionSymmetryAxis::Point(segment.point_ids()[0])
     } else {
         if !saved_section_line_witness_allowed(definition, axis_item.entity_id) {
             return None;
@@ -383,8 +385,8 @@ pub(crate) fn section_skamp_point_entity_id(
         return (item.sense == 0).then_some(point.point_id);
     }
     let segment = unique_decoded_section_segment(definition, item.entity_id)?;
-    (item.sense == 0 && segment.kind == crate::feature::FeatureSegmentKind::Point)
-        .then_some(segment.point_ids[0])
+    (item.sense == 0 && matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)))
+        .then_some(segment.point_ids()[0])
 }
 
 pub(crate) fn section_skamp_selected_point_id(
@@ -393,7 +395,7 @@ pub(crate) fn section_skamp_selected_point_id(
 ) -> Option<u32> {
     let ordinary_segment = unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
         unique_decoded_section_segment(definition, item.entity_id)
-            .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
+            .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)))
     });
     section_skamp_selected_point_id_with_ordinary_segment(definition, item, ordinary_segment)
 }
@@ -432,12 +434,12 @@ pub(crate) fn section_skamp_selected_point_id_with_ordinary_segment(
         return (item.sense == 4).then_some(circle.center_id);
     }
     let segment = ordinary_segment?;
-    if segment.kind == crate::feature::FeatureSegmentKind::Point {
-        return matches!(item.sense, 0 | 4).then_some(segment.point_ids[0]);
+    if matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)) {
+        return matches!(item.sense, 0 | 4).then_some(segment.point_ids()[0]);
     }
     match item.sense {
-        2 => Some(segment.point_ids[0]),
-        3 => Some(segment.point_ids[1]),
+        2 => Some(segment.point_ids()[0]),
+        3 => Some(segment.point_ids()[1]),
         4 => segment.center_id,
         _ => None,
     }
@@ -547,9 +549,8 @@ mod tests {
         offset: usize,
     ) -> crate::feature::FeatureSegment {
         crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Point,
+            kind: crate::feature::FeatureSegmentKind::Point(point_id),
             directions: [None; 3],
-            point_ids: [point_id; 2],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -645,9 +646,8 @@ mod tests {
     #[test]
     fn incomplete_unique_rows_supply_point_symmetry_sources() {
         let line = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -717,9 +717,8 @@ mod tests {
     #[test]
     fn incomplete_unique_rows_supply_axis_symmetry_sources() {
         let line = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -885,9 +884,8 @@ mod tests {
     #[test]
     fn incomplete_unique_rows_supply_point_on_line_sources() {
         let line = |external_id, point_ids, vertical_horizontal| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal,
@@ -1017,9 +1015,8 @@ mod tests {
     #[test]
     fn saved_line_axis_witness_requires_an_ordinary_line_identity() {
         let line = |external_id| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,

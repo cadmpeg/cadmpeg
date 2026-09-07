@@ -282,30 +282,30 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .expect("segtab");
     assert_eq!(segments.declared_count, 5);
     assert_eq!(segments.rows.len(), 5);
-    assert_eq!(
+    assert!(matches!(
         segments.rows[0].kind,
-        crate::feature::FeatureSegmentKind::Line
-    );
-    assert_eq!(segments.rows[0].point_ids, [7, 8]);
+        crate::feature::FeatureSegmentKind::Line(_)
+    ));
+    assert_eq!(segments.rows[0].point_ids(), [7, 8]);
     assert_eq!(segments.rows[0].center_id, None);
     assert_eq!(segments.rows[0].external_id, 42);
     assert_eq!(
         segments.rows[0].body,
         [2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]
     );
-    assert_eq!(
+    assert!(matches!(
         segments.rows[1].kind,
-        crate::feature::FeatureSegmentKind::Arc
-    );
+        crate::feature::FeatureSegmentKind::Arc(_)
+    ));
     assert_eq!(segments.rows[1].center_id, Some(10));
     assert_eq!(segments.rows[2].external_id, 227);
-    assert_eq!(segments.rows[3].point_ids, [11, 12]);
+    assert_eq!(segments.rows[3].point_ids(), [11, 12]);
     assert_eq!(segments.rows[3].external_id, 0);
-    assert_eq!(
+    assert!(matches!(
         segments.rows[4].kind,
-        crate::feature::FeatureSegmentKind::Point
-    );
-    assert_eq!(segments.rows[4].point_ids, [13, 13]);
+        crate::feature::FeatureSegmentKind::Point(_)
+    ));
+    assert_eq!(segments.rows[4].point_ids(), [13, 13]);
     assert_eq!(segments.rows[4].external_id, 4);
 
     let result = CreoCodec
@@ -531,7 +531,7 @@ fn scan_includes_named_segtab_prototype_as_data() {
 
     assert_eq!(segments.rows.len(), 1);
     assert_eq!(segments.rows[0].external_id, 4);
-    assert_eq!(segments.rows[0].point_ids, [0, 1]);
+    assert_eq!(segments.rows[0].point_ids(), [0, 1]);
     assert_eq!(segments.rows[0].vertical_horizontal, Some(1));
 }
 

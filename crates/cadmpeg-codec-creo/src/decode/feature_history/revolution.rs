@@ -108,7 +108,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         .iter()
                         .filter(|segment| {
                             generating_ids.contains(&segment.external_id)
-                                && segment.kind == crate::feature::FeatureSegmentKind::Arc
+                                && matches!(
+                                    segment.kind,
+                                    crate::feature::FeatureSegmentKind::Arc(_)
+                                )
                         })
                         .map(|segment| segment.external_id),
                     crate::surface::SurfaceKind::TorusOrSphere,
@@ -144,7 +147,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 continue;
             };
             let native_surface = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => {
+                crate::feature::FeatureSegmentKind::Line(_) => {
                     definition.order_table.as_ref().and_then(|order| {
                         ordered_analytic_surface_id_for_feature(
                             &scan.surfaces.rows,
@@ -156,10 +159,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         )
                     })
                 }
-                crate::feature::FeatureSegmentKind::Arc => {
+                crate::feature::FeatureSegmentKind::Arc(_) => {
                     arc_bindings.get(&segment.external_id).copied()
                 }
-                crate::feature::FeatureSegmentKind::Point => None,
+                crate::feature::FeatureSegmentKind::Point(_) => None,
             };
             let surface_id = native_surface.map_or_else(
                 || {

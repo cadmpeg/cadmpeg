@@ -559,9 +559,8 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
-                kind: FeatureSegmentKind::Line,
+                kind: FeatureSegmentKind::Line([8, 9]),
                 directions: [None; 3],
-                point_ids: [8, 9],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,
@@ -902,9 +901,8 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
 #[test]
 fn resolves_section_frame_from_two_generated_arc_cylinders() {
     let segment = |external_id, center_id| FeatureSegment {
-        kind: FeatureSegmentKind::Arc,
+        kind: FeatureSegmentKind::Arc([0; 2]),
         directions: [None; 3],
-        point_ids: [0; 2],
         center_id: Some(center_id),
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1090,9 +1088,8 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
 #[test]
 fn resolves_section_frame_from_complete_generated_planar_prism() {
     let line = |external_id, point_ids| FeatureSegment {
-        kind: FeatureSegmentKind::Line,
+        kind: FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,

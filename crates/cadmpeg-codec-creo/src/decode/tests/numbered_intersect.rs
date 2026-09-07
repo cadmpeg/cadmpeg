@@ -175,9 +175,8 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
 #[test]
 fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() {
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: Some(0),
@@ -1481,9 +1480,8 @@ fn model_feature_ids_include_row_backed_generated_producers() {
 #[test]
 fn closed_fallback_profile_selects_revolution_segments() {
     let segment = |external_id| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,

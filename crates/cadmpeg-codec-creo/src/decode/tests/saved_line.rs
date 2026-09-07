@@ -30,9 +30,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[test]
 fn saved_line_joins_through_order_table() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -989,7 +988,7 @@ fn saved_line_joins_through_order_table() {
         });
     let mut omitted_segment = segment.clone();
     omitted_segment.external_id = 43;
-    omitted_segment.point_ids = [11, 12];
+    omitted_segment.kind = crate::feature::FeatureSegmentKind::Line([11, 12]);
     missing_line
         .segments
         .as_mut()
@@ -1271,9 +1270,8 @@ fn generated_saved_geometry_forms_closed_profiles() {
 #[test]
 fn saved_arc_joins_through_order_table() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: Some(8),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -1641,9 +1639,8 @@ fn saved_arc_joins_through_order_table() {
 #[test]
 fn trimmed_line_reconciles_carrier_and_solver_orientation() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1654,7 +1651,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         offset: 40,
     };
     let anchor = crate::feature::FeatureSegment {
-        point_ids: [5, 6],
+        kind: crate::feature::FeatureSegmentKind::Line([5, 6]),
         external_id: 41,
         body: Vec::new(),
         offset: 39,
@@ -1818,9 +1815,8 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
 #[test]
 fn arc_carriers_use_trim_vertices() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: Some(8),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -1969,9 +1965,8 @@ fn placed_extrusion_line_defines_plane() {
         offset: 7,
     };
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,

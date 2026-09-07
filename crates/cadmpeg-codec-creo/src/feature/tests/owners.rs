@@ -564,8 +564,8 @@ fn positional_saved_section_replays_its_segment_table() {
     assert_eq!(segments.entity_ref, Some(1));
     assert_eq!(segments.rows.len(), 2);
     assert!(segments.is_complete());
-    assert_eq!(segments.rows[0].point_ids, [7, 8]);
-    assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
+    assert_eq!(segments.rows[0].point_ids(), [7, 8]);
+    assert!(matches!(segments.rows[1].kind, FeatureSegmentKind::Arc(_)));
     assert_eq!(segments.rows[1].center_id, Some(10));
     assert_eq!(segments.rows[1].external_id, 43);
 }
@@ -615,7 +615,7 @@ fn positional_segment_rows_follow_variable_structural_trailers() {
 
     assert!(segments.is_complete());
     assert_eq!(segments.rows.len(), 2);
-    assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
+    assert!(matches!(segments.rows[1].kind, FeatureSegmentKind::Arc(_)));
     assert_eq!(segments.rows[1].external_id, 43);
 }
 
@@ -881,9 +881,9 @@ fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
 
     assert!(segments.is_complete());
     assert_eq!(segments.rows.len(), 1);
-    assert_eq!(segments.rows[0].kind, FeatureSegmentKind::Line);
+    assert!(matches!(segments.rows[0].kind, FeatureSegmentKind::Line(_)));
     assert_eq!(segments.rows[0].directions, [Some(0), Some(0), Some(1)]);
-    assert_eq!(segments.rows[0].point_ids, [9, 11]);
+    assert_eq!(segments.rows[0].point_ids(), [9, 11]);
     assert_eq!(segments.rows[0].external_id, 0);
     assert_eq!(
         segments.rows[0].body,

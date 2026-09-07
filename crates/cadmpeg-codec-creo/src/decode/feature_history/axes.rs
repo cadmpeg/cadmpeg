@@ -31,10 +31,10 @@ pub(in super::super) fn resolved_revolution_axis(
     let candidates = segments
         .rows
         .iter()
-        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
         .filter_map(|segment| {
-            let start = points.get(&segment.point_ids[0])?;
-            let end = points.get(&segment.point_ids[1])?;
+            let start = points.get(&segment.point_ids()[0])?;
+            let end = points.get(&segment.point_ids()[1])?;
             if start[0] != 0.0 || end[0] != 0.0 || start == end {
                 return None;
             }

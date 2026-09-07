@@ -284,9 +284,8 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc,
+                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: Some(3),
                 arc_orientation: Some(0),
                 vertical_horizontal: None,

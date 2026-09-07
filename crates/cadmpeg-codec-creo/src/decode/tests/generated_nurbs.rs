@@ -807,9 +807,8 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -981,9 +980,8 @@ fn equation_function_thirty_five_solves_point_on_reference_line() {
 #[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1103,9 +1101,8 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
 #[test]
 fn section_point_uses_its_single_solved_position() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point,
+        kind: crate::feature::FeatureSegmentKind::Point(7),
         directions: [None; 3],
-        point_ids: [7, 7],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1128,9 +1125,8 @@ fn section_point_uses_its_single_solved_position() {
 #[test]
 fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [Some(0), None, Some(0)],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,

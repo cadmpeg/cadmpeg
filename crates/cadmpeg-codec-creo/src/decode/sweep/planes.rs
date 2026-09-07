@@ -184,7 +184,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         let Some(segment) = definition.segments.as_ref()?.segment(source_id) else {
             continue;
         };
-        if segment.kind != crate::feature::FeatureSegmentKind::Arc {
+        if !matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)) {
             continue;
         }
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)

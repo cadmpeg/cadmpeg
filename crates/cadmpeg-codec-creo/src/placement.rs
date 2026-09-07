@@ -96,7 +96,7 @@ fn generated_cylinder_section_transform(
         let Some(segment) = definition.segments.as_ref()?.segment(external_id) else {
             continue;
         };
-        if segment.kind != FeatureSegmentKind::Arc {
+        if !matches!(segment.kind, FeatureSegmentKind::Arc(_)) {
             continue;
         }
         let Some(center_id) = segment.center_id else {
@@ -271,13 +271,13 @@ fn generated_planar_section_transform(
         let Some(segment) = entry.source_entity_id().and_then(|id| segments.segment(id)) else {
             continue;
         };
-        (segment.kind == FeatureSegmentKind::Line).then_some(())?;
+        matches!(segment.kind, FeatureSegmentKind::Line(_)).then_some(())?;
         let point = |point_id| {
             let point = points.get(&point_id)?;
             Some([point[0]?, point[1]?])
         };
-        let start = point(segment.point_ids[0])?;
-        let end = point(segment.point_ids[1])?;
+        let start = point(segment.point_ids()[0])?;
+        let end = point(segment.point_ids()[1])?;
         let direction = [end[0] - start[0], end[1] - start[1]];
         let length = direction[0].hypot(direction[1]);
         (length.is_finite() && length > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
@@ -772,15 +772,15 @@ fn feature_generated_plane_equation(
     };
     let segments = definition.segments.as_ref()?;
     let segment = segments.segment(id)?;
-    (segment.kind == FeatureSegmentKind::Line).then_some(())?;
+    matches!(segment.kind, FeatureSegmentKind::Line(_)).then_some(())?;
     let variables = definition.variables.as_ref()?;
     let (points, _) = variables.reconciled_points();
     let point = |point_id| {
         let point = points.get(&point_id)?;
         Some([point[0]?, point[1]?])
     };
-    let start = point(segment.point_ids[0])?;
-    let end = point(segment.point_ids[1])?;
+    let start = point(segment.point_ids()[0])?;
+    let end = point(segment.point_ids()[1])?;
     let place = |point: [f64; 2]| {
         std::array::from_fn(|axis| {
             transform.origin[axis]

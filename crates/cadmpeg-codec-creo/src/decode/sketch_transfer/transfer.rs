@@ -96,9 +96,9 @@ pub(in super::super) fn transfer_sketches(
             coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
             for segment in &table.rows {
                 let family = match segment.kind {
-                    crate::feature::FeatureSegmentKind::Line => SketchSegmentFamily::Line,
-                    crate::feature::FeatureSegmentKind::Arc => SketchSegmentFamily::Arc,
-                    crate::feature::FeatureSegmentKind::Point => SketchSegmentFamily::Point,
+                    crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
+                    crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
+                    crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
                 };
                 coverage.family_mut(family).0 += 1;
             }
@@ -277,9 +277,9 @@ pub(in super::super) fn transfer_sketches(
             .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
         {
             let family = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => SketchSegmentFamily::Line,
-                crate::feature::FeatureSegmentKind::Arc => SketchSegmentFamily::Arc,
-                crate::feature::FeatureSegmentKind::Point => SketchSegmentFamily::Point,
+                crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
+                crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
+                crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
             };
             coverage.family_mut(family).1 += 1;
         }

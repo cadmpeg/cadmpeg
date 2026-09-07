@@ -327,9 +327,8 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line([21, 22]),
                 directions: [None; 3],
-                point_ids: [21, 22],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,
@@ -393,9 +392,8 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
 #[test]
 fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
     let line = |point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: Some(0),
@@ -562,9 +560,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line,
+                    kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                     directions: [None; 3],
-                    point_ids: [1, 2],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: Some(1),
@@ -575,9 +572,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line,
+                    kind: crate::feature::FeatureSegmentKind::Line([6, 7]),
                     directions: [None; 3],
-                    point_ids: [6, 7],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: Some(1),
@@ -588,9 +584,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line,
+                    kind: crate::feature::FeatureSegmentKind::Line([8, 9]),
                     directions: [Some(1), None, None],
-                    point_ids: [8, 9],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: Some(1),
@@ -601,9 +596,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line,
+                    kind: crate::feature::FeatureSegmentKind::Line([4, 5]),
                     directions: [None; 3],
-                    point_ids: [4, 5],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: Some(1),
@@ -614,9 +608,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line,
+                    kind: crate::feature::FeatureSegmentKind::Line([2, 3]),
                     directions: [None; 3],
-                    point_ids: [2, 3],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: Some(0),
@@ -794,9 +787,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
     segments.declared_count = 7;
     segments.rows.extend([
         crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([10, 12]),
             directions: [None; 3],
-            point_ids: [10, 12],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -807,9 +799,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             offset: 0,
         },
         crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([13, 11]),
             directions: [None; 3],
-            point_ids: [13, 11],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,

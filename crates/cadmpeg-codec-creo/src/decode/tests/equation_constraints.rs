@@ -137,9 +137,8 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         offset: 0,
     };
     let point = |external_id, point_id| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point,
+        kind: crate::feature::FeatureSegmentKind::Point(point_id),
         directions: [None; 3],
-        point_ids: [point_id, point_id],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -409,9 +408,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -576,9 +574,8 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -732,9 +729,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -989,9 +985,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1132,10 +1127,9 @@ fn equation_function_thirty_five_emits_point_on_line() {
         dimension_driven: false,
         offset: 0,
     };
-    let segment = |kind, external_id, point_ids| crate::feature::FeatureSegment {
+    let segment = |kind, external_id| crate::feature::FeatureSegment {
         kind,
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1176,8 +1170,8 @@ fn equation_function_thirty_five_emits_point_on_line() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![
-                segment(crate::feature::FeatureSegmentKind::Line, 10, [1, 2]),
-                segment(crate::feature::FeatureSegmentKind::Point, 12, [3, 3]),
+                segment(crate::feature::FeatureSegmentKind::Line([1, 2]), 10),
+                segment(crate::feature::FeatureSegmentKind::Point(3), 12),
             ],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
@@ -1220,7 +1214,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         .expect("segments");
     segments
         .rows
-        .retain(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point);
+        .retain(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)));
     segments.reference_line_rows = vec![crate::feature::FeatureReferenceLineSegment {
         directions: [None; 3],
         point_ids: [Some(1), Some(2)],
@@ -1326,9 +1320,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,
@@ -1471,9 +1464,8 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,

@@ -567,9 +567,8 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![FeatureSegment {
-            kind: FeatureSegmentKind::Arc,
+            kind: FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: Some(3),
             arc_orientation: Some(0),
             vertical_horizontal: None,
@@ -674,9 +673,8 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![FeatureSegment {
-            kind: FeatureSegmentKind::Arc,
+            kind: FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: Some(3),
             arc_orientation: Some(0),
             vertical_horizontal: None,
@@ -736,9 +734,8 @@ fn saved_generated_line_requires_its_orientation_invariant() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![FeatureSegment {
-            kind: FeatureSegmentKind::Line,
+            kind: FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: Some(0),
             vertical_horizontal: Some(1),

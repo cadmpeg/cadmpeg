@@ -38,21 +38,19 @@ pub(in super::super) fn section_point_locus(
         .filter_map(|segment| {
             let entity = sketch_entity_id(sketch, segment.external_id);
             let locus = match segment.kind {
-                crate::feature::FeatureSegmentKind::Point
-                    if segment.point_ids[0] == point_id && segment.point_ids[1] == point_id =>
-                {
+                crate::feature::FeatureSegmentKind::Point(id) if id == point_id => {
                     SketchLocus::Entity(entity)
                 }
-                crate::feature::FeatureSegmentKind::Line if segment.point_ids[0] == point_id => {
+                crate::feature::FeatureSegmentKind::Line([start, _]) if start == point_id => {
                     SketchLocus::Start(entity)
                 }
-                crate::feature::FeatureSegmentKind::Line if segment.point_ids[1] == point_id => {
+                crate::feature::FeatureSegmentKind::Line([_, end]) if end == point_id => {
                     SketchLocus::End(entity)
                 }
-                crate::feature::FeatureSegmentKind::Arc if segment.point_ids[0] == point_id => {
+                crate::feature::FeatureSegmentKind::Arc([end, _]) if end == point_id => {
                     SketchLocus::End(entity)
                 }
-                crate::feature::FeatureSegmentKind::Arc if segment.point_ids[1] == point_id => {
+                crate::feature::FeatureSegmentKind::Arc([_, start]) if start == point_id => {
                     SketchLocus::Start(entity)
                 }
                 _ => return None,
@@ -66,7 +64,7 @@ pub(in super::super) fn section_point_locus(
             .iter()
             .filter(|segment| {
                 unique_entities.contains(&segment.external_id)
-                    && segment.kind == crate::feature::FeatureSegmentKind::Arc
+                    && matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                     && segment.center_id == Some(point_id)
             })
             .map(|segment| {
@@ -233,9 +231,9 @@ pub(in super::super) fn section_skamp_locus(
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
-            (crate::feature::FeatureSegmentKind::Arc, 2) => Some(SketchLocus::End(entity)),
-            (crate::feature::FeatureSegmentKind::Arc, 3) => Some(SketchLocus::Start(entity)),
-            (crate::feature::FeatureSegmentKind::Arc, 4) => Some(SketchLocus::Center(entity)),
+            (crate::feature::FeatureSegmentKind::Arc(_), 2) => Some(SketchLocus::End(entity)),
+            (crate::feature::FeatureSegmentKind::Arc(_), 3) => Some(SketchLocus::Start(entity)),
+            (crate::feature::FeatureSegmentKind::Arc(_), 4) => Some(SketchLocus::Center(entity)),
             (_, 2) => Some(SketchLocus::Start(entity)),
             (_, 3) => Some(SketchLocus::End(entity)),
             _ => None,
@@ -413,7 +411,7 @@ pub(in super::super) fn section_skamp_shared_endpoint(
     let segment = unique_decoded_section_segment(definition, entity.entity_id)?;
     matches!(
         segment.kind,
-        crate::feature::FeatureSegmentKind::Line | crate::feature::FeatureSegmentKind::Arc
+        crate::feature::FeatureSegmentKind::Line(_) | crate::feature::FeatureSegmentKind::Arc(_)
     )
     .then_some(())?;
     let selected_point = section_skamp_selected_point_id_with_ordinary_segment(
@@ -422,10 +420,10 @@ pub(in super::super) fn section_skamp_shared_endpoint(
         unique_decoded_section_segment(definition, selected.entity_id),
     )?;
     let mut endpoints = segment
-        .point_ids
-        .iter()
+        .point_ids()
+        .into_iter()
         .enumerate()
-        .filter(|(_, point_id)| **point_id == selected_point);
+        .filter(|(_, point_id)| *point_id == selected_point);
     let (endpoint, _) = endpoints.next()?;
     endpoints.next().is_none().then_some(())?;
     section_skamp_locus(
@@ -660,7 +658,7 @@ pub(in super::super) fn section_skamp_is_line(
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return segment.kind == crate::feature::FeatureSegmentKind::Line
+        return matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
             || section_degenerate_axis_line(definition, segment);
     }
     if solver_only_section_entity_family(definition, item.entity_id)
@@ -687,9 +685,7 @@ pub(in super::super) fn section_degenerate_axis_line(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> bool {
-    if segment.kind != crate::feature::FeatureSegmentKind::Point
-        || segment.point_ids[0] != segment.point_ids[1]
-    {
+    if !matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)) {
         return false;
     }
     let expected_kind = match segment.vertical_horizontal {
@@ -723,7 +719,7 @@ pub(in super::super) fn section_skamp_is_point(
             == Some(SectionEntityIncidenceFamily::Point)
         || unique_point_segment(definition, item.entity_id).is_some()
         || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
-            segment.kind == crate::feature::FeatureSegmentKind::Point
+            matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_))
                 && !section_degenerate_axis_line(definition, segment)
         })
 }
@@ -740,8 +736,9 @@ pub(in super::super) fn section_skamp_is_arc(
         return true;
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc);
+        return unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+        });
     }
     section_saved_entity(definition, item.entity_id)
         .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Arc(_)))
@@ -897,8 +894,9 @@ pub(in super::super) fn section_skamp_is_circular(
             )
         })
     } else {
-        unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+        unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+        })
     }
 }
 
@@ -922,8 +920,8 @@ pub(in super::super) fn section_skamp_line_midpoint_sources(
             return None;
         }
         if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-            return (segment.kind == crate::feature::FeatureSegmentKind::Line)
-                .then_some(segment.point_ids.map(SectionPointSource::Point));
+            return matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
+                .then_some(segment.point_ids().map(SectionPointSource::Point));
         }
         if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
             return None;
@@ -995,14 +993,14 @@ pub(in super::super) fn section_skamp_arc_midpoint(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Option<[f64; 2]> {
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        if segment.kind != crate::feature::FeatureSegmentKind::Arc
+        if !matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
             || segment.arc_orientation != Some(0)
         {
             return None;
         }
         let center = complete_section_coordinate(coordinates, segment.center_id?)?;
-        let first = complete_section_coordinate(coordinates, segment.point_ids[0])?;
-        let second = complete_section_coordinate(coordinates, segment.point_ids[1])?;
+        let first = complete_section_coordinate(coordinates, segment.point_ids()[0])?;
+        let second = complete_section_coordinate(coordinates, segment.point_ids()[1])?;
         return oriented_arc_midpoint(center, first, second, None);
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
@@ -1286,9 +1284,8 @@ mod tests {
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Arc,
+                    kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                     directions: [None; 3],
-                    point_ids: [1, 2],
                     center_id: Some(3),
                     arc_orientation: Some(0),
                     vertical_horizontal: None,
@@ -1498,9 +1495,8 @@ mod tests {
         let mut decoded_arc = definition.clone();
         decoded_arc.segments.as_mut().expect("segments").rows.push(
             crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc,
+                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: Some(3),
                 arc_orientation: Some(0),
                 vertical_horizontal: None,
@@ -1573,9 +1569,8 @@ mod tests {
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line,
+                    kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                     directions: [None; 3],
-                    point_ids: [1, 2],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: None,
@@ -1649,9 +1644,8 @@ mod tests {
     #[test]
     fn incomplete_unique_rows_supply_shared_endpoint_tangent_loci() {
         let line = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -1728,12 +1722,10 @@ mod tests {
         let segment =
             |kind: crate::feature::FeatureSegmentKind,
              external_id: u32,
-             point_ids: [u32; 2],
              center_id: Option<u32>,
              arc_orientation: Option<u32>| crate::feature::FeatureSegment {
                 kind,
                 directions: [None; 3],
-                point_ids,
                 center_id,
                 arc_orientation,
                 vertical_horizontal: None,
@@ -1757,23 +1749,20 @@ mod tests {
                 entity_ref: None,
                 rows: vec![
                     segment(
-                        crate::feature::FeatureSegmentKind::Line,
+                        crate::feature::FeatureSegmentKind::Line([1, 2]),
                         10,
-                        [1, 2],
                         None,
                         None,
                     ),
                     segment(
-                        crate::feature::FeatureSegmentKind::Line,
+                        crate::feature::FeatureSegmentKind::Line([3, 4]),
                         20,
-                        [3, 4],
                         None,
                         None,
                     ),
                     segment(
-                        crate::feature::FeatureSegmentKind::Arc,
+                        crate::feature::FeatureSegmentKind::Arc([5, 6]),
                         30,
-                        [5, 6],
                         Some(7),
                         Some(0),
                     ),
@@ -1879,9 +1868,8 @@ mod tests {
             .expect("segments")
             .rows
             .push(segment(
-                crate::feature::FeatureSegmentKind::Line,
+                crate::feature::FeatureSegmentKind::Line([8, 9]),
                 20,
-                [8, 9],
                 None,
                 None,
             ));

@@ -113,7 +113,7 @@ pub(in super::super) fn resolved_profile_chains(
                 .as_ref()
                 .and_then(|table| table.segment(external_id))
                 .is_some_and(|segment| {
-                    segment.kind == crate::feature::FeatureSegmentKind::Arc
+                    matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                         && segment.arc_orientation == Some(0)
                 });
             profile.push(SketchEntityUse {
@@ -158,14 +158,14 @@ pub(in super::super) fn resolved_segment_profile_chains(
             emitted.contains(&segment.external_id)
                 && matches!(
                     segment.kind,
-                    crate::feature::FeatureSegmentKind::Line
-                        | crate::feature::FeatureSegmentKind::Arc
+                    crate::feature::FeatureSegmentKind::Line(_)
+                        | crate::feature::FeatureSegmentKind::Arc(_)
                 )
         })
         .collect::<Vec<_>>();
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, segment) in rows.iter().enumerate() {
-        for point in segment.point_ids {
+        for point in segment.point_ids() {
             incident.entry(point).or_default().push(index);
         }
     }
@@ -175,7 +175,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
         let mut component = BTreeSet::from([seed]);
         let mut frontier = vec![seed];
         while let Some(index) = frontier.pop() {
-            for point in rows[index].point_ids {
+            for point in rows[index].point_ids() {
                 for adjacent in &incident[&point] {
                     if component.insert(*adjacent) {
                         frontier.push(*adjacent);
@@ -185,7 +185,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
         }
         remaining.retain(|index| !component.contains(index));
         if component.iter().any(|index| {
-            rows[*index].point_ids.into_iter().any(|point| {
+            rows[*index].point_ids().into_iter().any(|point| {
                 incident[&point]
                     .iter()
                     .filter(|row| component.contains(row))
@@ -200,7 +200,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
             .min_by_key(|index| rows[**index].external_id)
             .copied()
             .expect("component contains seed");
-        let mut point = rows[first].point_ids[0].min(rows[first].point_ids[1]);
+        let mut point = rows[first].point_ids()[0].min(rows[first].point_ids()[1]);
         let start = point;
         let mut unused = component;
         let mut profile = Vec::new();
@@ -218,20 +218,21 @@ pub(in super::super) fn resolved_segment_profile_chains(
                 break;
             };
             let segment = rows[index];
-            let traversal_reversed = segment.point_ids[1] == point;
-            if !traversal_reversed && segment.point_ids[0] != point {
+            let traversal_reversed = segment.point_ids()[1] == point;
+            if !traversal_reversed && segment.point_ids()[0] != point {
                 break;
             }
-            let analytic_reversed = segment.kind == crate::feature::FeatureSegmentKind::Arc
-                && segment.arc_orientation == Some(0);
+            let analytic_reversed =
+                matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+                    && segment.arc_orientation == Some(0);
             profile.push(SketchEntityUse {
                 entity: sketch_entity_id(sketch, segment.external_id),
                 reversed: traversal_reversed ^ analytic_reversed,
             });
             point = if traversal_reversed {
-                segment.point_ids[0]
+                segment.point_ids()[0]
             } else {
-                segment.point_ids[1]
+                segment.point_ids()[1]
             };
             unused.remove(&index);
         }
@@ -316,7 +317,7 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     if item.sense == 0 {
         return unique_point_segment(definition, item.entity_id).is_some()
             || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
-                segment.kind == crate::feature::FeatureSegmentKind::Point
+                matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_))
                     && !section_degenerate_axis_line(definition, segment)
             });
     }
@@ -336,8 +337,8 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return matches!(
             (segment.kind, item.sense),
-            (crate::feature::FeatureSegmentKind::Line, 2 | 3)
-                | (crate::feature::FeatureSegmentKind::Arc, 2..=4)
+            (crate::feature::FeatureSegmentKind::Line(_), 2 | 3)
+                | (crate::feature::FeatureSegmentKind::Arc(_), 2..=4)
         );
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
@@ -566,8 +567,8 @@ pub(in super::super) fn solver_only_section_entity_family(
                             .is_some_and(|segment| {
                                 matches!(
                                     segment.kind,
-                                    crate::feature::FeatureSegmentKind::Line
-                                        | crate::feature::FeatureSegmentKind::Arc
+                                    crate::feature::FeatureSegmentKind::Line(_)
+                                        | crate::feature::FeatureSegmentKind::Arc(_)
                                 )
                             })
                             || (saved_section_entity_fallback_allowed(

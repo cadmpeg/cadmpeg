@@ -2218,11 +2218,11 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|segment| CreoSketchSegment {
                     external_id: segment.external_id,
                     kind: match segment.kind {
-                        crate::feature::FeatureSegmentKind::Line => "line",
-                        crate::feature::FeatureSegmentKind::Arc => "arc",
-                        crate::feature::FeatureSegmentKind::Point => "point",
+                        crate::feature::FeatureSegmentKind::Line(_) => "line",
+                        crate::feature::FeatureSegmentKind::Arc(_) => "arc",
+                        crate::feature::FeatureSegmentKind::Point(_) => "point",
                     },
-                    point_ids: segment.point_ids,
+                    point_ids: segment.point_ids(),
                     center_id: segment.center_id,
                     directions: segment.directions,
                     arc_orientation: segment.arc_orientation,

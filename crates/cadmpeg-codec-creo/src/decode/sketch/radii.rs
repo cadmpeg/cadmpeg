@@ -176,7 +176,7 @@ pub(crate) fn resolved_section_radii(
         .segments
         .iter()
         .flat_map(|table| &table.rows)
-        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)))
     {
         if unique_decoded_section_segment(definition, segment.external_id) != Some(segment) {
             continue;
@@ -188,7 +188,7 @@ pub(crate) fn resolved_section_radii(
             continue;
         };
         let endpoint_radii = segment
-            .point_ids
+            .point_ids()
             .iter()
             .filter_map(|id| points.get(id))
             .map(|point| (point[0] - center[0]).hypot(point[1] - center[1]))
@@ -401,11 +401,11 @@ fn unique_section_radius_arc(
     let matching = section_segment_rows(definition)
         .iter()
         .filter(|segment| {
-            segment.kind == crate::feature::FeatureSegmentKind::Arc
+            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                 && segment.radius_ref == Some(dimension_id)
                 && segment.center_id == Some(center)
-                && (segment.point_ids == [first_point, second_point]
-                    || segment.point_ids == [second_point, first_point])
+                && (segment.point_ids() == [first_point, second_point]
+                    || segment.point_ids() == [second_point, first_point])
                 && unique_entities.contains(&segment.external_id)
         })
         .collect::<Vec<_>>();
@@ -429,7 +429,7 @@ pub(crate) fn section_skamp_radius_source(
         return Some(SectionRadiusSource::Reference(circle.radius_ref));
     }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return (segment.kind == crate::feature::FeatureSegmentKind::Arc)
+        return matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
             .then_some(segment.radius_ref)
             .flatten()
             .map(SectionRadiusSource::Reference);
@@ -450,7 +450,7 @@ pub(crate) fn section_arc_carrier(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<([f64; 2], f64)> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Arc).then_some(())?;
+    matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)).then_some(())?;
     let center = *points.get(&segment.center_id?)?;
     let radius = *radii.get(&segment.radius_ref?)?;
     Some((center, radius))
@@ -465,7 +465,7 @@ pub(crate) fn section_axis_line_carrier_with_points(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)).then_some(())?;
     let fixed_coordinate = match segment.directions {
         [Some(0), _, _] => 0,
         [_, Some(0), _] => 1,
@@ -479,10 +479,10 @@ pub(crate) fn section_fixed_coordinate_line_carrier(
     segment: &crate::feature::FeatureSegment,
     fixed_coordinate: usize,
 ) -> Option<SketchGeometry> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Line && fixed_coordinate < 2)
+    (matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)) && fixed_coordinate < 2)
         .then_some(())?;
     let endpoint = |id| variable_points.get(&id);
-    let [first, second] = segment.point_ids.map(endpoint);
+    let [first, second] = segment.point_ids().map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
     };
@@ -531,7 +531,7 @@ pub(crate) fn section_axis_reference_line_geometry(
     }
     let fixed_coordinate = usize::try_from(segment.vertical_horizontal?).ok()?;
     let values = segment
-        .point_ids
+        .point_ids()
         .iter()
         .filter_map(|point| {
             variable_points
@@ -541,7 +541,7 @@ pub(crate) fn section_axis_reference_line_geometry(
                 .flatten()
         })
         .collect::<Vec<_>>();
-    let expected_value_count = if segment.point_ids[0] == segment.point_ids[1] {
+    let expected_value_count = if segment.point_ids()[0] == segment.point_ids()[1] {
         1
     } else {
         2
@@ -660,9 +660,8 @@ mod tests {
     #[test]
     fn unique_incomplete_axis_row_supplies_unbounded_carrier() {
         let line = crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: Some(0),
@@ -801,9 +800,8 @@ mod tests {
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Arc,
+                    kind: crate::feature::FeatureSegmentKind::Arc([2, 3]),
                     directions: [None; 3],
-                    point_ids: [2, 3],
                     center_id: Some(1),
                     arc_orientation: Some(1),
                     vertical_horizontal: None,

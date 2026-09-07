@@ -50,7 +50,7 @@ pub(crate) fn saved_section_coordinate_witnesses(
         })
         .filter(|segment| {
             segment
-                .point_ids
+                .point_ids()
                 .iter()
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
@@ -240,11 +240,11 @@ pub(crate) fn resolved_section_coordinates(
         .segments
         .iter()
         .flat_map(|table| &table.rows)
-        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
         .filter(|segment| segment_counts[&segment.external_id] == 1)
         .filter(|segment| {
             segment
-                .point_ids
+                .point_ids()
                 .iter()
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
@@ -468,8 +468,8 @@ pub(crate) fn resolved_section_coordinates(
     for segment in &segments {
         if let Some(coordinate) = section_line_fixed_coordinate(definition, segment) {
             equations.push(SectionCoordinateEquation::point_difference(
-                segment.point_ids[0],
-                segment.point_ids[1],
+                segment.point_ids()[0],
+                segment.point_ids()[1],
                 coordinate,
                 0.0,
             ));
@@ -673,7 +673,7 @@ pub(crate) fn section_linear_distance_coordinate(
         .iter()
         .copied()
         .filter(|segment| {
-            segment.point_ids == [first, second] || segment.point_ids == [second, first]
+            segment.point_ids() == [first, second] || segment.point_ids() == [second, first]
         })
         .collect::<Vec<_>>();
     let point_coordinate = |point_id: u32, coordinate: usize| -> Result<Option<f64>, ()> {
@@ -734,12 +734,12 @@ pub(crate) fn section_linear_distance_coordinate(
     // prove an endpoint role.
     let has_unique_incident_entity = |point_id| {
         table.rows.iter().any(|segment| {
-            segment.point_ids.contains(&point_id)
+            segment.point_ids().contains(&point_id)
                 && table.external_id_count(segment.external_id) == 1
         }) || table.point_rows.iter().any(|segment| {
             segment.point_id == point_id && table.external_id_count(segment.external_id) == 1
         }) || table.rows.iter().any(|segment| {
-            segment.kind == crate::feature::FeatureSegmentKind::Arc
+            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                 && segment.center_id == Some(point_id)
                 && table.external_id_count(segment.external_id) == 1
         }) || table.circle_rows.iter().any(|segment| {
@@ -829,9 +829,8 @@ mod tests {
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![FeatureSegment {
-                    kind: FeatureSegmentKind::Line,
+                    kind: FeatureSegmentKind::Line([1, 2]),
                     directions: [None; 3],
-                    point_ids: [1, 2],
                     center_id: None,
                     arc_orientation: None,
                     vertical_horizontal: None,
@@ -1010,14 +1009,12 @@ mod tests {
         {
             let table = definition.segments.as_mut().expect("segments");
             let mut arc = table.rows[0].clone();
-            arc.kind = FeatureSegmentKind::Arc;
-            arc.point_ids = [10, 11];
+            arc.kind = FeatureSegmentKind::Arc([10, 11]);
             arc.center_id = Some(3);
             arc.external_id = 7;
             arc.vertical_horizontal = None;
             let mut line = table.rows[0].clone();
-            line.kind = FeatureSegmentKind::Line;
-            line.point_ids = [4, 5];
+            line.kind = FeatureSegmentKind::Line([4, 5]);
             line.center_id = None;
             line.external_id = 8;
             line.vertical_horizontal = None;
