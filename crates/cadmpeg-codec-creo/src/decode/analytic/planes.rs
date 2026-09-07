@@ -737,7 +737,7 @@ fn fc05_cylinder_branch_witnesses(
             let frame = fc05_cap_pair_model_frame(scan, pair)?;
             let legacy = super::equations::CylinderEquation {
                 origin: frame.origin,
-                axis: frame.axis,
+                axis: frame.unit_vector(),
                 ref_direction: frame.ref_direction,
                 radius: pair.radius_mm,
             };

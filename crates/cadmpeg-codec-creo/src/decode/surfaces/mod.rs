@@ -11,7 +11,7 @@ mod positional;
 mod prototypes;
 mod transfer_curves;
 
-use crate::decode::axis::Axis;
+use crate::decode::axis::{Axis, Sign};
 #[allow(clippy::wildcard_imports)]
 pub(super) use brep::*;
 #[allow(clippy::wildcard_imports)]
@@ -212,10 +212,18 @@ const EPS_FC05_CAP_FRAME: f64 = 1.0e-9;
 pub(super) struct Fc05CapPairFrame {
     /// Model-space origin of the native cylinder parameterization (`v = 0`).
     pub(super) origin: [f64; 3],
-    pub(super) axis: [f64; 3],
     pub(super) ref_direction: [f64; 3],
     pub(super) axis_index: Axis,
-    pub(super) axis_sign: f64,
+    pub(super) axis_sign: Sign,
+}
+
+impl Fc05CapPairFrame {
+    /// The signed unit vector of the cylinder axis.
+    pub(super) fn unit_vector(self) -> [f64; 3] {
+        let mut axis = [0.0; 3];
+        axis[self.axis_index.index()] = self.axis_sign.scale();
+        axis
+    }
 }
 
 /// Resolve one cap-pair cylinder in model space from its two placed cap planes.
@@ -258,10 +266,14 @@ pub(super) fn fc05_cap_pair_model_frame(
     {
         return None;
     }
-    let axis_sign = (model_span / row_span).signum();
+    let axis_sign = if (model_span / row_span).is_sign_negative() {
+        Sign::Negative
+    } else {
+        Sign::Positive
+    };
     let parameter_origins = placed_caps
         .iter()
-        .map(|(plane, ordinate)| plane.origin[axis_index.index()] - axis_sign * ordinate)
+        .map(|(plane, ordinate)| plane.origin[axis_index.index()] - axis_sign.scale() * ordinate)
         .collect::<Vec<_>>();
     if parameter_origins
         .iter()
@@ -273,16 +285,15 @@ pub(super) fn fc05_cap_pair_model_frame(
         return None;
     }
     let axis_origin = parameter_origins[0];
-    let (origin, axis, ref_direction) = fc05_model_frame(
+    let (origin, _, ref_direction) = fc05_model_frame(
         axis_index,
         axis_origin,
         pair.center_row_frame,
         pair.reference_direction_row_frame,
-        axis_sign,
+        axis_sign.scale(),
     );
     Some(Fc05CapPairFrame {
         origin,
-        axis,
         ref_direction,
         axis_index,
         axis_sign,
@@ -352,7 +363,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     |sign| -f64::from(sign),
                 )
             },
-            |frame| frame.axis_sign,
+            |frame| frame.axis_sign.scale(),
         );
         let legacy_frame = fc05_model_frame(
             axis_index,

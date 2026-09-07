@@ -2042,7 +2042,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             id,
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                axis: Vector3::new(
+                    frame.unit_vector()[0],
+                    frame.unit_vector()[1],
+                    frame.unit_vector()[2],
+                ),
                 ref_direction: Vector3::new(
                     frame.ref_direction[0],
                     frame.ref_direction[1],
@@ -2069,7 +2073,10 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
                     .map_or_else(
-                        || frame.origin[frame.axis_index.index()] + frame.axis_sign * ordinate,
+                        || {
+                            frame.origin[frame.axis_index.index()]
+                                + frame.axis_sign.scale() * ordinate
+                        },
                         |plane| plane.origin[frame.axis_index.index()],
                     );
             let (center, _, _) = fc05_model_frame(
@@ -2077,7 +2084,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 cap_offset,
                 pair.center_row_frame,
                 pair.reference_direction_row_frame,
-                frame.axis_sign,
+                frame.axis_sign.scale(),
             );
             let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
                 .expect("identity grammar");
@@ -2100,7 +2107,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 id,
                 geometry: CurveGeometry::Circle {
                     center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    axis: Vector3::new(
+                        frame.unit_vector()[0],
+                        frame.unit_vector()[1],
+                        frame.unit_vector()[2],
+                    ),
                     ref_direction: Vector3::new(
                         frame.ref_direction[0],
                         frame.ref_direction[1],
