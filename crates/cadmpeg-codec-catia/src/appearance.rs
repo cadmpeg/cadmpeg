@@ -400,6 +400,16 @@ mod tests {
             packet(&inline(vec![3, 0xd1, 0x1a, 0x1f, 0x99])),
             Some(Packet::Body([0xd1, 0x1a, 0x1f, 0x99]))
         );
+        assert_eq!(packet(&inline(vec![2, 0xd1, 0x1a, 0x1f])), None);
+        assert_eq!(packet(&inline(vec![1, 0xd1, 0x1a, 0x1f, 0x99])), None);
+        assert_eq!(packet(&inline(vec![3, 0xd1, 0x1a, 0x1f])), None);
+        assert_eq!(
+            packet(&ValueField::Marker {
+                code: 0xe7,
+                offset: 0
+            }),
+            None
+        );
     }
 
     #[test]
