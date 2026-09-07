@@ -351,7 +351,10 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
         references.map(|pair| pair.references().map(|(_, offset)| offset)),
         [[216, 218], [236, 238]]
     );
-    assert_eq!(references.map(|pair| pair.wrapped()), [false, false]);
+    assert_eq!(
+        references.map(crate::om::simple_hole_references::ReferencePair::wrapped),
+        [false, false]
+    );
 
     let first_prefix = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
     let second_prefix = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
@@ -392,7 +395,10 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
         wrapped_references.map(|pair| pair.references().map(|(_, offset)| offset)),
         [[224, 226], [252, 254]]
     );
-    assert_eq!(wrapped_references.map(|pair| pair.wrapped()), [true, true]);
+    assert_eq!(
+        wrapped_references.map(crate::om::simple_hole_references::ReferencePair::wrapped),
+        [true, true]
+    );
     let mut malformed_wrapper = wrapped.clone();
     malformed_wrapper[16] ^= 1;
     assert!(
@@ -476,7 +482,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     let field = crate::om::datum_csys::datum_csys_references(record).unwrap();
     assert_eq!(field.control(), 0x13);
     assert_eq!(
-        field.members().each_ref().map(|(token, _)| token.value()),
+        field.members().each_ref().map(|(token, ())| token.value()),
         [42, 43, 44, 45, 46, 47, 48, 49]
     );
     assert_eq!(field.offsets(), [114, 116, 118, 120, 122, 124, 126, 128]);
@@ -484,7 +490,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
         field
             .members()
             .iter()
-            .map(|(token, _)| token.raw().to_vec())
+            .map(|(token, ())| token.raw().to_vec())
             .collect::<Vec<_>>(),
         (42..50).map(|value| vec![0xf0, value]).collect::<Vec<_>>()
     );
