@@ -231,7 +231,12 @@ fn parse_canvas_image(
             geometry_payload,
         )
         .ok()?,
-        DesignCanvasAsset::new(asset_class_tag, asset_record_index, asset_name).ok()?,
+        DesignCanvasAsset::new(
+            asset_class_tag.try_into().ok()?,
+            asset_record_index,
+            asset_name,
+        )
+        .ok()?,
         plane_entity_suffix,
         component_entity_suffix,
     )

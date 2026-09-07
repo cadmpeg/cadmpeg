@@ -4827,15 +4827,12 @@ impl DesignCanvasGeometry {
 /// Canvas image-asset record with a nonempty UTF-16 name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesignCanvasAsset {
-    class_tag: String,
+    class_tag: DesignClassTag,
     record_index: u32,
     name: String,
 }
 impl DesignCanvasAsset {
-    pub fn new(class_tag: String, record_index: u32, name: String) -> Result<Self, String> {
-        if class_tag.is_empty() || !class_tag.bytes().all(|byte| byte.is_ascii_graphic()) {
-            return Err("asset_class_tag must contain printable ASCII characters".into());
-        }
+    pub fn new(class_tag: DesignClassTag, record_index: u32, name: String) -> Result<Self, String> {
         if name.is_empty() {
             return Err("asset_name must be nonempty".into());
         }
@@ -5062,7 +5059,8 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
             geometry_payload,
         )?;
         let asset = DesignCanvasAsset::new(
-            wire.asset_class_tag,
+            DesignClassTag::try_from(wire.asset_class_tag)
+                .map_err(|error| format!("asset_class_tag: {error}"))?,
             wire.asset_record_index,
             wire.asset_name,
         )?;
@@ -5195,7 +5193,7 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             plane_reference_offset,
             component_entity_suffix: value.component_entity_suffix,
             component_reference_offset,
-            asset_class_tag: value.asset.class_tag,
+            asset_class_tag: value.asset.class_tag.into(),
             asset_record_index,
             asset_reference_offset,
             asset_byte_offset,
