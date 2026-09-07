@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"5"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"6"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -18,9 +18,9 @@ CadIr
 └── native
 ```
 
-`model` is format-neutral. `native` is a map keyed by format ID. Each value contains an integer `version` and an `arenas` map. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the independently versioned `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+`model` is format-neutral. `native` is a map keyed by format ID. Each value is `{ "arenas": { ... } }`. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
 
-`source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`. Readers accept an omitted `dialects` as unclassified and migrate the former singular `dialect` field to a one-layer set.
+`source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
 The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, and `presentation_layers`. References are string IDs. `subds` contains subdivision-surface control cages and is a free carrier arena.
 
@@ -54,7 +54,7 @@ All stored lengths, coordinates, distances, radii, linear tolerances, and length
 | carrier          | Geometric support referenced by topology                       |
 | sense            | Orientation relative to the referenced carrier                 |
 | exactness        | Fidelity class of an entity or serialized field                |
-| native namespace | Versioned source-specific data outside the neutral model       |
+| native namespace | Source-specific data outside the neutral model                 |
 | unknown record   | Format-specific product identity and related entity links      |
 
 ## Topology
@@ -188,25 +188,9 @@ more than once when the source serializes repeated consumption slots.
 
 ## Native namespaces
 
-A native namespace version declares which arena set and which record shapes a
-stored document holds, and it rises when either changes.
+A native namespace holds one `arenas` map. It carries no version of its own.
 
-When present, native namespace versions are:
-
-| Namespace         | Version |
-| ----------------- | ------- |
-| `native.f3d`      | 13      |
-| `native.sldprt`   | 13      |
-| `native.nx`       | 189     |
-| `native.inventor` | 25      |
-| `native.fcstd`    | 23      |
-| `native.catia`    | 288     |
-| `native.creo`     | 1       |
-| `native.rhino`    | 2       |
-| `native.iges`     | 5       |
-| `native.sat`      | 1       |
-
-Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`; its version 1 is the IR's default for a namespace that declares no shape revision of its own, not a version the codec stamps.
+Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`.
 
 NX native data retains the ordered UG_PART segment index with validated compressed-stream, body-image alias, and role-classified OM-section links. Parasolid attribute-class declarations keep exact field descriptors, topology attribute-list ownership, and counted integer, binary64, and string value records. OM retention covers internally pointed record-area headers and byte identities; object-ID-bounded records; section-scoped class and member declarations with bounded registry suffixes and structured class-layout fingerprints; offset-only store control and column blocks with atomic store-local class-selection lanes; ordered references to uniquely resolved object records and parameter declarations; product-terminated control indices; and complete counted same-store block-index lanes.
 
@@ -216,7 +200,7 @@ Sketch retention reconstructs exact payloads across ordered column boundaries, i
 
 NX datum-coordinate-system payloads retain complete framed scalar fields with exact source offsets. NX JPEG previews with valid bounded marker structure and embedded TIFF material textures transfer to exact neutral document assets. NX native data retains TIFF metadata and exact QAF stored-path-to-logical-material-path catalog relations. Those relations identify texture assets and logical names and leave body and face appearance assignment to the neutral appearance model. Topology-owned Parasolid type-81 attribute instances retain exact class relations to same-stream type-79 definitions selected by their serialized discriminators. Class-specific field-value roles remain native-only. Byte layout for these records lives in [`formats/siemens_nx.md`](formats/siemens_nx.md).
 
-Native records retain typed references into the neutral model. Format-neutral consumers treat foreign native records as opaque. An exporter preserves a supported namespace or reports its omission as loss. Native IDs participate in global uniqueness. Namespace versions change independently of `ir_version`. A consumer that omits a namespace version still processes the neutral model and treats that namespace as opaque.
+Native records retain typed references into the neutral model. Format-neutral consumers treat foreign native records as opaque. An exporter preserves a supported namespace or reports its omission as loss. Native IDs participate in global uniqueness. A consumer that does not know a namespace still processes the neutral model and treats that namespace as opaque.
 
 ## Presentation, attributes, and source fidelity
 
@@ -252,7 +236,7 @@ An unknown product record has an ID and related entity IDs. Source offset, byte 
 
 Validation uses reference lookup and in-IR arithmetic. It checks:
 
-- exact IR and native namespace versions;
+- the exact IR version;
 - non-empty globally unique IDs and strict arena ordering;
 - document and per-entity tolerance bounds;
 - all neutral and native references;
@@ -276,9 +260,9 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 Readers accept exactly `ir_version: "6"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
-Version 5 replaces the optional `Sweep.profile` field and profile-only `Sweep.sections` list with the required `Sweep.section` sum type and a same-typed `Sweep.sections` list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
+`Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
-Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature.
+JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature.
 
 ## Worked cube
 

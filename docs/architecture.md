@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 5. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 6. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 
@@ -19,7 +19,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 - `check` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
 - `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 
-CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 6, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
 A successful dump is not a checked model.
 
@@ -33,7 +33,7 @@ Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits inp
 
 ## CLI stream and exit contract
 
-`dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 8`, which carries the four-state dialect admission wire and always emits the dialect fields: `dialects` on every container summary, decode report, and source metadata block, and `target` on every export report. Each source layer owns its declarations inside its `DialectMatch`; source metadata has no second declaration field. Version 6 added top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message, dialects?, target? }` or null), including semantic refusal paths. `dialects` carries every identified layer on an unsupported-source refusal. `target` carries the typed request state and complete encoder catalog on an unsupported-target refusal. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report. The report carries the four-state dialect admission wire and always emits the dialect fields: `dialects` on every container summary, decode report, and source metadata block, and `target` on every export report. Each source layer owns its declarations inside its `DialectMatch`; source metadata has no second declaration field. The report carries top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message, dialects?, target? }` or null), including semantic refusal paths. `dialects` carries every identified layer on an unsupported-source refusal. `target` carries the typed request state and complete encoder catalog on an unsupported-target refusal. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. `inspect`, `check`, and `diff` write the same report envelope.
 
 Status 0 is success. Status 1 is a semantic refusal, including strict decode policy. Status 2 is an operational failure. A strict refusal from `dump` or `convert` uses `refusal.code: strict_decode_rejected` and serializes its completed decode report. A codec failure from either command uses status 2 and `refusal.code: decode_failed` when an explicit command report is written.
 
@@ -61,7 +61,7 @@ These hold across every codec, every dialect, and every release. A change that b
 
 **The neutral model is dialect-free.** The neutral arenas and model records hold no dialect discriminant and do not branch on one. `CadIr.source` carries `SourceMeta.dialects`, the complete source `DialectLayers`, so primary and nested or carried classification survive a CADIR intermediate. This is source metadata, not neutral-model semantics. Same-format target inheritance reads only the primary match. Container, decode, and export reports carry the corresponding source layers or output target. `cadmpeg-core` carries the dialect types and no format-version branches.
 
-**cadmpeg's own version axes are separate.** `CadIr.ir_version`, `NativeNamespace::version`, report `schema_version`, and `DECODE_SIDECAR_VERSION` describe cadmpeg. A source dialect describes a file someone else wrote. Different lifecycles, different owners, different failure modes; they never share a type and no operation compares one to the other.
+**cadmpeg's own version axis is separate.** `CadIr.ir_version` describes cadmpeg. It is the single version stamp: the CADIR document, the decode sidecar, and the CLI report are exact-match on it and carry no migrations. A source dialect describes a file someone else wrote. Different lifecycles, different owners, different failure modes; they never share a type and no operation compares one to the other.
 
 **Retention and the three write paths are unconditional.** `SourceFidelity`, retained records, and the `verbatim_replay` / `patched` / `synthesized` distinction are how cadmpeg writes back what it does not understand. Retention is never gated on a version check, and no codec is split per dialect: one codec owns its dialect set and branches inside itself. Splitting either way removes the cross-version upgrade path.
 
@@ -85,7 +85,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`                | CLI orchestration, conversion workflow, native validators, and output dispatch.                                                        |
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
-| `cadmpeg-ir`             | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
+| `cadmpeg-ir`             | `CadIr` version 6, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar and embedded-layer identity.                                                                      |

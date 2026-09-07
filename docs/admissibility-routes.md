@@ -77,11 +77,6 @@ Narrowing a keep-full route to a `Check` subset is a claim about the documents
 that route sees. Read the row above first: on IGES and SLDPRT the current
 evidence covers one row each.
 
-`writer.rs`'s `native_version_supported(namespace.version)` gate is not a
-dialect gate. It reads cadmpeg's own `sldprt` native-namespace version out of
-the IR. cadmpeg's version axes and source dialects are separate universes and
-never share a check.
-
 ## Native passthrough arenas
 
 A semantic writer refuses a native arena it cannot preserve, so an arena the

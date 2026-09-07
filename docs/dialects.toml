@@ -795,10 +795,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/dialect.rs"
 # container.rs:293-314) is provenance: it is not an argument to
 # `identify_variant` and appears in no conditional in the crate. It surfaces
 # only as report text (`container::summarize`) and primary-layer declarations
-# (`dialect::declared`). The numbers 276 and 288 are cadmpeg's own native-
-# namespace schema version
-# (`CATIA_NATIVE_VERSION`, native.rs:25), not a file version; they do not
-# belong in this registry.
+# (`dialect::declared`).
 #
 # `complete = false`: the CATIA V5 storage-family space is not published.
 [format.catia]
