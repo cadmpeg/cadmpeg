@@ -24,7 +24,8 @@ use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::protein::{
-    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
+    InstancePropertiesEntry, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord,
+    ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
     EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
@@ -278,25 +279,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let protein_assets = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance.records.iter().map(|asset| ProteinAssetRecord {
-                id: format!(
-                    "inventor:protein:asset#{}-{}",
-                    sha256_hex(instance.entry_name.as_bytes()),
-                    asset.ordinal
-                ),
-                entry_name: instance.entry_name.clone(),
-                ordinal: asset.ordinal,
-                asset: asset.clone(),
+            instance.records.iter().map(|asset| {
+                Ok::<_, CodecError>(ProteinAssetRecord {
+                    id: format!(
+                        "inventor:protein:asset#{}-{}",
+                        sha256_hex(instance.entry_name.as_bytes()),
+                        asset.ordinal
+                    ),
+                    entry_name: InstancePropertiesEntry::try_from(instance.entry_name.clone())
+                        .map_err(CodecError::malformed)?,
+                    asset: asset.clone(),
+                })
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let protein_rejections = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance
-                .rejected
-                .iter()
-                .map(|rejected| ProteinRejectionRecord {
+            instance.rejected.iter().map(|rejected| {
+                ProteinRejectionRecord::try_from(ProteinRejectionRecordWire {
                     id: format!(
                         "inventor:protein:rejection#{}-{}",
                         sha256_hex(instance.entry_name.as_bytes()),
@@ -306,8 +307,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     ordinal: rejected.ordinal,
                     detail: rejected.detail.clone(),
                 })
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(CodecError::malformed)?;
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
     let ufrx = match &container.ufrx {
