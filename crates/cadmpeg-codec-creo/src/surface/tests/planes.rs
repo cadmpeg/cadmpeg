@@ -1280,7 +1280,7 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
     assert!(matches!(
         prototype.field("i_pnts").map(|field| &field.value),
         Some(SurfaceNamedValue::ScalarArray(array))
-            if array.values() == &[
+            if array.values() == [
                 Some(f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6])),
                 Some(1.0),
                 Some(1.0),
@@ -1289,7 +1289,7 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
         Some(SurfaceNamedValue::ScalarArray(array))
-            if array.values() == &[
+            if array.values() == [
                 Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0])),
                 Some(1.0),
                 Some(1.0),
@@ -1309,7 +1309,7 @@ fn interpolation_point_dict_token_does_not_consume_following_world_coordinate() 
     assert!(matches!(
         records[0].field("i_pnts").map(|field| &field.value),
         Some(SurfaceNamedValue::ScalarArray(array))
-            if array.values() == &[
+            if array.values() == [
                 Some(f64::from_be_bytes([0x3f, 0xe6, 1, 2, 3, 4, 5, 6])),
                 Some(f64::from_be_bytes([0x40, 0x40, 1, 2, 3, 4, 5, 6])),
                 Some(1.0),
@@ -1334,7 +1334,7 @@ fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
     assert!(prototype.field("id").is_none());
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray(array)) if array.dimensions() == 1 && array.count() == 3 && array.values() == &[Some(1.0), Some(1.0), Some(1.0)]
+        Some(SurfaceNamedValue::ScalarArray(array)) if array.dimensions() == 1 && array.count() == 3 && array.values() == [Some(1.0), Some(1.0), Some(1.0)]
     ));
 }
 

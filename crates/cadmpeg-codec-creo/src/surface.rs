@@ -3227,8 +3227,10 @@ fn named_surface_value(
                     slots.iter().map(|slot| slot.0).collect(),
                     slots.into_iter().map(|slot| slot.1).collect(),
                 )
-                .map(SurfaceNamedValue::CountedScalarArray)
-                .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()));
+                .map_or_else(
+                    || SurfaceNamedValue::Opaque(body.to_vec()),
+                    SurfaceNamedValue::CountedScalarArray,
+                );
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3267,8 +3269,10 @@ fn named_surface_value(
                     slots.iter().map(|slot| slot.0).collect(),
                     slots.into_iter().map(|slot| slot.1).collect(),
                 )
-                .map(SurfaceNamedValue::CountedScalarArray)
-                .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()));
+                .map_or_else(
+                    || SurfaceNamedValue::Opaque(body.to_vec()),
+                    SurfaceNamedValue::CountedScalarArray,
+                );
             }
         }
     }
@@ -3321,8 +3325,10 @@ fn named_surface_value(
             values,
             spline_slots.map(|slots| slots.into_iter().map(|slot| slot.1).collect()),
         )
-        .map(SurfaceNamedValue::ScalarArray)
-        .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()));
+        .map_or_else(
+            || SurfaceNamedValue::Opaque(body.to_vec()),
+            SurfaceNamedValue::ScalarArray,
+        );
     }
     if compact_integer_field {
         let (value, end) = compact_int(body, 0);
