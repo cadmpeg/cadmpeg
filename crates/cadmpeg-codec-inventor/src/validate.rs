@@ -1616,7 +1616,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
             sections
                 .entry(record.token.as_str())
                 .or_default()
-                .insert(record.number);
+                .insert(u8::from(record.number));
             sections
         },
     );
