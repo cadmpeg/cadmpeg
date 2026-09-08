@@ -1496,10 +1496,11 @@ fn parse_directory(
     bytes: &[u8],
     version: CompoundVersion,
 ) -> Result<Vec<DirectorySlot>, CodecError> {
-    if !bytes.len().is_multiple_of(128) {
+    let (records, remainder) = bytes.as_chunks::<128>();
+    if !remainder.is_empty() {
         return malformed("CFB directory stream has a partial entry");
     }
-    let entry_count = bytes.len() / 128;
+    let entry_count = records.len();
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(entry_count as u64, "parse CFB directory entries")?;
         let retained = entry_count
@@ -1509,7 +1510,7 @@ fn parse_directory(
         ctx.charge_retained(retained as u64, "retain CFB directory")?;
     }
     let mut entries = Vec::with_capacity(entry_count);
-    for raw in bytes.chunks_exact(128) {
+    for raw in records {
         let object_type = raw[66];
         if object_type == 0 {
             entries.push(DirectorySlot::Free);
@@ -1521,7 +1522,7 @@ fn parse_directory(
             5 => DirectoryKind::Root,
             _ => return malformed("invalid CFB directory object type"),
         };
-        let name_len = usize::from(le_u16(raw, 64).expect("directory name length"));
+        let name_len = usize::from(le_u16_array(raw.as_chunks::<2>().0[64 / 2]));
         let name = {
             if !(2..=64).contains(&name_len)
                 || !name_len.is_multiple_of(2)
@@ -1544,7 +1545,7 @@ fn parse_directory(
             1 => DirectoryColor::Black,
             _ => return malformed("invalid CFB directory node color"),
         };
-        let mut size = le_u64(raw, 120).expect("directory stream size");
+        let mut size = le_u64_array(raw.as_chunks::<8>().0[120 / 8]);
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
@@ -1552,10 +1553,10 @@ fn parse_directory(
             name,
             kind,
             color,
-            left: le_u32(raw, 68).expect("directory left pointer"),
-            right: le_u32(raw, 72).expect("directory right pointer"),
-            child: le_u32(raw, 76).expect("directory child pointer"),
-            start_sector: le_u32(raw, 116).expect("directory start sector"),
+            left: le_u32_array(raw.as_chunks::<4>().0[68 / 4]),
+            right: le_u32_array(raw.as_chunks::<4>().0[72 / 4]),
+            child: le_u32_array(raw.as_chunks::<4>().0[76 / 4]),
+            start_sector: le_u32_array(raw.as_chunks::<4>().0[116 / 4]),
             size,
         }));
     }
@@ -1810,8 +1811,14 @@ fn le_u16(bytes: &[u8], offset: usize) -> Option<u16> {
 fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     View::u32_le_at(bytes, offset)
 }
-fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    View::u64_le_at(bytes, offset)
+fn le_u16_array(bytes: [u8; 2]) -> u16 {
+    u16::from_le_bytes(bytes)
+}
+fn le_u32_array(bytes: [u8; 4]) -> u32 {
+    u32::from_le_bytes(bytes)
+}
+fn le_u64_array(bytes: [u8; 8]) -> u64 {
+    u64::from_le_bytes(bytes)
 }
 fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
     Err(CodecError::Malformed(message.into()))
