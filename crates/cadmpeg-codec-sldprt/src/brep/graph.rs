@@ -33,11 +33,12 @@ use cadmpeg_ir::Exactness;
 use super::attrib;
 use super::blend::BlendSupportRef;
 use super::entity;
+use super::index::{scan_carriers, CarrierIndex};
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
 use super::typed;
-use super::{scan_carriers, CarrierIndex, CurveCarrier, LEN_TO_MM};
+use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -6030,7 +6031,7 @@ mod tests {
         tables.insert_bridge(bridge(10, 100, 20));
         tables.insert_bridge(bridge(11, 200, 10));
         let decoded = super::decode_graph(
-            &super::CarrierIndex::default(),
+            &crate::brep::index::CarrierIndex::default(),
             &tables,
             super::entity::Facts {
                 entity_count: 1,
