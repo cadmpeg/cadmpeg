@@ -436,12 +436,22 @@ fn loft_surface_walks_bridge_to_direct_cache() {
             };
 
             assert!(loft.sections.iter().all(Vec::is_empty));
-            assert_eq!(loft.closures, [1, 2]);
-            assert_eq!(loft.singularities, [3, 4]);
-            assert_eq!(loft.mode, 7);
-            assert_eq!(loft.bridge.len(), 5);
+            let crate::nurbs::proc_surface::EmbeddedLoftLayout::Legacy {
+                closures,
+                singularities,
+                mode,
+                bridge,
+                ..
+            } = loft.layout
+            else {
+                panic!("expected legacy loft layout")
+            };
+            assert_eq!(closures, [1, 2]);
+            assert_eq!(singularities, [3, 4]);
+            assert_eq!(mode, 7);
+            assert_eq!(bridge.len(), 5);
             assert!(matches!(
-                loft.bridge.as_slice(),
+                bridge.as_slice(),
                 [
                     cadmpeg_ir::geometry::LoftBridgeToken::Boolean(true),
                     cadmpeg_ir::geometry::LoftBridgeToken::Integer(11),

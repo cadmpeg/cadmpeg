@@ -800,18 +800,30 @@ pub struct EmbeddedLoftSectionEntry {
 pub struct EmbeddedLoft {
     /// The two section lists, in stream order.
     pub sections: [Vec<EmbeddedLoftSectionEntry>; 2],
-    /// The revision-gated form of the layout, when serialized.
-    pub revision_form: Option<cadmpeg_ir::geometry::LoftRevisionForm>,
-    /// Neutral surface parameters of the loft.
-    pub parameters: cadmpeg_ir::geometry::SplineSurfaceParameters,
-    /// Two closure enums.
-    pub closures: [i64; 2],
-    /// Two singularity enums.
-    pub singularities: [i64; 2],
-    /// The mode integer of the loft.
-    pub mode: i64,
-    /// The bridge tokens closing the record, in stream order.
-    pub bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
+    /// The native loft layout.
+    pub layout: EmbeddedLoftLayout,
+}
+
+/// The legacy and revision loft fields.
+pub enum EmbeddedLoftLayout {
+    /// The legacy loft fields.
+    Legacy {
+        /// The ordered parameter ranges.
+        ranges: [[f64; 2]; 2],
+        /// The closure enums.
+        closures: [i64; 2],
+        /// The singularity enums.
+        singularities: [i64; 2],
+        /// The loft mode.
+        mode: i64,
+        /// The bridge tokens in stream order.
+        bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
+    },
+    /// The revision form and optional interval bounds.
+    Revision(
+        cadmpeg_ir::geometry::LoftRevisionForm,
+        [[Option<f64>; 2]; 2],
+    ),
 }
 
 /// One scale block of an embedded compound loft.
@@ -1775,21 +1787,17 @@ fn revision_loft(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
-            revision_form: Some(cadmpeg_ir::geometry::LoftRevisionForm {
-                revision,
-                flags,
-                ints,
-                cache: cache.into_form(),
-                discontinuities,
-                tail_flag,
-            }),
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges {
-                intervals: wrap_ranges,
-            },
-            closures: [0, 0],
-            singularities: [0, 0],
-            mode: 0,
-            bridge: Vec::new(),
+            layout: EmbeddedLoftLayout::Revision(
+                cadmpeg_ir::geometry::LoftRevisionForm {
+                    revision,
+                    flags,
+                    ints,
+                    cache: cache.into_form(),
+                    discontinuities,
+                    tail_flag,
+                },
+                wrap_ranges,
+            ),
         }),
         cache_fit_tolerance: None,
     })
@@ -1837,14 +1845,13 @@ fn loft_spl_sur(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
-            revision_form: None,
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+            layout: EmbeddedLoftLayout::Legacy {
                 ranges: parameter_ranges,
+                closures,
+                singularities,
+                mode,
+                bridge,
             },
-            closures,
-            singularities,
-            mode,
-            bridge,
         }),
         cache_fit_tolerance,
     })
