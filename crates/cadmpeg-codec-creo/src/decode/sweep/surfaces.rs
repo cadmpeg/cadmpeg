@@ -606,7 +606,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         crate::surface::ExtrusionVariant::Linear,
                     ),
                 )
-                .then_some((surface_id, spline))
+                .then_some((surface_id, internal_id, spline))
             })
             .collect::<Vec<_>>();
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
@@ -616,7 +616,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let sweep = transform
             .normal
             .map(|value| value * (span.upper - span.lower));
-        for (native_surface_id, spline) in splines {
+        for (native_surface_id, internal_id, spline) in splines {
             let Some(section_curve) = saved_spline_nurbs(spline) else {
                 continue;
             };
@@ -629,10 +629,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
                 continue;
             };
-            let suffix = spline
-                .entity_id
-                .expect("ordered saved spline has an entity id")
-                .to_string();
+            let suffix = internal_id.to_string();
             let curve_id = CurveId::mint(format!(
                 "creo:feature:extrusion_directrix#{feature_id}:{suffix}"
             ))
