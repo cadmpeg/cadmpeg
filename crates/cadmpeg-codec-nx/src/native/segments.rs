@@ -96,11 +96,11 @@ pub enum SegmentIndexSlot {
 
 /// Validated link from a segment-index word to a compressed stream wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "row_wire::Wire", into = "row_wire::Wire")]
 pub struct SegmentStreamLink {
     /// Globally unique link identity.
     pub id: String,
     /// Owning segment-index row.
-    #[serde(with = "row_wire")]
     pub row: usize,
     /// Row word containing the wrapper offset.
     pub slot: SegmentIndexSlot,
