@@ -10,6 +10,19 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLim
 
 const CFB_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
+enum ContainerKind {
+    Cfb,
+    Zip,
+}
+
+fn detect(bytes: &[u8]) -> ContainerKind {
+    if bytes.starts_with(&CFB_MAGIC) {
+        ContainerKind::Cfb
+    } else {
+        ContainerKind::Zip
+    }
+}
+
 fn allocation_label(allocation: CompoundAllocation) -> &'static str {
     match allocation {
         CompoundAllocation::Regular => "fat",
@@ -39,12 +52,17 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    if bytes.starts_with(&CFB_MAGIC) {
-        let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-        Ok(Listing::Cfb(snapshot.entries().to_vec()))
-    } else {
-        let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
-        Ok(Listing::Zip(snapshot.entries().to_vec()))
+    match detect(bytes) {
+        ContainerKind::Cfb => {
+            let snapshot =
+                CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
+            Ok(Listing::Cfb(snapshot.entries().to_vec()))
+        }
+        ContainerKind::Zip => {
+            let snapshot =
+                ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
+            Ok(Listing::Zip(snapshot.entries().to_vec()))
+        }
     }
 }
 
@@ -67,24 +85,30 @@ pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    if bytes.starts_with(&CFB_MAGIC) {
-        let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-        let entry = snapshot.stream(name).ok_or_else(|| {
-            anyhow::anyhow!("{}", missing_compound_member_message(&snapshot, name))
-        })?;
-        let view = snapshot
-            .open(&ctx, entry)
-            .with_context(|| format!("opening stream {}", shell_quote(name)))?;
-        return Ok(view.window().to_vec());
+    match detect(bytes) {
+        ContainerKind::Cfb => {
+            let snapshot =
+                CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
+            let entry = snapshot.stream(name).ok_or_else(|| {
+                anyhow::anyhow!("{}", missing_compound_member_message(&snapshot, name))
+            })?;
+            let view = snapshot
+                .open(&ctx, entry)
+                .with_context(|| format!("opening stream {}", shell_quote(name)))?;
+            Ok(view.window().to_vec())
+        }
+        ContainerKind::Zip => {
+            let snapshot =
+                ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
+            let entry = snapshot
+                .entry(name)
+                .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
+            let view = snapshot
+                .open(&ctx, &entry.name)
+                .with_context(|| format!("opening entry {}", shell_quote(name)))?;
+            Ok(view.window().to_vec())
+        }
     }
-    let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
-    let entry = snapshot
-        .entry(name)
-        .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
-    let view = snapshot
-        .open(&ctx, &entry.name)
-        .with_context(|| format!("opening entry {}", shell_quote(name)))?;
-    Ok(view.window().to_vec())
 }
 
 fn missing_compound_member_message(snapshot: &CompoundSnapshot<'_>, name: &str) -> String {
