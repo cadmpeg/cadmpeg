@@ -10,6 +10,7 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
 use super::{is_class_token, CLASS_MARKER};
+use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{classify, FeatureClass};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -1925,6 +1926,7 @@ pub(crate) fn project_generated_hole_axes(
             .and_then(|native| native_features.get(native))
             .and_then(|native| native.source_id.as_deref())
             .and_then(|source| source.parse::<u32>().ok())
+            .and_then(|source| FeatureSourceId::try_from(source).ok())
         else {
             continue;
         };
@@ -1935,7 +1937,7 @@ pub(crate) fn project_generated_hole_axes(
             let local_identities = lane
                 .generated_surface_identities
                 .iter()
-                .filter(|identity| identity.feature_source_id == source)
+                .filter(|identity| identity.feature_source_id == source.value())
                 .map(|identity| identity.local_identity)
                 .collect::<HashSet<_>>();
             if local_identities.is_empty() {

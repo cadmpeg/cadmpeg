@@ -25,6 +25,7 @@ use super::selections::{
     mirror_pattern_component_path_at, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
 };
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
+use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -663,7 +664,7 @@ pub(crate) fn bind_mirror_surface_planes(
         })
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
-    let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
+    let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
     for (face, identity) in face_identities {
         let candidates = faces_by_identity
             .entry((identity.feature_source_id, identity.local_id))
@@ -704,8 +705,11 @@ pub(crate) fn bind_mirror_surface_planes(
             let Some(component) = selection.components.last() else {
                 continue;
             };
-            let source = View::u32_le_at(&component.type_signature, 4)
-                .expect("four-byte feature source ID slice");
+            let Some(source) = View::u32_le_at(&component.type_signature, 4)
+                .and_then(|source| FeatureSourceId::try_from(source).ok())
+            else {
+                continue;
+            };
             let Some(local) = component.local_id else {
                 continue;
             };

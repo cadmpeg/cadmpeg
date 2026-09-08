@@ -591,7 +591,7 @@ fn mesh_from(
 
 fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> PersistentFaceIdentity {
     PersistentFaceIdentity {
-        feature_source_id: source,
+        feature_source_id: source.try_into().unwrap(),
         local_id: local,
         trailing_fields: trailing_fields.to_vec(),
     }
@@ -637,7 +637,7 @@ fn opaque_surface_suffix_remains_source_only() {
     assert_eq!(
         references,
         vec![PersistentSurfaceReference::SourceOnly {
-            feature_source_id: 7,
+            feature_source_id: 7_u32.try_into().unwrap(),
             local_surface_id: 3,
         }]
     );
@@ -1831,4 +1831,19 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(4.0, 0.0),
     ];
     assert!(!is_simple_polygon(&crossing, CONTAINMENT_TOLERANCE));
+}
+
+#[test]
+fn persistent_surface_source_sentinels_are_absent() {
+    for source in [0, u32::MAX] {
+        let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
+        let references = persistent_surface_references(
+            &payload,
+            ByteRange {
+                start: 0,
+                end: payload.len(),
+            },
+        );
+        assert!(references.is_empty());
+    }
 }

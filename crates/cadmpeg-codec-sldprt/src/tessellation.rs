@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayLists` descriptor tables.
 
+use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
@@ -124,13 +125,13 @@ pub(crate) enum PersistentSurfaceReference {
     Complete(PersistentFaceIdentity),
     /// A source-level reference whose trailing fields are opaque.
     SourceOnly {
-        feature_source_id: u32,
+        feature_source_id: FeatureSourceId,
         local_surface_id: u32,
     },
 }
 
 impl PersistentSurfaceReference {
-    pub(crate) fn feature_source_id(&self) -> u32 {
+    pub(crate) fn feature_source_id(&self) -> FeatureSourceId {
         match self {
             Self::Complete(identity) => identity.feature_source_id,
             Self::SourceOnly {
@@ -164,7 +165,7 @@ impl DisplayFace {
         let source = sources.next()?;
         sources
             .all(|candidate| candidate == source)
-            .then_some(source)
+            .then_some(source.value())
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
@@ -578,7 +579,7 @@ fn persistent_surface_references(
         let Some(feature_source_id) = fields
             .next()
             .and_then(|field| field.parse::<u32>().ok())
-            .filter(|source| *source != 0 && *source != u32::MAX)
+            .and_then(|source| FeatureSourceId::try_from(source).ok())
         else {
             at = end;
             continue;

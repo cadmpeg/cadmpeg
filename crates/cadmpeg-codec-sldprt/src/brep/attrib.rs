@@ -44,7 +44,7 @@ const ATOM_LOCAL: usize = 4;
 pub(crate) struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
     pub(crate) face_attr: u16,
-    pub(crate) identity: super::PersistentFaceIdentity,
+    pub(crate) identity: Option<super::PersistentFaceIdentity>,
 }
 
 /// A persistent identity bound to an emitted face.
@@ -311,11 +311,13 @@ pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
         };
         let atom = RawFaceAtom {
             face_attr,
-            identity: super::PersistentFaceIdentity {
-                feature_source_id: values[ATOM_FEATURE],
-                local_id: values[ATOM_LOCAL],
-                trailing_fields: values[ATOM_LOCAL + 1..].to_vec(),
-            },
+            identity: super::feature_source::FeatureSourceId::try_from(values[ATOM_FEATURE])
+                .ok()
+                .map(|feature_source_id| super::PersistentFaceIdentity {
+                    feature_source_id,
+                    local_id: values[ATOM_LOCAL],
+                    trailing_fields: values[ATOM_LOCAL + 1..].to_vec(),
+                }),
         };
         match found.entry(face_attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -459,19 +461,40 @@ mod tests {
     }
 
     #[test]
+    fn atom_source_sentinels_have_no_identity() {
+        for source in [0, u32::MAX] {
+            let atoms = scan(&stream(&[74, source, 1_390_698_820, 0, 3], 333));
+            assert_eq!(atoms.len(), 1);
+            assert_eq!(atoms[0].face_attr, 333);
+            assert!(atoms[0].identity.is_none());
+        }
+    }
+
+    #[test]
     fn instance_binds_face_to_producing_feature() {
         let atoms = scan(&stream(&[74, 75, 1_390_698_820, 0, 3], 333));
         assert_eq!(atoms.len(), 1);
         assert_eq!(atoms[0].face_attr, 333);
-        assert_eq!(atoms[0].identity.feature_source_id, 75);
-        assert_eq!(atoms[0].identity.local_id, 3);
+        assert_eq!(
+            atoms[0]
+                .identity
+                .as_ref()
+                .unwrap()
+                .feature_source_id
+                .value(),
+            75
+        );
+        assert_eq!(atoms[0].identity.as_ref().unwrap().local_id, 3);
     }
 
     #[test]
     fn instance_preserves_optional_persistent_tail() {
         let atoms = scan(&stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333));
         assert_eq!(atoms.len(), 1);
-        assert_eq!(atoms[0].identity.trailing_fields, vec![10, 8]);
+        assert_eq!(
+            atoms[0].identity.as_ref().unwrap().trailing_fields,
+            vec![10, 8]
+        );
     }
 
     #[test]

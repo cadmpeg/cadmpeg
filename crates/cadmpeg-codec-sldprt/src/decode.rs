@@ -2450,7 +2450,12 @@ fn build_geometry_ir(
         .collect::<Vec<_>>();
     let face_producers = face_identities
         .iter()
-        .map(|(target, identity)| (target.as_str().to_owned(), identity.feature_source_id))
+        .map(|(target, identity)| {
+            (
+                target.as_str().to_owned(),
+                identity.feature_source_id.value(),
+            )
+        })
         .collect::<Vec<_>>();
     let body_modifiers = brep
         .body_modifiers
@@ -2752,7 +2757,7 @@ fn build_geometry_ir(
                     table_index,
                     candidates
                         .iter()
-                        .map(u32::to_string)
+                        .map(|source| source.value().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 ));
