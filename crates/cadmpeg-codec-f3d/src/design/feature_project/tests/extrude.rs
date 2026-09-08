@@ -499,7 +499,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     )
     .unwrap();
     let mut owner = parse_parameter_owner(&parameter_owner_frame())
-        .expect("generated parameter owner is canonical");
+        .expect("generated parameter owner is canonical")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
     owner.id = "f3d:Design/BulkStream.dat:owner#44".into();
     owner.record_index = 44;
     owner.scope_record_index = scope.record_index;

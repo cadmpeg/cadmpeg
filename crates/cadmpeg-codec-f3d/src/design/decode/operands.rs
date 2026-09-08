@@ -1068,10 +1068,11 @@ pub fn decode_face_source_groups(
     Ok(out)
 }
 
+/// Fixed source-reference and scalar layout for one face carrier class.
 #[derive(Clone, Copy)]
-struct FaceSourceCarrierLayout {
-    source_count: usize,
-    source_reference_offset: usize,
+pub(crate) struct FaceSourceCarrierLayout {
+    pub(crate) source_count: usize,
+    pub(crate) source_reference_offset: usize,
     scalar_offset: usize,
     scalar_discriminator: u32,
     paired_class_tag: &'static str,
@@ -1107,14 +1108,9 @@ fn face_source_carrier_layout(class_tag: &str) -> Option<FaceSourceCarrierLayout
 pub(crate) fn face_source_carrier_spec(
     class_tag: &str,
     paired_class_tag: &str,
-) -> Option<(usize, usize, usize, u32)> {
+) -> Option<FaceSourceCarrierLayout> {
     let layout = face_source_carrier_layout(class_tag)?;
-    (layout.paired_class_tag == paired_class_tag).then_some((
-        layout.source_count,
-        layout.source_reference_offset,
-        layout.scalar_offset,
-        layout.scalar_discriminator,
-    ))
+    (layout.paired_class_tag == paired_class_tag).then_some(layout)
 }
 
 fn parse_face_source_carrier_prefix(
@@ -1449,7 +1445,12 @@ pub fn decode_construction_operand_groups(
             else {
                 continue;
             };
-            match parse_construction_operand_group(bytes, scope, ordinal, header) {
+            match parse_construction_operand_group(
+                bytes,
+                scope,
+                ordinal,
+                &RecordFrame::from(*header),
+            ) {
                 ConstructionOperandGroupParse::Complete(mut group) => {
                     group.id = ids::native_design_construction_operand_group_id(
                         &entry.name,
@@ -2018,6 +2019,24 @@ fn extrude_operand_role(
     }
 }
 
+/// Indexed frame identity and stream position.
+#[derive(Clone, Debug)]
+pub(crate) struct RecordFrame {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) byte_offset: u64,
+}
+
+impl From<&DesignRecordHeader> for RecordFrame {
+    fn from(header: &DesignRecordHeader) -> Self {
+        Self {
+            record_index: header.record_index,
+            class_tag: header.class_tag.clone(),
+            byte_offset: header.byte_offset,
+        }
+    }
+}
+
 /// Read the construction-operand group at `header`.
 ///
 /// The record's members are a leading-block presence byte, the property block
@@ -2039,7 +2058,7 @@ pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
-    header: &DesignRecordHeader,
+    header: &RecordFrame,
 ) -> ConstructionOperandGroupParse {
     use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
 
@@ -2265,7 +2284,7 @@ pub(crate) fn parse_construction_operand_group(
 fn legacy_body_group_tail(
     bytes: &[u8],
     scope: &DesignParameterScope,
-    header: &DesignRecordHeader,
+    header: &RecordFrame,
     cursor: usize,
     opaque_index: u32,
 ) -> Option<(bool, usize, String)> {

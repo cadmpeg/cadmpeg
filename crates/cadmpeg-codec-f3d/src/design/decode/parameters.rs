@@ -484,34 +484,26 @@ pub fn decode_parameter_owners(
         let frame = bytes
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
-        let (mut owner, evaluated_value_is_absolute) =
-            if let Some(owner) = parse_parameter_owner(frame) {
-                (owner, false)
-            } else if let Some(mut owner) =
-                parse_legacy_parameter_owner_68(frame, parameter.evaluated_value)
-            {
-                owner.evaluated_value_offset = parameter.evaluated_value_offset;
-                (owner, true)
-            } else if let Some(mut owner) =
-                parse_legacy_parameter_owner_88(frame, parameter.evaluated_value)
-            {
-                owner.evaluated_value_offset = parameter.evaluated_value_offset;
-                (owner, true)
-            } else {
-                return Err(malformed("does not match the parameter-owner grammar"));
-            };
+        let evaluated = crate::records::Located {
+            value: parameter.evaluated_value,
+            offset: parameter.evaluated_value_offset,
+        };
+        let owner = if let Some(owner) = parse_parameter_owner(frame) {
+            owner
+                .into_record(&entry.name, header.byte_offset)
+                .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?
+        } else {
+            let mut owner = parse_legacy_parameter_owner_68(frame, evaluated)
+                .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated))
+                .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?;
+            owner.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
+            owner.byte_offset = header.byte_offset;
+            owner
+        };
         if owner.record_index != owner_index
             || owner.parameter_record_index != parameter.record_index
         {
             return Err(malformed("does not link back to its referencing parameter"));
-        }
-        owner.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
-        owner.byte_offset = header.byte_offset;
-        if !evaluated_value_is_absolute {
-            owner.evaluated_value_offset = owner
-                .evaluated_value_offset
-                .checked_add(header.byte_offset)
-                .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?;
         }
         out.push(owner);
     }
@@ -519,7 +511,58 @@ pub fn decode_parameter_owners(
     Ok(out)
 }
 
-pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
+/// Byte offset measured from an indexed frame start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FrameRelative(pub(crate) u64);
+
+impl FrameRelative {
+    /// Convert this offset to a stream-absolute position.
+    pub(crate) fn absolute(self, frame_start: u64) -> Option<u64> {
+        frame_start.checked_add(self.0)
+    }
+}
+
+/// Parameter owner parsed in frame-relative coordinates.
+pub(crate) struct ParsedParameterOwner {
+    pub(crate) frame_length: u64,
+    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) record_index: u32,
+    pub(crate) scope_record_index: u32,
+    pub(crate) local_ordinal: u32,
+    pub(crate) evaluated_value: f64,
+    pub(crate) evaluated_value_offset: FrameRelative,
+    pub(crate) parameter_record_index: u32,
+    pub(crate) owned_ordinal: u32,
+    pub(crate) variant: Option<u8>,
+    pub(crate) companion_record_index: u32,
+}
+
+impl ParsedParameterOwner {
+    /// Locate this owner in its containing stream.
+    pub(crate) fn into_record(
+        self,
+        stream: &str,
+        frame_start: u64,
+    ) -> Option<DesignParameterOwner> {
+        Some(DesignParameterOwner {
+            id: ids::native_design_parameter_owner_id(stream, frame_start),
+            byte_offset: frame_start,
+            frame_length: self.frame_length,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+            parameter_record_index: self.parameter_record_index,
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            companion_record_index: self.companion_record_index,
+        })
+    }
+}
+
+pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
@@ -618,16 +661,14 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         return None;
     }
 
-    Some(DesignParameterOwner {
-        id: String::new(),
-        byte_offset: 0,
+    Some(ParsedParameterOwner {
         frame_length: u64::try_from(frame.len()).ok()?,
         class_tag,
         record_index,
         scope_record_index,
         local_ordinal: View::u32_le_at(frame, owner_prefix::LOCAL_ORDINAL)?,
         evaluated_value,
-        evaluated_value_offset,
+        evaluated_value_offset: FrameRelative(evaluated_value_offset),
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
         variant,
@@ -641,7 +682,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
 /// this grammar because older class tags also occur on modern owner records.
 pub(crate) fn parse_legacy_parameter_owner_68(
     frame: &[u8],
-    evaluated_value: f64,
+    evaluated: crate::records::Located<f64>,
 ) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_68_class(&class_tag)
@@ -666,7 +707,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
-    if !evaluated_value.is_finite()
+    if !evaluated.value.is_finite()
         || !consecutive(record_index, parameter_record_index, companion_record_index)
     {
         return None;
@@ -679,8 +720,8 @@ pub(crate) fn parse_legacy_parameter_owner_68(
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
-        evaluated_value,
-        evaluated_value_offset: 0,
+        evaluated_value: evaluated.value,
+        evaluated_value_offset: evaluated.offset,
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
@@ -692,7 +733,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
 /// whose scalar and local-ordinal lanes are absent.
 pub(crate) fn parse_legacy_parameter_owner_88(
     frame: &[u8],
-    evaluated_value: f64,
+    evaluated: crate::records::Located<f64>,
 ) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_88_class(&class_tag)
@@ -729,7 +770,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
-    if !evaluated_value.is_finite()
+    if !evaluated.value.is_finite()
         || !consecutive(record_index, parameter_record_index, companion_record_index)
     {
         return None;
@@ -742,8 +783,8 @@ pub(crate) fn parse_legacy_parameter_owner_88(
         record_index,
         scope_record_index,
         local_ordinal: 0,
-        evaluated_value,
-        evaluated_value_offset: 0,
+        evaluated_value: evaluated.value,
+        evaluated_value_offset: evaluated.offset,
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
