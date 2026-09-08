@@ -159,15 +159,19 @@ mod tests {
         let rhino: Summary = serde_json::from_str(include_str!(
             "../../cadmpeg-codec-rhino/tests/golden/inspect/point.json"
         ))
-        .unwrap();
+        .expect("native summary witness");
         let table = rhino
             .entries
             .iter()
             .find(|entry| entry.role == ContainerRole::Table)
-            .unwrap();
+            .expect("native summary witness");
         assert_eq!(table.compression, EntryCompression::None);
-        let body_offset: u64 = table.attributes["body_offset"].parse().unwrap();
-        let offset: u64 = table.attributes["offset"].parse().unwrap();
+        let body_offset: u64 = table.attributes["body_offset"]
+            .parse()
+            .expect("native summary witness");
+        let offset: u64 = table.attributes["offset"]
+            .parse()
+            .expect("native summary witness");
         assert_eq!(
             table.compressed_size - table.uncompressed_size,
             body_offset - offset
@@ -177,30 +181,30 @@ mod tests {
         let inventor: Summary = serde_json::from_str(include_str!(
             "../../cadmpeg-codec-inventor/tests/golden/inspect/structural.json"
         ))
-        .unwrap();
+        .expect("native summary witness");
         let storage = inventor
             .entries
             .iter()
             .find(|entry| entry.name == "RSeStorage")
-            .unwrap();
+            .expect("native summary witness");
         assert_eq!(storage.compression, EntryCompression::Storage);
         let stream = inventor
             .entries
             .iter()
             .find(|entry| entry.name == "RSeStorage/RSeSegInfo")
-            .unwrap();
+            .expect("native summary witness");
         assert_eq!(stream.compression, EntryCompression::Stored);
         assert_eq!(stream.compressed_size, stream.uncompressed_size);
 
         let step: Summary = serde_json::from_str(include_str!(
             "../../cadmpeg-codec-step/tests/golden/inspect/ap242_ed3_sections.json"
         ))
-        .unwrap();
+        .expect("native summary witness");
         let references = step
             .entries
             .iter()
             .find(|entry| entry.name == "REFERENCE")
-            .unwrap();
+            .expect("native summary witness");
         assert_eq!(references.role, ContainerRole::StepExternalReferences);
         assert_eq!(references.compression, EntryCompression::None);
         assert_eq!(references.attributes["external_count"], "1");
