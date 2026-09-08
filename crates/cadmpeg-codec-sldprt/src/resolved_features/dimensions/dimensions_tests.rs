@@ -2,6 +2,7 @@
 
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::*;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
@@ -19,7 +20,7 @@ use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn declared_entity_handle_precedes_generic_operand_resolution() {
-    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -174,7 +175,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 
 #[test]
 fn declared_entity_handle_accepts_indexed_radial_point_pair() {
-    let kind = FeatureInputOperandKind::Native(0x80f7);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_80F7);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -284,7 +285,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
 
 #[test]
 fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
-    let kind = FeatureInputOperandKind::Native(0x836e);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -486,11 +487,16 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
     };
 
     for kind in [
-        FeatureInputOperandKind::Native(0x80d4),
-        FeatureInputOperandKind::Native(0x80d5),
-        FeatureInputOperandKind::Native(0x80dd),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D4),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80DD),
     ] {
-        let strict_point_tag = matches!(kind, FeatureInputOperandKind::Native(0x80d4 | 0x80d5));
+        let strict_point_tag = matches!(
+            kind,
+            FeatureInputOperandKind::Native(
+                NativeOperandTag::TAG_80D4 | NativeOperandTag::TAG_80D5
+            )
+        );
         let operand = FeatureInputOperand {
             offset: 100,
             reference_ref: "reference".into(),
@@ -618,7 +624,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
 
 #[test]
 fn declared_slot_handle_selects_indexed_dimension_center() {
-    let kind = FeatureInputOperandKind::Native(0x88e7);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_88E7);
     let operand = FeatureInputOperand {
         offset: 150,
         reference_ref: "reference".into(),
@@ -828,7 +834,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 
-    let kind = FeatureInputOperandKind::Native(0x69bd);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_69BD);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -977,7 +983,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
 
 #[test]
 fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
-    let kind = FeatureInputOperandKind::Native(0x8452);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8452);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1118,7 +1124,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
 
 #[test]
 fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
-    let kind = FeatureInputOperandKind::Native(0x8263);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8263);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1450,7 +1456,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         let operand = FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(0x83fe),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
             entity_index: 0,
             entity_ref: Some(center.id.clone()),
         };
@@ -1520,7 +1526,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(0x829a),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
             entity_index: 0,
             entity_ref: Some(marker_id.into()),
         }],

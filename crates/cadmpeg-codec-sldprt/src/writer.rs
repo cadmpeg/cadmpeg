@@ -1964,6 +1964,7 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
     let meshes = ir
         .model
         .tessellations
@@ -2046,19 +2047,19 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for index in auxiliary_count..3 {
-            match index {
-                0 => descriptor(&mut out, 4, 8, 2, 0, &[]),
-                1 => {
-                    let data = list_c
-                        .iter()
-                        .flat_map(|value| value.to_le_bytes())
-                        .collect::<Vec<_>>();
-                    descriptor(&mut out, 4, 8, 2, list_c.len(), &data);
-                }
-                2 => descriptor(&mut out, 1, 8, 2, 0, &[]),
-                _ => unreachable!("three auxiliary descriptors"),
-            }
+        let append: [AuxiliaryWriter; 3] = [
+            |out, _| descriptor(out, 4, 8, 2, 0, &[]),
+            |out, list_c| {
+                let data = list_c
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<_>>();
+                descriptor(out, 4, 8, 2, list_c.len(), &data);
+            },
+            |out, _| descriptor(out, 1, 8, 2, 0, &[]),
+        ];
+        for append in append.iter().skip(auxiliary_count) {
+            append(&mut out, &list_c);
         }
     }
     Ok(out)
