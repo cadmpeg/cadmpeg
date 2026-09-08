@@ -2883,9 +2883,46 @@ pub const DESIGN_MODULE_COMPONENT: &str = "Component";
 /// Add-in module that registers the root Fusion document types.
 pub const DESIGN_MODULE_FUSION: &str = "Fusion";
 
+#[derive(Debug, Clone, PartialEq)]
+struct NativeRecordId {
+    text: String,
+    stream_end: usize,
+}
+
+impl NativeRecordId {
+    fn try_new(text: String, kind: &str, key: impl std::fmt::Display) -> Result<Self, String> {
+        let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
+        if text != format!("{stream}:{kind}#{key}") {
+            return Err(format!("id must identify {kind} at {key}"));
+        }
+        let stream_end = stream.len();
+        Ok(Self { text, stream_end })
+    }
+    fn stream(&self) -> &str {
+        &self.text[..self.stream_end]
+    }
+}
+
 /// JSON configuration payload stored in a Fusion design-configuration entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
 pub struct DesignConfiguration {
+    /// Stable identity derived from the ZIP entry name.
+    id: String,
+    /// Complete ZIP entry name used for native regeneration.
+    entry_name: String,
+    /// Native configuration entry family.
+    pub kind: DesignConfigurationKind,
+    /// Variant names in serialized object-member order.
+    #[serde(default)]
+    pub variant_order: Vec<String>,
+    /// Complete decoded JSON payload, including unrecognized fields.
+    pub payload: serde_json::Value,
+}
+
+/// Serialized configuration identity and payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignConfigurationWire {
     /// Stable identity derived from the ZIP entry name.
     pub id: String,
     /// Complete ZIP entry name used for native regeneration.
@@ -2897,6 +2934,54 @@ pub struct DesignConfiguration {
     pub variant_order: Vec<String>,
     /// Complete decoded JSON payload, including unrecognized fields.
     pub payload: serde_json::Value,
+}
+
+impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
+    type Error = String;
+    fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
+        let record = Self::new(wire.entry_name, wire.kind, wire.variant_order, wire.payload);
+        if wire.id != record.id {
+            return Err("configuration.id must identify entry_name".into());
+        }
+        Ok(record)
+    }
+}
+impl From<DesignConfiguration> for DesignConfigurationWire {
+    fn from(value: DesignConfiguration) -> Self {
+        Self {
+            id: value.id,
+            entry_name: value.entry_name,
+            kind: value.kind,
+            variant_order: value.variant_order,
+            payload: value.payload,
+        }
+    }
+}
+impl DesignConfiguration {
+    /// Constructs a configuration with the identity of its entry name.
+    pub(crate) fn new(
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: serde_json::Value,
+    ) -> Self {
+        Self {
+            id: crate::ids::configuration_entry_id(&entry_name),
+            entry_name,
+            kind,
+            variant_order,
+            payload,
+        }
+    }
+
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id
+    }
+    /// Returns the configuration entry name.
+    pub(crate) fn entry_name(&self) -> &String {
+        &self.entry_name
+    }
 }
 
 /// Native Fusion design-configuration entry family.
@@ -3141,9 +3226,10 @@ impl DesignTimelineFrame {
 )]
 pub struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
+    segment_end: usize,
     /// Checked source frame and ordered item locations.
-    pub frame: DesignTimelineFrame,
+    frame: DesignTimelineFrame,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
     /// Design entity identity of the timeline record.
@@ -3152,6 +3238,44 @@ pub struct DesignFeatureTimeline {
     pub source_ordinal: u32,
     /// Same-segment context record referenced before the scope list.
     pub context_record_index: std::num::NonZeroU64,
+}
+
+impl DesignFeatureTimeline {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the timeline source frame.
+    pub(crate) fn frame(&self) -> &DesignTimelineFrame {
+        &self.frame
+    }
+    /// Returns the Design segment encoded in the identity.
+    pub(crate) fn segment(&self) -> &str {
+        &self.id.text[..self.segment_end]
+    }
+    /// Admits a record whose identity matches its source location.
+    pub(crate) fn try_new(
+        id: String,
+        frame: DesignTimelineFrame,
+        class_tag: DesignClassTag,
+        record_index: std::num::NonZeroU64,
+        source_ordinal: u32,
+        context_record_index: std::num::NonZeroU64,
+    ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "design-feature-timeline", frame.byte_offset())?;
+        let segment_end = crate::ids::design_segment(&id.text)
+            .ok_or("timeline.id must contain a Design segment")?
+            .len();
+        Ok(Self {
+            id,
+            segment_end,
+            frame,
+            class_tag,
+            record_index,
+            source_ordinal,
+            context_record_index,
+        })
+    }
 }
 
 /// Counted Design timeline-item list that carries authored feature order.
@@ -3195,22 +3319,22 @@ impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
             .zip(wire.item_record_index_offsets)
             .map(|(value, offset)| Located { value, offset })
             .collect();
-        Ok(Self {
-            frame: DesignTimelineFrame::new(
+        Self::try_new(
+            wire.id,
+            DesignTimelineFrame::new(
                 wire.byte_offset,
                 wire.frame_length,
                 wire.context_record_index_offset,
                 wire.item_count_offset,
                 items,
             )?,
-            id: wire.id,
-            class_tag: DesignClassTag::try_from(wire.class_tag)?,
-            record_index: std::num::NonZeroU64::new(wire.record_index)
+            DesignClassTag::try_from(wire.class_tag)?,
+            std::num::NonZeroU64::new(wire.record_index)
                 .ok_or("timeline.record_index must be nonzero")?,
-            source_ordinal: wire.source_ordinal,
-            context_record_index: std::num::NonZeroU64::new(wire.context_record_index)
+            wire.source_ordinal,
+            std::num::NonZeroU64::new(wire.context_record_index)
                 .ok_or("timeline.context_record_index must be nonzero")?,
-        })
+        )
     }
 }
 impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
@@ -3224,7 +3348,7 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
         Self {
             item_record_indices,
             item_record_index_offsets,
-            id: value.id,
+            id: value.id.text,
             byte_offset: value.frame.byte_offset,
             class_tag: value.class_tag.into(),
             record_index: value.record_index.get(),
@@ -8587,15 +8711,27 @@ impl ActChannelGroup {
 #[serde(try_from = "ActEntitySerde", into = "ActEntitySerde")]
 pub struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Record index shared by the channel group and its optional ACTTable row.
-    pub record_index: u32,
+    record_index: u32,
     entity_id: String,
     table_row: Option<ActTableRow>,
     channel_group: ActChannelGroup,
 }
 
 impl ActEntity {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the ACT entity record index.
+    pub(crate) fn record_index(&self) -> u32 {
+        self.record_index
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub(crate) fn try_new(
         id: String,
         record_index: u32,
@@ -8603,6 +8739,7 @@ impl ActEntity {
         table_row: Option<ActTableRow>,
         channel_group: ActChannelGroup,
     ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-entity", record_index)?;
         if !crate::act::is_entity_key(&entity_id) {
             return Err("ACT entity_id must be a decimal segment_entity key".into());
         }
@@ -8795,7 +8932,7 @@ impl From<ActEntity> for ActEntitySerde {
             None => (Vec::new(), None),
         };
         Self {
-            id: entity.id,
+            id: entity.id.text,
             record_index: entity.record_index,
             table_record_index_offset,
             channel_record_index_offset,
@@ -8817,7 +8954,7 @@ impl From<ActEntity> for ActEntitySerde {
 #[serde(try_from = "ActGuidWire", into = "ActGuidWire")]
 pub struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Byte offset of the UTF-16 length prefix in the ACT `BulkStream`.
     byte_offset: u64,
     /// Position in the pool in source order; does not assign a GUID to one table entry.
@@ -8827,7 +8964,16 @@ pub struct ActGuid {
 }
 
 impl ActGuid {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub fn new(id: String, byte_offset: u64, ordinal: u32, guid: String) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-guid", byte_offset)?;
         byte_offset
             .checked_add(4)
             .ok_or("ACT GUID byte_offset overflows guid_offset")?;
@@ -8873,7 +9019,7 @@ impl From<ActGuid> for ActGuidWire {
     fn from(guid: ActGuid) -> Self {
         let guid_offset = guid.guid_offset();
         Self {
-            id: guid.id,
+            id: guid.id.text,
             byte_offset: guid.byte_offset,
             guid_offset,
             ordinal: guid.ordinal,
@@ -8887,7 +9033,7 @@ impl From<ActGuid> for ActGuidWire {
 #[serde(try_from = "ActTableReferenceWire", into = "ActTableReferenceWire")]
 pub struct ActTableReference {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Position in the counted reference run, in source order.
     pub ordinal: u32,
     /// Byte offset of the reference-presence marker in the ACT `BulkStream`.
@@ -8897,12 +9043,21 @@ pub struct ActTableReference {
 }
 
 impl ActTableReference {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub fn new(
         id: String,
         ordinal: u32,
         byte_offset: u64,
         target_record: u32,
     ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-table-reference", byte_offset)?;
         byte_offset
             .checked_add(1)
             .ok_or("ACT table reference byte_offset overflows target_record_offset")?;
@@ -8948,7 +9103,7 @@ impl From<ActTableReference> for ActTableReferenceWire {
     fn from(reference: ActTableReference) -> Self {
         let target_record_offset = reference.target_record_offset();
         Self {
-            id: reference.id,
+            id: reference.id.text,
             ordinal: reference.ordinal,
             byte_offset: reference.byte_offset,
             target_record: reference.target_record,
@@ -8961,7 +9116,7 @@ impl From<ActTableReference> for ActTableReferenceWire {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActRegistryChannelWire", into = "ActRegistryChannelWire")]
 pub struct ActRegistryChannel {
-    pub id: String,
+    id: NativeRecordId,
     pub ordinal: u32,
     byte_offset: u64,
     name: String,
@@ -8969,6 +9124,14 @@ pub struct ActRegistryChannel {
 }
 
 impl ActRegistryChannel {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
     pub fn new(
         id: String,
         ordinal: u32,
@@ -8976,6 +9139,7 @@ impl ActRegistryChannel {
         name: String,
         guid: String,
     ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-registry-channel", byte_offset)?;
         validate_act_channel_name(&name)?;
         byte_offset
             .checked_add(8 + name.len() as u64)
@@ -9035,7 +9199,7 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
         let name_offset = channel.name_offset();
         let guid_offset = channel.guid_offset();
         Self {
-            id: channel.id,
+            id: channel.id.text,
             ordinal: channel.ordinal,
             byte_offset: channel.byte_offset,
             name: channel.name,
@@ -9051,7 +9215,7 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
 #[serde(try_from = "ActRootComponentWire", into = "ActRootComponentWire")]
 pub struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: NativeRecordId,
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
@@ -9063,7 +9227,52 @@ pub struct ActRootComponent {
     /// Source counter/registry flag; 0 and 1 are both valid.
     pub registry_flag: ActRegistryFlag,
     /// Checked source layout and the two variable-length strings.
-    pub layout: ActRootLayout,
+    layout: ActRootLayout,
+}
+
+impl ActRootComponent {
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id.text
+    }
+    /// Returns the ACT root source layout.
+    pub(crate) fn layout(&self) -> &ActRootLayout {
+        &self.layout
+    }
+    /// Returns the native stream encoded in the identity.
+    pub(crate) fn stream(&self) -> &str {
+        self.id.stream()
+    }
+    /// Admits a record whose identity matches its source location.
+    pub(crate) fn try_new(
+        id: String,
+        record_index: u32,
+        class_tag: DesignClassTag,
+        instance_root_record: u32,
+        components_root_record: u32,
+        registry_flag: ActRegistryFlag,
+        layout: ActRootLayout,
+    ) -> Result<Self, String> {
+        let id = NativeRecordId::try_new(id, "act-root-component", layout.byte_offset())?;
+        Ok(Self {
+            id,
+            record_index,
+            class_tag,
+            instance_root_record,
+            components_root_record,
+            registry_flag,
+            layout,
+        })
+    }
+    /// Changes root strings without changing the identity offset.
+    pub(crate) fn try_set_strings(
+        &mut self,
+        entity_id: String,
+        display_name: String,
+    ) -> Result<(), String> {
+        self.layout = self.layout.with_strings(entity_id, display_name)?;
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -9144,25 +9353,24 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
         if wire.display_name_offset != layout.display_name_offset() {
             return Err("display_name_offset disagrees with ACT root layout".into());
         }
-        Ok(Self {
-            id: wire.id,
-            record_index: wire.record_index,
-            class_tag: wire
-                .class_tag
+        Self::try_new(
+            wire.id,
+            wire.record_index,
+            wire.class_tag
                 .try_into()
                 .map_err(|error| format!("class_tag: {error}"))?,
-            instance_root_record: wire.instance_root_record,
-            components_root_record: wire.components_root_record,
-            registry_flag: wire.registry_flag,
+            wire.instance_root_record,
+            wire.components_root_record,
+            wire.registry_flag,
             layout,
-        })
+        )
     }
 }
 
 impl From<ActRootComponent> for ActRootComponentWire {
     fn from(root: ActRootComponent) -> Self {
         Self {
-            id: root.id,
+            id: root.id.text,
             record_index: root.record_index,
             class_tag: root.class_tag.into(),
             instance_root_record: root.instance_root_record,

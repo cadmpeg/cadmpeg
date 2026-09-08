@@ -932,7 +932,7 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     assert_eq!(f3d_native(result.ir()).act_entities.len(), 1);
-    assert_eq!(f3d_native(result.ir()).act_entities[0].record_index, 7);
+    assert_eq!(f3d_native(result.ir()).act_entities[0].record_index(), 7);
     assert_eq!(f3d_native(result.ir()).act_entities[0].entity_id(), "0_985");
     assert_eq!(f3d_native(result.ir()).act_guids.len(), 1);
     assert_eq!(
@@ -957,13 +957,13 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0]
-            .layout
+            .layout()
             .entity_id(),
         "0_3"
     );
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0]
-            .layout
+            .layout()
             .display_name(),
         "(Unsaved)"
     );
@@ -1228,7 +1228,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
 
     let mut colliding_root = decoded.ir().clone();
     update_f3d_native(&mut colliding_root, |native| {
-        native.act_root_components[0].record_index = native.act_entities[0].record_index;
+        native.act_root_components[0].record_index = native.act_entities[0].record_index();
     });
     assert!(crate::validate::validate_native(&colliding_root)
         .iter()

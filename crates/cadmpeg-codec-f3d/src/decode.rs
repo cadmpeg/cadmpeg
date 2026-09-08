@@ -4030,19 +4030,19 @@ fn populate_annotations(
             note(&entity.id, "persistent_subentity_tag");
         }
         for entity in &native.act_entities {
-            note(&entity.id, "ACTEntity");
+            note(entity.id(), "ACTEntity");
         }
         for entity in &native.act_guids {
-            note(&entity.id, "ACTGuid");
+            note(entity.id(), "ACTGuid");
         }
         for entity in &native.act_registry_channels {
-            note(&entity.id, "ACTRegistryChannel");
+            note(entity.id(), "ACTRegistryChannel");
         }
         for entity in &native.act_root_components {
-            note(&entity.id, "ACTRootComponent");
+            note(entity.id(), "ACTRootComponent");
         }
         for entity in &native.act_table_references {
-            note(&entity.id, "ACTTableReference");
+            note(entity.id(), "ACTTableReference");
         }
         for history in &native.asm_histories {
             note(&history.id, "history_stream");

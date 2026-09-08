@@ -610,15 +610,18 @@ fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Opt
         (components_marker - cursor) as u64,
     )
     .ok()?;
-    Some(ComponentLink::Root(ActRootComponent {
-        id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
-        record_index: frame.record_index,
-        class_tag: frame.class_tag.clone().try_into().ok()?,
-        instance_root_record,
-        components_root_record,
-        registry_flag,
-        layout,
-    }))
+    Some(ComponentLink::Root(
+        ActRootComponent::try_new(
+            crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
+            frame.record_index,
+            frame.class_tag.clone().try_into().ok()?,
+            instance_root_record,
+            components_root_record,
+            registry_flag,
+            layout,
+        )
+        .ok()?,
+    ))
 }
 
 /// Whether `key` has the ACT entity-key form `<segment id>_<entity id>`.
@@ -716,7 +719,7 @@ mod tests {
         .expect("matching table and change group");
         assert_eq!(entities.len(), 1);
         assert!(entities[0].in_table());
-        assert_eq!(entities[0].record_index, 7);
+        assert_eq!(entities[0].record_index(), 7);
 
         let mismatch = merge_entities(
             stream,

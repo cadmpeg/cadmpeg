@@ -37,9 +37,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .expect("generated configuration decode");
     let native = f3d_native(decoded.ir());
     assert_eq!(native.design_configurations.len(), 1);
-    assert_eq!(native.design_configurations[0].entry_name, name);
+    assert_eq!(native.design_configurations[0].entry_name(), name);
     assert_eq!(
-        native.design_configurations[0].id,
+        native.design_configurations[0].id().as_str(),
         format!("f3d:configuration:entry#{name}")
     );
     assert_eq!(
@@ -77,7 +77,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert_eq!(medium.properties["suppressed:slot"], "true");
     assert_eq!(
         medium.native_ref.as_deref(),
-        Some(native.design_configurations[0].id.as_str())
+        Some(native.design_configurations[0].id().as_str())
     );
     let mut invalid_order = decoded.ir().clone();
     update_f3d_native(&mut invalid_order, |native| {

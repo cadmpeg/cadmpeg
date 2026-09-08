@@ -722,20 +722,21 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         next_record_index: 114,
         next_byte_offset: 0,
     };
-    let timeline = crate::records::DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = crate::records::DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![crate::records::Located {
                 value: 100,
                 offset: 0,
             }],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let project = |selection: &DesignEntitySelectionOperand| {
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {

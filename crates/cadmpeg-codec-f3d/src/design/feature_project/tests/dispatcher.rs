@@ -356,8 +356,9 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             reference_type_offset: 0,
         });
     }
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
                 crate::records::Located {
@@ -370,12 +371,12 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let scopes = vec![predecessor, point];
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {

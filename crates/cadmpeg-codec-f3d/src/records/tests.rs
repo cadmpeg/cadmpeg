@@ -212,7 +212,7 @@ fn parameter_unit_preserves_source_and_authored_wire() {
 fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
     for offsets in ["[245,256]", "[245,278]"] {
         let wire = format!(
-            r#"{{"id":"timeline","byte_offset":200,"class_tag":"256","record_index":35,"source_ordinal":0,"frame_length":100,"context_record_index":17,"context_record_index_offset":220,"item_count_offset":240,"item_record_indices":[101,102],"item_record_index_offsets":{offsets}}}"#
+            r#"{{"id":"f3d:Design/BulkStream.dat:design-feature-timeline#200","byte_offset":200,"class_tag":"256","record_index":35,"source_ordinal":0,"frame_length":100,"context_record_index":17,"context_record_index_offset":220,"item_count_offset":240,"item_record_indices":[101,102],"item_record_index_offsets":{offsets}}}"#
         );
         let timeline: crate::records::DesignFeatureTimeline =
             serde_json::from_str(&wire).expect("timeline items");
@@ -970,7 +970,7 @@ fn sketch_placement_extent_and_matrix_are_checked_at_construction() {
 #[test]
 fn timeline_frame_rejects_invalid_source_spans() {
     let wire = serde_json::json!({
-        "id": "timeline", "byte_offset": 200, "class_tag": "256",
+        "id": "f3d:Design/BulkStream.dat:design-feature-timeline#200", "byte_offset": 200, "class_tag": "256",
         "record_index": 35, "source_ordinal": 0, "frame_length": 100,
         "context_record_index": 17, "context_record_index_offset": 220,
         "item_count_offset": 240, "item_record_indices": [101, 102],
@@ -1516,8 +1516,20 @@ fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
             serde_json::from_value::<crate::records::ActTableReference>(invalid).unwrap_err();
         assert!(error.to_string().contains("target_record_offset"));
     }
-    assert!(crate::records::ActTableReference::new("id".into(), 0, u64::MAX, 3).is_err());
-    assert!(crate::records::ActTableReference::new("id".into(), 0, u64::MAX - 1, 3).is_ok());
+    assert!(crate::records::ActTableReference::new(
+        format!("stream:act-table-reference#{}", u64::MAX),
+        0,
+        u64::MAX,
+        3
+    )
+    .is_err());
+    assert!(crate::records::ActTableReference::new(
+        format!("stream:act-table-reference#{}", u64::MAX - 1),
+        0,
+        u64::MAX - 1,
+        3
+    )
+    .is_ok());
 }
 
 #[test]
@@ -1543,8 +1555,20 @@ fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
         assert!(error.to_string().contains("GUID"));
     }
     let text = "01234567-89ab-cdef-0123-456789abcdef";
-    assert!(crate::records::ActGuid::new("id".into(), u64::MAX - 3, 0, text.into()).is_err());
-    assert!(crate::records::ActGuid::new("id".into(), u64::MAX - 4, 0, text.into()).is_ok());
+    assert!(crate::records::ActGuid::new(
+        format!("stream:act-guid#{}", u64::MAX - 3),
+        u64::MAX - 3,
+        0,
+        text.into()
+    )
+    .is_err());
+    assert!(crate::records::ActGuid::new(
+        format!("stream:act-guid#{}", u64::MAX - 4),
+        u64::MAX - 4,
+        0,
+        text.into()
+    )
+    .is_ok());
 }
 
 #[test]
@@ -1572,7 +1596,7 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
     }
     let guid = "01234567-89ab-cdef-0123-456789abcdef";
     assert!(crate::records::ActRegistryChannel::new(
-        "id".into(),
+        format!("stream:act-registry-channel#{}", u64::MAX - 10),
         0,
         u64::MAX - 10,
         "abc".into(),
@@ -1580,7 +1604,7 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
     )
     .is_err());
     assert!(crate::records::ActRegistryChannel::new(
-        "id".into(),
+        format!("stream:act-registry-channel#{}", u64::MAX - 11),
         0,
         u64::MAX - 11,
         "abc".into(),
@@ -1588,7 +1612,7 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
     )
     .is_ok());
     assert!(crate::records::ActRegistryChannel::new(
-        "id".into(),
+        "stream:act-registry-channel#0".into(),
         0,
         0,
         "abc".into(),
@@ -1954,3 +1978,5 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
 }
 
 mod act_entities;
+
+mod native_ids;
