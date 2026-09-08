@@ -556,7 +556,7 @@ fn grip_block(
                         point.point,
                         point.weight,
                     )
-                    .map_err(|error| malformed(name, &error.to_string()))
+                    .map_err(|error| malformed(name, error))
                 })
                 .transpose()
         })
@@ -1313,7 +1313,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 ),
             };
             SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
-                .map_err(|error| malformed(name, &error.to_string()))
+                .map_err(|error| malformed(name, error))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     let edge_knot_intervals_ir = edge_knot_intervals
@@ -1417,7 +1417,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 return Err(malformed(name, "face ring does not close"));
             }
         }
-        faces.push(SubdFace::new(ring).map_err(|error| malformed(name, &error.to_string()))?);
+        faces.push(SubdFace::new(ring).map_err(|error| malformed(name, error))?);
     }
 
     let mut crease_incidence =
@@ -1444,7 +1444,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 },
                 secondary_layouts[index].clone(),
             )
-            .map_err(|error| malformed(name, &error.to_string()))
+            .map_err(|error| malformed(name, error))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let creased_edges = crease_edges
@@ -1468,7 +1468,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 Some(edge_knot_intervals_ir[index]),
                 [0.0, 0.0],
             )
-            .map_err(|error| malformed(name, &error.to_string()))
+            .map_err(|error| malformed(name, error))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let source_key = name
@@ -1490,7 +1490,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 instance_path: Vec::new(),
             }),
             cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
-                .map_err(|error| malformed(name, &error.to_string()))?,
+                .map_err(|error| malformed(name, error))?,
         },
         unknown_record_kinds,
     })
