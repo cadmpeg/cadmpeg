@@ -59,7 +59,7 @@ struct IdentityRegistry {
 /// One `[[support]]` row of the capability registry.
 #[derive(Debug, Deserialize)]
 struct SupportRow {
-    dialect: String,
+    dialect: DialectId,
     read: ReadDisposition,
     write: WriteDisposition,
 }
@@ -85,9 +85,9 @@ enum RegistryLoadError {
     #[error("cannot parse the dialect support registry: {0}")]
     Support(#[source] toml::de::Error),
     #[error("duplicate support row for dialect {0}")]
-    DuplicateSupport(String),
+    DuplicateSupport(DialectId),
     #[error("support row for dialect {0} has no identity row")]
-    SupportWithoutIdentity(String),
+    SupportWithoutIdentity(DialectId),
     #[error("identity row for dialect {0} has no support row")]
     IdentityWithoutSupport(DialectId),
     #[error("format word {name:?} belongs to both {first:?} and {second:?}")]
@@ -147,9 +147,9 @@ impl Registries {
         let identity_ids = identity
             .dialect
             .iter()
-            .map(|row| row.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut dispositions = BTreeMap::new();
+            .map(|row| row.id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let mut dispositions = std::collections::HashMap::new();
         for row in support.support {
             let dialect = row.dialect;
             let disposition = Disposition {
@@ -159,7 +159,7 @@ impl Registries {
             if dispositions.insert(dialect.clone(), disposition).is_some() {
                 return Err(RegistryLoadError::DuplicateSupport(dialect));
             }
-            if !identity_ids.contains(dialect.as_str()) {
+            if !identity_ids.contains(&dialect) {
                 return Err(RegistryLoadError::SupportWithoutIdentity(dialect));
             }
         }
@@ -170,7 +170,7 @@ impl Registries {
                 .into_iter()
                 .map(|row| {
                     let disposition = dispositions
-                        .remove(row.id.as_str())
+                        .remove(&row.id)
                         .ok_or_else(|| RegistryLoadError::IdentityWithoutSupport(row.id.clone()))?;
                     Ok(DialectEntry {
                         disposition,
@@ -302,7 +302,7 @@ mod tests {
             "the unmatched support row is rejected",
         );
         assert!(
-            matches!(error, RegistryLoadError::SupportWithoutIdentity(id) if id == "step:ap214")
+            matches!(error, RegistryLoadError::SupportWithoutIdentity(id) if id.as_str() == "step:ap214")
         );
     }
 
@@ -329,7 +329,9 @@ mod tests {
             ),
             "the duplicate support row is rejected",
         );
-        assert!(matches!(error, RegistryLoadError::DuplicateSupport(id) if id == "step:ap203"));
+        assert!(
+            matches!(error, RegistryLoadError::DuplicateSupport(id) if id.as_str() == "step:ap203")
+        );
     }
 
     #[test]
