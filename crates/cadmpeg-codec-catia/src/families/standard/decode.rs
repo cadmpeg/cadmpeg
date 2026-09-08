@@ -2317,11 +2317,11 @@ fn try_decode_standard_population(
             ),
         );
     }
+    report.coverage.record(
+        crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
+        0,
+    );
     for (key, exhaustion) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
-            mesh_quotient::MeshCandidateExhaustion::QuotientPreparation,
-        ),
         (
             crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
@@ -5576,8 +5576,8 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
 ) -> Option<Vec<Option<[usize; 2]>>> {
     let graph = graph?;
     let identity_points = unique_native_identity_points(
-        &graph.logical_vertices,
-        graph.vertex_points.len(),
+        graph.vertices.logical_vertices(),
+        graph.vertices.raw_points().len(),
         &graph.vertex_tolerances,
         points,
     );

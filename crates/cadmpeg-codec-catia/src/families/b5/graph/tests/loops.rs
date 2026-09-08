@@ -17,7 +17,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         loop_metadata(&base, 2),
         Some((
             B5LoopMetadata {
-                framing_controls: [0x05, 0x05],
+                framing_controls: [B5FramingControl::Control05; 2],
                 extension: None,
             },
             vec![[1, -1, 1], [-1, 1, -1]],
@@ -28,7 +28,10 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         let extended = extended_loop_metadata(metadata_control);
         let (metadata, edge_controls) =
             loop_metadata(&extended, 1).expect("complete extended metadata");
-        assert_eq!(metadata.framing_controls, [0x03, 0x05]);
+        assert_eq!(
+            metadata.framing_controls.map(B5FramingControl::as_byte),
+            [0x03, 0x05]
+        );
         assert_eq!(edge_controls, [[1, -1, 1]]);
         assert_eq!(
             metadata.extension,
@@ -46,7 +49,10 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
     ];
     let (metadata, edge_controls) =
         loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
-    assert_eq!(metadata.framing_controls, [0x05, 0x03]);
+    assert_eq!(
+        metadata.framing_controls.map(B5FramingControl::as_byte),
+        [0x05, 0x03]
+    );
     assert_eq!(edge_controls, [[1, -1, 1], [-1, 1, -1]]);
     assert_eq!(metadata.extension, None);
 }
@@ -665,7 +671,10 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
             Some(B5FaceRecord {
                 object_id: 3,
                 references: vec![1, 2],
-                terminal_control: Some(terminal_control),
+                terminal_control: Some(
+                    B5FramingControl::from_byte(terminal_control)
+                        .expect("declared terminal control")
+                ),
             })
         );
 
@@ -705,7 +714,7 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
     let record = B5FaceRecord {
         object_id: 30,
         references: vec![10, 11, 20],
-        terminal_control: Some(0x05),
+        terminal_control: Some(B5FramingControl::Control05),
     };
     let loops = BTreeMap::from([(
         20,
@@ -735,8 +744,14 @@ fn one_edge_loop_closes_on_one_native_vertex() {
         surface: 4,
     };
 
-    assert!(loop_chain_closes(&loop_, &BTreeMap::from([(3, [0, 0])])));
-    assert!(!loop_chain_closes(&loop_, &BTreeMap::from([(3, [0, 1])])));
+    assert!(loop_chain_closes(
+        &loop_,
+        &BTreeMap::from([(3, [B5VertexRef::Raw(0); 2])])
+    ));
+    assert!(!loop_chain_closes(
+        &loop_,
+        &BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])])
+    ));
 }
 
 #[test]
@@ -748,7 +763,10 @@ fn loop_chain_requires_each_source_native_edge_sense() {
         surface: 7,
     };
     loop_.members[1].controls[0] = -1;
-    let edge_vertices = BTreeMap::from([(1, [0, 1]), (2, [2, 1]), (3, [2, 0])]);
+    let edge_vertices = BTreeMap::from(
+        [(1, [0, 1]), (2, [2, 1]), (3, [2, 0])]
+            .map(|(edge, vertices)| (edge, vertices.map(B5VertexRef::Raw))),
+    );
     assert!(loop_chain_closes(&loop_, &edge_vertices));
 
     loop_.members[1].controls[0] = 1;
@@ -964,7 +982,10 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         &[],
     );
 
-    assert_eq!(bound.edges, BTreeMap::from([(3, [0, 1])]));
+    assert_eq!(
+        bound.edges,
+        BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])])
+    );
     assert_eq!(
         bound.vertices,
         vec![
@@ -988,7 +1009,10 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         &BTreeMap::from([(10, endpoints[1])]),
         &[],
     );
-    assert_eq!(mismatched.edges, BTreeMap::from([(3, [0, 1])]));
+    assert_eq!(
+        mismatched.edges,
+        BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])])
+    );
     assert_eq!(
         mismatched.vertices,
         vec![
@@ -1256,7 +1280,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             B5VertexIncidenceLink {
                 object_id: 10,
                 incidence: 20,
-                terminal_control: 0x00,
+                terminal_control: B5VertexIncidenceControl::Control00,
             },
         )]),
         &by_id,
@@ -1284,7 +1308,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             B5VertexIncidenceLink {
                 object_id: 10,
                 incidence: 20,
-                terminal_control: 0x00,
+                terminal_control: B5VertexIncidenceControl::Control00,
             },
         )]),
         &conflicting_by_id,
@@ -1305,7 +1329,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             B5VertexIncidenceLink {
                 object_id: 10,
                 incidence: 20,
-                terminal_control: 0x00,
+                terminal_control: B5VertexIncidenceControl::Control00,
             },
         )]),
         &out_of_domain_by_id,

@@ -7857,13 +7857,13 @@ fn zero_entity_support_runs(
                                 byte_offset: loop_record.pos as u64,
                                 record_ordinal: loop_record.record_ordinal,
                                 tag: loop_record.tag,
-                                member_ids: loop_record.member_ids,
+                                member_ids: loop_record.members.member_ids().collect(),
                                 typed_references: loop_record.typed_references,
                                 typed_records,
                                 support_record_ordinals: loop_record.support_record_ordinals,
-                                terminal_id: loop_record.terminal_id,
-                                gap: loop_record.gap,
-                                loop_class: loop_record.loop_class,
+                                terminal_id: loop_record.members.terminal_id(),
+                                gap: loop_record.members.gap(),
+                                loop_class: loop_record.loop_class.as_byte(),
                                 forward_senses: loop_record.forward_senses,
                                 oriented_model_endpoints: loop_record.oriented_model_endpoints,
                             }
@@ -7950,8 +7950,8 @@ fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroE
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
-            topology_refs: record.topology_refs,
-            surface_support_refs: record.surface_support_refs,
+            topology_refs: record.topology_refs(),
+            surface_support_refs: record.surface_support_refs(),
         })
         .collect()
 }
@@ -7960,6 +7960,8 @@ fn zero_entity_oriented_use_pairs(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    use crate::families::zero_entity::records::ZeroEntityUseSlot;
+
     crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
         .into_iter()
         .enumerate()
@@ -7967,12 +7969,16 @@ fn zero_entity_oriented_use_pairs(
             id: format!("catia:zero-entity:oriented-use-pair#{index}"),
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
-            base_columns: pair.base_columns,
-            uses: pair.uses.map(|use_| CatiaZeroEntityOrientedUse {
+            base_columns: pair.base_columns(),
+            uses: [
+                (ZeroEntityUseSlot::First, &pair.uses[0]),
+                (ZeroEntityUseSlot::Second, &pair.uses[1]),
+            ]
+            .map(|(slot, use_)| CatiaZeroEntityOrientedUse {
                 byte_offset: use_.pos as u64,
                 record_ordinal: use_.record_ordinal,
-                side: use_.side,
-                allocations: use_.allocations,
+                side: slot.side(),
+                allocations: pair.allocations(slot),
             }),
         })
         .collect()

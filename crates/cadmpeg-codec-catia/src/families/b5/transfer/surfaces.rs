@@ -24,21 +24,47 @@ use crate::assemble::cgm_source;
 
 const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 
-pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeometry> {
+/// Direct geometry or a procedural surface construction.
+pub(super) enum B5SurfaceCarrier<'a> {
+    Analytic(SurfaceGeometry),
+    Procedural(B5ProceduralSurface<'a>),
+}
+
+/// Surface constructions that require procedural lowering.
+pub(super) enum B5ProceduralSurface<'a> {
+    Unresolved,
+    RollingBall {
+        carrier_object_id: u32,
+        definition: &'a ProceduralSurfaceDefinition,
+    },
+    Revolution {
+        profile_curve: u32,
+        axis_origin: [f64; 3],
+        axis_direction: [f64; 3],
+        angular_scale: f64,
+        bounds: [[f64; 2]; 2],
+    },
+}
+
+/// Classify a surface into its direct geometry or procedural construction.
+pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
     match surface {
         B5Surface::Plane {
             origin,
             direction_u,
             direction_v,
             ..
-        } => orthonormal_plane(*origin, *direction_u, *direction_v),
+        } => orthonormal_plane(*origin, *direction_u, *direction_v).map_or(
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+            B5SurfaceCarrier::Analytic,
+        ),
         B5Surface::Cylinder {
             origin,
             reference_x,
             axis,
             radius,
             ..
-        } => Some(SurfaceGeometry::Cylinder {
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Cylinder {
             origin: point(*origin),
             axis: vector(*axis),
             ref_direction: vector(*reference_x),
@@ -53,7 +79,7 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             ..
         } => {
             let slant = slant_range[0];
-            Some(SurfaceGeometry::Cone {
+            B5SurfaceCarrier::Analytic(SurfaceGeometry::Cone {
                 origin: point(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 axis: vector(*axis),
                 ref_direction: vector(*direction_x),
@@ -68,7 +94,7 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             axis,
             radius,
             ..
-        } => Some(SurfaceGeometry::Sphere {
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Sphere {
             center: point(*center),
             axis: vector(*axis),
             ref_direction: vector(*direction_x),
@@ -81,18 +107,41 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             major_radius,
             minor_radius,
             ..
-        } => Some(SurfaceGeometry::Torus {
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Torus {
             center: point(*center),
             axis: vector(*axis),
             ref_direction: vector(*direction_x),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
-        B5Surface::Nurbs(surface) => Some(SurfaceGeometry::Nurbs(surface.clone())),
-        B5Surface::UnresolvedNurbs { .. }
-        | B5Surface::Unknown { .. }
-        | B5Surface::RollingBall { .. }
-        | B5Surface::Revolution { .. } => None,
+        B5Surface::Nurbs(surface) => {
+            B5SurfaceCarrier::Analytic(SurfaceGeometry::Nurbs(surface.clone()))
+        }
+        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => {
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
+        }
+        B5Surface::RollingBall {
+            carrier_object_id,
+            definition,
+        } => B5SurfaceCarrier::Procedural(B5ProceduralSurface::RollingBall {
+            carrier_object_id: *carrier_object_id,
+            definition,
+        }),
+        B5Surface::Revolution {
+            profile_curve,
+            axis_origin,
+            axis_direction,
+            angular_scale,
+            profile_range,
+            angular_range,
+            ..
+        } => B5SurfaceCarrier::Procedural(B5ProceduralSurface::Revolution {
+            profile_curve: *profile_curve,
+            axis_origin: *axis_origin,
+            axis_direction: *axis_direction,
+            angular_scale: *angular_scale,
+            bounds: [*profile_range, *angular_range],
+        }),
     }
 }
 
@@ -102,12 +151,15 @@ pub(super) fn neutral_surface(
     surface_id: u32,
     payload: &UnknownId,
 ) -> SurfacePlan {
-    if let Some(geometry) = neutral_analytic_surface(surface) {
-        return SurfacePlan {
-            geometry,
-            procedure: None,
-        };
-    }
+    let carrier = match surface_carrier(surface) {
+        B5SurfaceCarrier::Analytic(geometry) => {
+            return SurfacePlan {
+                geometry,
+                procedure: None,
+            }
+        }
+        B5SurfaceCarrier::Procedural(carrier) => carrier,
+    };
     if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id) {
         return SurfacePlan {
             geometry: SurfaceGeometry::Unknown {
@@ -117,36 +169,34 @@ pub(super) fn neutral_surface(
         };
     }
     let mut procedure = None;
-    let geometry = match surface {
-        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
+    let geometry = match carrier {
+        B5ProceduralSurface::Unresolved => SurfaceGeometry::Unknown {
             record: Some(payload.clone()),
         },
-        B5Surface::RollingBall {
+        B5ProceduralSurface::RollingBall {
             carrier_object_id,
             definition,
         } => {
             procedure = Some(SurfaceProcedure::RollingBall {
-                carrier_object_id: *carrier_object_id,
+                carrier_object_id,
                 definition: definition.clone(),
             });
             SurfaceGeometry::Unknown {
                 record: Some(payload.clone()),
             }
         }
-        B5Surface::Revolution {
+        B5ProceduralSurface::Revolution {
             profile_curve,
             axis_origin,
             axis_direction,
-            profile_range,
-            angular_range,
             angular_scale,
-            ..
+            bounds,
         } => revolution_surface(
-            graph.profiles.get(profile_curve),
-            *axis_origin,
-            *axis_direction,
-            *angular_scale,
-            [*profile_range, *angular_range],
+            graph.profiles.get(&profile_curve),
+            axis_origin,
+            axis_direction,
+            angular_scale,
+            bounds,
         )
         .map_or_else(
             || SurfaceGeometry::Unknown {
@@ -157,13 +207,8 @@ pub(super) fn neutral_surface(
                 SurfaceGeometry::Nurbs(surface)
             },
         ),
-        B5Surface::Plane { .. }
-        | B5Surface::Cylinder { .. }
-        | B5Surface::Cone { .. }
-        | B5Surface::Sphere { .. }
-        | B5Surface::Torus { .. }
-        | B5Surface::Nurbs(_) => unreachable!("analytic carriers returned above"),
     };
+
     SurfacePlan {
         geometry,
         procedure,
@@ -816,6 +861,22 @@ fn emit_extrusion_procedure(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_plane_frame_is_an_unresolved_carrier() {
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [1.0, 0.0, 0.0],
+            u_range: [0.0, 1.0],
+            v_range: [0.0, 1.0],
+        };
+        assert!(matches!(
+            surface_carrier(&plane),
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
+        ));
+    }
+
     use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
 
