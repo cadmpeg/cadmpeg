@@ -541,6 +541,7 @@ pub struct RollingBallSite {
     pub theta: f64,
 }
 
+#[cfg(test)]
 impl RollingBallSite {
     /// Radius from the centre to the first limit.
     pub fn radius(&self) -> f64 {
