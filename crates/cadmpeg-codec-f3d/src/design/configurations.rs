@@ -82,13 +82,18 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
         .map(|entry| {
             let bytes = scan.entry_bytes(&entry.name)?;
-            let payload: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(bytes)
-                .map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "invalid F3D configuration JSON {}: {error}",
-                        entry.name
-                    ))
-                })?;
+            let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "invalid F3D configuration JSON {}: {error}",
+                    entry.name
+                ))
+            })?;
+            let serde_json::Value::Object(payload) = payload else {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D configuration JSON must be an object: {}",
+                    entry.name
+                )));
+            };
             let kind = if entry.name.ends_with(".dsgcfgrule") {
                 DesignConfigurationKind::Rule
             } else {
