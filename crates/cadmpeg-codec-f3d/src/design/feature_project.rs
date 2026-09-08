@@ -2256,8 +2256,7 @@ fn project_fillet_arm(
                                     && parameter.record_index == record_index
                             })
                         })
-                        .map(|parameter| parameter.evaluated_value())
-                        .filter(|weight| weight.is_finite());
+                        .map(crate::records::DesignParameter::evaluated_value);
                     let edges = construction_groups
                         .iter()
                         .find(|group| {

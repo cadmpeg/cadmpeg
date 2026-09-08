@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt::Write as _;
+
 mod graphics;
 mod parameter;
 
@@ -88,7 +90,7 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
             for offset in [None, Some(0), Some(50)] {
                 let mut wire = format!("{prefix},\"{field}\":{value}");
                 if let Some(offset) = offset {
-                    wire.push_str(&format!(",\"{field}_offset\":{offset}"));
+                    write!(wire, ",\"{field}_offset\":{offset}").unwrap();
                 }
                 wire.push('}');
                 let parsed: crate::records::DesignMaterialAssignment =
@@ -129,7 +131,7 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
         for offset in [None, Some(0), Some(4)] {
             let mut wire = format!("{prefix},\"design_id\":{value}");
             if let Some(offset) = offset {
-                wire.push_str(&format!(",\"design_id_offset\":{offset}"));
+                write!(wire, ",\"design_id_offset\":{offset}").unwrap();
             }
             wire.push_str(suffix);
             let parsed: crate::records::ConstructionRecipe =
@@ -156,7 +158,7 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
         for offset in [None, Some(0), Some(44)] {
             let mut wire = format!("{prefix},\"base_type_guid\":{value}");
             if let Some(offset) = offset {
-                wire.push_str(&format!(",\"base_type_guid_offset\":{offset}"));
+                write!(wire, ",\"base_type_guid_offset\":{offset}").unwrap();
             }
             wire.push_str(suffix);
             let parsed: crate::records::SegmentType =

@@ -5352,7 +5352,7 @@ fn validate_fillet_radius_groups<'a>(
                                         .is_some_and(design::feature_project::design_length_unit)
                                     && parameter.evaluated_value() >= 0.0
                             })
-                            .map(|parameter| parameter.evaluated_value())
+                            .map(crate::records::DesignParameter::evaluated_value)
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
@@ -5369,7 +5369,7 @@ fn validate_fillet_radius_groups<'a>(
                                         && parameter.unit().is_none()
                                         && (0.0..1.0).contains(&parameter.evaluated_value())
                                 })
-                                .map(|parameter| parameter.evaluated_value())
+                                .map(crate::records::DesignParameter::evaluated_value)
                         })
                         .collect::<Option<Vec<_>>>();
                     start.zip(end).zip(middle).zip(positions).is_some_and(
