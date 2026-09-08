@@ -40,6 +40,16 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
 }
 
 #[test]
+fn indexed_polygon_admits_only_aligned_parameters() {
+    let node = Point3::new(0.0, 0.0, 0.0);
+    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), 0.0).is_err());
+    let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), 0.0).unwrap();
+    assert_eq!(polygon.nodes, [node]);
+    assert_eq!(polygon.parameters, Some(vec![2.0]));
+    assert!(IndexedPolygon::try_new(vec![node], None, 0.0).is_ok());
+}
+
+#[test]
 fn neutral_identity_keys_preserve_exact_composed_locations() {
     let positive = translation(0.5e-12, 0.0, 0.0);
     let negative = translation(-0.5e-12, 0.0, 0.0);
