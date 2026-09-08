@@ -408,6 +408,25 @@ pub(crate) fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
     sense == SKETCH_LINK_SENSE_UNCONSTRAINED || sense == -1
 }
 
+/// A stored sketch-link sense excluding the unconstrained sentinels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i64", into = "i64")]
+pub struct SketchLinkSense(i64);
+impl TryFrom<i64> for SketchLinkSense {
+    type Error = &'static str;
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if sketch_link_sense_is_unconstrained(value) {
+            return Err("sense must omit the unconstrained sentinel");
+        }
+        Ok(Self(value))
+    }
+}
+impl From<SketchLinkSense> for i64 {
+    fn from(value: SketchLinkSense) -> Self {
+        value.0
+    }
+}
+
 /// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchCurveLink {
@@ -424,7 +443,7 @@ pub struct SketchCurveLink {
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.
     /// Absent when the source record leaves the sense unconstrained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sense: Option<i64>,
+    pub sense: Option<SketchLinkSense>,
     /// Source role tag distinguishing how the sketch curve participates in the link
     /// (e.g. profile edge vs. construction reference).
     pub role: i64,

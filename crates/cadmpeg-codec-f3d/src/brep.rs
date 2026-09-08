@@ -3,8 +3,7 @@
 //! blob-scoped id qualification, and Design body-map selector resolution.
 
 use crate::records::{
-    sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
-    PersistentSubentityTag, SketchCurveLink,
+    CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
 };
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
@@ -406,7 +405,7 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
         target: attribute.target.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
-        sense: (!sketch_link_sense_is_unconstrained(payload.sense)).then_some(payload.sense),
+        sense: crate::records::SketchLinkSense::try_from(payload.sense).ok(),
         role: payload.role,
         closure: payload.closure,
     })
