@@ -348,7 +348,7 @@ fn curve_pcurve(
         .ok()?;
     Some(PcurveEndpoints {
         curve_id: topology.id,
-        faces: topology.stored_face_ids(),
+        faces: topology.faces,
         face_0_endpoints: [[first[0], first[1]], [last[0], last[1]]],
         face_1_endpoints: [[first[2], first[3]], [last[2], last[3]]],
         offset: record.offset,

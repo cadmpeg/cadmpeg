@@ -450,7 +450,12 @@ fn reference_geometry_uses_the_generic_compact_lane() {
     let row = [10, 11, 7, 7, 0x81, 0x0d, 68, 0xe3];
     assert_eq!(
         topology_suffix_candidates(&row),
-        Some(vec![(0, [10, 11, 7, 7], [269, 68])])
+        Some(vec![TopologySuffixCandidate {
+            start: 0,
+            faces: [10, 11].map(NonZeroU32::new),
+            next_edges: [7, 7],
+            reference_geometry: [269, 68],
+        }])
     );
 }
 
@@ -528,7 +533,12 @@ fn materialized_face_evidence_precedes_namespace_face_evidence() {
             Some(&materialized_face_ids),
             Some(&namespace_face_ids),
         ),
-        Some((0, [371, 369, 331, 297], [0, 0]))
+        Some(TopologySuffixCandidate {
+            start: 0,
+            faces: [371, 369].map(NonZeroU32::new),
+            next_edges: [331, 297],
+            reference_geometry: [0, 0],
+        })
     );
 }
 
