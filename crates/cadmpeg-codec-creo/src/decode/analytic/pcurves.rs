@@ -346,7 +346,6 @@ type SupportConePlaneWitness = ([[f64; 2]; 2], PlaneEquation);
 
 struct MappedPcurvePaths {
     mapped: Vec<MappedPcurvePath>,
-    paths: usize,
     missing_surfaces: usize,
     unevaluable_paths: usize,
 }
@@ -655,12 +654,10 @@ fn map_pcurve_paths(
 ) -> MappedPcurvePaths {
     let mut result = MappedPcurvePaths {
         mapped: Vec::new(),
-        paths: 0,
         missing_surfaces: 0,
         unevaluable_paths: 0,
     };
     for (face_id, endpoints) in paths {
-        result.paths += 1;
         let Some(face_id) = face_id else {
             result.missing_surfaces += 1;
             continue;
@@ -790,7 +787,8 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mut carrier_proof_available = false;
         for (face_index, (face_id, endpoints)) in paths {
             let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
-            diagnostics.paths += mapped.paths;
+            diagnostics.paths +=
+                mapped.mapped.len() + mapped.missing_surfaces + mapped.unevaluable_paths;
             diagnostics.missing_surfaces += mapped.missing_surfaces;
             diagnostics.unevaluable_paths += mapped.unevaluable_paths;
             diagnostics.mapped_paths += mapped.mapped.len();
