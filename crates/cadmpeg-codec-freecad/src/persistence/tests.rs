@@ -385,7 +385,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(result.ir().model.tessellations[0].body.is_none());
     assert!(result.ir().model.tessellations[0].faces.is_empty());
     assert_eq!(
-        result.ir().model.tessellations[0].chordal_deflection,
+        result.ir().model.tessellations[0].chordal_deflection(),
         Some(0.01)
     );
     let entries = namespace

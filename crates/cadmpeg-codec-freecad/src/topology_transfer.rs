@@ -69,7 +69,7 @@ pub(crate) fn transfer(
         for root in builder.body_roots()? {
             builder.append_body(ctx, ir, root)?;
         }
-        builder.emit_unowned_triangulations(ir);
+        builder.emit_unowned_triangulations(ir)?;
         occurrences.extend(builder.occurrences);
     }
     close_radial_rings(&mut ir.model.coedges);
@@ -288,7 +288,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_unowned_triangulations(&self, ir: &mut CadIr) {
+    fn emit_unowned_triangulations(&self, ir: &mut CadIr) -> Result<(), CodecError> {
         for (offset, triangulation) in self.tables.triangulations.iter().enumerate() {
             let index = offset + 1;
             if self.emitted_triangulations.contains(&index) {
@@ -308,8 +308,13 @@ impl<'a> Builder<'a> {
                     Vec::new(),
                     Vec::new(),
                 )
-                .expect("decoded triangulation is a valid tessellation")
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid triangulation: {error}"))
+                })?
                 .with_chordal_deflection(Some(triangulation.deflection))
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid triangulation deflection: {error}"))
+                })?
                 .with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Fcstd,
                     object_id: self.source_object.clone(),
@@ -321,6 +326,7 @@ impl<'a> Builder<'a> {
                 })),
             );
         }
+        Ok(())
     }
 
     fn pcurve_id(&self, edge: usize, representation: usize, secondary: bool) -> PcurveId {
@@ -804,10 +810,15 @@ impl<'a> Builder<'a> {
                     Vec::new(),
                     Vec::new(),
                 )
-                .expect("decoded triangulation is a valid tessellation")
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid triangulation: {error}"))
+                })?
                 .with_body(self.current_body.clone())
                 .with_faces(vec![face_id.clone()])
                 .with_chordal_deflection(Some(triangulation.deflection * deflection_scale))
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid triangulation deflection: {error}"))
+                })?
                 .with_source_object(Some(self.source_association())),
             );
         }

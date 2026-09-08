@@ -376,6 +376,23 @@ pub(super) fn decode(
                     });
             }
         }
+        let mesh = match Tessellation::from_decoded(
+            ids::tessellation("mesh", id),
+            local_vertices,
+            local_triangles,
+            strip_lengths,
+            normals,
+            Vec::new(),
+            Vec::new(),
+        ) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                losses.push(
+                    StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
+                );
+                continue;
+            }
+        };
         if !declared_items.contains(&id) {
             let message = format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
@@ -384,17 +401,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
         ir.model.tessellations.push(
-            Tessellation::from_decoded(
-                ids::tessellation("mesh", id),
-                local_vertices,
-                local_triangles,
-                strip_lengths,
-                normals,
-                Vec::new(),
-                Vec::new(),
-            )
-            .expect("decoded STEP tessellation is valid")
-            .with_body(
+            mesh.with_body(
                 (!unresolved_items.contains(&id))
                     .then(|| item_bodies.get(&id))
                     .flatten()

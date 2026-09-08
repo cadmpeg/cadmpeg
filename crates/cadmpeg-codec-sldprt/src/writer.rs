@@ -2182,7 +2182,10 @@ pub(super) fn sequential_tessellation(
     .map_err(|err| CodecError::Malformed(err.to_string()))?
     .with_body(mesh.body.clone())
     .with_faces(mesh.faces.clone())
-    .with_chordal_deflection(mesh.chordal_deflection)
+    .with_chordal_deflection(mesh.chordal_deflection())
+    .map_err(|error| {
+        CodecError::malformed(format_args!("invalid tessellation deflection: {error}"))
+    })?
     .with_source_object(mesh.source_object.clone()))
 }
 

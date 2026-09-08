@@ -787,7 +787,10 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .expect("valid tessellation"),
     );
 
-    assert_eq!(assign_unique_surface_owners(&mut model), vec!["mesh"]);
+    assert_eq!(
+        assign_unique_surface_owners(&mut model).unwrap(),
+        vec!["mesh"]
+    );
     assert_eq!(model.tessellations[0].faces, vec![second]);
     assert_eq!(
         model.tessellations[0].body,
@@ -803,7 +806,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .clear();
     model.tessellations[0].body = None;
     model.tessellations[0].faces.clear();
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 }
 
@@ -830,7 +833,10 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
         .expect("valid tessellation"),
     );
 
-    assert_eq!(assign_unique_surface_owners(&mut model), vec!["lower-mesh"]);
+    assert_eq!(
+        assign_unique_surface_owners(&mut model).unwrap(),
+        vec!["lower-mesh"]
+    );
     assert_eq!(model.tessellations[0].faces, vec![lower]);
     assert_eq!(
         model.tessellations[0].body,
@@ -866,12 +872,12 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["chordal-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
-        .chordal_deflection
+        .chordal_deflection()
         .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
@@ -903,12 +909,12 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["inconsistent-normals-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
-        .chordal_deflection
+        .chordal_deflection()
         .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
@@ -938,7 +944,7 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].body.is_none());
     assert!(model.tessellations[0].faces.is_empty());
 }
@@ -1030,7 +1036,10 @@ fn cone_support_binds_display_list_face() {
         .expect("valid tessellation"),
     );
 
-    assert_eq!(assign_unique_surface_owners(&mut model), vec!["cone-mesh"]);
+    assert_eq!(
+        assign_unique_surface_owners(&mut model).unwrap(),
+        vec!["cone-mesh"]
+    );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(
         model.tessellations[0].body,
@@ -1087,7 +1096,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["cone-cache-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1096,7 +1105,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
     assert!(model.tessellations[0]
-        .chordal_deflection
+        .chordal_deflection()
         .is_some_and(|deflection| deflection > 0.09 && deflection < 0.11));
 }
 
@@ -1166,7 +1175,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         .push(mesh_from("nurbs-exact-mesh", vertices, vec![[0, 1, 2]]));
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["nurbs-exact-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1174,7 +1183,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
-    assert!(model.tessellations[0].chordal_deflection.is_none());
+    assert!(model.tessellations[0].chordal_deflection().is_none());
 }
 
 #[test]
@@ -1207,10 +1216,10 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
-    assert!(model.tessellations[0].chordal_deflection.is_none());
+    assert!(model.tessellations[0].chordal_deflection().is_none());
 }
 
 #[test]
@@ -1246,7 +1255,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -1288,7 +1297,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -1785,7 +1794,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["arc-trim-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![target]);

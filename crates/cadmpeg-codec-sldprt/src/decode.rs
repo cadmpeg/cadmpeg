@@ -2822,7 +2822,9 @@ fn build_geometry_ir(
                     Vec::new(),
                     mesh.channels,
                 )
-                .expect("decoded SLDPRT display mesh is a valid tessellation"),
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?,
             );
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
@@ -2875,7 +2877,7 @@ fn build_geometry_ir(
     );
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
-    ));
+    )?);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
         annotation_builder.derived(&id, "body").derived(id, "faces");

@@ -616,7 +616,9 @@ struct SurfaceCandidate<'a> {
 /// must provide a forward-evaluated parameter witness within the face or
 /// display quantization tolerance; an unconstrained nearest-support fit is
 /// not an ownership witness.
-pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Model) -> Vec<String> {
+pub(crate) fn assign_unique_surface_owners(
+    model: &mut cadmpeg_ir::document::Model,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let surfaces = model
         .surfaces
         .iter()
@@ -756,11 +758,16 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
         mesh.faces.push((*face).clone());
         mesh.body = Some((*body).clone());
         if let Some(deflection) = chordal_deflection {
-            mesh.chordal_deflection = Some(deflection);
+            mesh.set_chordal_deflection(Some(deflection))
+                .map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "invalid tessellation deflection: {error}"
+                    ))
+                })?;
         }
         assigned.push(mesh.id.to_string());
     }
-    assigned
+    Ok(assigned)
 }
 
 fn approximate_surface_owner(

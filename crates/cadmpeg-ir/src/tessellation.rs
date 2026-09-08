@@ -15,7 +15,7 @@ crate::ids::reference_id_type!(
     TessellationId
 );
 
-/// Structural error in a tessellation mesh or channel carrier.
+/// Admission error in a tessellation mesh or channel carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TessellationError(String);
 
@@ -165,7 +165,7 @@ pub struct Tessellation {
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
     pub faces: Vec<FaceId>,
     /// Source chordal deflection tolerance, when carried.
-    pub chordal_deflection: Option<f64>,
+    chordal_deflection: Option<f64>,
     /// Native source-object identity and effective display metadata.
     pub source_object: Option<SourceObjectAssociation>,
     vertices: Vec<Point3>,
@@ -237,6 +237,30 @@ fn triangles_from_strips(strips: &[u32]) -> Result<Vec<[u32; 3]>, TessellationEr
             .ok_or_else(|| tessellation_error("tessellation strip index overflows u32"))?;
     }
     Ok(triangles)
+}
+
+fn require_finite_vertices(vertices: &[Point3]) -> Result<(), TessellationError> {
+    if vertices
+        .iter()
+        .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    {
+        return Err(tessellation_error(
+            "vertices contain a non-finite coordinate",
+        ));
+    }
+    Ok(())
+}
+
+fn require_finite_normals(normals: &[Vector3]) -> Result<(), TessellationError> {
+    if normals
+        .iter()
+        .any(|normal| !normal.x.is_finite() || !normal.y.is_finite() || !normal.z.is_finite())
+    {
+        return Err(tessellation_error(
+            "normals contain a non-finite coordinate",
+        ));
+    }
+    Ok(())
 }
 
 fn require_triangle_indices(
@@ -444,10 +468,12 @@ impl Tessellation {
         shading: TessellationNormals,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
+        require_finite_vertices(&vertices)?;
         require_triangle_indices(&vertices, &triangles)?;
         match &shading {
             TessellationNormals::None => {}
             TessellationNormals::PerVertex(normals) => {
+                require_finite_normals(normals)?;
                 if normals.len() != vertices.len() {
                     return Err(tessellation_error(
                         "tessellation normals do not match vertex count",
@@ -455,6 +481,7 @@ impl Tessellation {
                 }
             }
             TessellationNormals::PerCorner(normals) => {
+                require_finite_normals(normals)?;
                 if triangles.len().checked_mul(3) != Some(normals.len()) {
                     return Err(tessellation_error(
                         "tessellation corner normals do not match triangle corners",
@@ -526,9 +553,16 @@ impl Tessellation {
         &self.vertices
     }
 
-    /// Mutable vertex positions. The cardinality cannot change.
-    pub fn vertices_mut(&mut self) -> &mut [Point3] {
-        &mut self.vertices
+    /// Atomically edit vertex positions while preserving finite coordinates.
+    pub fn edit_vertices(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), TessellationError> {
+        let mut vertices = self.vertices.clone();
+        edit(&mut vertices);
+        require_finite_vertices(&vertices)?;
+        self.vertices = vertices;
+        Ok(())
     }
 
     /// Zero-based vertex indices, with source winding preserved.
@@ -567,12 +601,22 @@ impl Tessellation {
         }
     }
 
-    /// Mutable per-vertex normals. The cardinality cannot change.
-    pub fn normals_mut(&mut self) -> Option<&mut [Vector3]> {
-        match &mut self.shading {
-            TessellationNormals::PerVertex(normals) => Some(normals),
-            TessellationNormals::None | TessellationNormals::PerCorner(_) => None,
-        }
+    /// Atomically edit the stored shading normals while preserving finite coordinates.
+    pub fn edit_normals(
+        &mut self,
+        edit: impl FnOnce(&mut [Vector3]),
+    ) -> Result<(), TessellationError> {
+        let mut shading = self.shading.clone();
+        let normals = match &mut shading {
+            TessellationNormals::PerVertex(normals) | TessellationNormals::PerCorner(normals) => {
+                normals.as_mut_slice()
+            }
+            TessellationNormals::None => &mut [],
+        };
+        edit(normals);
+        require_finite_normals(normals)?;
+        self.shading = shading;
+        Ok(())
     }
 
     /// Per-triangle-corner normals; empty when the source carried none or vertex normals.
@@ -581,14 +625,6 @@ impl Tessellation {
         match &self.shading {
             TessellationNormals::PerCorner(normals) => normals,
             TessellationNormals::None | TessellationNormals::PerVertex(_) => &[],
-        }
-    }
-
-    /// Mutable per-triangle-corner normals. The cardinality cannot change.
-    pub fn corner_normals_mut(&mut self) -> Option<&mut [Vector3]> {
-        match &mut self.shading {
-            TessellationNormals::PerCorner(normals) => Some(normals),
-            TessellationNormals::None | TessellationNormals::PerVertex(_) => None,
         }
     }
 
@@ -630,11 +666,33 @@ impl Tessellation {
         self
     }
 
-    /// Set the source chordal deflection.
+    /// Source chordal deflection tolerance.
     #[must_use]
-    pub fn with_chordal_deflection(mut self, chordal_deflection: Option<f64>) -> Self {
+    pub const fn chordal_deflection(&self) -> Option<f64> {
+        self.chordal_deflection
+    }
+
+    /// Set a finite, non-negative source chordal deflection.
+    pub fn set_chordal_deflection(
+        &mut self,
+        chordal_deflection: Option<f64>,
+    ) -> Result<(), TessellationError> {
+        if chordal_deflection.is_some_and(|value| !value.is_finite() || value < 0.0) {
+            return Err(tessellation_error(
+                "chordal_deflection must be finite and non-negative",
+            ));
+        }
         self.chordal_deflection = chordal_deflection;
-        self
+        Ok(())
+    }
+
+    /// Set a finite, non-negative source chordal deflection.
+    pub fn with_chordal_deflection(
+        mut self,
+        chordal_deflection: Option<f64>,
+    ) -> Result<Self, TessellationError> {
+        self.set_chordal_deflection(chordal_deflection)?;
+        Ok(self)
     }
 
     /// Set the native source-object identity.
@@ -808,7 +866,7 @@ impl TryFrom<TessellationWire> for Tessellation {
         )?;
         mesh.body = wire.body;
         mesh.faces = wire.faces;
-        mesh.chordal_deflection = wire.chordal_deflection;
+        mesh.set_chordal_deflection(wire.chordal_deflection)?;
         mesh.source_object = wire.source_object;
         mesh = mesh.with_feature_edges(wire.feature_edges)?;
         mesh = mesh.with_triangle_groups(wire.triangle_groups)?;

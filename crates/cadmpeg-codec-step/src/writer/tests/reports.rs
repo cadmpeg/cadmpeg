@@ -812,7 +812,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
                 .expect("identity grammar"),
         ))
         .with_faces(vec![ir.model.faces[0].id.clone()])
-        .with_chordal_deflection(Some(0.01)),
+        .with_chordal_deflection(Some(0.01))
+        .unwrap(),
     );
 
     let report = write_step(
