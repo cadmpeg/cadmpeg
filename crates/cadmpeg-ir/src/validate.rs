@@ -235,7 +235,7 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-            profiles: Default::default(),
+            profiles: crate::sketches::SketchProfiles::default(),
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {

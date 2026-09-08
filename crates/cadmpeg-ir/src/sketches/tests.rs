@@ -105,7 +105,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     let members = (0..3)
@@ -330,7 +330,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(
@@ -433,7 +433,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     ir.model.sketch_entities.extend(

@@ -143,7 +143,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     let source = SketchEntityId::mint("synthetic:test:nurbs#source").unwrap();
@@ -513,7 +513,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -597,7 +597,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     let feature = |suffix: &str, ordinal, profile| Feature {
