@@ -1397,7 +1397,7 @@ pub fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Opt
 #[cfg(test)]
 pub fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
-    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
 ) -> BTreeMap<u32, [f64; 3]> {
@@ -1419,7 +1419,7 @@ pub fn solve_pcurve_vertex_domains(
 /// inferred geometry is inconsistent.
 pub fn solve_pcurve_vertex_domains_with_authoritative_points(
     constraints: &[PcurveVertexConstraint],
-    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
     authoritative_points: &BTreeMap<u32, [f64; 3]>,
@@ -1475,16 +1475,12 @@ pub fn solve_pcurve_vertex_domains_with_authoritative_points(
     for (vertex, point) in fixed_points {
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(point.iter().copied().collect());
+                entry.insert(vec![*point]);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let Some(point) = point {
-                    entry
-                        .get_mut()
-                        .retain(|candidate| model_points_agree(*candidate, *point));
-                } else {
-                    entry.get_mut().clear();
-                }
+                entry
+                    .get_mut()
+                    .retain(|candidate| model_points_agree(*candidate, *point));
             }
         }
     }

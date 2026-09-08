@@ -50,7 +50,7 @@ fn pcurve_candidate_agrees_with_fixed_points(
     vertices: [u32; 2],
     points: [[f64; 3]; 2],
     directions: [u8; 2],
-    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
 ) -> bool {
     let Some(ordered) = directed_pcurve_points(directions, points) else {
         return true;
@@ -58,7 +58,7 @@ fn pcurve_candidate_agrees_with_fixed_points(
     vertices.into_iter().zip(ordered).all(|(vertex, point)| {
         fixed_points
             .get(&vertex)
-            .is_none_or(|known| known.is_none_or(|known| model_points_agree(known, point)))
+            .is_none_or(|known| model_points_agree(*known, point))
     })
 }
 
@@ -535,10 +535,7 @@ pub fn solve_topological_vertices(
     diagnostics.carrier_points = carrier_points.len();
     let edge_start_vertices =
         crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
-    let mut fixed_points = carrier_points
-        .into_iter()
-        .map(|(vertex, point)| (vertex, Some(point)))
-        .collect::<BTreeMap<_, _>>();
+    let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
         pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers);
     diagnostics.pcurve = pcurve_diagnostics;
@@ -605,7 +602,7 @@ pub fn solve_topological_vertices(
             }
             for (vertex, point) in vertices.into_iter().zip(ordered) {
                 diagnostics.directed_endpoint_assignments += 1;
-                fixed_points.entry(vertex).or_insert(Some(point));
+                fixed_points.entry(vertex).or_insert(point);
                 if authoritative && !ambiguous {
                     authoritative_points.entry(vertex).or_insert(point);
                 }
