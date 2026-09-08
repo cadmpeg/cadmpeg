@@ -524,7 +524,13 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_dimension_null_locus_pairs)
+            namespace.set_arena_from(
+                row.arena,
+                model
+                    .design_dimension_null_locus_pairs
+                    .iter()
+                    .map(crate::records::dimension_null_locus_wire::Wire::from),
+            )
         },
         len: |model| model.design_dimension_null_locus_pairs.len(),
         counts_toward_emptiness: true,
@@ -1181,7 +1187,11 @@ pub struct F3dNative {
     #[serde(default)]
     pub design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
     /// Null-plus-typed loci recovered from dimensional companion graphs.
-    #[serde(default)]
+    #[serde(default, with = "crate::records::dimension_null_locus_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "Vec<crate::records::dimension_null_locus_wire::Wire>")
+    )]
     pub design_dimension_null_locus_pairs: Vec<DesignDimensionLocusPair>,
     /// Indexed records containing dimension-owned construction recipes.
     #[serde(default)]
@@ -1373,7 +1383,12 @@ impl F3dNative {
             design_dimension_locus_groups: namespace.arena_as("design_dimension_locus_groups")?,
             design_dimension_locus_pairs: namespace.arena_as("design_dimension_locus_pairs")?,
             design_dimension_null_locus_pairs: namespace
-                .arena_as("design_dimension_null_locus_pairs")?,
+                .arena_as::<crate::records::dimension_null_locus_wire::Entry>(
+                    "design_dimension_null_locus_pairs",
+                )?
+                .into_iter()
+                .map(|entry| entry.0)
+                .collect(),
             design_dimension_recipe_records: namespace
                 .arena_as("design_dimension_recipe_records")?,
             design_edge_operands: namespace.arena_as("design_edge_operands")?,
