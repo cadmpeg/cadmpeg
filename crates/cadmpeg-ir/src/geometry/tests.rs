@@ -766,3 +766,34 @@ mod rolling_ball_side;
 mod variable_blend_secondary_curve;
 
 mod variable_blend_value;
+
+#[test]
+fn bspline_surface_numeric_admission_and_transactional_edit() {
+    use crate::geometry::BsplineSurface;
+    use crate::math::Point3;
+    let points = vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2];
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    assert!(BsplineSurface::new(
+        1,
+        1,
+        vec![0.0, 1.0, 0.0, 1.0],
+        knots.clone(),
+        points.clone()
+    )
+    .is_err());
+    let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
+    let original = surface.clone();
+    assert!(surface
+        .edit_control_points(|point| point.x = f64::NAN)
+        .is_err());
+    assert_eq!(surface, original);
+    let mut wire = serde_json::to_value(&surface).unwrap();
+    wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
+    assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
+    surface.edit_control_points(|point| point.z = 2.0).unwrap();
+    assert!(surface
+        .control_points()
+        .iter()
+        .flatten()
+        .all(|point| point.z == 2.0));
+}

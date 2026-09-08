@@ -259,9 +259,11 @@ impl BsplineSurface {
                 knots.len(),
                 checked_knot_count(axis, count, degree)?,
             )?;
+            require_nondecreasing_knots(knots)?;
         }
         for row in &control_points {
             require_length("control_points row", row.len(), v_count)?;
+            require_finite_points_3("control_points", row)?;
         }
         Ok(Self {
             u_degree,
@@ -297,9 +299,20 @@ impl BsplineSurface {
         &self.control_points
     }
 
-    /// Mutable pole coordinates. The grid shape cannot change.
-    pub fn control_points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
-        self.control_points.iter_mut().flatten()
+    /// Atomically edit pole coordinates while preserving the grid and finite values.
+    pub fn edit_control_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3),
+    ) -> Result<(), NurbsError> {
+        let mut points = self.control_points.clone();
+        for row in &mut points {
+            for point in row.iter_mut() {
+                edit(point);
+            }
+            require_finite_points_3("control_points", row)?;
+        }
+        self.control_points = points;
+        Ok(())
     }
 }
 

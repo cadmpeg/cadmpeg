@@ -905,18 +905,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SpatialSketchGeometry::NurbsSurface { surface } => {
-                if surface.u_degree() == 0
-                    || surface.v_degree() == 0
-                    || surface.u_knots().iter().any(|value| !value.is_finite())
-                    || surface.v_knots().iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(surface.u_knots())
-                    || !knots_nondecreasing(surface.v_knots())
-                    || surface
-                        .control_points()
-                        .iter()
-                        .flatten()
-                        .any(|point| !finite3(*point))
-                {
+                if surface.u_degree() == 0 || surface.v_degree() == 0 {
                     finding(
                         findings,
                         Check::ParameterDomain,

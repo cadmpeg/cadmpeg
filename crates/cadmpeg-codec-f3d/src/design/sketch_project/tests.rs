@@ -1008,7 +1008,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &surfaces,
         &relations,
         1.0e-6,
-    );
+    )
+    .unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 8);
     assert!(entities.iter().any(|entity| matches!(
