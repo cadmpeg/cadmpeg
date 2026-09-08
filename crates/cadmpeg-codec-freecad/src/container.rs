@@ -133,7 +133,7 @@ pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
         format!("SchemaVersion={}", scan.document.schema_version),
         format!("FileVersion={}", scan.document.file_version),
         format!("document root={}", scan.document.root_name),
-        format!("document kind={}", scan.document.document_kind.as_str()),
+        format!("document kind={}", scan.document.document_kind().as_str()),
         format!("object count={}", scan.document.object_count),
         format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ];
@@ -254,19 +254,6 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let document_kind = if domains.iter().any(|domain| domain == "Assembly") {
-        crate::native::DocumentKind::Assembly
-    } else if domains.iter().any(|domain| domain == "TechDraw") {
-        crate::native::DocumentKind::Drawing
-    } else if domains.iter().any(|domain| domain == "PartDesign") {
-        crate::native::DocumentKind::PartDesign
-    } else if domains.iter().any(|domain| domain == "Part") {
-        crate::native::DocumentKind::Part
-    } else if object_count == 0 {
-        crate::native::DocumentKind::Empty
-    } else {
-        crate::native::DocumentKind::ApplicationDocument
-    };
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         schema_version,
@@ -274,7 +261,6 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
         program_version: canonical_attribute(root, "ProgramVersion", "programVersion")?,
         root_name: root.tag_name().name().into(),
         object_count,
-        document_kind,
         domains,
     };
     Ok(document)

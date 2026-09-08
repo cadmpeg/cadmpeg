@@ -47,6 +47,17 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn document_kind_wire_must_match_domains_and_count() {
+        let mut wire = serde_json::json!({"id":"document", "schema_version":"4",
+            "file_version":"1", "program_version":null, "root_name":"Document",
+            "object_count":1, "domains":["Part"], "document_kind":"empty"});
+        assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
+        wire["document_kind"] = serde_json::json!("part");
+        let facts = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(facts).unwrap(), wire);
+    }
+
+    #[test]
     fn link_array_wire_rejects_negative_and_mismatched_counts() {
         let base = serde_json::json!({
             "id": "link", "object": "object", "kind": "occurrence",
@@ -1197,6 +1208,7 @@ impl DocumentKind {
 
 /// Metadata read from the persistence document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DocumentFactsWire", into = "DocumentFactsWire")]
 pub struct DocumentFacts {
     /// Stable document-record identity.
     pub id: String,
@@ -1210,10 +1222,71 @@ pub struct DocumentFacts {
     pub root_name: String,
     /// Number of declared application objects.
     pub object_count: usize,
-    /// Structural document-kind classification.
-    pub document_kind: DocumentKind,
     /// Application domains present in object declarations.
     pub domains: Vec<String>,
+}
+
+impl DocumentFacts {
+    /// Structural document-kind classification.
+    pub fn document_kind(&self) -> DocumentKind {
+        if self.domains.iter().any(|domain| domain == "Assembly") {
+            DocumentKind::Assembly
+        } else if self.domains.iter().any(|domain| domain == "TechDraw") {
+            DocumentKind::Drawing
+        } else if self.domains.iter().any(|domain| domain == "PartDesign") {
+            DocumentKind::PartDesign
+        } else if self.domains.iter().any(|domain| domain == "Part") {
+            DocumentKind::Part
+        } else if self.object_count == 0 {
+            DocumentKind::Empty
+        } else {
+            DocumentKind::ApplicationDocument
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DocumentFactsWire {
+    id: String,
+    schema_version: String,
+    file_version: String,
+    program_version: Option<String>,
+    root_name: String,
+    object_count: usize,
+    domains: Vec<String>,
+    document_kind: DocumentKind,
+}
+impl From<DocumentFacts> for DocumentFactsWire {
+    fn from(value: DocumentFacts) -> Self {
+        Self {
+            document_kind: value.document_kind(),
+            id: value.id,
+            schema_version: value.schema_version,
+            file_version: value.file_version,
+            program_version: value.program_version,
+            root_name: value.root_name,
+            object_count: value.object_count,
+            domains: value.domains,
+        }
+    }
+}
+impl TryFrom<DocumentFactsWire> for DocumentFacts {
+    type Error = String;
+    fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            schema_version: wire.schema_version,
+            file_version: wire.file_version,
+            program_version: wire.program_version,
+            root_name: wire.root_name,
+            object_count: wire.object_count,
+            domains: wire.domains,
+        };
+        if wire.document_kind != value.document_kind() {
+            return Err("document_kind disagrees with domains and object_count".to_owned());
+        }
+        Ok(value)
+    }
 }
 
 /// One declared application object and its persistence state.
