@@ -433,6 +433,7 @@ pub struct ExtractArgs {
     pub file: PathBuf,
     /// Exact entry or stream path (quotes removed).
     pub member: String,
+    /// Extracted-byte destination.
     #[command(flatten)]
     pub output: ExtractDestination,
     /// Resource-limit profile applied while reading the archive.
@@ -445,7 +446,9 @@ pub struct ExtractArgs {
 /// Extracted-byte destination and its file overwrite policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtractDestination {
+    /// Write bytes to standard output.
     Stdout,
+    /// Write bytes with the file overwrite policy.
     File(crate::application::artifact_store::FileDestination),
 }
 
