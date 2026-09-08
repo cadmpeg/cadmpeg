@@ -1115,7 +1115,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
-                    apply_kernel_header(&mut ir, carrier.family, &decoded.header);
+                    apply_kernel_header(&mut ir, carrier.family, &decoded.header)?;
                     Some(decoded.brep)
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1682,9 +1682,9 @@ fn apply_kernel_header(
     ir: &mut CadIr,
     family: crate::kernel::KernelFamily,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
-) {
+) -> Result<(), CodecError> {
     let Some(source) = ir.source.as_mut() else {
-        return;
+        return Ok(());
     };
     if let Some(version) = header.save_format_version {
         source
@@ -1712,11 +1712,12 @@ fn apply_kernel_header(
             .insert("kernel_product_version".into(), version.clone());
     }
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
-        ir.tolerances = Tolerances { linear, angular };
+        ir.tolerances = Tolerances::new(linear, angular).map_err(CodecError::Malformed)?;
     }
     source
         .attributes
         .insert("kernel_family".into(), family.label().into());
+    Ok(())
 }
 
 fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {

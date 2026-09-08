@@ -431,7 +431,8 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         "BREP.saved-edge.smbh",
         FORMAT,
         DecodePurpose::Model,
-    );
+    )
+    .expect("valid BREP tolerances");
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
@@ -1023,7 +1024,8 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         &HashSet::new(),
         &HashSet::new(),
         FORMAT,
-    );
+    )
+    .expect("valid edge tolerance");
 
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.edges[0].curve, None);

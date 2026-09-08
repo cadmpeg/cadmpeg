@@ -233,8 +233,6 @@ fn degenerate_plane_normal_is_flagged() {
 #[test]
 fn topology_tolerance_and_new_conics_are_bounds_checked() {
     let mut ir = unit_cube();
-    let edge_id = ir.model.edges[0].id.as_str().to_owned();
-    ir.model.edges[0].tolerance = Some(-1.0);
     ir.model.curves.push(Curve {
         id: CurveId::mint("synthetic:test:curve#bad-parabola").expect("valid identity"),
         geometry: CurveGeometry::Parabola {
@@ -259,7 +257,6 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 
     let report = validate_neutral(&ir, Vec::new());
     for entity in [
-        edge_id.as_str(),
         "synthetic:test:curve#bad-parabola",
         "synthetic:test:curve#bad-hyperbola",
     ] {
@@ -301,15 +298,4 @@ fn revolution_rejects_equal_intervals() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("revolution interval")));
-}
-
-#[test]
-fn document_and_entity_tolerances_are_checked() {
-    let mut ir = unit_cube();
-    ir.tolerances.angular = f64::NAN;
-    ir.model.faces[0].tolerance = Some(0.0);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Tolerances));
 }

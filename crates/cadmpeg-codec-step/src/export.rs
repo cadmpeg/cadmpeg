@@ -1362,7 +1362,7 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                real(self.ir.tolerances.linear),
+                real(self.ir.tolerances.linear.get()),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -3209,7 +3209,7 @@ impl<'a> Builder<'a> {
                     if datum_system.is_some() && datum_ref.is_none() {
                         continue;
                     }
-                    let measure = self.emit_pmi_measure(*magnitude);
+                    let measure = self.emit_pmi_measure(magnitude.get());
                     let tolerance_ref = if datum_ref.is_none()
                         && modifiers.is_empty()
                         && defined_unit.is_none()
@@ -3426,10 +3426,10 @@ impl<'a> Builder<'a> {
         for modifier in parsed {
             match modifier {
                 Modifier::WithValue { kind, value } => {
-                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue::new(
                         value,
-                        quantity: cadmpeg_ir::PmiQuantity::Length,
-                    });
+                        cadmpeg_ir::PmiQuantity::Length,
+                    )?);
                     modifiers.push(
                         self.emitter
                             .emit(
@@ -3529,8 +3529,10 @@ impl<'a> Builder<'a> {
             ),
             PmiQuantity::Ratio => ("MEASURE_WITH_UNIT", "RATIO_MEASURE", self.emit_ratio_unit()),
         };
-        self.emitter
-            .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
+        self.emitter.emit(
+            entity,
+            &format!("{typed}({}),{unit}", real(value.value.get())),
+        )
     }
 
     fn emit_pmi_measure_representation_item(
@@ -3545,7 +3547,11 @@ impl<'a> Builder<'a> {
         };
         self.emitter.emit(
             "MEASURE_REPRESENTATION_ITEM",
-            &format!("{},{typed}({}),{unit}", string(name), real(value.value)),
+            &format!(
+                "{},{typed}({}),{unit}",
+                string(name),
+                real(value.value.get())
+            ),
         )
     }
 

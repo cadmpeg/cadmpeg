@@ -250,7 +250,10 @@ fn write_archive_prefix(
     ))?;
     output.write_all(&table(
         TCODE_SETTINGS_TABLE,
-        &[units_record(ir.tolerances.linear, ir.tolerances.angular)],
+        &[units_record(
+            ir.tolerances.linear.get(),
+            ir.tolerances.angular.get(),
+        )],
     ))?;
     for typecode in [
         TCODE_BITMAP_TABLE,
@@ -566,17 +569,9 @@ fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
 ) -> Result<WritePlan, CodecError> {
-    if !ir.tolerances.linear.is_finite() || ir.tolerances.linear <= 0.0 {
+    if ir.tolerances.angular.get() > std::f64::consts::PI {
         return Err(CodecError::Malformed(
-            "Rhino absolute tolerance must be positive and finite".into(),
-        ));
-    }
-    if !ir.tolerances.angular.is_finite()
-        || ir.tolerances.angular <= 0.0
-        || ir.tolerances.angular > std::f64::consts::PI
-    {
-        return Err(CodecError::Malformed(
-            "Rhino angular tolerance must be finite and in (0, pi]".into(),
+            "Rhino angular tolerance must not exceed pi".into(),
         ));
     }
     if ir
@@ -1133,12 +1128,13 @@ fn planar_sheet_brep_payload(
         ordered_points.push(point.position);
     }
     for edge in &ordered_edges {
-        validate_planar_edge(model, edge, ir.tolerances.linear)?;
+        validate_planar_edge(model, edge, ir.tolerances.linear.get())?;
     }
     if let Some((origin, normal, _, _)) = plane_frame {
         let plane_tolerance = face
             .tolerance
-            .unwrap_or(ir.tolerances.linear)
+            .map(cadmpeg_ir::units::PositiveScalar::get)
+            .unwrap_or(ir.tolerances.linear.get())
             .max(EPS_WRITE_DEGENERATE);
         for point in &ordered_points {
             let distance = (point.x - origin.x) * normal.x
@@ -1174,7 +1170,9 @@ fn planar_sheet_brep_payload(
         validate_nurbs_trim_loop(
             model,
             nurbs_patch.expect("non-plane patch"),
-            face.tolerance.unwrap_or(ir.tolerances.linear),
+            face.tolerance
+                .map(cadmpeg_ir::units::PositiveScalar::get)
+                .unwrap_or(ir.tolerances.linear.get()),
             &ordered_edges,
             &ordered_coedges,
         )?;
@@ -1251,7 +1249,13 @@ fn planar_sheet_brep_payload(
                 record.extend(value.to_le_bytes());
             }
             record.extend(indexes(&incident));
-            record.extend(vertex.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(
+                vertex
+                    .tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
+                    .unwrap_or(0.0)
+                    .to_le_bytes(),
+            );
             record
         })
         .collect::<Vec<_>>();
@@ -1272,7 +1276,12 @@ fn planar_sheet_brep_payload(
             record.extend(vertex_index[edge.start.as_str()].to_le_bytes());
             record.extend(vertex_index[edge.end.as_str()].to_le_bytes());
             record.extend(indexes(&[index as i32]));
-            record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(
+                edge.tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
+                    .unwrap_or(0.0)
+                    .to_le_bytes(),
+            );
             record.extend(
                 edge.param_range
                     .expect("validated edge domain")
@@ -1525,7 +1534,7 @@ fn multi_face_brep_payload(
                 edge.id.as_str()
             )));
         }
-        validate_planar_edge(model, edge, ir.tolerances.linear)?;
+        validate_planar_edge(model, edge, ir.tolerances.linear.get())?;
     }
     let used_curves = model
         .edges
@@ -1784,7 +1793,8 @@ fn multi_face_brep_payload(
                 surface,
                 model.faces[face_position]
                     .tolerance
-                    .unwrap_or(ir.tolerances.linear),
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
+                    .unwrap_or(ir.tolerances.linear.get()),
                 &edges,
                 &coedges,
             )?;
@@ -1801,7 +1811,8 @@ fn multi_face_brep_payload(
         };
         let tolerance = model.faces[face_position]
             .tolerance
-            .unwrap_or(ir.tolerances.linear)
+            .map(cadmpeg_ir::units::PositiveScalar::get)
+            .unwrap_or(ir.tolerances.linear.get())
             .max(EPS_WRITE_DEGENERATE);
         let mut boundary = Vec::with_capacity(loop_.coedges().len());
         for coedge_id in loop_.coedges() {
@@ -1940,7 +1951,13 @@ fn multi_face_brep_payload(
                 record.extend(value.to_le_bytes());
             }
             record.extend(indexes(&incident));
-            record.extend(vertex.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(
+                vertex
+                    .tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
+                    .unwrap_or(0.0)
+                    .to_le_bytes(),
+            );
             record
         })
         .collect::<Vec<_>>();
@@ -1963,7 +1980,12 @@ fn multi_face_brep_payload(
                     .map(|coedge| *coedge as i32)
                     .collect::<Vec<_>>(),
             ));
-            record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(
+                edge.tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
+                    .unwrap_or(0.0)
+                    .to_le_bytes(),
+            );
             record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
             record
         })
@@ -2231,6 +2253,7 @@ fn validate_planar_edge(
     })?;
     let tolerance = edge
         .tolerance
+        .map(cadmpeg_ir::units::PositiveScalar::get)
         .unwrap_or(document_tolerance)
         .max(EPS_WRITE_DEGENERATE);
     if !close_point(start, expected_start, tolerance) || !close_point(end, expected_end, tolerance)
@@ -2643,7 +2666,11 @@ fn validate_nurbs_trim_loop(
         breaks.dedup();
 
         let tolerance = face_tolerance
-            .max(edge.tolerance.unwrap_or(0.0))
+            .max(
+                edge.tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
+                    .unwrap_or(0.0),
+            )
             .max(pcurve.fit_tolerance().unwrap_or(0.0))
             .max(EPS_WRITE_DEGENERATE);
         for span in breaks.windows(2) {

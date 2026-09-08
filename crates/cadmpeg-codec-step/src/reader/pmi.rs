@@ -455,7 +455,7 @@ pub(super) fn decode(
                     .flat_map(|partial| partial.parameters.iter())
                     .find_map(|value| measure(value, exchange, &mut measurements))
             });
-        let Some(magnitude) = magnitude else {
+        let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
             warnings.push(format!(
                 "{} #{id} has no numeric magnitude",
                 record.display_name()
@@ -1140,7 +1140,9 @@ fn modifier_text(
             typed.insert(*id);
             let kind = parameters.first()?.enumeration()?.to_ascii_lowercase();
             let measure_id = parameters.get(1)?.reference()?;
-            let value = measure(&Value::Reference(measure_id), exchange, measurements)?.value;
+            let value = measure(&Value::Reference(measure_id), exchange, measurements)?
+                .value
+                .get();
             typed.insert(measure_id);
             Some(format!("{kind}:{value}"))
         }
@@ -1861,29 +1863,25 @@ fn measure_inner(
         return None;
     }
     match value {
-        Value::Integer(value) => Some(PmiValue {
-            value: *value as f64,
-            quantity: PmiQuantity::Ratio,
-        }),
-        Value::Real(value) => Some(PmiValue {
-            value: *value,
-            quantity: PmiQuantity::Ratio,
-        }),
-        Value::Typed(name, value) => value.number().map(|number| PmiValue {
-            value: if name.contains("LENGTH") {
-                number * measurements.length_scale
-            } else if name.contains("ANGLE") {
-                number * measurements.angle_scale
-            } else {
-                number
-            },
-            quantity: if name.contains("LENGTH") {
-                PmiQuantity::Length
-            } else if name.contains("ANGLE") {
-                PmiQuantity::Angle
-            } else {
-                PmiQuantity::Ratio
-            },
+        Value::Integer(value) => PmiValue::new(*value as f64, PmiQuantity::Ratio),
+        Value::Real(value) => PmiValue::new(*value, PmiQuantity::Ratio),
+        Value::Typed(name, value) => value.number().and_then(|number| {
+            PmiValue::new(
+                if name.contains("LENGTH") {
+                    number * measurements.length_scale
+                } else if name.contains("ANGLE") {
+                    number * measurements.angle_scale
+                } else {
+                    number
+                },
+                if name.contains("LENGTH") {
+                    PmiQuantity::Length
+                } else if name.contains("ANGLE") {
+                    PmiQuantity::Angle
+                } else {
+                    PmiQuantity::Ratio
+                },
+            )
         }),
         Value::Reference(id) => {
             if !active.insert(*id) {
@@ -1948,10 +1946,7 @@ fn measure_inner(
                 .flat_map(|partial| &partial.parameters)
                 .find_map(|parameter| {
                     scalar_number(parameter)
-                        .map(|number| PmiValue {
-                            value: number * scale,
-                            quantity,
-                        })
+                        .and_then(|number| PmiValue::new(number * scale, quantity))
                         .or_else(|| {
                             measure_inner(parameter, exchange, active, depth + 1, measurements)
                         })

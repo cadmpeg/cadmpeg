@@ -1699,7 +1699,15 @@ fn plane_face_draft(
     stem: &str,
     boundary_edges: Vec<Edge>,
     resolution: f64,
-) -> ModelDraft {
+) -> Result<ModelDraft, &'static str> {
+    let tolerance = if resolution > 0.0 {
+        Some(
+            cadmpeg_ir::units::PositiveScalar::new(resolution)
+                .ok_or("face tolerance must be finite")?,
+        )
+    } else {
+        None
+    };
     let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
     let region_id = RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
     let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
@@ -1746,7 +1754,7 @@ fn plane_face_draft(
         },
         name: None,
         color: None,
-        tolerance: (resolution > 0.0).then_some(resolution),
+        tolerance,
     });
     candidate.model_mut().shells.push(Shell {
         id: shell_id.clone(),
@@ -1770,7 +1778,7 @@ fn plane_face_draft(
         visible: None,
     });
     candidate.model_mut().finalize();
-    candidate
+    Ok(candidate)
 }
 
 fn legacy_single_parent_face(
@@ -1853,7 +1861,7 @@ fn legacy_single_parent_face(
     }
     let stem = format!("legacy-single-parent-D{}", entry.sequence);
     Ok(Some((
-        plane_face_draft(parent_sequence, &stem, boundary_edges, resolution),
+        plane_face_draft(parent_sequence, &stem, boundary_edges, resolution)?,
         std::iter::once(parent_sequence).chain(children).collect(),
     )))
 }
@@ -2554,7 +2562,10 @@ pub(super) fn project(
                         vec![edge],
                         global.minimum_resolution_mm(),
                     );
-                    legacy_face_candidates.push((entry.sequence, candidate));
+                    match candidate {
+                        Ok(candidate) => legacy_face_candidates.push((entry.sequence, candidate)),
+                        Err(reason) => losses.push(entity_loss(entry, reason)),
+                    }
                 }
                 Err(reason) => losses.push(entity_loss(entry, reason.message())),
             },

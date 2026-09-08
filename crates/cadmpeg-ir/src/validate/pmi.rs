@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::document::CadIr;
-use crate::pmi::{DimensionTolerance, PmiDefinition, PmiTarget};
+use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -131,18 +131,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                 }
             }
-            PmiDefinition::GeometricTolerance {
-                magnitude,
-                datum_system,
-                ..
-            } => {
-                if !(magnitude.value.is_finite() && magnitude.value >= 0.0) {
-                    invalid(
-                        findings,
-                        annotation.id.as_str(),
-                        "invalid tolerance magnitude",
-                    );
-                }
+            PmiDefinition::GeometricTolerance { datum_system, .. } => {
                 if datum_system.as_ref().is_some_and(|id| {
                     !matches!(
                         definitions.get(id.as_str()),
@@ -152,30 +141,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     invalid(findings, annotation.id.as_str(), "unresolved datum system");
                 }
             }
-            PmiDefinition::Dimension {
-                nominal, tolerance, ..
-            } => {
-                let deviations = match tolerance {
-                    Some(
-                        DimensionTolerance::PlusMinus { lower, upper }
-                        | DimensionTolerance::PlusMinusFit { lower, upper, .. },
-                    ) => Some((lower, upper)),
-                    Some(DimensionTolerance::Fit(_)) | None => None,
-                };
-                let non_finite = nominal
-                    .as_ref()
-                    .is_some_and(|value| !value.value.is_finite())
-                    || deviations.is_some_and(|(lower, upper)| {
-                        !lower.value.is_finite() || !upper.value.is_finite()
-                    });
-                if non_finite {
-                    invalid(
-                        findings,
-                        annotation.id.as_str(),
-                        "non-finite dimension value",
-                    );
-                }
-            }
+            PmiDefinition::Dimension { .. } => {}
             PmiDefinition::Presentation { semantics, .. } => {
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
                     invalid(

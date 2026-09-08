@@ -444,7 +444,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
             )));
         }
         let tolerance = match target_vertices[after.vertex.as_str()].tolerance {
-            Some(tolerance) => tolerance,
+            Some(tolerance) => tolerance.get(),
             None if after.evaluated_unset => -1.0,
             None => {
                 return Err(CodecError::malformed(format_args!(
@@ -452,11 +452,10 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 )))
             }
         };
-        if !tolerance.is_finite()
-            || after
-                .leading_tolerances
-                .iter()
-                .any(|value| !value.is_finite())
+        if after
+            .leading_tolerances
+            .iter()
+            .any(|value| !value.is_finite())
         {
             return Err(CodecError::malformed(format_args!(
                 "F3D tolerant vertex {id} has non-finite fields"
@@ -465,6 +464,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
         if tolerance
             != baseline_vertices[after.vertex.as_str()]
                 .tolerance
+                .map(cadmpeg_ir::units::PositiveScalar::get)
                 .unwrap_or(if before.evaluated_unset {
                     -1.0
                 } else {
@@ -551,13 +551,8 @@ pub(crate) fn validate_tolerant_edge_edits(
         let tolerance = target_edges[after.edge.as_str()].tolerance.ok_or_else(|| {
             CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
         })?;
-        if !tolerance.is_finite() || tolerance < 0.0 {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant edge {id} has invalid fields"
-            )));
-        }
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(after.record_index as usize, tolerance / LEN_TO_MM);
+            edits.insert(after.record_index as usize, tolerance.get() / LEN_TO_MM);
         }
     }
     Ok(edits)

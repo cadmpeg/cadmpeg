@@ -232,7 +232,13 @@ pub(super) fn emit_topology(
             tolerance,
         });
         vertices.insert(node.xmt, vertex.clone());
-        vertex_positions.insert(vertex, (point_position, tolerance));
+        vertex_positions.insert(
+            vertex,
+            (
+                point_position,
+                tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+            ),
+        );
     }
     let pcurve_indices: BTreeMap<_, _> = ir
         .model
@@ -410,7 +416,7 @@ pub(super) fn emit_topology(
                     start_tolerance,
                     end_position,
                     end_tolerance,
-                    decoded_tolerance(fields.tolerance),
+                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::units::PositiveScalar::get),
                     procedural_curve_ids.contains(carrier),
                     &mut curve_point_cache,
                     adaptive_geometry_budget,
@@ -915,11 +921,11 @@ pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
     }
 }
 
-pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
+pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
     match value {
         MISSING_TOLERANCE => None,
         value if value.is_finite() && value > 0.0 && (value * 1000.0).is_finite() => {
-            Some(value * 1000.0)
+            cadmpeg_ir::units::PositiveScalar::new(value * 1000.0)
         }
         _ => None,
     }
@@ -935,7 +941,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     curve_index: usize,
     range: Option<[f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
-    tolerance: Option<f64>,
+    tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<VertexId> {
@@ -1052,7 +1058,10 @@ pub(crate) fn orient_edge_range_with_budget(
             .points
             .iter()
             .find(|candidate| candidate.id == vertex.point)?;
-        Some((point.position, vertex.tolerance))
+        Some((
+            point.position,
+            vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        ))
     };
     let (start_position, start_tolerance) = vertex_position(start)?;
     let (end_position, end_tolerance) = vertex_position(end)?;

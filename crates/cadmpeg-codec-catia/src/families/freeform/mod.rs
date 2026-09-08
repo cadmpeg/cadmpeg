@@ -2177,6 +2177,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     ]
                     .into_iter()
                     .flatten()
+                    .map(cadmpeg_ir::units::PositiveScalar::get)
                     .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
                     let coedges = standard_surfaces
                         .iter()
@@ -2221,7 +2222,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 .get(*coedge)
                                 .copied()
                                 .flatten()
-                                .map_or(edge_allowance, |value| edge_allowance.max(value));
+                                .map_or(edge_allowance, |value| edge_allowance.max(value.get()));
                             pcurve_lift_reaches_endpoints(
                                 &geometry,
                                 surface_geometry,

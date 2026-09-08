@@ -136,43 +136,34 @@ pub(crate) fn transfer_neutral(
                 )))
             }
         };
-        let scale = parameter("Scale")?;
-        if scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing {} has a non-positive or non-finite scale",
-                record.id
-            )));
-        }
-        let rotation_degrees = parameter("Rotation")?;
-        if rotation_degrees.is_some_and(|rotation| !rotation.is_finite()) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing {} has a non-finite rotation",
-                record.id
-            )));
-        }
+        let scale = parameter("Scale")?
+            .map(|value| {
+                cadmpeg_ir::units::PositiveScalar::new(value).ok_or_else(|| {
+                    CodecError::malformed("drawing scale must be positive and finite")
+                })
+            })
+            .transpose()?;
+        let rotation_degrees = parameter("Rotation")?
+            .map(|value| {
+                cadmpeg_ir::units::FiniteScalar::new(value)
+                    .ok_or_else(|| CodecError::malformed("drawing rotation must be finite"))
+            })
+            .transpose()?;
         let direction = if record.parameters.contains_key("Direction") {
-            let direction = vector_property(&owned, "Direction")?.ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "drawing {} has no direction vector",
-                    record.id
-                ))
-            })?;
-            let length_squared = direction
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>();
-            if direction.iter().any(|component| !component.is_finite())
-                || length_squared <= f64::EPSILON
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} has a non-finite or zero direction",
-                    record.id
-                )));
-            }
-            Some(direction)
+            let value = vector_property(&owned, "Direction")?
+                .ok_or_else(|| CodecError::malformed("drawing direction is absent"))?;
+            Some(cadmpeg_ir::units::NonzeroVector::new(value).ok_or_else(|| {
+                CodecError::malformed("drawing direction must be finite and nonzero")
+            })?)
         } else {
             None
         };
+        let position = position
+            .map(|value| {
+                cadmpeg_ir::units::FiniteVector::new(value)
+                    .ok_or_else(|| CodecError::malformed("drawing position must be finite"))
+            })
+            .transpose()?;
         let relationships = record
             .relationships
             .iter()

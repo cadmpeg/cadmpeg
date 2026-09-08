@@ -139,6 +139,9 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         resolved.z - target.z,
     )
     .norm();
-    assert!(residual <= ir.tolerances.linear, "residual={residual}");
+    assert!(
+        residual <= ir.tolerances.linear.get(),
+        "residual={residual}"
+    );
     assert!(super::model_curve_parameter_near_point(&ir, &curve_id, target, 0.24).is_none());
 }

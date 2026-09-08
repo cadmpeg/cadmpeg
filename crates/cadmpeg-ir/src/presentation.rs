@@ -17,10 +17,12 @@ crate::ids::reference_id_type!(
 pub struct CameraState {
     /// Camera position in document coordinates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f64; 3]>,
+    #[serde(deserialize_with = "deserialize_position")]
+    pub position: Option<crate::units::FiniteVector<3>>,
     /// Persisted Inventor axis-angle orientation as X, Y, Z, angle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub orientation: Option<[f64; 4]>,
+    #[serde(deserialize_with = "deserialize_orientation")]
+    pub orientation: Option<crate::units::NonzeroVector<4>>,
     /// Other camera fields retained by exact source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
@@ -179,10 +181,12 @@ pub struct ViewPresentation {
     pub selection_style: Option<String>,
     /// Line width in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_width: Option<f64>,
+    #[serde(deserialize_with = "deserialize_line_width")]
+    pub line_width: Option<crate::units::NonNegativeScalar>,
     /// Point size in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub point_size: Option<f64>,
+    #[serde(deserialize_with = "deserialize_point_size")]
+    pub point_size: Option<crate::units::NonNegativeScalar>,
     /// Remaining view properties by exact source property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
@@ -284,6 +288,30 @@ pub struct PresentationLayer {
     pub items: Vec<PresentationItem>,
 }
 
+fn deserialize_position<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::FiniteVector<3>>, D::Error> {
+    crate::units::deserialize_named(deserializer, "position")
+}
+
+fn deserialize_orientation<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::NonzeroVector<4>>, D::Error> {
+    crate::units::deserialize_named(deserializer, "orientation")
+}
+
+fn deserialize_line_width<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "line_width")
+}
+
+fn deserialize_point_size<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "point_size")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -291,12 +319,16 @@ mod tests {
         use super::*;
         let kinds = [
             PresentationStateKind::Camera(CameraState {
-                position: Some([1.0, 2.0, 3.0]),
+                position: Some(
+                    crate::units::FiniteVector::new([1.0, 2.0, 3.0]).expect("finite position"),
+                ),
                 orientation: None,
                 properties: BTreeMap::new(),
             }),
             PresentationStateKind::Camera(CameraState {
-                position: Some([4.0, 5.0, 6.0]),
+                position: Some(
+                    crate::units::FiniteVector::new([4.0, 5.0, 6.0]).expect("finite position"),
+                ),
                 orientation: None,
                 properties: BTreeMap::new(),
             }),

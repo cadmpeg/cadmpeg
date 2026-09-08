@@ -2063,7 +2063,7 @@ fn try_decode_text_model(
         let Ok(stream) = cadmpeg_asm::sat::parse(bytes) else {
             continue;
         };
-        let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT);
+        let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
             && decoded.asm.faces.is_empty()
@@ -2251,13 +2251,13 @@ impl<'a> F3dDecodeSession<'a> {
         ctx: &'a DecodeContext<'a>,
         scan: &'a ContainerScan<'a>,
         session_state: DecodeSessionState,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
         } = session_state;
-        let (ir, source_attributes, unknowns) = build_metadata_ir(scan);
-        Self {
+        let (ir, source_attributes, unknowns) = build_metadata_ir(scan)?;
+        Ok(Self {
             ctx,
             scan,
             path: SessionPath::Bodyless { deferred: None },
@@ -2268,7 +2268,7 @@ impl<'a> F3dDecodeSession<'a> {
             report_scope,
             unknowns,
             admitted_entities,
-        }
+        })
     }
 
     fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
@@ -2545,7 +2545,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_curve_identities,
                 &self.native.sketch_relations,
                 &self.native.sketch_texts,
-                self.ir.tolerances.linear,
+                self.ir.tolerances.linear.get(),
             );
         (
             self.ir.model.spatial_sketches,
@@ -2556,7 +2556,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_curve_identities,
             &self.native.sketch_surfaces,
             &self.native.sketch_relations,
-            self.ir.tolerances.linear,
+            self.ir.tolerances.linear.get(),
         );
         crate::design::feature_project::bind_work_point_sketch_point_constructions(
             &mut self.ir.model.features,
@@ -2621,8 +2621,8 @@ impl<'a> F3dDecodeSession<'a> {
                 sketch_entities: &self.ir.model.sketch_entities,
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
-                linear_tolerance: self.ir.tolerances.linear,
-                angular_tolerance: self.ir.tolerances.angular,
+                linear_tolerance: self.ir.tolerances.linear.get(),
+                angular_tolerance: self.ir.tolerances.angular.get(),
             },
             &mut self.ir.model.features,
         )?;
@@ -2671,8 +2671,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_entities: &self.ir.model.spatial_sketch_entities,
                 histories: &self.native.asm_histories,
                 scope_histories: &scope_histories,
-                linear_tolerance: self.ir.tolerances.linear,
-                angular_tolerance: self.ir.tolerances.angular,
+                linear_tolerance: self.ir.tolerances.linear.get(),
+                angular_tolerance: self.ir.tolerances.angular.get(),
                 arrangement_budget: &arrangement_budget,
             },
         );
@@ -2684,8 +2684,8 @@ impl<'a> F3dDecodeSession<'a> {
             surfaces: &self.ir.model.surfaces,
             groups: &self.native.design_construction_operand_groups,
             operands: &mut self.native.design_face_operands,
-            linear_tolerance: self.ir.tolerances.linear,
-            angular_tolerance: self.ir.tolerances.angular,
+            linear_tolerance: self.ir.tolerances.linear.get(),
+            angular_tolerance: self.ir.tolerances.angular.get(),
         };
         crate::design::face_resolve::bind_extrude_start_planes(
             &mut self.ir.model.features,
@@ -2724,14 +2724,14 @@ impl<'a> F3dDecodeSession<'a> {
             crate::design::dimensions::project_dimension_constraints(
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
-                self.ir.tolerances.linear,
+                self.ir.tolerances.linear.get(),
             )
         } else {
             crate::design::dimensions::project_dimension_constraints_with_presentations(
                 &constraint_inputs,
                 &self.native.design_dimension_presentation_frames,
                 &self.ir.model.spatial_sketches,
-                self.ir.tolerances.linear,
+                self.ir.tolerances.linear.get(),
             )
         };
         self.ir
@@ -2743,7 +2743,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
-                self.ir.tolerances.linear,
+                self.ir.tolerances.linear.get(),
             ),
         );
         crate::design::dimensions::bind_offset_dimension_parameters(
@@ -3024,7 +3024,7 @@ fn decode_scanned_document<'a>(
     )?;
 
     if ctx.container_only() {
-        let (ir, mut source_attributes, unknowns) = build_metadata_ir(scan);
+        let (ir, mut source_attributes, unknowns) = build_metadata_ir(scan)?;
         annotate_docstruct(&mut source_attributes, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(scan);
@@ -3172,7 +3172,7 @@ fn decode_scanned_document<'a>(
             admitted_entities,
             report_scope,
         },
-    )
+    )?
     .into_result()
 }
 
@@ -4783,7 +4783,7 @@ fn try_decode_brep(
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT);
+    let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT)?;
     if decoded.asm.surfaces.is_empty()
         && decoded.asm.points.is_empty()
         && decoded.asm.faces.is_empty()
@@ -4810,7 +4810,7 @@ fn build_geometry_ir(
 > {
     let mut ir = CadIr::empty();
     let (source_attributes, tolerances) =
-        source_attributes_and_tolerances(scan, primary_model_brep);
+        source_attributes_and_tolerances(scan, primary_model_brep)?;
     ir.tolerances = tolerances;
     let Brep {
         asm,
@@ -4836,7 +4836,7 @@ fn build_geometry_ir(
 fn source_attributes_and_tolerances(
     scan: &ContainerScan,
     primary_model_brep: &BrepFacts,
-) -> (std::collections::BTreeMap<String, String>, Tolerances) {
+) -> Result<(std::collections::BTreeMap<String, String>, Tolerances), CodecError> {
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = scan.design_asset_folder() {
         attributes.insert("asset_folder".to_string(), folder.to_owned());
@@ -4873,14 +4873,11 @@ fn source_attributes_and_tolerances(
             attributes.insert("save_date".to_string(), sd.clone());
         }
         if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-            tolerances = Tolerances {
-                linear: resabs,
-                angular: resnor,
-            };
+            tolerances = Tolerances::new(resabs, resnor).map_err(CodecError::Malformed)?;
         }
     }
 
-    (attributes, tolerances)
+    Ok((attributes, tolerances))
 }
 
 /// Loss report for a successful geometry decode.
@@ -4979,11 +4976,14 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
 
 fn build_metadata_ir(
     scan: &ContainerScan,
-) -> (
-    CadIr,
-    std::collections::BTreeMap<String, String>,
-    Vec<UnknownRecord>,
-) {
+) -> Result<
+    (
+        CadIr,
+        std::collections::BTreeMap<String, String>,
+        Vec<UnknownRecord>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 
@@ -5020,10 +5020,7 @@ fn build_metadata_ir(
                 attributes.insert("save_date".to_string(), sd.clone());
             }
             if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-                ir.tolerances = Tolerances {
-                    linear: resabs,
-                    angular: resnor,
-                };
+                ir.tolerances = Tolerances::new(resabs, resnor).map_err(CodecError::Malformed)?;
             }
         }
 
@@ -5037,7 +5034,7 @@ fn build_metadata_ir(
         ));
     }
 
-    (ir, attributes, unknowns)
+    Ok((ir, attributes, unknowns))
 }
 
 /// Build geometry and topology loss notes from the container state.

@@ -167,7 +167,7 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode stale trim with document tolerance");
-    assert!((decoded.ir().tolerances.linear - 0.1).abs() <= f64::EPSILON);
+    assert!((decoded.ir().tolerances.linear.get() - 0.1).abs() <= f64::EPSILON);
     let use_ = decoded
         .ir()
         .model

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
+
 use crate::decode::blend::{
     bezier_spans, closest_nurbs_curve_parameter, closest_pcurve_parameters,
     homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
@@ -291,7 +293,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,
-        tolerance: Some(1.0e-8),
+        tolerance: Some(
+            cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
+                .expect("positive finite tolerance"),
+        ),
     });
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
@@ -299,7 +304,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         start: vertex.clone(),
         end: vertex,
         param_range: None,
-        tolerance: Some(1.0e-8),
+        tolerance: Some(
+            cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
+                .expect("positive finite tolerance"),
+        ),
     });
 
     let procedural_start = ir.model.procedural_curves.len();
@@ -678,12 +686,12 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
-            tolerance: Some(0.0),
+            tolerance: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
-            tolerance: Some(0.0),
+            tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
@@ -692,7 +700,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         start: start_vertex,
         end: end_vertex,
         param_range: None,
-        tolerance: Some(0.0),
+        tolerance: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
     let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
@@ -1104,7 +1112,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         start: vertices[0].clone(),
         end: vertices[1].clone(),
         param_range: None,
-        tolerance: Some(0.03),
+        tolerance: Some(
+            cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"),
+        ),
     });
     let pcurves = [
         PcurveId::mint("nx:test:pcurve#0").expect("identity grammar"),
@@ -1143,7 +1153,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             loops: vec![loops[index].clone()].into(),
             name: None,
             color: None,
-            tolerance: Some(0.03),
+            tolerance: Some(
+                cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"),
+            ),
         });
         ir.model.loops.push(Loop {
             id: loops[index].clone(),

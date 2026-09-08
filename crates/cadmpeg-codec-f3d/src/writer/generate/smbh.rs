@@ -1758,16 +1758,10 @@ fn native_tolerant_vertex_tail(
     // The unset evaluated slot has no neutral tolerance; the native tail
     // carries the fact and the sentinel is written back.
     let tolerance = match vertex.tolerance {
-        Some(tolerance) => tolerance,
+        Some(tolerance) => tolerance.get(),
         None if stored.is_some_and(|tail| tail.evaluated_unset) => -1.0,
         None => return Ok(()),
     };
-    if !tolerance.is_finite() {
-        return Err(CodecError::malformed(format_args!(
-            "F3D vertex {} tolerance must be finite",
-            vertex.id
-        )));
-    }
     // The record stores three f64 tolerance slots: the two leading slots
     // verbatim (default: the -1 unevaluated sentinel) and the evaluated
     // tolerance last, followed by a version-gated trailing integer (0 or 1,
@@ -1804,13 +1798,7 @@ fn native_tolerant_edge_tail(
     let Some(tolerance) = edge.tolerance else {
         return Ok(());
     };
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return Err(CodecError::malformed(format_args!(
-            "F3D edge {} tolerance must be finite and nonnegative",
-            edge.id
-        )));
-    }
-    native_f64(records, tolerance / LEN_TO_MM);
+    native_f64(records, tolerance.get() / LEN_TO_MM);
     let (revision, trailing) = topology
         .tolerant_edges
         .get(edge.id.as_str())

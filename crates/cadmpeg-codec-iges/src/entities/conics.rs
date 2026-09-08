@@ -26,7 +26,7 @@ fn add_bounded_curve(
     start: Point3,
     end: Point3,
     parameter_range: [f64; 2],
-    tolerance: Option<f64>,
+    tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
 ) -> EdgeId {
     let stem = format!("D{}", entry.sequence);
     let start_point =
@@ -409,7 +409,15 @@ pub(super) fn project(
             ));
             continue;
         }
-        let tolerance = (resolution > 0.0).then_some(resolution);
+        let tolerance = if resolution > 0.0 {
+            let Some(value) = cadmpeg_ir::units::PositiveScalar::new(resolution) else {
+                losses.push(entity_loss(entry, "conic tolerance must be finite"));
+                continue;
+            };
+            Some(value)
+        } else {
+            None
+        };
         let edge = add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance);
         wire_edges.push(edge);
         decoded.insert(entry.sequence);

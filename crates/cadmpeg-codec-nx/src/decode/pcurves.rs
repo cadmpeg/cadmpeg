@@ -458,9 +458,8 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let Some(edge) = ir.model.edges.get(*edge_index) else {
                 continue;
             };
-            let Some(endpoint_tolerance) = edge
-                .tolerance
-                .filter(|value| value.is_finite() && *value >= 0.0)
+            let Some(endpoint_tolerance) =
+                edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)
             else {
                 continue;
             };
@@ -1058,8 +1057,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         .filter_map(|edge| {
             Some((
                 edge.curve.clone()?,
-                edge.tolerance
-                    .filter(|value| value.is_finite() && *value >= 0.0)?,
+                edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)?,
             ))
         })
         .fold(
@@ -1347,8 +1345,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                             *vertex_points.get(&edge.end)?,
                         ],
                         context.parameter_range,
-                        edge.tolerance
-                            .filter(|value| value.is_finite() && *value >= 0.0)?,
+                        edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)?,
                         false,
                     )
                 }
@@ -3289,7 +3286,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             let Some(edge) = model_index.edges(edge_id.as_str()) else {
                 continue;
             };
-            let Some(tolerance) = edge.tolerance else {
+            let Some(tolerance) = edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) else {
                 continue;
             };
             if edge.curve.is_some() {
@@ -3579,6 +3576,7 @@ pub(crate) fn pcurve_edge_endpoint_contract_with_index(
     let allowance = [edge.tolerance, start_tolerance, end_tolerance]
         .into_iter()
         .flatten()
+        .map(cadmpeg_ir::units::PositiveScalar::get)
         .fold(0.0_f64, f64::max);
     Some(([start, end], allowance))
 }

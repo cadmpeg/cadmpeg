@@ -132,7 +132,10 @@ fn current_v5_angular_dimension_extension_reaches_dimension_semantics() {
     assert_eq!(annotation.runtime_type, "angular_dimension");
     assert_eq!(annotation.parameters["first_extension_offset"], "2.5");
     assert_eq!(annotation.parameters["second_extension_offset"], "4");
-    assert_eq!(annotation.value, Some(EXPECTED_ANGLE));
+    assert_eq!(
+        annotation.value.map(cadmpeg_ir::units::FiniteScalar::get),
+        Some(EXPECTED_ANGLE)
+    );
     assert_object_record(&result, &record);
     assert_valid(&result);
 }

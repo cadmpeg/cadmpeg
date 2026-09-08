@@ -1304,10 +1304,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
-    Ok(crate::decode::decode(
-        &scan,
-        crate::mesh::MeshExpand::new(ctx, root),
-    ))
+    crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }
 
 #[cfg(test)]

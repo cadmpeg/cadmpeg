@@ -3419,7 +3419,7 @@ pub(crate) fn emit_vertices(
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         vertices: kept_vertices,
         points: kept_points,
@@ -3439,7 +3439,7 @@ pub(crate) fn emit_vertices(
                         // neutral vertex carries no tolerance and the native
                         // tail keeps the unset fact.
                         tolerance: matches!(r.head(), "tvertex")
-                            .then(|| {
+                            .then(|| -> Result<_, cadmpeg_core::CodecError> {
                                 // The save-format 700 layout stores one
                                 // tolerance directly after the point.
                                 let slot = if matches!(r.chunk(4), Some(Token::Long(_))) {
@@ -3447,12 +3447,20 @@ pub(crate) fn emit_vertices(
                                 } else {
                                     5
                                 };
-                                match r.chunk(slot) {
+                                Ok(match r.chunk(slot) {
                                     Some(Token::Double(value)) if *value < 0.0 => None,
-                                    Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                                    Some(Token::Double(value)) => Some(
+                                        cadmpeg_ir::units::PositiveScalar::new(*value * LEN_TO_MM)
+                                            .ok_or_else(|| {
+                                                cadmpeg_core::CodecError::malformed(
+                                                    "vertex tolerance must be positive and finite",
+                                                )
+                                            })?,
+                                    ),
                                     _ => None,
-                                }
+                                })
                             })
+                            .transpose()?
                             .flatten(),
                     });
                     if r.head() == "tvertex" {
@@ -3504,6 +3512,7 @@ pub(crate) fn emit_vertices(
             }
         }
     }
+    Ok(())
 }
 
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
@@ -3516,7 +3525,7 @@ pub(crate) fn emit_edges(
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         edges: kept_edges,
         vertices: kept_vertices,
@@ -3609,7 +3618,17 @@ pub(crate) fn emit_edges(
                 start: VertexId::mint(id(format, start)).expect("identity grammar"),
                 end: VertexId::mint(id(format, end)).expect("identity grammar"),
                 param_range,
-                tolerance: tolerant_tail.map(|(tolerance, _, _)| tolerance * LEN_TO_MM),
+                tolerance: tolerant_tail
+                    .map(|(tolerance, _, _)| {
+                        cadmpeg_ir::units::PositiveScalar::new(tolerance * LEN_TO_MM).ok_or_else(
+                            || {
+                                cadmpeg_core::CodecError::malformed(
+                                    "edge tolerance must be positive and finite",
+                                )
+                            },
+                        )
+                    })
+                    .transpose()?,
             });
             if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
@@ -3645,6 +3664,7 @@ pub(crate) fn emit_edges(
             }
         }
     }
+    Ok(())
 }
 
 /// Emit reachable coedges with pcurve links, tolerant parameters, and any
