@@ -1938,7 +1938,7 @@ impl<'a> Builder<'a> {
             if !mesh.faces.is_empty() {
                 reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
             }
-            if mesh.chordal_deflection.is_some() {
+            if mesh.chordal_deflection().is_some() {
                 reduced_fields.push("chordal deflection".to_string());
             }
             if !mesh.channels().is_empty() {
