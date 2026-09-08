@@ -198,7 +198,9 @@ pub(super) fn decode(
             )?,
             None,
             PmiDefinition::DatumSystem {
-                references: datum_references,
+                references: datum_references
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             },
         );
         typed.insert(id);

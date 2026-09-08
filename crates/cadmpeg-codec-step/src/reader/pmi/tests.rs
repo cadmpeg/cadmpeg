@@ -83,9 +83,9 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(matches!(
         &datum_system.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].precedence.get() == 1
-                && references[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].precedence.get() == 1
+                && references.as_slice()[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
     ));
     assert!(matches!(
         tolerance.definition,
@@ -130,8 +130,8 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].modifiers
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].modifiers
                     == ["maximum_material_requirement", "distance:0.2"]
     )));
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
@@ -1269,21 +1269,23 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     let PmiDefinition::DatumSystem { references } = &mut system.definition else {
         unreachable!()
     };
-    let modifiers = references[0].modifiers.clone();
-    *references = vec![
-        DatumReference {
-            datum: datum_a.id,
-            precedence: std::num::NonZeroU32::MIN,
-            common_group: Some(7),
-            modifiers: modifiers.clone(),
-        },
-        DatumReference {
-            datum: datum_b.id,
-            precedence: std::num::NonZeroU32::MIN,
-            common_group: Some(7),
-            modifiers: vec!["least_material_requirement".into()],
-        },
-    ];
+    let modifiers = references.as_slice()[0].modifiers.clone();
+    references
+        .replace(vec![
+            DatumReference {
+                datum: datum_a.id,
+                precedence: std::num::NonZeroU32::MIN,
+                common_group: Some(7),
+                modifiers: modifiers.clone(),
+            },
+            DatumReference {
+                datum: datum_b.id,
+                precedence: std::num::NonZeroU32::MIN,
+                common_group: Some(7),
+                modifiers: vec!["least_material_requirement".into()],
+            },
+        ])
+        .expect("valid common datum compartment");
     let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
@@ -1302,12 +1304,13 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 2
+            if references.as_slice().len() == 2
             && references
+                .as_slice()
                 .iter()
                 .all(|reference| reference.precedence.get() == 1)
-                && references.iter().all(|reference| reference.common_group == Some(1))
-                && references[0].modifiers != references[1].modifiers
+                && references.as_slice().iter().all(|reference| reference.common_group == Some(1))
+                && references.as_slice()[0].modifiers != references.as_slice()[1].modifiers
     )));
 }
 

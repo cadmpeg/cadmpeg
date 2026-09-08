@@ -227,6 +227,68 @@ pub struct DatumReference {
     pub modifiers: Vec<String>,
 }
 
+/// Ordered datum references with consistent precedence compartments.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vec<DatumReference>", into = "Vec<DatumReference>")]
+pub struct DatumReferences(Vec<DatumReference>);
+
+impl DatumReferences {
+    /// Return the ordered datum references.
+    #[must_use]
+    pub fn as_slice(&self) -> &[DatumReference] {
+        &self.0
+    }
+
+    /// Replace the references after checking their precedence compartments.
+    pub fn replace(&mut self, references: Vec<DatumReference>) -> Result<(), String> {
+        let replacement = Self::try_from(references)?;
+        *self = replacement;
+        Ok(())
+    }
+}
+
+impl From<DatumReferences> for Vec<DatumReference> {
+    fn from(value: DatumReferences) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<Vec<DatumReference>> for DatumReferences {
+    type Error = String;
+
+    fn try_from(references: Vec<DatumReference>) -> Result<Self, Self::Error> {
+        let mut compartments = std::collections::BTreeMap::<_, (usize, Option<u32>)>::new();
+        let mut common_groups = std::collections::BTreeMap::new();
+        for reference in &references {
+            let (count, group) = compartments
+                .entry(reference.precedence)
+                .or_insert((0, reference.common_group));
+            if *group != reference.common_group {
+                return Err(
+                    "references: a precedence compartment must use one common_group".into(),
+                );
+            }
+            *count += 1;
+            if let Some(group) = reference.common_group {
+                if common_groups
+                    .insert(group, reference.precedence)
+                    .is_some_and(|precedence| precedence != reference.precedence)
+                {
+                    return Err("references: common_group spans precedence compartments".into());
+                }
+            }
+        }
+        if compartments
+            .values()
+            .any(|(count, group)| *count == 1 && group.is_some() || *count > 1 && group.is_none())
+        {
+            return Err("references: one datum must have no common_group and multiple datums must share a common_group".into());
+        }
+        Ok(Self(references))
+    }
+}
+
 fn deserialize_datum_precedence<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -284,7 +346,7 @@ pub enum PmiDefinition {
     /// Ordered collection of datum references.
     DatumSystem {
         /// Ordered datum references.
-        references: Vec<DatumReference>,
+        references: DatumReferences,
     },
     /// Datum target feature and its geometric form.
     DatumTarget {
@@ -387,7 +449,9 @@ impl From<PmiDefinition> for PmiDefinitionWire {
     fn from(value: PmiDefinition) -> Self {
         match value {
             PmiDefinition::Datum { identification } => Self::Datum { identification },
-            PmiDefinition::DatumSystem { references } => Self::DatumSystem { references },
+            PmiDefinition::DatumSystem { references } => Self::DatumSystem {
+                references: references.into(),
+            },
             PmiDefinition::DatumTarget {
                 form,
                 identification,
@@ -456,7 +520,9 @@ impl TryFrom<PmiDefinitionWire> for PmiDefinition {
     fn try_from(value: PmiDefinitionWire) -> Result<Self, Self::Error> {
         Ok(match value {
             PmiDefinitionWire::Datum { identification } => Self::Datum { identification },
-            PmiDefinitionWire::DatumSystem { references } => Self::DatumSystem { references },
+            PmiDefinitionWire::DatumSystem { references } => Self::DatumSystem {
+                references: references.try_into()?,
+            },
             PmiDefinitionWire::DatumTarget {
                 form,
                 identification,
@@ -616,7 +682,9 @@ mod tests {
                     precedence: NonZeroU32::MIN,
                     common_group: None,
                     modifiers: Vec::new(),
-                }],
+                }]
+                .try_into()
+                .expect("valid datum compartments"),
             },
         });
         ir.finalize();
@@ -804,7 +872,9 @@ mod tests {
                     precedence: NonZeroU32::MIN,
                     common_group: None,
                     modifiers: Vec::new(),
-                }],
+                }]
+                .try_into()
+                .expect("valid datum compartments"),
             },
         });
         ir.model.pmi.push(PmiAnnotation {
@@ -864,5 +934,59 @@ mod tests {
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
         assert!(crate::products::NonEmptyString::new("").is_none());
+    }
+
+    #[test]
+    fn datum_compartments_are_checked_at_construction_wire_and_replacement() {
+        let reference = |id: &str, precedence, common_group| DatumReference {
+            datum: PmiId::mint(format!("test:model:pmi#{id}")).expect("valid identity"),
+            precedence: NonZeroU32::new(precedence).expect("positive precedence"),
+            common_group,
+            modifiers: Vec::new(),
+        };
+        let valid = vec![
+            reference("c", 2, None),
+            reference("a", 1, Some(0)),
+            reference("b", 1, Some(0)),
+        ];
+        let mut admitted = DatumReferences::try_from(valid.clone()).expect("valid compartments");
+        assert_eq!(admitted.as_slice(), valid);
+        let wire = serde_json::json!({"kind": "datum_system", "references": valid});
+        let definition: PmiDefinition = serde_json::from_value(wire.clone()).expect("valid wire");
+        assert_eq!(serde_json::to_value(definition).expect("serialize"), wire);
+        assert!(DatumReferences::try_from(Vec::new())
+            .expect("empty system")
+            .as_slice()
+            .is_empty());
+        for invalid in [
+            vec![reference("a", 1, Some(7))],
+            vec![reference("a", 1, None), reference("b", 1, None)],
+            vec![reference("a", 1, Some(7)), reference("b", 1, None)],
+            vec![reference("a", 1, Some(7)), reference("b", 1, Some(8))],
+            vec![
+                reference("a", 1, Some(7)),
+                reference("b", 1, Some(7)),
+                reference("c", 2, Some(7)),
+                reference("d", 2, Some(7)),
+            ],
+        ] {
+            assert!(DatumReferences::try_from(invalid.clone()).is_err());
+            let error = serde_json::from_value::<PmiDefinition>(
+                serde_json::json!({"kind": "datum_system", "references": invalid}),
+            )
+            .expect_err("invalid compartments");
+            assert!(error.to_string().contains("references"));
+            assert!(serde_json::from_value::<DatumReferences>(
+                serde_json::to_value(&invalid).expect("serialize")
+            )
+            .is_err());
+            assert!(admitted.replace(invalid).is_err());
+            assert_eq!(admitted.as_slice(), valid);
+        }
+        let replacement = vec![reference("z", 3, None)];
+        admitted
+            .replace(replacement.clone())
+            .expect("valid replacement");
+        assert_eq!(admitted.as_slice(), replacement);
     }
 }

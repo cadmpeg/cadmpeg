@@ -3019,7 +3019,7 @@ impl<'a> Builder<'a> {
         for annotation in &annotations {
             if let PmiDefinition::DatumSystem { references } = &annotation.definition {
                 let mut groups = BTreeMap::<(u32, Option<u32>), Vec<_>>::new();
-                for reference in references {
+                for reference in references.as_slice() {
                     groups
                         .entry((reference.precedence.get(), reference.common_group))
                         .or_default()
@@ -3032,9 +3032,6 @@ impl<'a> Builder<'a> {
                             .iter()
                             .map(|reference| annotation_refs.get(&reference.datum).copied())
                             .collect::<Option<Vec<_>>>()?;
-                        if group[0].common_group.is_none() && group.len() != 1 {
-                            return None;
-                        }
                         let (datum, modifiers) = if group[0].common_group.is_some() {
                             let elements = group
                                 .iter()

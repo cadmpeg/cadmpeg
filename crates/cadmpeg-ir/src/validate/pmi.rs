@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information reference validation.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
@@ -87,9 +87,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         match &annotation.definition {
             PmiDefinition::DatumSystem { references } => {
-                let mut compartments = BTreeMap::<u32, Vec<_>>::new();
-                let mut common_groups = BTreeMap::new();
-                for reference in references {
+                for reference in references.as_slice() {
                     if !matches!(
                         definitions.get(reference.datum.as_str()),
                         Some(PmiDefinition::Datum { .. })
@@ -99,35 +97,6 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             annotation.id.as_str(),
                             "unresolved datum reference",
                         );
-                    }
-                    compartments
-                        .entry(reference.precedence.get())
-                        .or_default()
-                        .push(reference);
-                    if let Some(group) = reference.common_group {
-                        if common_groups
-                            .insert(group, reference.precedence.get())
-                            .is_some_and(|precedence| precedence != reference.precedence.get())
-                        {
-                            invalid(
-                                findings,
-                                annotation.id.as_str(),
-                                "common datum group spans precedence compartments",
-                            );
-                        }
-                    }
-                }
-                for compartment in compartments.values() {
-                    let common_group = compartment[0].common_group;
-                    let common = common_group.is_some()
-                        && compartment.len() >= 2
-                        && compartment
-                            .iter()
-                            .all(|reference| reference.common_group == common_group);
-                    if compartment.len() != 1 && !common
-                        || compartment.len() == 1 && common_group.is_some()
-                    {
-                        invalid(findings, annotation.id.as_str(), "invalid datum precedence");
                     }
                 }
             }
