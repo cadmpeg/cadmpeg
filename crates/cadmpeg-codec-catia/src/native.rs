@@ -8841,7 +8841,7 @@ impl CatiaNative {
                 byte_offset: segment.range.start as u64,
                 byte_len: (segment.range.end - segment.range.start) as u64,
                 type_word: segment.type_word,
-                family: finjpl_family(segment.kind).to_string(),
+                family: finjpl_family(segment.kind()).to_string(),
                 name: segment.name,
                 data: bytes[segment.range].to_vec(),
             })
