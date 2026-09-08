@@ -2895,7 +2895,7 @@ fn attach_feature_operations(
             );
             source_properties.insert(
                 "point_construction_mode".to_string(),
-                format!("{:02x}", header.mode),
+                format!("{:02x}", u8::from(header.mode)),
             );
         }
         if let Some(lane) = point_construction_scalar_lanes_by_operation.get(label.id.as_str()) {

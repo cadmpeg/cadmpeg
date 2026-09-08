@@ -2616,7 +2616,7 @@ pub struct FeaturePointConstructionHeader {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
     /// Serialized header mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::PointHeaderMode,
     /// Absolute file offset of the reference width marker.
     pub source_offset: u64,
 }

@@ -231,7 +231,7 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
     let header = super::point_feature_payload_header(record).expect("complete header");
     assert_eq!(header.reference.token.value(), 7311);
     assert_eq!(header.reference.offset, 207);
-    assert_eq!(header.mode, 0x02);
+    assert_eq!(u8::from(header.mode), 0x02);
 
     let mut alternate_mode = payload.to_vec();
     alternate_mode[52] = 0x03;
@@ -246,7 +246,7 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
         )
         .expect("alternate mode")
         .mode,
-        0x03
+        crate::om::discriminators::PointHeaderMode::Form03
     );
 
     for malformed_offset in [0, 10, 51, 72] {
