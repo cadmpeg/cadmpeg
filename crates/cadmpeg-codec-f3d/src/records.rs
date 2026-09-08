@@ -1131,8 +1131,17 @@ pub struct DesignRecipeReference {
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// One frame shape covers both source forms: the two-locus form, which carries
+/// the opaque index that precedes its loci, and the null-locus form, whose
+/// first locus is the fixed zero reference and which carries no opaque index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignDimensionLocusPairWire"))]
+#[serde(
+    try_from = "DesignDimensionLocusPairWire",
+    into = "DesignDimensionLocusPairWire"
+)]
 pub struct DesignDimensionLocusPair {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1149,69 +1158,116 @@ pub struct DesignDimensionLocusPair {
     pub record_index: u32,
     /// Byte length from the primary header to the paired header.
     pub frame_length: u64,
-    /// Opaque u32 preceding the two locus references.
-    pub opaque_index: u32,
-    /// Byte offset of `opaque_index`.
-    pub opaque_index_offset: u64,
-    /// First typed sketch-geometry record.
-    pub first_geometry_record_index: u32,
-    /// Byte offset of the first geometry record index.
-    pub first_geometry_reference_offset: u64,
-    /// Source role code following the first geometry reference.
-    pub first_role: u32,
-    /// Byte offset of `first_role`.
-    pub first_role_offset: u64,
-    /// Second typed sketch-geometry record.
-    pub second_geometry_record_index: u32,
-    /// Byte offset of the second geometry record index.
-    pub second_geometry_reference_offset: u64,
-    /// Source role code following the second geometry reference.
-    pub second_role: u32,
-    /// Byte offset of `second_role`.
-    pub second_role_offset: u64,
+    /// Opaque u32 preceding the two locus references. Present exactly when the
+    /// first locus names sketch geometry.
+    pub opaque_index: Option<Located<u32>>,
+    /// The two ordered loci. `loci[0].geometry_record_index` is `None` in the
+    /// null-locus form, where the frame stores a fixed zero record reference.
+    pub loci: [DesignDimensionAnnotationOperand; 2],
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
 }
 
-/// Dimension frame with one null locus and one typed sketch-geometry locus.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignDimensionNullLocusPair {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Companion record containing this frame.
-    pub companion_record_index: u32,
-    /// Companion record owned by the following dimension parameter governed by
-    /// this frame.
-    pub governing_companion_record_index: u32,
-    /// Byte offset of the primary indexed record header.
-    pub byte_offset: u64,
-    /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
-    /// Shared logical record identity.
-    pub record_index: u32,
-    /// Byte length from the primary header to the paired header.
-    pub frame_length: u64,
-    /// Byte offset of the fixed zero record reference.
-    pub null_reference_offset: u64,
-    /// Role code attached to the null record reference.
-    pub null_role: u32,
-    /// Byte offset of `null_role`.
-    pub null_role_offset: u64,
-    /// Typed sketch-geometry record.
-    pub geometry_record_index: u32,
-    /// Byte offset of `geometry_record_index`.
-    pub geometry_reference_offset: u64,
-    /// Role code attached to the typed geometry record.
-    pub geometry_role: u32,
-    /// Byte offset of `geometry_role`.
-    pub geometry_role_offset: u64,
-    /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: DesignClassTag,
-    /// Byte offset of the paired indexed record header.
-    pub paired_byte_offset: u64,
+struct DesignDimensionLocusPairWire {
+    id: String,
+    companion_record_index: u32,
+    governing_companion_record_index: u32,
+    byte_offset: u64,
+    class_tag: String,
+    record_index: u32,
+    frame_length: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opaque_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opaque_index_offset: Option<u64>,
+    first_geometry_record_index: u32,
+    first_geometry_reference_offset: u64,
+    first_role: u32,
+    first_role_offset: u64,
+    second_geometry_record_index: u32,
+    second_geometry_reference_offset: u64,
+    second_role: u32,
+    second_role_offset: u64,
+    paired_class_tag: String,
+    paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
+    type Error = String;
+
+    fn try_from(wire: DesignDimensionLocusPairWire) -> Result<Self, Self::Error> {
+        let opaque_index = match (wire.opaque_index, wire.opaque_index_offset) {
+            (None, None) => None,
+            (Some(value), Some(offset)) => Some(Located { value, offset }),
+            _ => return Err("opaque_index and opaque_index_offset must occur together".to_owned()),
+        };
+        let first = NonZeroU32::new(wire.first_geometry_record_index);
+        if opaque_index.is_some() != first.is_some() {
+            return Err(
+                "opaque_index is present exactly when first_geometry_record_index names geometry"
+                    .to_owned(),
+            );
+        }
+        let second = NonZeroU32::new(wire.second_geometry_record_index)
+            .ok_or("second_geometry_record_index must name an indexed sketch-geometry record")?;
+        Ok(Self {
+            id: wire.id,
+            companion_record_index: wire.companion_record_index,
+            governing_companion_record_index: wire.governing_companion_record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag.try_into()?,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            opaque_index,
+            loci: [
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: first,
+                    geometry_reference_offset: wire.first_geometry_reference_offset,
+                    role: wire.first_role,
+                    role_offset: wire.first_role_offset,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: Some(second),
+                    geometry_reference_offset: wire.second_geometry_reference_offset,
+                    role: wire.second_role,
+                    role_offset: wire.second_role_offset,
+                },
+            ],
+            paired_class_tag: wire.paired_class_tag.try_into()?,
+            paired_byte_offset: wire.paired_byte_offset,
+        })
+    }
+}
+
+impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
+    fn from(pair: DesignDimensionLocusPair) -> Self {
+        let [first, second] = pair.loci;
+        Self {
+            id: pair.id,
+            companion_record_index: pair.companion_record_index,
+            governing_companion_record_index: pair.governing_companion_record_index,
+            byte_offset: pair.byte_offset,
+            class_tag: pair.class_tag.into(),
+            record_index: pair.record_index,
+            frame_length: pair.frame_length,
+            opaque_index: pair.opaque_index.as_ref().map(|located| located.value),
+            opaque_index_offset: pair.opaque_index.as_ref().map(|located| located.offset),
+            first_geometry_record_index: first.geometry_record_index.map_or(0, NonZeroU32::get),
+            first_geometry_reference_offset: first.geometry_reference_offset,
+            first_role: first.role,
+            first_role_offset: first.role_offset,
+            second_geometry_record_index: second.geometry_record_index.map_or(0, NonZeroU32::get),
+            second_geometry_reference_offset: second.geometry_reference_offset,
+            second_role: second.role,
+            second_role_offset: second.role_offset,
+            paired_class_tag: pair.paired_class_tag.into(),
+            paired_byte_offset: pair.paired_byte_offset,
+        }
+    }
 }
 
 /// One nullable typed operand in an annotated dimension frame.
@@ -1228,6 +1284,13 @@ pub struct DesignDimensionAnnotationOperand {
     pub role: u32,
     /// Byte offset of `role`.
     pub role_offset: u64,
+}
+
+impl DesignDimensionAnnotationOperand {
+    /// The named sketch-geometry record, or the wire's zero for the null locus.
+    pub(crate) fn geometry_index(&self) -> u32 {
+        self.geometry_record_index.map_or(0, NonZeroU32::get)
+    }
 }
 
 mod annotation_geometry_index {

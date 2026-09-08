@@ -7872,14 +7872,16 @@ fn validate_dimension_locus_pairs<'a>(
             && governs_following_dimension
             && pair.frame_length > 69
             && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
-            && pair.opaque_index_offset == pair.byte_offset.saturating_add(35)
-            && pair.first_geometry_reference_offset == pair.byte_offset.saturating_add(40)
-            && pair.first_role_offset == pair.byte_offset.saturating_add(50)
-            && pair.second_geometry_reference_offset == pair.byte_offset.saturating_add(55)
-            && pair.second_role_offset == pair.byte_offset.saturating_add(65)
-            && sketch_geometry_indices.contains(&(native_stream, pair.first_geometry_record_index))
-            && sketch_geometry_indices
-                .contains(&(native_stream, pair.second_geometry_record_index))
+            && pair
+                .opaque_index
+                .as_ref()
+                .is_some_and(|opaque| opaque.offset == pair.byte_offset.saturating_add(35))
+            && pair.loci[0].geometry_reference_offset == pair.byte_offset.saturating_add(40)
+            && pair.loci[0].role_offset == pair.byte_offset.saturating_add(50)
+            && pair.loci[1].geometry_reference_offset == pair.byte_offset.saturating_add(55)
+            && pair.loci[1].role_offset == pair.byte_offset.saturating_add(65)
+            && sketch_geometry_indices.contains(&(native_stream, pair.loci[0].geometry_index()))
+            && sketch_geometry_indices.contains(&(native_stream, pair.loci[1].geometry_index()))
             && unique_index
             && unique_companion;
         if !valid {
@@ -8267,11 +8269,12 @@ fn validate_dimension_null_locus_pairs<'a>(
             && !companion_has_typed_frame
             && pair.frame_length > 54
             && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
-            && pair.null_reference_offset == pair.byte_offset.saturating_add(25)
-            && pair.null_role_offset == pair.byte_offset.saturating_add(35)
-            && pair.geometry_reference_offset == pair.byte_offset.saturating_add(40)
-            && pair.geometry_role_offset == pair.byte_offset.saturating_add(50)
-            && sketch_geometry_indices.contains(&(native_stream, pair.geometry_record_index))
+            && pair.opaque_index.is_none()
+            && pair.loci[0].geometry_reference_offset == pair.byte_offset.saturating_add(25)
+            && pair.loci[0].role_offset == pair.byte_offset.saturating_add(35)
+            && pair.loci[1].geometry_reference_offset == pair.byte_offset.saturating_add(40)
+            && pair.loci[1].role_offset == pair.byte_offset.saturating_add(50)
+            && sketch_geometry_indices.contains(&(native_stream, pair.loci[1].geometry_index()))
             && unique_index
             && unique_companion;
         if !valid {
@@ -8688,10 +8691,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let Some(owner) = owner else {
             continue;
         };
-        for member in [
-            pair.first_geometry_record_index,
-            pair.second_geometry_record_index,
-        ] {
+        for member in [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()] {
             if relation_owners
                 .insert((native_stream, member), owner)
                 .is_some_and(|existing| existing != owner)
@@ -8741,7 +8741,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             continue;
         };
         if relation_owners
-            .insert((native_stream, pair.geometry_record_index), owner)
+            .insert((native_stream, pair.loci[1].geometry_index()), owner)
             .is_some_and(|existing| existing != owner)
         {
             findings.push(Finding {

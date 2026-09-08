@@ -1622,3 +1622,27 @@ fn empty_reference_runs_have_one_representation() {
         }])
     );
 }
+
+#[test]
+fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_index() {
+    let shared = r#""id":"pair","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80"#;
+    let loci = r#""first_geometry_reference_offset":50,"first_role":0,"first_role_offset":60,"second_geometry_record_index":41,"second_geometry_reference_offset":65,"second_role":1,"second_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}"#;
+    for (opaque, first, valid) in [
+        (r#","opaque_index":4,"opaque_index_offset":45"#, 40, true),
+        ("", 0, true),
+        (r#","opaque_index":4,"opaque_index_offset":45"#, 0, false),
+        ("", 40, false),
+        (r#","opaque_index":4"#, 40, false),
+    ] {
+        let wire = format!(r#"{{{shared}{opaque},"first_geometry_record_index":{first},{loci}"#);
+        let parsed = serde_json::from_str::<crate::records::DesignDimensionLocusPair>(&wire);
+        if valid {
+            assert_eq!(
+                serde_json::to_string(&parsed.expect("dimension locus pair")).expect("pair wire"),
+                wire
+            );
+        } else {
+            assert!(parsed.is_err(), "{wire}");
+        }
+    }
+}

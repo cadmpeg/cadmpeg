@@ -15,15 +15,15 @@ use crate::records::topology::DesignEdgeOperand;
 use crate::records::{
     ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame,
-    DesignDimensionPresentationOperand, DesignDimensionRecipeRecord, DesignEntityHeader,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignRecordHeader, DesignSketchPlacement, PersistentSubentityTag, SketchCurveIdentity,
-    SketchPoint,
+    DesignDimensionPresentationFrame, DesignDimensionPresentationOperand,
+    DesignDimensionRecipeRecord, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignRecordHeader, DesignSketchPlacement,
+    PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU32;
 
 /// Record slices every dimension-record decode pass reads: the container scan
 /// plus the parameter, owner, companion, scope, record-header, and sketch
@@ -802,16 +802,24 @@ pub(crate) fn parse_dimension_locus_pair(
         class_tag: class_tag.try_into().ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
-        opaque_index: View::u32_le_at(bytes, start + 35)?,
-        opaque_index_offset: (start + 35) as u64,
-        first_geometry_record_index,
-        first_geometry_reference_offset: (start + 40) as u64,
-        first_role: View::u32_le_at(bytes, start + 50)?,
-        first_role_offset: (start + 50) as u64,
-        second_geometry_record_index,
-        second_geometry_reference_offset: (start + 55) as u64,
-        second_role: View::u32_le_at(bytes, start + 65)?,
-        second_role_offset: (start + 65) as u64,
+        opaque_index: Some(crate::records::Located {
+            value: View::u32_le_at(bytes, start + 35)?,
+            offset: (start + 35) as u64,
+        }),
+        loci: [
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: Some(NonZeroU32::new(first_geometry_record_index)?),
+                geometry_reference_offset: (start + 40) as u64,
+                role: View::u32_le_at(bytes, start + 50)?,
+                role_offset: (start + 50) as u64,
+            },
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: Some(NonZeroU32::new(second_geometry_record_index)?),
+                geometry_reference_offset: (start + 55) as u64,
+                role: View::u32_le_at(bytes, start + 65)?,
+                role_offset: (start + 65) as u64,
+            },
+        ],
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
@@ -823,7 +831,7 @@ pub fn decode_dimension_null_locus_pairs(
     inputs: &DimensionDecodeInputs<'_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
-) -> Result<Vec<DesignDimensionNullLocusPair>, CodecError> {
+) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
         scan,
         parameters,
@@ -946,7 +954,7 @@ pub(crate) fn find_dimension_null_locus_pair(
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionNullLocusPair> {
+) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
             .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
@@ -975,7 +983,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
     start: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionNullLocusPair> {
+) -> Option<DesignDimensionLocusPair> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
@@ -1004,7 +1012,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    Some(DesignDimensionNullLocusPair {
+    Some(DesignDimensionLocusPair {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
@@ -1012,13 +1020,21 @@ pub(crate) fn parse_dimension_null_locus_pair(
         class_tag: class_tag.try_into().ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
-        null_reference_offset: (start + 25) as u64,
-        null_role: View::u32_le_at(bytes, start + 35)?,
-        null_role_offset: (start + 35) as u64,
-        geometry_record_index,
-        geometry_reference_offset: (start + 40) as u64,
-        geometry_role: View::u32_le_at(bytes, start + 50)?,
-        geometry_role_offset: (start + 50) as u64,
+        opaque_index: None,
+        loci: [
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: None,
+                geometry_reference_offset: (start + 25) as u64,
+                role: View::u32_le_at(bytes, start + 35)?,
+                role_offset: (start + 35) as u64,
+            },
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: Some(NonZeroU32::new(geometry_record_index)?),
+                geometry_reference_offset: (start + 40) as u64,
+                role: View::u32_le_at(bytes, start + 50)?,
+                role_offset: (start + 50) as u64,
+            },
+        ],
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })

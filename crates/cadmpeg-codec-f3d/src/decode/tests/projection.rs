@@ -22,10 +22,9 @@ use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::feature::DesignParameterScope;
 use crate::records::{
-    DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity,
-    SketchPoint, SketchRelation,
+    DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
+    DesignFeatureTimeline, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
+    DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 
 #[test]
@@ -1786,16 +1785,24 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
             record_index: 31,
             frame_length: 100,
-            opaque_index: 0,
-            opaque_index_offset: 300,
-            first_geometry_record_index: 40,
-            first_geometry_reference_offset: 305,
-            first_role: 1,
-            first_role_offset: 315,
-            second_geometry_record_index: 41,
-            second_geometry_reference_offset: 320,
-            second_role: 2,
-            second_role_offset: 330,
+            opaque_index: Some(crate::records::Located {
+                value: 0,
+                offset: 300,
+            }),
+            loci: [
+                crate::records::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(40),
+                    geometry_reference_offset: 305,
+                    role: 1,
+                    role_offset: 315,
+                },
+                crate::records::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(41),
+                    geometry_reference_offset: 320,
+                    role: 2,
+                    role_offset: 330,
+                },
+            ],
             paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
             paired_byte_offset: 378,
         });
@@ -1809,7 +1816,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     native.design_dimension_locus_pairs.clear();
     native
         .design_dimension_null_locus_pairs
-        .push(DesignDimensionNullLocusPair {
+        .push(DesignDimensionLocusPair {
             id: format!("{stream}:design-dimension-null-locus-pair#278"),
             companion_record_index: 99,
             governing_companion_record_index: 30,
@@ -1817,13 +1824,21 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
             record_index: 31,
             frame_length: 100,
-            null_reference_offset: 300,
-            null_role: 14,
-            null_role_offset: 305,
-            geometry_record_index: 40,
-            geometry_reference_offset: 310,
-            geometry_role: 3,
-            geometry_role_offset: 320,
+            opaque_index: None,
+            loci: [
+                crate::records::DesignDimensionAnnotationOperand {
+                    geometry_record_index: None,
+                    geometry_reference_offset: 300,
+                    role: 14,
+                    role_offset: 305,
+                },
+                crate::records::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(40),
+                    geometry_reference_offset: 310,
+                    role: 3,
+                    role_offset: 320,
+                },
+            ],
             paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
             paired_byte_offset: 378,
         });

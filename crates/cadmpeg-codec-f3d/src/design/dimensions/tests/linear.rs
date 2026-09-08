@@ -786,16 +786,24 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 30,
         frame_length: 100,
-        opaque_index: 0,
-        opaque_index_offset: 65,
-        first_geometry_record_index: 40,
-        first_geometry_reference_offset: 70,
-        first_role: 7,
-        first_role_offset: 80,
-        second_geometry_record_index: 41,
-        second_geometry_reference_offset: 85,
-        second_role: 8,
-        second_role_offset: 95,
+        opaque_index: Some(crate::records::Located {
+            value: 0,
+            offset: 65,
+        }),
+        loci: [
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(40),
+                geometry_reference_offset: 70,
+                role: 7,
+                role_offset: 80,
+            },
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(41),
+                geometry_reference_offset: 85,
+                role: 8,
+                role_offset: 95,
+            },
+        ],
         paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         paired_byte_offset: 130,
     };
@@ -1080,7 +1088,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let mut zero_parameter = parameter;
     zero_parameter.evaluated_value = 0.0;
     let mut duplicate_pair = pair.clone();
-    duplicate_pair.second_geometry_record_index = duplicate_pair.first_geometry_record_index;
+    duplicate_pair.loci[1].geometry_record_index = duplicate_pair.loci[0].geometry_record_index;
     let duplicate = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),

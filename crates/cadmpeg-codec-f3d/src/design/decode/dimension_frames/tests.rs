@@ -604,10 +604,10 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     assert_eq!(pair.companion_record_index, 228);
     assert_eq!(pair.record_index, 233);
     assert_eq!(pair.frame_length, 80);
-    assert_eq!(pair.first_geometry_record_index, 192);
-    assert_eq!(pair.first_role, 0);
-    assert_eq!(pair.second_geometry_record_index, 194);
-    assert_eq!(pair.second_role, 1);
+    assert_eq!(pair.loci[0].geometry_index(), 192);
+    assert_eq!(pair.loci[0].role, 0);
+    assert_eq!(pair.loci[1].geometry_index(), 194);
+    assert_eq!(pair.loci[1].role, 1);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
     let mut parameter = parse_design_parameter(&parameter_record(
         Some(300),
@@ -700,9 +700,9 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.governing_companion_record_index, 1290);
     assert_eq!(pair.record_index, 1394);
     assert_eq!(pair.frame_length, 74);
-    assert_eq!(pair.null_role, 10);
-    assert_eq!(pair.geometry_record_index, 1109);
-    assert_eq!(pair.geometry_role, 7);
+    assert_eq!(pair.loci[0].role, 10);
+    assert_eq!(pair.loci[1].geometry_index(), 1109);
+    assert_eq!(pair.loci[1].role, 7);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
 
     assert!(parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none());
@@ -720,8 +720,8 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(nested.paired_byte_offset, 85);
 
     let mut axis_pair = pair.clone();
-    axis_pair.null_role = 14;
-    axis_pair.geometry_role = 3;
+    axis_pair.loci[0].role = 14;
+    axis_pair.loci[1].role = 3;
     let entity = SketchEntity::new(
         SketchEntityId("f3d:model:sketch-entity#line".into()),
         SketchId("f3d:model:sketch#axis-angle".into()),
@@ -756,7 +756,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         TEST_LINEAR_TOLERANCE,
     )
     .is_none());
-    axis_pair.null_role = 13;
+    axis_pair.loci[0].role = 13;
     assert!(null_locus_dimension_definition(
         &axis_pair,
         &entity,

@@ -46,12 +46,12 @@ use crate::records::{
     ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
     DesignCanvasImage, DesignComponentNamingSpace, DesignConfiguration, DesignDecalImage,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
-    DesignEntityHeader, DesignFeatureTimeline, DesignMaterialAssignment, DesignMeshFeature,
-    DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader,
-    DesignSketchPlacement, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
+    DesignDimensionPresentationFrame, DesignDimensionRecipeRecord, DesignEntityHeader,
+    DesignFeatureTimeline, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
+    DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader, DesignSketchPlacement,
+    LostEdgeReference, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
+    SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface,
+    SketchText, XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
@@ -1182,7 +1182,7 @@ pub struct F3dNative {
     pub design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
     /// Null-plus-typed loci recovered from dimensional companion graphs.
     #[serde(default)]
-    pub design_dimension_null_locus_pairs: Vec<DesignDimensionNullLocusPair>,
+    pub design_dimension_null_locus_pairs: Vec<DesignDimensionLocusPair>,
     /// Indexed records containing dimension-owned construction recipes.
     #[serde(default)]
     pub design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
