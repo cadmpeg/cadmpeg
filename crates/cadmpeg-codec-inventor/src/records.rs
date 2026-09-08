@@ -713,7 +713,8 @@ mod tests {
                 serde_json::from_value::<super::MetaSectionNumber>(serde_json::json!(number));
             if (1..=11).contains(&number) {
                 assert_eq!(
-                    serde_json::to_value(parsed.unwrap()).unwrap(),
+                    serde_json::to_value(parsed.expect("section number is in 1..=11"))
+                        .expect("section number is in 1..=11"),
                     serde_json::json!(number)
                 );
             } else {
