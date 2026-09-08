@@ -1721,15 +1721,15 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
 
 #[test]
 fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(2),
-        origin: [0.0, 0.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(2),
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
@@ -1755,7 +1755,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
     assert!(matches!(
         extruded_section_line(&transform, [2.0, 3.0]),
-        Some(CurveGeometry::Line { origin, direction })
+        CurveGeometry::Line { origin, direction }
             if origin == Point3::new(2.0, 3.0, 0.0)
                 && direction == Vector3::new(0.0, 0.0, 1.0)
     ));

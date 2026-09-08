@@ -24,7 +24,7 @@ pub(in super::super) fn extruded_geometry_surface(
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
             let line = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            let normal = normalized(cross(line, transform.normal))?;
+            let normal = normalized(cross(line, transform.normal()))?;
             Some(SurfaceGeometry::Plane {
                 origin: Point3::new(start[0], start[1], start[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -36,14 +36,14 @@ pub(in super::super) fn extruded_geometry_surface(
             Some(SurfaceGeometry::Cylinder {
                 origin: Point3::new(center[0], center[1], center[2]),
                 axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
                 ),
                 ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
                 ),
                 radius: radius.0,
             })
@@ -475,9 +475,9 @@ pub(in super::super) fn extrusion_brep_side_surface(
 ) -> Option<SurfaceGeometry> {
     if matches!(geometry, SketchGeometry::Nurbs { .. }) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        let lower_translation = transform.normal.map(|value| value * span.lower);
+        let lower_translation = transform.normal().map(|value| value * span.lower);
         let sweep = transform
-            .normal
+            .normal()
             .map(|value| value * (span.upper - span.lower));
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;

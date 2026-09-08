@@ -122,7 +122,7 @@ pub(in super::super) fn revolved_section_surface(
             let (on_axis, radial) = project(center);
             let major_radius = dot(radial, radial).sqrt();
             let reference = normalized(radial).or_else(|| {
-                [transform.u_axis, transform.v_axis]
+                [transform.u_axis(), transform.v_axis()]
                     .into_iter()
                     .find_map(|candidate| {
                         let axial = dot(candidate, axis);
@@ -169,9 +169,9 @@ pub(in super::super) fn placed_section_geometry_curve(
         SketchGeometry::ReferenceLine { origin, direction } => {
             let origin = section_point_in_model(transform, [origin.u, origin.v]);
             let direction = normalized([
-                direction.u * transform.u_axis[0] + direction.v * transform.v_axis[0],
-                direction.u * transform.u_axis[1] + direction.v * transform.v_axis[1],
-                direction.u * transform.u_axis[2] + direction.v * transform.v_axis[2],
+                direction.u * transform.u_axis()[0] + direction.v * transform.v_axis()[0],
+                direction.u * transform.u_axis()[1] + direction.v * transform.v_axis()[1],
+                direction.u * transform.u_axis()[2] + direction.v * transform.v_axis()[2],
             ])?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(origin[0], origin[1], origin[2]),
@@ -183,14 +183,14 @@ pub(in super::super) fn placed_section_geometry_curve(
             Some(CurveGeometry::Circle {
                 center: Point3::new(center[0], center[1], center[2]),
                 axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
                 ),
                 ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
                 ),
                 radius: radius.0,
             })
@@ -433,13 +433,13 @@ pub(in super::super) fn revolved_section_circle(
 pub(in super::super) fn extruded_section_line(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
-) -> Option<CurveGeometry> {
-    let direction = normalized(transform.normal)?;
+) -> CurveGeometry {
+    let direction = transform.normal();
     let origin = section_point_in_model(transform, point);
-    Some(CurveGeometry::Line {
+    CurveGeometry::Line {
         origin: Point3::new(origin[0], origin[1], origin[2]),
         direction: Vector3::new(direction[0], direction[1], direction[2]),
-    })
+    }
 }
 
 pub(in super::super) fn transfer_feature_extrusion_surfaces(
@@ -612,9 +612,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
-        let lower_translation = transform.normal.map(|value| value * span.lower);
+        let lower_translation = transform.normal().map(|value| value * span.lower);
         let sweep = transform
-            .normal
+            .normal()
             .map(|value| value * (span.upper - span.lower));
         for (native_surface_id, internal_id, spline) in splines {
             let Some(section_curve) = saved_spline_nurbs(spline) else {

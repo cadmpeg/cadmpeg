@@ -44,7 +44,11 @@ pub(in super::super) fn blind_extrusion_from_carriers(
         .iter()
         .flat_map(|carrier| carrier.starts.iter().flatten().copied())
         .chain(planes.iter().flat_map(|(origin, _)| *origin))
-        .chain(transform.into_iter().flat_map(|transform| transform.origin))
+        .chain(
+            transform
+                .into_iter()
+                .flat_map(|transform| transform.origin()),
+        )
         .map(f64::abs)
         .fold(length.max(1.0), f64::max);
     let tolerance = EPS_COORDINATE_AGREEMENT * coordinate_scale;
@@ -109,7 +113,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
     }
     let reverse = if has_opposed_carrier {
         if let Some(transform) = transform {
-            let transform_station = dot(transform.origin, direction);
+            let transform_station = dot(transform.origin(), direction);
             if (transform_station - start_station).abs() <= tolerance {
                 false
             } else if (transform_station - end_station).abs() <= tolerance {
@@ -142,9 +146,9 @@ pub(in super::super) fn blind_extrusion_from_carriers(
         (direction, start_station, end_station)
     };
     if let Some(transform) = transform {
-        let normal = normalized(transform.normal)?;
+        let normal = transform.normal();
         ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT
-            && (dot(transform.origin, direction) - start_station).abs() <= tolerance)
+            && (dot(transform.origin(), direction) - start_station).abs() <= tolerance)
             .then_some(())?;
     }
     let unique_stations = unique_stations
@@ -882,7 +886,7 @@ pub(in super::super) fn derived_blind_extrusion_span(
     else {
         return None;
     };
-    directed_blind_extrusion_span(transform.normal, direction, length.0)
+    directed_blind_extrusion_span(transform.normal(), direction, length.0)
 }
 
 pub(in super::super) fn resolved_feature_extrusion_span(
@@ -896,7 +900,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
             feature_plane_equations(scan, ir, feature_id)
-                .and_then(|planes| extrusion_span(transform.origin, transform.normal, planes))
+                .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes))
         })
         .or_else(|| {
             generated_cap_plane_extent(scan, ir, feature_id).and_then(|(extent, direction)| {

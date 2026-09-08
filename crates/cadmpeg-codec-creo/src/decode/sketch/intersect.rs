@@ -636,9 +636,9 @@ pub(crate) fn section_point_in_model(
     point: [f64; 2],
 ) -> [f64; 3] {
     std::array::from_fn(|axis| {
-        transform.origin[axis]
-            + point[0] * transform.u_axis[axis]
-            + point[1] * transform.v_axis[axis]
+        transform.origin()[axis]
+            + point[0] * transform.u_axis()[axis]
+            + point[1] * transform.v_axis()[axis]
     })
 }
 
@@ -647,10 +647,10 @@ pub(crate) fn section_xyz_in_model(
     point: [f64; 3],
 ) -> [f64; 3] {
     std::array::from_fn(|axis| {
-        transform.origin[axis]
-            + point[0] * transform.u_axis[axis]
-            + point[1] * transform.v_axis[axis]
-            + point[2] * transform.normal[axis]
+        transform.origin()[axis]
+            + point[0] * transform.u_axis()[axis]
+            + point[1] * transform.v_axis()[axis]
+            + point[2] * transform.normal()[axis]
     })
 }
 

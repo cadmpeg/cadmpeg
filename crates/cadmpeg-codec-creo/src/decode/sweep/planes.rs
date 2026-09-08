@@ -379,7 +379,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
     transform: &crate::placement::FeatureSectionTransform,
     frames: &[crate::surface::PositionalCylinderFrame],
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let normal = normalized(transform.normal)?;
+    let normal = transform.normal();
     let first = *frames.first()?;
     let length = first.length().filter(|length| *length > 0.0)?;
     let direction = normalized(first.axis())?;
@@ -400,7 +400,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
                 && close(
                     dot(
                         std::array::from_fn(|index| {
-                            frame.origin()[index] - transform.origin[index]
+                            frame.origin()[index] - transform.origin()[index]
                         }),
                         normal,
                     ),

@@ -366,8 +366,11 @@ pub fn single_cap_circular_sweep_geometry<'a>(
     let [transform] = transforms.as_slice() else {
         return None;
     };
-    let (extent, direction) =
-        extrusion_extent_and_direction(transform.origin, transform.normal, [(plane.1, plane.2)])?;
+    let (extent, direction) = extrusion_extent_and_direction(
+        transform.origin(),
+        transform.normal(),
+        [(plane.1, plane.2)],
+    )?;
     Some(CircularSweepGeometry {
         cylinder_rows: vec![cylinder_row],
         section_definition_id: Some(transform.definition_id),
