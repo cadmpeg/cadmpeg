@@ -854,7 +854,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
                             side.pcurve = None;
                         }
                     })
-                    .unwrap()
+                    .unwrap();
             })
             .unwrap();
     }
@@ -908,7 +908,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
                             side.pcurve = None;
                         }
                     })
-                    .unwrap()
+                    .unwrap();
             })
             .unwrap();
     }
@@ -1354,7 +1354,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     (*context_sides)[1].surface = None;
                     (*context_sides)[1].pcurve = None;
                 })
-                .unwrap()
+                .unwrap();
         })
         .unwrap();
     {
@@ -1371,7 +1371,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                             side.pcurve = None;
                         }
                     })
-                    .unwrap()
+                    .unwrap();
             })
             .unwrap();
     }
@@ -1441,7 +1441,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
                     .edit(|context_sides, _, _| {
                         (*context_sides)[0].pcurve = None;
                     })
-                    .unwrap()
+                    .unwrap();
             })
             .unwrap();
     }
@@ -1574,7 +1574,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                             })
                             .unwrap();
                     })
-                    .unwrap()
+                    .unwrap();
             })
             .unwrap();
     }
@@ -1644,7 +1644,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                             })
                             .unwrap();
                     })
-                    .unwrap()
+                    .unwrap();
             })
             .unwrap();
     }

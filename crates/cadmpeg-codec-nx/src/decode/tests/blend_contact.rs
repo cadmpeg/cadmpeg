@@ -1414,7 +1414,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                         .into(),
                     );
                 })
-                .unwrap()
+                .unwrap();
         })
         .unwrap();
     let parameters = Point2::new(0.4, 0.35);
