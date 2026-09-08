@@ -8951,14 +8951,111 @@ impl IntcurveSupportContext {
     }
 }
 
+/// Finite endpoint witnesses and distinct supports of a tolerant intersection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TolerantIntersectionConstructionWire")]
+pub struct TolerantIntersectionConstruction {
+    supports: [SurfaceId; 2],
+    endpoints: [Point3; 2],
+    tolerance: f64,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TolerantIntersectionConstructionWire {
+    supports: [SurfaceId; 2],
+    endpoints: [Point3; 2],
+    tolerance: f64,
+}
+
+impl TryFrom<TolerantIntersectionConstructionWire> for TolerantIntersectionConstruction {
+    type Error = &'static str;
+    fn try_from(wire: TolerantIntersectionConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.supports, wire.endpoints, wire.tolerance)
+    }
+}
+
+impl TolerantIntersectionConstruction {
+    /// Admit distinct supports, finite endpoints, and a finite non-negative tolerance.
+    pub fn try_new(
+        supports: [SurfaceId; 2],
+        endpoints: [Point3; 2],
+        tolerance: f64,
+    ) -> Result<Self, &'static str> {
+        if supports[0] == supports[1] {
+            return Err("tolerant intersection supports must be distinct");
+        }
+        if !endpoints
+            .iter()
+            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        {
+            return Err("tolerant intersection endpoints must be finite");
+        }
+        FitTolerance::try_new(tolerance)
+            .map_err(|_| "tolerant intersection tolerance must be finite and non-negative")?;
+        Ok(Self {
+            supports,
+            endpoints,
+            tolerance,
+        })
+    }
+
+    /// Support surfaces, endpoint witnesses, and maximum admitted deviation.
+    #[must_use]
+    pub const fn parts(&self) -> (&[SurfaceId; 2], &[Point3; 2], &f64) {
+        (&self.supports, &self.endpoints, &self.tolerance)
+    }
+}
+
 /// Complete neutral parameterization of one topology-bounded intersection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TolerantIntersectionParameterizationWire")]
 pub struct TolerantIntersectionParameterization {
     /// Coincident support charts in support order.
     pub pcurves: [PcurveGeometry; 2],
+    parameter_range: [f64; 2],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TolerantIntersectionParameterizationWire {
+    pcurves: [PcurveGeometry; 2],
+    parameter_range: [f64; 2],
+}
+
+impl TryFrom<TolerantIntersectionParameterizationWire> for TolerantIntersectionParameterization {
+    type Error = &'static str;
+    fn try_from(wire: TolerantIntersectionParameterizationWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.pcurves, wire.parameter_range)
+    }
+}
+
+impl TolerantIntersectionParameterization {
+    /// Admit a finite strictly increasing solved-curve interval.
+    pub fn try_new(
+        pcurves: [PcurveGeometry; 2],
+        parameter_range: [f64; 2],
+    ) -> Result<Self, &'static str> {
+        if !parameter_range.iter().all(|value| value.is_finite())
+            || parameter_range[0] >= parameter_range[1]
+        {
+            return Err(
+                "tolerant intersection parameter_range must be finite and strictly increasing",
+            );
+        }
+        Ok(Self {
+            pcurves,
+            parameter_range,
+        })
+    }
+
     /// Common finite solved-curve interval.
-    pub parameter_range: [f64; 2],
+    #[must_use]
+    pub const fn parameter_range(&self) -> [f64; 2] {
+        self.parameter_range
+    }
 }
 
 /// Cache-first shared-context fields absent from the context-first layout.
@@ -9856,12 +9953,9 @@ pub enum ProceduralCurveDefinition {
     },
     /// Tolerance-bounded intersection relation selected by topology endpoints.
     TolerantIntersection {
-        /// Two distinct adjacent face surfaces.
-        supports: [SurfaceId; 2],
-        /// Ordered model-space endpoint witnesses.
-        endpoints: [Point3; 2],
-        /// Maximum model-space deviation admitted by the source edge.
-        tolerance: f64,
+        /// Distinct supports and finite endpoint bounds.
+        #[serde(flatten)]
+        construction: TolerantIntersectionConstruction,
         /// Atomic neutral parameterization established by validated support charts.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameterization: Option<TolerantIntersectionParameterization>,

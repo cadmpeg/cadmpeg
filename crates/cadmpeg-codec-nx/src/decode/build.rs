@@ -767,9 +767,10 @@ pub(crate) fn try_decode_geometry(
                 }
             } else if let Some((supports, endpoints, tolerance)) = uncharted {
                 ProceduralCurveDefinition::TolerantIntersection {
-                    supports,
-                    endpoints,
-                    tolerance,
+                    construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                        supports, endpoints, tolerance,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     parameterization: None,
                 }
             } else {

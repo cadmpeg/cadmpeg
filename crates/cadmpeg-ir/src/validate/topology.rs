@@ -1400,7 +1400,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+            ProceduralCurveDefinition::TolerantIntersection {
+                construction: intersection,
+                ..
+            } => {
+                let (supports, _, _) = intersection.parts();
+
                 for surface in supports {
                     if ids.surfaces(surface.as_str()).is_none() {
                         ref_error(

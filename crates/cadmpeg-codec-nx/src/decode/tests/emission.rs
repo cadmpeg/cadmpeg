@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
+
 use crate::decode::blend::analytic_surface_offset;
 use crate::decode::build::{
     ordered_curve_candidates, ordered_point_candidates, ordered_surface_candidates,
@@ -666,14 +668,14 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .find(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .expect("intersection construction");
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        supports,
-        endpoints,
-        tolerance,
+        construction: intersection,
         parameterization,
     } = procedural.definition()
     else {
         panic!("tolerant intersection definition");
     };
+    let (supports, endpoints, tolerance) = intersection.parts();
+
     assert_ne!(supports[0], supports[1]);
     assert_eq!(*endpoints, expected_endpoints);
     assert_eq!(*tolerance, 0.01);
@@ -1475,9 +1477,12 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
-                supports: [nurbs, plane],
-                endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-                tolerance: 1.0e-8,
+                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                    [nurbs, plane],
+                    [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                    TOLERANT_INTERSECTION_FIT,
+                )
+                .unwrap(),
                 parameterization: None,
             },
         ),
@@ -1527,18 +1532,20 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
 
     let ProceduralCurveDefinition::TolerantIntersection {
-        supports,
+        construction: intersection,
         parameterization: Some(parameterization),
         ..
     } = ir.model.procedural_curves[0].definition()
     else {
         unreachable!()
     };
+    let (supports, _, _) = intersection.parts();
+
     assert_eq!(
         ir.model.procedural_curves[0].cache_fit_tolerance(),
         Some(1.0e-8)
     );
-    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
+    assert_eq!(parameterization.parameter_range(), [0.0, 1.0]);
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let owner = ir

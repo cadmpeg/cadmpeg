@@ -645,7 +645,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+            ProceduralCurveDefinition::TolerantIntersection {
+                construction: intersection,
+                ..
+            } => {
+                let (supports, _, _) = intersection.parts();
+
                 surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {

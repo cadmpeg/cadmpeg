@@ -81,13 +81,15 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
 
     let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        supports,
+        construction: intersection,
         parameterization,
         ..
     } = procedural.definition()
     else {
         panic!("typed tolerant intersection");
     };
+    let (supports, _, _) = intersection.parts();
+
     assert_ne!(supports[0], supports[1]);
     assert!(parameterization.is_none());
     let owner = result

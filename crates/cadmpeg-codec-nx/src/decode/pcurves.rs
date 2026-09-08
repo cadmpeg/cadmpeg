@@ -442,14 +442,14 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 continue;
             };
             let ProceduralCurveDefinition::TolerantIntersection {
-                supports,
-                endpoints,
-                tolerance: _,
+                construction: intersection,
                 parameterization: None,
             } = procedural.definition()
             else {
                 continue;
             };
+            let (supports, endpoints, _) = intersection.parts();
+
             let Some(edge_indices) = edges_by_curve.get(owner) else {
                 continue;
             };
@@ -551,14 +551,16 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 )
             });
             if let [Some(first), Some(second)] = pcurves {
+                let Ok(parameterization) =
+                    TolerantIntersectionParameterization::try_new([first, second], first_range)
+                else {
+                    continue;
+                };
                 replacements.push((
                     procedural.id.clone(),
                     edge.id.clone(),
                     edge_reversed,
-                    TolerantIntersectionParameterization {
-                        pcurves: [first, second],
-                        parameter_range: first_range,
-                    },
+                    parameterization,
                 ));
             }
         }
@@ -585,7 +587,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             if slot.is_some() {
                 return None;
             }
-            let range = parameterization.parameter_range;
+            let range = parameterization.parameter_range();
             *slot = Some(parameterization);
             Some(range)
         });
@@ -1359,11 +1361,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     )
                 }
                 ProceduralCurveDefinition::TolerantIntersection {
-                    supports,
-                    endpoints,
-                    tolerance,
+                    construction: intersection,
                     parameterization: None,
                 } => {
+                    let (supports, endpoints, tolerance) = intersection.parts();
+
                     let range = if edge.start == edge.end
                         && model_index.curves(owner.as_str()).is_some_and(|curve| {
                             matches!(
@@ -1502,10 +1504,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             ProceduralCurveDefinition::TolerantIntersection {
                 parameterization, ..
             } if parameterization.is_none() => {
-                *parameterization = Some(TolerantIntersectionParameterization {
-                    pcurves,
-                    parameter_range: range,
-                });
+                let Ok(completed) = TolerantIntersectionParameterization::try_new(pcurves, range)
+                else {
+                    return false;
+                };
+                *parameterization = Some(completed);
                 true
             }
             _ => false,
@@ -3410,6 +3413,13 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
     };
 
     for (xmt, edge_id, supports, endpoints, tolerance) in candidates {
+        let Ok(admitted_intersection) =
+            cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                supports, endpoints, tolerance,
+            )
+        else {
+            continue;
+        };
         let curve_id =
             CurveId::mint(format!("{prefix}:tolerant-curve#{xmt}")).expect("identity grammar");
         let procedural_id =
@@ -3448,9 +3458,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             ProceduralCurve::new(
                 procedural_id,
                 ProceduralCurveDefinition::TolerantIntersection {
-                    supports,
-                    endpoints,
-                    tolerance,
+                    construction: admitted_intersection,
                     parameterization: None,
                 },
             ),
