@@ -87,8 +87,13 @@ pub fn plane_envelope_corners(envelope: &crate::surface::PlaneEnvelope) -> Optio
     ])
 }
 
-pub type HoleCapOutline = (u32, [f64; 3], [f64; 3], [[f64; 3]; 2]);
-pub type PartialCapOutline = (u32, [f64; 3], [f64; 3], Option<[[f64; 3]; 2]>);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CapOutline {
+    pub surface_id: u32,
+    pub origin: [f64; 3],
+    pub normal: [f64; 3],
+    pub corners: Option<[[f64; 3]; 2]>,
+}
 
 pub fn cap_square_center_radius(
     corners: [[f64; 3]; 2],
@@ -118,14 +123,13 @@ pub fn cap_square_center_radius(
     ))
 }
 
-pub fn cylinder_from_single_cap_outline(cap: PartialCapOutline) -> Option<HoleCylinder> {
-    let (_, _, axis, corners) = cap;
-    let axis = normalized(axis)?;
+pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
+    let axis = normalized(cap.normal)?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
     })?;
-    let (center, radius) = cap_square_center_radius(corners?, axis_index)?;
+    let (center, radius) = cap_square_center_radius(cap.corners?, axis_index)?;
     let radial_axis = (0..3).find(|index| *index != axis_index)?;
     let mut ref_direction = [0.0; 3];
     ref_direction[radial_axis] = 1.0;
@@ -137,8 +141,8 @@ pub fn cylinder_from_single_cap_outline(cap: PartialCapOutline) -> Option<HoleCy
     })
 }
 
-pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<HoleCylinder> {
-    let placement = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
+pub fn hole_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCylinder> {
+    let placement = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     let axis = placement.1;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
@@ -149,8 +153,8 @@ pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<Hole
         .collect::<Vec<_>>();
     let mut centers = Vec::<[f64; 3]>::new();
     let mut radii = Vec::new();
-    for (_, _, _, corners) in caps {
-        let (center, radius) = cap_square_center_radius(corners, axis_index)?;
+    for cap in caps {
+        let (center, radius) = cap_square_center_radius(cap.corners?, axis_index)?;
         centers.push(center);
         radii.push(radius);
     }
