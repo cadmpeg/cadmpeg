@@ -9,6 +9,7 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::num::NonZeroUsize;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
@@ -82,19 +83,15 @@ struct ParsedDirectoryRecord {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ParameterLexState {
-    at_field_start: bool,
-    hollerith_remaining: usize,
-    count_start: Option<usize>,
+enum ParameterLexState {
+    FieldStart { digits: Option<usize> },
+    InField,
+    Hollerith { remaining: NonZeroUsize },
 }
 
 impl Default for ParameterLexState {
     fn default() -> Self {
-        Self {
-            at_field_start: true,
-            hollerith_remaining: 0,
-            count_start: None,
-        }
+        Self::FieldStart { digits: None }
     }
 }
 
@@ -532,39 +529,43 @@ fn parameter_record_terminator(
     record_delimiter: u8,
 ) -> bool {
     for byte in line.iter().copied() {
-        if state.hollerith_remaining > 0 {
-            state.hollerith_remaining -= 1;
-            continue;
-        }
-        if state.at_field_start {
-            if byte == b' ' {
+        match *state {
+            ParameterLexState::Hollerith { remaining } => {
+                *state = NonZeroUsize::new(remaining.get() - 1)
+                    .map_or(ParameterLexState::InField, |remaining| {
+                        ParameterLexState::Hollerith { remaining }
+                    });
                 continue;
             }
-            if byte.is_ascii_digit() {
-                state.count_start = Some(
-                    state
-                        .count_start
-                        .unwrap_or_default()
-                        .saturating_mul(10)
-                        .saturating_add(usize::from(byte - b'0')),
-                );
-                continue;
-            }
-            if matches!(byte, b'H' | b'h') {
-                let Some(count) = state.count_start.take() else {
-                    state.at_field_start = false;
+            ParameterLexState::FieldStart { digits } => {
+                if byte == b' ' {
                     continue;
-                };
-                state.hollerith_remaining = count;
-                state.at_field_start = false;
-                continue;
+                }
+                if byte.is_ascii_digit() {
+                    *state = ParameterLexState::FieldStart {
+                        digits: Some(
+                            digits
+                                .unwrap_or_default()
+                                .saturating_mul(10)
+                                .saturating_add(usize::from(byte - b'0')),
+                        ),
+                    };
+                    continue;
+                }
+                if matches!(byte, b'H' | b'h') {
+                    *state = digits
+                        .and_then(NonZeroUsize::new)
+                        .map_or(ParameterLexState::InField, |remaining| {
+                            ParameterLexState::Hollerith { remaining }
+                        });
+                    continue;
+                }
+                *state = ParameterLexState::InField;
             }
-            state.count_start = None;
-            state.at_field_start = false;
+            ParameterLexState::InField => {}
         }
         if byte == parameter_delimiter {
-            state.at_field_start = true;
-            state.count_start = None;
+            *state = ParameterLexState::FieldStart { digits: None };
         } else if byte == record_delimiter {
             return true;
         }
