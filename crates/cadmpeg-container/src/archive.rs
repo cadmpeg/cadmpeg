@@ -194,17 +194,19 @@ impl<'a> ArchiveSnapshot<'a> {
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
-        let start = usize::try_from(absolute_start)
-            .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
-        let end = usize::try_from(absolute_end)
-            .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
-        let source = self.root.child(start, end).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "ZIP data range escapes archive for {}",
-                entry.name
-            ))
-        })?;
-        let mut decoder: Box<dyn Read> = match entry.compression {
+        let compressed_source = || {
+            let start = usize::try_from(absolute_start)
+                .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
+            let end = usize::try_from(absolute_end)
+                .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
+            self.root.child(start, end).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "ZIP data range escapes archive for {}",
+                    entry.name
+                ))
+            })
+        };
+        let (source, mut decoder): (_, Box<dyn Read>) = match entry.compression {
             ZipCompression::Stored => {
                 let view = ctx.register_slice_as(
                     self.root,
@@ -228,15 +230,24 @@ impl<'a> ArchiveSnapshot<'a> {
                 }
                 return Ok(view);
             }
-            ZipCompression::Deflate => Box::new(flate2::read::DeflateDecoder::new(source.window())),
-            ZipCompression::Zstd => Box::new(
-                zstd::stream::read::Decoder::with_buffer(source.window()).map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "cannot open Zstandard frame for {}: {error}",
-                        entry.name
-                    ))
-                })?,
-            ),
+            ZipCompression::Deflate => {
+                let source = compressed_source()?;
+                (
+                    source,
+                    Box::new(flate2::read::DeflateDecoder::new(source.window())),
+                )
+            }
+            ZipCompression::Zstd => {
+                let source = compressed_source()?;
+                let decoder =
+                    zstd::stream::read::Decoder::with_buffer(source.window()).map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "cannot open Zstandard frame for {}: {error}",
+                            entry.name
+                        ))
+                    })?;
+                (source, Box::new(decoder))
+            }
         };
         let mut writer = ctx.begin_expand_as(
             source,
