@@ -888,8 +888,6 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             label.identity.segment_token.as_str(),
             label.identity.record_ordinal,
         )) != Some(&label.identity.type_id.as_str())
-            || label.name.is_empty()
-            || label.class_id.len() != 32
             || references
                 .into_iter()
                 .any(|reference| !resolves(&label.identity.segment_token, reference))
@@ -997,7 +995,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                     raw_feature.identity.segment_token.as_str(),
                     raw_feature.identity.record_ordinal,
                 ))
-                .is_none_or(|label| label.class_id != expected_class)
+                .is_none_or(|label| label.class_id() != expected_class)
         {
             findings.push(finding(
                 Check::NativeLinks,

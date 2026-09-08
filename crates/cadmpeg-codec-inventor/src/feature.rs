@@ -13,6 +13,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::products::NonEmptyString;
 use cadmpeg_ir::sketches::Sketch;
 use serde::{Deserialize, Serialize};
 
@@ -234,13 +235,63 @@ pub(crate) struct PmDcLinkedHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcFeatureLabelPayloadWire",
+    into = "PmDcFeatureLabelPayloadWire"
+)]
 pub(crate) struct PmDcFeatureLabelPayload {
+    pub(crate) save_version_major: u8,
+    pub(crate) header: PmDcLinkedHeader,
+    pub(crate) index: u32,
+    pub(crate) participants: PmDcReferenceList,
+    name: NonEmptyString,
+    class_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct PmDcFeatureLabelPayloadWire {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
     pub(crate) index: u32,
     pub(crate) participants: PmDcReferenceList,
     pub(crate) name: String,
     pub(crate) class_id: String,
+}
+
+impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
+    type Error = String;
+    fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
+        if wire.class_id.len() != 32 {
+            return Err("class_id must contain 32 bytes".into());
+        }
+        Ok(Self {
+            save_version_major: wire.save_version_major,
+            header: wire.header,
+            index: wire.index,
+            participants: wire.participants,
+            name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
+            class_id: wire.class_id,
+        })
+    }
+}
+
+impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
+    fn from(value: PmDcFeatureLabelPayload) -> Self {
+        Self {
+            save_version_major: value.save_version_major,
+            header: value.header,
+            index: value.index,
+            participants: value.participants,
+            name: value.name.as_str().to_owned(),
+            class_id: value.class_id,
+        }
+    }
+}
+
+impl PmDcFeatureLabelPayload {
+    pub(crate) fn class_id(&self) -> &str {
+        &self.class_id
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -334,9 +385,6 @@ pub(crate) fn inventory(
                     })
                 }
                 FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).map(|label| {
-                    if label.name.is_empty() {
-                        return;
-                    }
                     inventory.labels.push(Located::new(
                         label,
                         type_id_string(record.type_id),
@@ -853,7 +901,7 @@ fn parse_label(
     let name = cursor.utf16(ctx, "feature label")?;
     let class_id = type_id_string(cursor.take_array("feature-label class id")?);
     cursor.finish("feature label")?;
-    Ok(PmDcFeatureLabelPayload {
+    PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
         save_version_major: version,
         header,
         index,
@@ -861,6 +909,7 @@ fn parse_label(
         name,
         class_id,
     })
+    .map_err(CodecError::malformed)
 }
 
 const EXTRUSION_CLASS_ID: &str = "3111a90cd0118b83000819b00524dc09";
@@ -1088,7 +1137,7 @@ fn project_extrusion(
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
-        name: Some(label.name.clone()),
+        name: Some(label.name.as_str().to_owned()),
         suppressed: None,
         dependencies: Vec::new(),
         source_properties: boolean_properties(source, &[20, 22], index),
@@ -1188,7 +1237,7 @@ fn project_fillet(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.clone()),
+            name: Some(label.name.as_str().to_owned()),
             suppressed: None,
             dependencies: Vec::new(),
             source_properties: boolean_properties(source, &[2, 3, 4, 5, 8], index),
@@ -1227,7 +1276,7 @@ fn project_chamfer(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.clone()),
+            name: Some(label.name.as_str().to_owned()),
             suppressed: None,
             dependencies: Vec::new(),
             source_properties: boolean_properties(source, &[6, 9], index),
@@ -1330,7 +1379,7 @@ fn project_hole(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.clone()),
+            name: Some(label.name.as_str().to_owned()),
             suppressed: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -1733,6 +1782,33 @@ mod tests {
         )
     }
 
+    #[test]
+    fn located_label_admission_rejects_empty_name_and_wrong_class_width() {
+        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
+        let valid = serde_json::to_value(&label).expect("valid label fixture");
+        let admitted: PmDcFeatureLabel =
+            serde_json::from_value(valid.clone()).expect("valid label fixture");
+        assert_eq!(
+            serde_json::to_value(admitted).expect("valid label fixture"),
+            valid
+        );
+        for (field, value) in [
+            ("name", String::new()),
+            ("class_id", "a".repeat(31)),
+            ("class_id", "a".repeat(33)),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = serde_json::json!(value);
+            assert!(serde_json::from_value::<PmDcFeatureLabel>(wire)
+                .expect_err("invalid label")
+                .to_string()
+                .contains(field));
+        }
+        let mut wire = valid;
+        wire["class_id"] = serde_json::json!("z".repeat(32));
+        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_ok());
+    }
+
     fn test_label(
         owner_ordinal: u32,
         index: u32,
@@ -1740,7 +1816,7 @@ mod tests {
         participants: &[u32],
     ) -> PmDcFeatureLabel {
         Located::new(
-            PmDcFeatureLabelPayload {
+            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
                 save_version_major: 16,
                 header: PmDcLinkedHeader {
                     header_value: 0,
@@ -1754,7 +1830,8 @@ mod tests {
                 participants: reference_list(participants),
                 name: format!("Feature {index}"),
                 class_id: class_id.into(),
-            },
+            })
+            .expect("valid label fixture"),
             type_id_string(FEATURE_LABEL_TYPE),
             SEGMENT,
             owner_ordinal + 1000,
