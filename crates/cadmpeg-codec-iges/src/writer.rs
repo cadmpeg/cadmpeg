@@ -277,13 +277,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
 fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     let writes_brep = has_brep_topology(ir);
     if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
-        matches!(
+        (matches!(
             surface.geometry,
-            SurfaceGeometry::Cylinder { .. }
-                | SurfaceGeometry::Cone { .. }
-                | SurfaceGeometry::Sphere { .. }
-                | SurfaceGeometry::Torus { .. }
-        ) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
+            SurfaceGeometry::Cylinder(_)
+                | SurfaceGeometry::Cone(_)
+                | SurfaceGeometry::Sphere(_)
+                | SurfaceGeometry::Torus(_)
+        )) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
     }) {
         return Err(CodecError::NotImplemented(format!(
             "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
@@ -482,12 +482,12 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         let geometry = surface.geometry.solved_cache().unwrap_or(&surface.geometry);
         if !matches!(
             geometry,
-            SurfaceGeometry::Plane { .. }
+            SurfaceGeometry::Plane(_)
                 | SurfaceGeometry::Nurbs(_)
-                | SurfaceGeometry::Cylinder { .. }
-                | SurfaceGeometry::Cone { .. }
-                | SurfaceGeometry::Sphere { .. }
-                | SurfaceGeometry::Torus { .. }
+                | SurfaceGeometry::Cylinder(_)
+                | SurfaceGeometry::Cone(_)
+                | SurfaceGeometry::Sphere(_)
+                | SurfaceGeometry::Torus(_)
         ) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES procedural surface {} has no writable solved carrier",
@@ -519,11 +519,11 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         let geometry = flatten_curve(&curve.geometry)?;
         if !matches!(
             geometry,
-            CurveGeometry::Line { .. }
-                | CurveGeometry::Circle { .. }
-                | CurveGeometry::Ellipse { .. }
-                | CurveGeometry::Parabola { .. }
-                | CurveGeometry::Hyperbola { .. }
+            CurveGeometry::Line(_)
+                | CurveGeometry::Circle(_)
+                | CurveGeometry::Ellipse(_)
+                | CurveGeometry::Parabola(_)
+                | CurveGeometry::Hyperbola(_)
                 | CurveGeometry::Nurbs(_)
                 | CurveGeometry::Polyline(_)
         ) {
@@ -754,7 +754,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                         ))
                     })?;
                 surface_entities_for_ir(ir, &surface.geometry, 0, version)?;
-                if matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+                if matches!(surface.geometry, SurfaceGeometry::Cylinder(_))
                     && face.loops.iter().any(|loop_id| {
                         let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id)
                         else {
@@ -2996,7 +2996,7 @@ fn oriented_curve_entity(
         end: span.start,
     };
     let mut entity = match geometry {
-        CurveGeometry::Line { .. } => curve_entity(geometry, Some(&reversed_span), version)?,
+        CurveGeometry::Line(_) => curve_entity(geometry, Some(&reversed_span), version)?,
         CurveGeometry::Nurbs(nurbs) => {
             let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
             let reversed_span = CurveSpan {
@@ -3009,12 +3009,8 @@ fn oriented_curve_entity(
                 version,
             )?
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
                 *center,
                 *axis,
@@ -3038,13 +3034,8 @@ fn oriented_curve_entity(
                 version,
             )?
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
                 *center,
                 *axis,
@@ -3069,12 +3060,8 @@ fn oriented_curve_entity(
                 version,
             )?
         }
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => {
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
             let reversed = crate::entities::curve_conversion::parabolic_arc_nurbs(
                 *vertex,
                 *axis,
@@ -3119,24 +3106,23 @@ fn oriented_curve_entity(
                 version,
             )?
         }
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                hyperbola_curve.parts();
             // The hyperbola parameterization satisfies p(-u) = p(u) with its
             // transverse axis reversed. Emit that equivalent frame with the
             // reflected interval so the Type 104 endpoints follow the
             // reversed coedge without introducing an approximation.
-            let reversed_geometry = CurveGeometry::Hyperbola {
-                center: *center,
-                axis: axis.scale(-1.0),
-                major_direction: *major_direction,
-                major_radius: *major_radius,
-                minor_radius: *minor_radius,
-            };
+            let reversed_geometry = CurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                    *center,
+                    axis.scale(-1.0),
+                    *major_direction,
+                    *major_radius,
+                    *minor_radius,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
             let reversed_range = [-span.range[1], -span.range[0]];
             if reversed_range.iter().any(|value| !value.is_finite()) {
                 return Err(CodecError::Malformed(
@@ -3166,7 +3152,7 @@ fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
             return false;
         }
         match geometry {
-            CurveGeometry::Line { .. } => true,
+            CurveGeometry::Line(_) => true,
             CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
             _ => false,
         }
@@ -4215,7 +4201,7 @@ fn construction_carrier_interval(
 ) -> Result<[f64; 2], CodecError> {
     match procedural.record_bounds {
         None => {
-            if matches!(geometry, CurveGeometry::Line { .. })
+            if matches!(geometry, CurveGeometry::Line(_))
                 && ir
                     .model
                     .edges
@@ -4331,11 +4317,11 @@ impl AnalyticSurfaceFamily {
 
 fn analytic_surface_family(geometry: &SurfaceGeometry) -> Option<AnalyticSurfaceFamily> {
     match geometry {
-        SurfaceGeometry::Plane { .. } => Some(AnalyticSurfaceFamily::Plane),
-        SurfaceGeometry::Cylinder { .. } => Some(AnalyticSurfaceFamily::Cylinder),
-        SurfaceGeometry::Cone { .. } => Some(AnalyticSurfaceFamily::Cone),
-        SurfaceGeometry::Sphere { .. } => Some(AnalyticSurfaceFamily::Sphere),
-        SurfaceGeometry::Torus { .. } => Some(AnalyticSurfaceFamily::Torus),
+        SurfaceGeometry::Plane(_) => Some(AnalyticSurfaceFamily::Plane),
+        SurfaceGeometry::Cylinder(_) => Some(AnalyticSurfaceFamily::Cylinder),
+        SurfaceGeometry::Cone(_) => Some(AnalyticSurfaceFamily::Cone),
+        SurfaceGeometry::Sphere(_) => Some(AnalyticSurfaceFamily::Sphere),
+        SurfaceGeometry::Torus(_) => Some(AnalyticSurfaceFamily::Torus),
         SurfaceGeometry::Nurbs(_) => None,
         _ => None,
     }
@@ -4478,7 +4464,7 @@ fn extrusion_surface_entities(
         }
         (span.start, span.end)
     } else {
-        let evaluation_interval = if matches!(&geometry, CurveGeometry::Line { .. }) {
+        let evaluation_interval = if matches!(&geometry, CurveGeometry::Line(_)) {
             carrier_interval
         } else {
             [start_parameter, terminate_parameter]
@@ -4623,7 +4609,7 @@ fn revolution_surface_entities(
         procedural,
         [start_parameter, terminate_parameter],
     )?;
-    let evaluation_interval = if matches!(&geometry, CurveGeometry::Line { .. }) {
+    let evaluation_interval = if matches!(&geometry, CurveGeometry::Line(_)) {
         carrier_interval
     } else {
         [start_parameter, terminate_parameter]
@@ -4638,10 +4624,10 @@ fn revolution_surface_entities(
     ensure_finite_point(end, "Type 120 generatrix terminate")?;
     let axis_direction = unit(*axis_direction, "Type 120 axis direction")?;
     let axis_end = axis_origin.translated(axis_direction, 1.0);
-    let axis_geometry = CurveGeometry::Line {
-        origin: *axis_origin,
-        direction: axis_direction,
-    };
+    let axis_geometry = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(*axis_origin, axis_direction)
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+    );
     let axis_span = CurveSpan {
         range: [0.0, 1.0],
         start: *axis_origin,
@@ -4684,11 +4670,8 @@ fn surface_entities(
     let analytic_type_code =
         analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
     match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             if matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) {
                 let (normal, u_axis) = orthonormal_pair(*normal, *u_axis, "legacy plane basis")?;
                 let v_axis = normal.cross(u_axis);
@@ -4726,12 +4709,8 @@ fn surface_entities(
             Ok(entities)
         }
         SurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
             if !radius.is_finite() || *radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES cylinder radius must be positive and finite".into(),
@@ -4759,14 +4738,8 @@ fn surface_entities(
             entities.push(surface);
             Ok(entities)
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
             if !same_float(*ratio, 1.0) {
                 return Err(CodecError::NotImplemented(
                     "IGES analytic cone writer only encodes circular cones".into(),
@@ -4808,12 +4781,8 @@ fn surface_entities(
             entities.push(surface);
             Ok(entities)
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
             if !radius.is_finite() || *radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES sphere radius must be positive and finite".into(),
@@ -4841,13 +4810,8 @@ fn surface_entities(
             entities.push(surface);
             Ok(entities)
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             if !major_radius.is_finite()
                 || !minor_radius.is_finite()
                 || *minor_radius <= 0.0
@@ -5467,10 +5431,10 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
     ensure_finite_point(end, &format!("edge {} end", edge.id))?;
     if matches!(
         geometry,
-        CurveGeometry::Circle { .. }
-            | CurveGeometry::Ellipse { .. }
-            | CurveGeometry::Parabola { .. }
-            | CurveGeometry::Hyperbola { .. }
+        CurveGeometry::Circle(_)
+            | CurveGeometry::Ellipse(_)
+            | CurveGeometry::Parabola(_)
+            | CurveGeometry::Hyperbola(_)
             | CurveGeometry::Nurbs(_)
             | CurveGeometry::Polyline(_)
     ) {
@@ -5524,19 +5488,32 @@ fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
             cache: Some(geometry),
             ..
         } => default_range(geometry),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => Ok([0.0, TAU]),
+        CurveGeometry::Circle(_) => Ok([0.0, TAU]),
+        CurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
         CurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
         CurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
             Ok([values[0], *values.last().expect("polyline has points")])
         }
-        CurveGeometry::Line { .. }
-        | CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
+        CurveGeometry::Line(_) => Err(CodecError::NotImplemented(
+            "IGES semantic writer requires a finite curve parameter range".into(),
+        )),
+        CurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(
+            "IGES semantic writer requires a finite curve parameter range".into(),
+        )),
+        CurveGeometry::Hyperbola(_) => Err(CodecError::NotImplemented(
+            "IGES semantic writer requires a finite curve parameter range".into(),
+        )),
+        CurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
+            "IGES semantic writer requires a finite curve parameter range".into(),
+        )),
+        CurveGeometry::Composite { .. } => Err(CodecError::NotImplemented(
+            "IGES semantic writer requires a finite curve parameter range".into(),
+        )),
+        CurveGeometry::Procedural { .. } => Err(CodecError::NotImplemented(
+            "IGES semantic writer requires a finite curve parameter range".into(),
+        )),
+        CurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
         CurveGeometry::Transformed { .. } => Err(CodecError::Malformed(
@@ -5561,7 +5538,7 @@ fn curve_entity(
             cache: Some(geometry),
             ..
         } => curve_entity(geometry, span, version),
-        CurveGeometry::Line { .. } => {
+        CurveGeometry::Line(_) => {
             let span = span.ok_or_else(|| {
                 CodecError::NotImplemented(
                     "IGES semantic writer cannot bound an unreferenced line".into(),
@@ -5585,12 +5562,8 @@ fn curve_entity(
                 transform: None,
             })
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
             if !radius.is_finite() || *radius <= 0.0 {
                 return Err(CodecError::Malformed(
@@ -5621,13 +5594,8 @@ fn curve_entity(
                 transform: Some(placement(*center, reference, y_axis, axis)?),
             })
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
             if !major_radius.is_finite()
                 || !minor_radius.is_finite()
@@ -5668,12 +5636,8 @@ fn curve_entity(
                 transform: Some(placement(*center, major, y_axis, axis)?),
             })
         }
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => {
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
             if range[0] == range[1] || !focal_distance.is_finite() || *focal_distance <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES parabola requires a finite non-zero parameter span".into(),
@@ -5700,13 +5664,9 @@ fn curve_entity(
                 transform: Some(placement(*vertex, x_axis, major, axis)?),
             })
         }
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                hyperbola_curve.parts();
             if range[0] == range[1]
                 || !major_radius.is_finite()
                 || !minor_radius.is_finite()
@@ -5752,11 +5712,19 @@ fn curve_entity(
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(&nurbs, range, "POLYLINE")
         }
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. }
-        | CurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
+        CurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
+            "IGES semantic writer does not encode this curve geometry".into(),
+        )),
+        CurveGeometry::Composite { .. } => Err(CodecError::NotImplemented(
+            "IGES semantic writer does not encode this curve geometry".into(),
+        )),
+        CurveGeometry::Procedural { .. } => Err(CodecError::NotImplemented(
+            "IGES semantic writer does not encode this curve geometry".into(),
+        )),
+        CurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
+            "IGES semantic writer does not encode this curve geometry".into(),
+        )),
+        CurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
     }
@@ -5965,61 +5933,75 @@ fn apply_rigid_transform(
     let point = |value: Point3| transform.apply_point(value);
     let vector = |value: Vector3, label: &str| unit(transform.apply_vector(value), label);
     Ok(match geometry {
-        CurveGeometry::Line { origin, direction } => CurveGeometry::Line {
-            origin: point(origin),
-            direction: vector(direction, "transformed line direction")?,
-        },
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => CurveGeometry::Circle {
-            center: point(center),
-            axis: vector(axis, "transformed circle axis")?,
-            ref_direction: vector(ref_direction, "transformed circle reference")?,
-            radius,
-        },
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => CurveGeometry::Ellipse {
-            center: point(center),
-            axis: vector(axis, "transformed ellipse axis")?,
-            major_direction: vector(major_direction, "transformed ellipse major")?,
-            major_radius,
-            minor_radius,
-        },
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => CurveGeometry::Parabola {
-            vertex: point(vertex),
-            axis: vector(axis, "transformed parabola axis")?,
-            major_direction: vector(major_direction, "transformed parabola major")?,
-            focal_distance,
-        },
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => CurveGeometry::Hyperbola {
-            center: point(center),
-            axis: vector(axis, "transformed hyperbola axis")?,
-            major_direction: vector(major_direction, "transformed hyperbola major")?,
-            major_radius,
-            minor_radius,
-        },
-        CurveGeometry::Degenerate { point: value } => CurveGeometry::Degenerate {
-            point: point(value),
-        },
+        CurveGeometry::Line(line_curve) => {
+            let (&origin, &direction) = line_curve.parts();
+            CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    point(origin),
+                    vector(direction, "transformed line direction")?,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    point(center),
+                    vector(axis, "transformed circle axis")?,
+                    vector(ref_direction, "transformed circle reference")?,
+                    radius,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
+                ellipse_curve.parts();
+            CurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    point(center),
+                    vector(axis, "transformed ellipse axis")?,
+                    vector(major_direction, "transformed ellipse major")?,
+                    major_radius,
+                    minor_radius,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )
+        }
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (&vertex, &axis, &major_direction, &focal_distance) = parabola_curve.parts();
+            CurveGeometry::Parabola(
+                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                    point(vertex),
+                    vector(axis, "transformed parabola axis")?,
+                    vector(major_direction, "transformed parabola major")?,
+                    focal_distance,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )
+        }
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
+                hyperbola_curve.parts();
+            CurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                    point(center),
+                    vector(axis, "transformed hyperbola axis")?,
+                    vector(major_direction, "transformed hyperbola major")?,
+                    major_radius,
+                    minor_radius,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )
+        }
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (&value,) = degenerate_curve.parts();
+            CurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(point(value))
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            )
+        }
         CurveGeometry::Nurbs(mut nurbs) => {
             nurbs
                 .edit_control_points(|points| {

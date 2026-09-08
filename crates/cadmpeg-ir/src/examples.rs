@@ -130,10 +130,10 @@ pub fn unit_cube() -> CadIr {
         let unit = Vector3::new(dir.x / len, dir.y / len, dir.z / len);
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("synthetic:cube:curve#{i}")).expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(ax, ay, az),
-                direction: unit,
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(Point3::new(ax, ay, az), unit)
+                    .expect("valid example geometry"),
+            ),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -154,11 +154,14 @@ pub fn unit_cube() -> CadIr {
         let surf_id = format!("synthetic:cube:surface#{name}");
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(surf_id.clone()).expect("valid identity"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin.0, origin.1, origin.2),
-                normal: Vector3::new(normal.0, normal.1, normal.2),
-                u_axis: derive_reference_direction(Vector3::new(normal.0, normal.1, normal.2)),
-            },
+            geometry: SurfaceGeometry::Plane(
+                crate::geometry::PlaneSurface::try_new(
+                    Point3::new(origin.0, origin.1, origin.2),
+                    Vector3::new(normal.0, normal.1, normal.2),
+                    derive_reference_direction(Vector3::new(normal.0, normal.1, normal.2)),
+                )
+                .expect("valid example geometry"),
+            ),
             source_object: None,
         });
 
@@ -274,18 +277,24 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
     ir.model.curves = vec![
         Curve {
             id: CurveId::mint("synthetic:v2:curve#u").expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid example geometry"),
+            ),
             source_object: None,
         },
         Curve {
             id: CurveId::mint("synthetic:v2:curve#v").expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .expect("valid example geometry"),
+            ),
             source_object: None,
         },
     ];
@@ -296,11 +305,14 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
             cache: Some(
-                SolvedSurfaceGeometry::new(SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                })
+                SolvedSurfaceGeometry::new(SurfaceGeometry::Plane(
+                    crate::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid example geometry"),
+                ))
                 .expect("solved example surface"),
             ),
         },

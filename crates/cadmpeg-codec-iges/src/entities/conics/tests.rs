@@ -49,12 +49,12 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
             );
             assert_eq!(result.ir().model.curves.len(), 1, "{version} {family}");
             assert!(
-                matches!(
-                    (&result.ir().model.curves[0].geometry, family_number),
-                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0)
-                        | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 1)
-                        | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 2)
-                ),
+                match (&result.ir().model.curves[0].geometry, family_number) {
+                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse(_), 0) => true,
+                    (cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_), 1) => true,
+                    (cadmpeg_ir::geometry::CurveGeometry::Parabola(_), 2) => true,
+                    _ => false,
+                },
                 "{version} {family}: {:?}",
                 result.ir().model.curves[0].geometry
             );
@@ -110,9 +110,9 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             .iter()
             .all(|vertex| vertex.tolerance == Some(0.001)));
         match (&result.ir().model.curves[0].geometry, form) {
-            (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0 | 1)
-            | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 2)
-            | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 3) => {}
+            (cadmpeg_ir::geometry::CurveGeometry::Ellipse(_), 0 | 1) => {}
+            (cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_), 2) => {}
+            (cadmpeg_ir::geometry::CurveGeometry::Parabola(_), 3) => {}
             (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
         }
         assert!(result.report().losses.is_empty(), "form {form}");

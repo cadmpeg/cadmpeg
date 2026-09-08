@@ -180,11 +180,14 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         ProceduralSurfaceId::mint("test:model:surface-construction#cache").expect("valid identity");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            crate::geometry::PlaneSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model

@@ -294,7 +294,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
+        cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
         }
@@ -333,11 +334,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     assert_eq!(result.ir().model.surfaces.len(), 7);
     match &result.ir().model.surfaces[0].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
             assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0]);
             assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0]);

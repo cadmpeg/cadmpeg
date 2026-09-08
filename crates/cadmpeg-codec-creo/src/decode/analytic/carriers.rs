@@ -37,16 +37,19 @@ fn existing_plane_agrees_with_topology(
     topology: PlaneEquation,
 ) -> Option<bool> {
     match geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => Some(
-            agreed_plane(&[
-                PlaneEquation {
-                    origin: [origin.x, origin.y, origin.z],
-                    normal: [normal.x, normal.y, normal.z],
-                },
-                topology,
-            ])
-            .is_some(),
-        ),
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, _) = plane_surface.parts();
+            Some(
+                agreed_plane(&[
+                    PlaneEquation {
+                        origin: [origin.x, origin.y, origin.z],
+                        normal: [normal.x, normal.y, normal.z],
+                    },
+                    topology,
+                ])
+                .is_some(),
+            )
+        }
         SurfaceGeometry::Unknown { .. } => None,
         _ => Some(false),
     }
@@ -153,6 +156,13 @@ pub fn transfer_topology_bound_planes(
             continue;
         }
         let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+            normal,
+            cadmpeg_ir::geometry::derive_reference_direction(normal),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -163,11 +173,7 @@ pub fn transfer_topology_bound_planes(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal,
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
-            },
+            geometry: SurfaceGeometry::Plane(plane_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
@@ -316,7 +322,8 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
                     continue;
                 }
             };
-            if let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry {
+            if let SurfaceGeometry::Plane(plane_surface) = &surface.geometry {
+                let (origin, normal, _) = plane_surface.parts();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -429,61 +436,51 @@ fn positional_cylinder_carrier(
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     match geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, _) = plane_surface.parts();
             Some(CarrierEquation::Plane(PlaneEquation {
                 origin: [origin.x, origin.y, origin.z],
                 normal: [normal.x, normal.y, normal.z],
             }))
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => Some(CarrierEquation::Cylinder(CylinderEquation {
-            origin: [origin.x, origin.y, origin.z],
-            axis: [axis.x, axis.y, axis.z],
-            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            radius: *radius,
-        })),
-        SurfaceGeometry::Sphere {
-            center,
-            axis: _,
-            ref_direction,
-            radius,
-        } => Some(CarrierEquation::Sphere(SphereEquation {
-            center: [center.x, center.y, center.z],
-            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            radius: *radius,
-        })),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => Some(CarrierEquation::Cone(ConeEquation::new(
-            [origin.x, origin.y, origin.z],
-            [axis.x, axis.y, axis.z],
-            [ref_direction.x, ref_direction.y, ref_direction.z],
-            *radius,
-            *ratio,
-            *half_angle,
-        )?)),
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => Some(CarrierEquation::Torus(TorusEquation {
-            center: [center.x, center.y, center.z],
-            axis: [axis.x, axis.y, axis.z],
-            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        })),
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            Some(CarrierEquation::Cylinder(CylinderEquation {
+                origin: [origin.x, origin.y, origin.z],
+                axis: [axis.x, axis.y, axis.z],
+                ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                radius: *radius,
+            }))
+        }
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, _, ref_direction, radius) = sphere_surface.parts();
+            Some(CarrierEquation::Sphere(SphereEquation {
+                center: [center.x, center.y, center.z],
+                ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                radius: *radius,
+            }))
+        }
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            Some(CarrierEquation::Cone(ConeEquation::new(
+                [origin.x, origin.y, origin.z],
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+                *radius,
+                *ratio,
+                *half_angle,
+            )?))
+        }
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            Some(CarrierEquation::Torus(TorusEquation {
+                center: [center.x, center.y, center.z],
+                axis: [axis.x, axis.y, axis.z],
+                ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                major_radius: *major_radius,
+                minor_radius: *minor_radius,
+            }))
+        }
         _ => None,
     }
 }

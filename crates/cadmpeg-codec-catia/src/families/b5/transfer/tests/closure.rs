@@ -52,16 +52,22 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(translated.knots(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(translated.control_points(), nurbs.control_points());
 
-    let line = CurveGeometry::Line {
-        origin: Point3::new(10.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(10.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     assert_eq!(
         curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0]),
-        Some(CurveGeometry::Line {
-            origin: Point3::new(20.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        })
+        Some(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(20.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
     assert_eq!(
         curve_on_parameter_range(
@@ -80,17 +86,23 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(scaled.knots(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(
         curve_on_parameter_range(
-            CurveGeometry::Line {
-                origin: Point3::new(10.0, 0.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(10.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0)
+                )
+                .unwrap()
+            ),
             [10.0, 20.0],
             [0.0, 2.0],
         ),
-        Some(CurveGeometry::Line {
-            origin: Point3::new(20.0, 0.0, 0.0),
-            direction: Vector3::new(5.0, 0.0, 0.0),
-        })
+        Some(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(20.0, 0.0, 0.0),
+                Vector3::new(5.0, 0.0, 0.0)
+            )
+            .unwrap()
+        ))
     );
 }
 
@@ -609,14 +621,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
             SurfaceId::mint("catia:test:surface#surface-11".to_string()).expect("identity grammar"),
         ),
     ]);
-    let pcurve_20 = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
-    let pcurve_21 = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 1.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let pcurve_20 = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
+    let pcurve_21 = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
     let pcurves = BTreeMap::from([
         (20, (pcurve_20.clone(), false, [2.0, 4.0])),
         (21, (pcurve_21.clone(), false, [2.0, 5.0])),
@@ -691,11 +703,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
 #[test]
 fn procedural_support_requires_physical_edge_endpoint_agreement() {
     let plane = || SurfacePlan {
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         procedure: None,
     };
     let surfaces = BTreeMap::from([(10, plane()), (11, plane())]);
@@ -703,10 +718,13 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         (
             20,
             (
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 0.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
                 false,
                 [0.0, 1.0],
             ),
@@ -714,10 +732,13 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         (
             21,
             (
-                PcurveGeometry::Line {
-                    origin: Point2::new(1.0, 0.0),
-                    direction: Point2::new(-1.0, 0.0),
-                },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(1.0, 0.0),
+                        Point2::new(-1.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
                 false,
                 [0.0, 1.0],
             ),
@@ -1131,11 +1152,14 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     let surfaces = BTreeMap::from([(
         4,
         SurfacePlan {
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             procedure: None,
         },
     )]);

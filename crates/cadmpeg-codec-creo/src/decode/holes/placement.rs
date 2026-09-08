@@ -129,12 +129,15 @@ pub fn cylinder_from_single_cap_outline(cap: PartialCapOutline) -> Option<Surfac
     let radial_axis = (0..3).find(|index| *index != axis_index)?;
     let mut ref_direction = [0.0; 3];
     ref_direction[radial_axis] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
-        origin: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        radius,
-    })
+    Some(SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(center[0], center[1], center[2]),
+            Vector3::new(axis[0], axis[1], axis[2]),
+            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            radius,
+        )
+        .ok()?,
+    ))
 }
 
 pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceGeometry> {
@@ -169,21 +172,25 @@ pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<Surf
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
-        origin: Point3::new(centers[0][0], centers[0][1], centers[0][2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        radius: radii[0],
-    })
+    Some(SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(centers[0][0], centers[0][1], centers[0][2]),
+            Vector3::new(axis[0], axis[1], axis[2]),
+            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            radii[0],
+        )
+        .ok()?,
+    ))
 }
 
 pub fn cylinder_from_complementary_outline_bounds(
     plane: &SurfaceGeometry,
     bounds: [[[f64; 2]; 2]; 2],
 ) -> Option<SurfaceGeometry> {
-    let SurfaceGeometry::Plane { origin, normal, .. } = plane else {
+    let SurfaceGeometry::Plane(plane_surface) = plane else {
         return None;
     };
+    let (origin, normal, _) = plane_surface.parts();
     let axis = normalized([normal.x, normal.y, normal.z])?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
@@ -234,12 +241,15 @@ pub fn cylinder_from_complementary_outline_bounds(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
-        origin: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        radius: 0.5 * spans[0],
-    })
+    Some(SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(center[0], center[1], center[2]),
+            Vector3::new(axis[0], axis[1], axis[2]),
+            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            0.5 * spans[0],
+        )
+        .ok()?,
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq)]

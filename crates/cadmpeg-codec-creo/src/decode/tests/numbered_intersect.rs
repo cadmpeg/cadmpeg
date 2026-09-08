@@ -1329,29 +1329,38 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
         [[-0.3125, 1.3125], [0.3125, 1.625]],
         [[-0.3125, 1.625], [0.3125, 1.9375]],
     ];
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, -1.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     assert_eq!(
         cylinder_from_complementary_outline_bounds(&plane, bounds),
-        Some(SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 1.625, -1.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.3125,
-        })
+        Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 1.625, -1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.3125
+            )
+            .unwrap()
+        ))
     );
 }
 
 #[test]
 fn split_outline_carrier_requires_complementary_square_bounds() {
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     assert!(cylinder_from_complementary_outline_bounds(
         &plane,
         [[[-1.0, 0.0], [1.0, 0.5]], [[-1.0, 0.6], [1.0, 1.0]]],
@@ -1740,74 +1749,142 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
     };
 
-    assert!(matches!(
-        revolved_section_circle(&transform, [2.0, 3.0], &axis),
-        Some(CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        }) if center == Point3::new(0.0, 3.0, 0.0)
-            && axis == Vector3::new(0.0, 1.0, 0.0)
-            && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && radius == 2.0
-    ));
+    assert!(
+        match revolved_section_circle(&transform, [2.0, 3.0], &axis) {
+            Some(CurveGeometry::Circle(circle_curve))
+                if {
+                    let (center, axis, ref_direction, radius) = circle_curve.parts();
+                    *center == Point3::new(0.0, 3.0, 0.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 2.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
-    assert!(matches!(
-        extruded_section_line(&transform, [2.0, 3.0]),
-        Some(CurveGeometry::Line { origin, direction })
-            if origin == Point3::new(2.0, 3.0, 0.0)
-                && direction == Vector3::new(0.0, 0.0, 1.0)
-    ));
+    assert!(match extruded_section_line(&transform, [2.0, 3.0]) {
+        Some(CurveGeometry::Line(line_curve))
+            if {
+                let (origin, direction) = line_curve.parts();
+                *origin == Point3::new(2.0, 3.0, 0.0) && *direction == Vector3::new(0.0, 0.0, 1.0)
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis),
-        Some(SurfaceGeometry::Cylinder { radius, .. }) if radius == 2.0
-    ));
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis),
-        Some(SurfaceGeometry::Plane { origin, .. }) if origin.y == 3.0
-    ));
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis),
-        Some(SurfaceGeometry::Cone { radius, half_angle, .. })
-            if radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis),
-        Some(SurfaceGeometry::Cone { axis, radius, half_angle, .. })
-            if axis.y == -1.0
-                && radius == 4.0
-                && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
-    ));
+    assert!(
+        match revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis) {
+            Some(SurfaceGeometry::Cylinder(cylinder_surface))
+                if {
+                    let (_, _, _, radius) = cylinder_surface.parts();
+                    *radius == 2.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
+    assert!(
+        match revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis) {
+            Some(SurfaceGeometry::Plane(plane_surface))
+                if {
+                    let (origin, _, _) = plane_surface.parts();
+                    origin.y == 3.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
+    assert!(
+        match revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis) {
+            Some(SurfaceGeometry::Cone(cone_surface))
+                if {
+                    let (_, _, _, radius, _, half_angle) = cone_surface.parts();
+                    *radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
+    assert!(
+        match revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis) {
+            Some(SurfaceGeometry::Cone(cone_surface))
+                if {
+                    let (_, axis, _, radius, _, half_angle) = cone_surface.parts();
+                    axis.y == -1.0
+                        && *radius == 4.0
+                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
     let centered_arc = SketchGeometry::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
         radius: Length(2.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
     };
-    assert!(matches!(
-        revolved_section_surface(&transform, &centered_arc, &axis),
-        Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
-    ));
+    assert!(
+        match revolved_section_surface(&transform, &centered_arc, &axis) {
+            Some(SurfaceGeometry::Sphere(sphere_surface))
+                if {
+                    let (_, _, _, radius) = sphere_surface.parts();
+                    *radius == 2.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
     let offset_arc = SketchGeometry::Arc {
         center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
         radius: Length(2.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
     };
-    assert!(matches!(
-        revolved_section_surface(&transform, &offset_arc, &axis),
-        Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
-            if major_radius == 5.0 && minor_radius == 2.0
-    ));
+    assert!(
+        match revolved_section_surface(&transform, &offset_arc, &axis) {
+            Some(SurfaceGeometry::Torus(torus_surface))
+                if {
+                    let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                    *major_radius == 5.0 && *minor_radius == 2.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
     let offset_circle = SketchGeometry::Circle {
         center: Point2::new(5.0, 3.0),
         radius: Length(2.0),
     };
-    assert!(matches!(
-        revolved_section_surface(&transform, &offset_circle, &axis),
-        Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
-            if major_radius == 5.0 && minor_radius == 2.0
-    ));
+    assert!(
+        match revolved_section_surface(&transform, &offset_circle, &axis) {
+            Some(SurfaceGeometry::Torus(torus_surface))
+                if {
+                    let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                    *major_radius == 5.0 && *minor_radius == 2.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
 }

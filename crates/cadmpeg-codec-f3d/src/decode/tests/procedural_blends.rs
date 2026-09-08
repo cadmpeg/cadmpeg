@@ -83,10 +83,15 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     .iter_mut()
                     .find(|curve| curve.id == side)
                     .expect("G2 side curve")
-                    .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                    origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
-                    direction: cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0),
-                };
+                    .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
+                        cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0)
+                            .unit()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                );
             }
             source_less
                 .model
@@ -94,10 +99,15 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 .iter_mut()
                 .find(|curve| curve.id == center_curve)
                 .expect("G2 center curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
-                direction: cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
             let mut encoded = Vec::new();
             F3dCodec
                 .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -243,10 +253,15 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .iter_mut()
                 .find(|curve| Some(&curve.id) == side.as_ref())
                 .expect("rolling-ball side curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 3.0, -2.0),
-                direction: cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(ordinal as f64, 3.0, -2.0),
+                    cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         if let Some(third) = &third_curve {
             source_less
@@ -255,10 +270,15 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .iter_mut()
                 .find(|curve| curve.id == *third)
                 .expect("rolling-ball third-side curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
-                direction: cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         source_less
             .model
@@ -266,10 +286,15 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             .iter_mut()
             .find(|curve| curve.id == slice_curve)
             .expect("rolling-ball slice curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(2.0, -3.0, 1.0),
-            direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(2.0, -3.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -827,20 +852,30 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             .iter_mut()
             .find(|curve| curve.id == post_curve)
             .expect("variable-blend post curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
-            direction: cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         source_less
             .model
             .curves
             .iter_mut()
             .find(|curve| curve.id == slice_curve)
             .expect("variable-blend slice curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 1.0),
-            direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(3.0, -2.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         for (ordinal, side) in side_curves.iter().enumerate() {
             source_less
                 .model
@@ -848,10 +883,15 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .iter_mut()
                 .find(|curve| curve.id == *side)
                 .expect("variable-blend side curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
-                direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+                    cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec

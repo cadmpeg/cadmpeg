@@ -6,9 +6,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::test_support::*;
 use std::io::Cursor;
 
-use crate::writer::tests::{
-    semantic_writer_rejects_nonfinite_analytic_carriers, semantic_writer_rejects_subds,
-};
+use crate::writer::tests::semantic_writer_rejects_subds;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
@@ -229,7 +227,6 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
         crate::decode::document_local_sha256(second.ir())
     );
     semantic_writer_rejects_subds();
-    semantic_writer_rejects_nonfinite_analytic_carriers();
 }
 
 // --------------------------------------------------------------------------

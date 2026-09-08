@@ -181,29 +181,26 @@ pub(crate) struct SurfaceCarrier {
 impl SurfaceCarrier {
     pub fn frame(&self) -> Option<(Vector3, Vector3)> {
         match &self.geometry {
-            SurfaceGeometry::Plane { normal, u_axis, .. } => {
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (_, normal, u_axis) = plane_surface.parts();
                 Some((*u_axis, cross(*normal, *u_axis)))
             }
-            SurfaceGeometry::Cylinder {
-                axis,
-                ref_direction,
-                ..
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (_, axis, ref_direction, _) = cylinder_surface.parts();
+                Some((*ref_direction, *axis))
             }
-            | SurfaceGeometry::Cone {
-                axis,
-                ref_direction,
-                ..
+            SurfaceGeometry::Cone(cone_surface) => {
+                let (_, axis, ref_direction, _, _, _) = cone_surface.parts();
+                Some((*ref_direction, *axis))
             }
-            | SurfaceGeometry::Sphere {
-                axis,
-                ref_direction,
-                ..
+            SurfaceGeometry::Sphere(sphere_surface) => {
+                let (_, axis, ref_direction, _) = sphere_surface.parts();
+                Some((*ref_direction, *axis))
             }
-            | SurfaceGeometry::Torus {
-                axis,
-                ref_direction,
-                ..
-            } => Some((*ref_direction, *axis)),
+            SurfaceGeometry::Torus(torus_surface) => {
+                let (_, axis, ref_direction, _, _) = torus_surface.parts();
+                Some((*ref_direction, *axis))
+            }
             _ => None,
         }
     }
@@ -422,61 +419,81 @@ fn decode_carrier_values(
         })
     };
     let g = match tt {
-        tag::LINE => curve(CurveGeometry::Line {
-            origin: scale_point(&v[0..3]),
-            direction: unit(&v[3..6]),
-        }),
-        tag::CIRCLE => curve(CurveGeometry::Circle {
-            center: scale_point(&v[0..3]),
-            axis: unit(&v[3..6]),
-            ref_direction: unit(&v[6..9]),
-            radius: v[9] * LEN_TO_MM,
-        }),
-        tag::ELLIPSE => curve(CurveGeometry::Ellipse {
-            center: scale_point(&v[0..3]),
-            axis: unit(&v[3..6]),
-            major_direction: unit(&v[6..9]),
-            major_radius: v[9] * LEN_TO_MM,
-            minor_radius: v[10] * LEN_TO_MM,
-        }),
-        tag::PLANE => surface(SurfaceGeometry::Plane {
-            origin: scale_point(&v[0..3]),
-            normal: unit(&v[3..6]),
-            u_axis: unit(&v[6..9]),
-        }),
-        tag::CYLINDER => surface(SurfaceGeometry::Cylinder {
-            origin: scale_point(&v[0..3]),
-            axis: unit(&v[3..6]),
-            ref_direction: unit(&v[7..10]),
-            radius: v[6] * LEN_TO_MM,
-        }),
+        tag::LINE => curve(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(scale_point(&v[0..3]), unit(&v[3..6])).ok()?,
+        )),
+        tag::CIRCLE => curve(CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                scale_point(&v[0..3]),
+                unit(&v[3..6]),
+                unit(&v[6..9]),
+                v[9] * LEN_TO_MM,
+            )
+            .ok()?,
+        )),
+        tag::ELLIPSE => curve(CurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipseCurve::try_new(
+                scale_point(&v[0..3]),
+                unit(&v[3..6]),
+                unit(&v[6..9]),
+                v[9] * LEN_TO_MM,
+                v[10] * LEN_TO_MM,
+            )
+            .ok()?,
+        )),
+        tag::PLANE => surface(SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                scale_point(&v[0..3]),
+                unit(&v[3..6]),
+                unit(&v[6..9]),
+            )
+            .ok()?,
+        )),
+        tag::CYLINDER => surface(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                scale_point(&v[0..3]),
+                unit(&v[3..6]),
+                unit(&v[7..10]),
+                v[6] * LEN_TO_MM,
+            )
+            .ok()?,
+        )),
         tag::CONE => {
             // origin(3) axis(3) radius sin cos refdir(3): half-angle from the
             // stored sine, which satisfies sin^2+cos^2=1 in the observed sample.
             let sin = v[7];
-            return Some(surface(SurfaceGeometry::Cone {
-                origin: scale_point(&v[0..3]),
-                axis: unit(&v[3..6]),
-                ref_direction: unit(&v[9..12]),
-                radius: v[6] * LEN_TO_MM,
-                ratio: 1.0,
-                half_angle: sin.abs().clamp(0.0, 1.0).asin(),
-            }));
+            return Some(surface(SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    scale_point(&v[0..3]),
+                    unit(&v[3..6]),
+                    unit(&v[9..12]),
+                    v[6] * LEN_TO_MM,
+                    1.0,
+                    sin.abs().clamp(0.0, 1.0).asin(),
+                )
+                .ok()?,
+            )));
         }
-        tag::SPHERE => surface(SurfaceGeometry::Sphere {
-            center: scale_point(&v[0..3]),
-            axis: unit(&v[4..7]),
-            ref_direction: unit(&v[7..10]),
-            radius: v[3] * LEN_TO_MM,
-        }),
+        tag::SPHERE => surface(SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SphereSurface::try_new(
+                scale_point(&v[0..3]),
+                unit(&v[4..7]),
+                unit(&v[7..10]),
+                v[3] * LEN_TO_MM,
+            )
+            .ok()?,
+        )),
         tag::TORUS => {
-            return Some(surface(SurfaceGeometry::Torus {
-                center: scale_point(&v[0..3]),
-                axis: unit(&v[3..6]),
-                ref_direction: unit(&v[8..11]),
-                major_radius: v[6].abs() * LEN_TO_MM,
-                minor_radius: v[7] * LEN_TO_MM,
-            }));
+            return Some(surface(SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    scale_point(&v[0..3]),
+                    unit(&v[3..6]),
+                    unit(&v[8..11]),
+                    v[6].abs() * LEN_TO_MM,
+                    v[7] * LEN_TO_MM,
+                )
+                .ok()?,
+            )));
         }
         _ => return None,
     };
@@ -671,9 +688,10 @@ mod tests {
             };
             assert_eq!(carrier.attr, 7);
             assert_eq!(carrier.end, bytes.len());
-            let CurveGeometry::Line { origin, direction } = carrier.geometry else {
+            let CurveGeometry::Line(line_curve) = carrier.geometry else {
                 panic!("expected line");
             };
+            let (&origin, &direction) = line_curve.parts();
             assert_eq!(origin, Point3::new(1_000_000_000_000.0, 0.0, 0.0));
             assert_eq!(direction, Vector3::new(1.0, 0.0, 0.0));
         }
@@ -712,17 +730,10 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } = carrier.geometry
-        else {
+        let SurfaceGeometry::Cone(cone_surface) = carrier.geometry else {
             panic!("expected cone");
         };
+        let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) = cone_surface.parts();
         assert_eq!(origin, Point3::new(0.0, 0.0, 6.7));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -744,16 +755,10 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } = carrier.geometry
-        else {
+        let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
             panic!("expected torus");
         };
+        let (&center, &axis, &ref_direction, &major_radius, &minor_radius) = torus_surface.parts();
         assert_eq!(center, Point3::new(0.0, 0.0, 0.2));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -802,14 +807,10 @@ mod tests {
         let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("spindle torus") else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } = carrier.geometry
-        else {
+        let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
             panic!("expected torus");
         };
+        let (_, _, _, &major_radius, &minor_radius) = torus_surface.parts();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
     }
@@ -827,14 +828,10 @@ mod tests {
         else {
             panic!("expected surface carrier");
         };
-        let SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } = carrier.geometry
-        else {
+        let SurfaceGeometry::Torus(torus_surface) = carrier.geometry else {
             panic!("expected torus");
         };
+        let (_, _, _, &major_radius, &minor_radius) = torus_surface.parts();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);

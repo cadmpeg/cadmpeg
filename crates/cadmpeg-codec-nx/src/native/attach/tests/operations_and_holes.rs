@@ -1089,31 +1089,32 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             .surfaces
             .iter_mut()
             .filter_map(|surface| {
-                let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry else {
+                let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry else {
                     return None;
                 };
+                let (_, normal, _) = plane_surface.parts();
                 let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
-                (components[axis] > 0.5).then_some(origin)
+                (components[axis] > 0.5).then_some(plane_surface)
             })
             .collect::<Vec<_>>();
         assert_eq!(surfaces.len(), 2);
         surfaces.sort_by(|first, second| {
+            let (first, _, _) = first.parts();
+            let (second, _, _) = second.parts();
             [first.x, first.y, first.z][axis].total_cmp(&[second.x, second.y, second.z][axis])
         });
-        match axis {
-            0 => {
-                surfaces[0].x = 0.0;
-                surfaces[1].x = dimensions[axis];
+        for (index, surface) in surfaces.into_iter().enumerate() {
+            let (origin, normal, u_axis) = surface.parts();
+            let mut origin = *origin;
+            let coordinate = if index == 0 { 0.0 } else { dimensions[axis] };
+            match axis {
+                0 => origin.x = coordinate,
+                1 => origin.y = coordinate,
+                2 => origin.z = coordinate,
+                _ => unreachable!(),
             }
-            1 => {
-                surfaces[0].y = 0.0;
-                surfaces[1].y = dimensions[axis];
-            }
-            2 => {
-                surfaces[0].z = 0.0;
-                surfaces[1].z = dimensions[axis];
-            }
-            _ => unreachable!(),
+            *surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
         }
     }
     let output = ir.model.bodies[0].id.clone();
@@ -1148,13 +1149,17 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .surfaces
         .iter_mut()
         .find_map(|surface| {
-            let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry else {
+            let SurfaceGeometry::Plane(plane_surface) = &mut surface.geometry else {
                 return None;
             };
-            (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(origin)
+            let (origin, normal, _) = plane_surface.parts();
+            (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(plane_surface)
         })
         .expect("positive y plane");
-    high_y.y = 10.0;
+    let (origin, normal, u_axis) = high_y.parts();
+    let mut origin = *origin;
+    origin.y = 10.0;
+    *high_y = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
     assert_eq!(
         placement(&repeated, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
         None
@@ -1166,20 +1171,24 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .surfaces
         .iter()
         .find(|surface| {
-            matches!(
-                &surface.geometry,
-                SurfaceGeometry::Plane { normal, .. } if normal.x.abs() > 0.5
-            )
+            matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (_, normal, _) = plane_surface.parts();
+                normal.x.abs() > 0.5
+            })
         })
         .expect("x-normal plane")
         .clone();
     intermediate_surface.id =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
             .expect("identity grammar");
-    let SurfaceGeometry::Plane { origin, .. } = &mut intermediate_surface.geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = &mut intermediate_surface.geometry else {
         unreachable!()
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
+    let mut origin = *origin;
     origin.x = 5.0;
+    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
     stepped.model.surfaces.push(intermediate_surface);
     let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
     intermediate_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
@@ -1198,12 +1207,15 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     );
 
     let mut nonplanar = ir.clone();
-    nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
-        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+    nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
         None
@@ -1222,12 +1234,15 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let mut curved_surface = curved_feature.model.surfaces[0].clone();
     curved_surface.id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
         .expect("identity grammar");
-    curved_surface.geometry = SurfaceGeometry::Sphere {
-        center: cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+    curved_surface.geometry = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
     curved_feature.model.surfaces.push(curved_surface);
     let mut curved_face = curved_feature.model.faces[0].clone();
     curved_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#later-curved-face")
@@ -1280,12 +1295,15 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ir.model
         .surfaces
         .retain(|candidate| candidate.id == surface);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: f64::EPSILON,
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            f64::EPSILON,
+        )
+        .unwrap(),
+    );
 
     assert_eq!(
         super::sphere_body_projection(&ir, &[]),

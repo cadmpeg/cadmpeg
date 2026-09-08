@@ -948,15 +948,12 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         .unwrap();
 
     assert_eq!(result.ir().model.curves.len(), 1);
-    let cadmpeg_ir::geometry::CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = &result.ir().model.curves[0].geometry
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
+        &result.ir().model.curves[0].geometry
     else {
         panic!("expected a circle carrier");
     };
+    let (center, axis, ref_direction, radius) = circle_curve.parts();
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
@@ -991,11 +988,12 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } =
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
         &result.ir().model.curves[0].geometry
     else {
         panic!("expected a circle carrier");
     };
+    let (_, _, _, radius) = circle_curve.parts();
     assert!((*radius - 1.0).abs() < 1.0e-12);
     assert!(
         result.report().losses.is_empty(),
@@ -1057,11 +1055,12 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { axis, radius, .. } =
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
         &result.ir().model.curves[0].geometry
     else {
         panic!("expected a circle carrier");
     };
+    let (_, axis, _, radius) = circle_curve.parts();
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, -0.0, 1.0));
     assert_eq!(*radius, 1.0);
     assert!(result.report().losses.is_empty());
@@ -1081,11 +1080,12 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } =
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) =
         &result.ir().model.curves[0].geometry
     else {
         panic!("expected a circle carrier");
     };
+    let (_, _, _, radius) = circle_curve.parts();
     assert!((*radius - 16.0).abs() < 1.0e-12);
     assert!(
         result.report().losses.is_empty(),
@@ -1124,11 +1124,12 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     assert_eq!(result.ir().model.curves.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.points.len(), 2);
-    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } =
+    let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) =
         &result.ir().model.curves[0].geometry
     else {
         panic!("expected a line carrier");
     };
+    let (origin, direction) = line_curve.parts();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 5.0]));

@@ -84,21 +84,27 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: cylinder_surface.clone(),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     model.surfaces.push(Surface {
         id: cap_surface.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
@@ -113,12 +119,15 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
                     model.curves.push(Curve {
                         id: curve_id.clone(),
-                        geometry: CurveGeometry::Circle {
-                            center,
-                            axis: Vector3::new(0.0, 0.0, 1.0),
-                            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                            radius,
-                        },
+                        geometry: CurveGeometry::Circle(
+                            cadmpeg_ir::geometry::CircleCurve::try_new(
+                                center,
+                                Vector3::new(0.0, 0.0, 1.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                                radius,
+                            )
+                            .unwrap(),
+                        ),
                         source_object: None,
                     });
                     model.edges.push(Edge {
@@ -388,12 +397,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             if !model.edges.iter().any(|edge| edge.id == edge_id) {
                 model.curves.push(Curve {
                     id: curve_id.clone(),
-                    geometry: CurveGeometry::Circle {
-                        center,
-                        axis: Vector3::new(0.0, 0.0, 1.0),
-                        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                        radius,
-                    },
+                    geometry: CurveGeometry::Circle(
+                        cadmpeg_ir::geometry::CircleCurve::try_new(
+                            center,
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            radius,
+                        )
+                        .unwrap(),
+                    ),
                     source_object: None,
                 });
                 model.edges.push(Edge {
@@ -431,12 +443,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     let bore_surface = SurfaceId::mint("test:model:entity#bore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: bore_surface.clone(),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let bore_loops = vec![
@@ -454,12 +469,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         SurfaceId::mint("test:model:entity#counterbore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: counterbore_surface.clone(),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let counterbore_loops = vec![
@@ -482,11 +500,14 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         SurfaceId::mint("test:model:entity#shoulder-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: shoulder_surface.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 10.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let shoulder_loops = vec![

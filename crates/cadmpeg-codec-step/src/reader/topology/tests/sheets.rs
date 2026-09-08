@@ -77,12 +77,18 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
             .count(),
         1
     );
-    assert!(matches!(
-        result.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
-            if origin == cadmpeg_ir::math::Point2::new(0.0, 0.0)
-                && direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
-    ));
+    assert!(match result.ir().model.pcurves[0].geometry {
+        cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+            if {
+                let (origin, direction) = line_pcurve.parts();
+                *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0)
+                    && *direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
     assert!(result
         .ir()
         .model

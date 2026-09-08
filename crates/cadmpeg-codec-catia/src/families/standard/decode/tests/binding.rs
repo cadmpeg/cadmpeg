@@ -191,14 +191,17 @@ fn standard_object_journal_merges_matching_edge_dialects_and_rejects_conflicts()
 
 #[test]
 fn same_cone_generator_requires_an_apex_collinear_endpoint_pair() {
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .unwrap(),
+    );
     assert!(same_cone_generator_pair(
         &cone,
         &cone,
@@ -294,11 +297,14 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
             source_object: None,
         },
     ];
-    let left = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let left = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let right = SurfaceGeometry::Unknown { record: None };
     assert_eq!(
         standard_circle_endpoint_candidates(
@@ -448,26 +454,35 @@ fn canonical_periodic_range_snaps_roundoff_at_the_turn_seam() {
 
 #[test]
 fn coincident_planes_do_not_impose_a_line_direction() {
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     assert!(intersection_line_direction(&plane, &plane).is_none());
 }
 
 #[test]
 fn plane_intersection_preserves_tiny_nonzero_direction() {
-    let left = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(1.0, 0.0, 0.0),
-        u_axis: Vector3::new(0.0, 1.0, 0.0),
-    };
-    let right = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(1.0, 1e-200, 0.0),
-        u_axis: Vector3::new(0.0, 0.0, 1.0),
-    };
+    let left = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let right = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1e-200, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+    );
     assert_eq!(
         intersection_line_direction(&left, &right),
         Some(Vector3::new(0.0, 0.0, 1e-200))
@@ -490,22 +505,33 @@ fn plane_intersection_preserves_tiny_nonzero_angle_and_finite_origin() {
 
 #[test]
 fn cylinder_generator_direction_requires_compatible_support_axes() {
-    let cylinder = |axis| SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis,
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
+    let cylinder = |axis| {
+        SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                axis,
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        )
     };
-    let containing_plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let transverse_plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let containing_plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let transverse_plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let axial = cylinder(Vector3::new(0.0, 0.0, 1.0));
     let oblique = cylinder(Vector3::new(0.0, 1.0, 0.0));
 
@@ -563,10 +589,10 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
     }];
 
     let associated = associate_standard_freeform_e5_surfaces(&records, &stream);
-    assert!(matches!(
-        associated.get(&7),
-        Some(SurfaceGeometry::Torus { .. })
-    ));
+    assert!(match associated.get(&7) {
+        Some(SurfaceGeometry::Torus(_)) => true,
+        _ => false,
+    });
 }
 
 #[test]
@@ -652,11 +678,14 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
@@ -704,11 +733,14 @@ fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
 
 #[test]
 fn standard_plane_line_inverts_to_exact_parameter_line() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -727,10 +759,13 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(
         geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-            direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                cadmpeg_ir::math::Point2::new(3.0, 4.0)
+            )
+            .unwrap()
+        )
     );
 }
 
@@ -752,11 +787,14 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         ]);
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model.faces.push(Face {
@@ -842,11 +880,14 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
 
 #[test]
 fn standard_plane_circle_pcurve_preserves_contained_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
     let support = StandardCurveSupport {
@@ -855,12 +896,15 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Circle { center, radius },
     };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    };
+    let carrier = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            center,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    );
     let start = Point3::new(radius, 0.0, 0.0);
     let end = Point3::new(0.0, radius, 0.0);
     let (geometry, range) =
@@ -876,11 +920,14 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
 
 #[test]
 fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
     let start = Point3::new(radius, 0.0, 0.0);
@@ -890,12 +937,15 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Circle { center, radius },
     };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    };
+    let carrier = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            center,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    );
     let (geometry, range) =
         standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
             .expect("closed contained plane circle pcurve");
@@ -920,12 +970,15 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
 
 #[test]
 fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() {
-    let surface = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
+    let surface = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .unwrap(),
+    );
     let section_radius = 21.0_f64.sqrt();
     let support = StandardCurveSupport {
         pos: 0,
@@ -956,11 +1009,14 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let support = StandardCurveSupport {
@@ -985,29 +1041,38 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     );
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
-    assert!(matches!(
-        ir.model.curves.iter().find(|candidate| candidate.id == curve),
+    assert!(match ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == curve)
+    {
         Some(Curve {
-            geometry: CurveGeometry::Circle {
-                axis,
-                ref_direction,
-                radius,
-                ..
-            },
+            geometry: CurveGeometry::Circle(circle_curve),
             ..
-        }) if *axis == Vector3::new(0.0, 0.0, 1.0)
-            && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && *radius == 2.0
-    ));
+        }) if {
+            let (_, axis, ref_direction, radius) = circle_curve.parts();
+            *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 2.0
+        } =>
+        {
+            true
+        }
+        _ => false,
+    });
 }
 
 #[test]
 fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let center = Point3::new(0.0, 0.0, 1.0);
     let radius = 2.0_f64.sqrt();
     let support = StandardCurveSupport {
@@ -1016,12 +1081,15 @@ fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Circle { center, radius },
     };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(1.0, 0.0, 0.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius,
-    };
+    let carrier = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            center,
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    );
     assert!(standard_pcurve_geometry(
         &surface,
         &support,
@@ -1035,11 +1103,14 @@ fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
 
 #[test]
 fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
     let support = StandardCurveSupport {
@@ -1048,12 +1119,15 @@ fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Circle { center, radius },
     };
-    let carrier = CurveGeometry::Circle {
-        center,
-        axis: Vector3::new(1.0, 0.0, 0.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius,
-    };
+    let carrier = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            center,
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    );
     assert!(standard_pcurve_geometry(
         &surface,
         &support,
@@ -1067,11 +1141,14 @@ fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
 
 #[test]
 fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1080,10 +1157,13 @@ fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
     };
     let start = Point3::new(2.0, 4.0, 3.0);
     let end = Point3::new(5.0, 8.0, 3.0);
-    let carrier = CurveGeometry::Line {
-        origin: start,
-        direction: Vector3::new(3.0, 4.0, 0.0),
-    };
+    let carrier = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            start,
+            Vector3::new(3.0, 4.0, 0.0).unit().unwrap(),
+        )
+        .unwrap(),
+    );
     let (geometry, range) =
         standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
             .expect("solved spline line pcurve");
@@ -1091,20 +1171,23 @@ fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(
         geometry,
-        PcurveGeometry::Line {
-            origin: Point2::new(1.0, 2.0),
-            direction: Point2::new(3.0, 4.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(3.0, 4.0))
+                .unwrap()
+        )
     );
 }
 
 #[test]
 fn standard_pcurve_rejects_endpoints_outside_the_face_carrier() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1125,14 +1208,17 @@ fn standard_pcurve_rejects_endpoints_outside_the_face_carrier() {
 #[test]
 fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
     for half_angle in [0.25f64, 1e-200] {
-        let surface = SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle,
-        };
+        let surface = SurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::ConeSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.0,
+                1.0,
+                half_angle,
+            )
+            .unwrap(),
+        );
         let support = StandardCurveSupport {
             pos: 0,
             tag: 1,
@@ -1153,10 +1239,13 @@ fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
         assert_eq!(range, [0.0, 1.0]);
         assert_eq!(
             geometry,
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-                direction: cadmpeg_ir::math::Point2::new(0.0, height),
-            }
+            PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
+                    cadmpeg_ir::math::Point2::new(0.0, height)
+                )
+                .unwrap()
+            )
         );
     }
 }
@@ -1165,14 +1254,17 @@ fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
 fn standard_cone_latitude_inverts_to_isoparametric_line() {
     let half_angle = 0.25f64;
     let radius = 3.0 + 2.0 * half_angle.tan();
-    let surface = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-        ratio: 1.0,
-        half_angle,
-    };
+    let surface = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            1.0,
+            half_angle,
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1194,21 +1286,27 @@ fn standard_cone_latitude_inverts_to_isoparametric_line() {
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(
         geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 2.0),
-            direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 2.0),
+                cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0)
+            )
+            .unwrap()
+        )
     );
 }
 
 #[test]
 fn standard_cylinder_witness_selects_complementary_arc() {
-    let surface = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let surface = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1229,21 +1327,27 @@ fn standard_cylinder_witness_selects_complementary_arc() {
     .expect("witnessed cylinder section");
     assert_eq!(
         geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-            direction: cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 3.0),
+                cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,)
+            )
+            .unwrap()
+        )
     );
 }
 
 #[test]
 fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
-    let surface = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let surface = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1264,22 +1368,28 @@ fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
     .expect("endpoint-aligned witness does not reject the arc");
     assert_eq!(
         geometry,
-        PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(std::f64::consts::PI, 3.0),
-            direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(std::f64::consts::PI, 3.0),
+                cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0)
+            )
+            .unwrap()
+        )
     );
 }
 
 #[test]
 fn standard_torus_witness_selects_complementary_latitude_arc() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 5.0,
-        minor_radius: 2.0,
-    };
+    let surface = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+            2.0,
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1298,12 +1408,13 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         None,
     )
     .expect("witnessed torus latitude");
-    let PcurveGeometry::Line { origin, direction } = geometry else {
+    let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus chart line");
     };
-    assert_eq!(origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
+    let (origin, direction) = line_pcurve.parts();
+    assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(
-        direction,
+        *direction,
         cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
     );
     let range = circle_parameter_range_from_surface_branch(
@@ -1314,8 +1425,8 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         Vector3::new(1.0, 0.0, 0.0),
         Point3::new(7.0, 0.0, 0.0),
         Point3::new(0.0, 7.0, 0.0),
-        origin,
-        direction,
+        *origin,
+        *direction,
     )
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -1323,13 +1434,16 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
 
 #[test]
 fn standard_torus_witness_selects_complementary_meridian_arc() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 5.0,
-        minor_radius: 2.0,
-    };
+    let surface = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+            2.0,
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1345,12 +1459,13 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     let (geometry, _) =
         standard_pcurve_geometry(&surface, &support, start, end, Some(witness), None)
             .expect("witnessed torus meridian");
-    let PcurveGeometry::Line { origin, direction } = geometry else {
+    let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus meridian chart line");
     };
+    let (origin, direction) = line_pcurve.parts();
     let long_sweep = std::f64::consts::FRAC_PI_2 - std::f64::consts::TAU;
-    assert_eq!(origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
-    assert_eq!(direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
+    assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
+    assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
 
     let range = circle_parameter_range_from_surface_branch(
         &surface,
@@ -1360,8 +1475,8 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         Vector3::new(1.0, 0.0, 0.0),
         start,
         end,
-        origin,
-        direction,
+        *origin,
+        *direction,
     )
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
@@ -1379,12 +1494,15 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
     let radius = 5.0;
     let ring = radius * latitude.cos();
     let height = radius * latitude.sin();
-    let surface = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    };
+    let surface = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    );
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -1403,9 +1521,10 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
         None,
     )
     .expect("sphere latitude pcurve");
-    let PcurveGeometry::Line { origin, direction } = geometry else {
+    let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected line pcurve");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - latitude).abs() < 1.0e-12);
     assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -1416,13 +1535,16 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
 fn generated_analytic_curve_ranges_use_angular_parameters() {
     const ANGLE_TOLERANCE: f64 = 1e-12;
 
-    let geometry = CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 2.0,
-    };
+    let geometry = CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            2.0,
+        )
+        .unwrap(),
+    );
     let start = curve_point(&geometry, 0.0).expect("ellipse start");
     let end = curve_point(&geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");
     let witness = curve_point(&geometry, 0.75 * std::f64::consts::PI).expect("ellipse witness");

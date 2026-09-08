@@ -101,6 +101,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
+            let Ok(sphere_surface) = cadmpeg_ir::geometry::SphereSurface::try_new(
+                Point3::new(center[0], center[1], center[2]),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            ) else {
+                continue;
+            };
             annotate(
                 annotations,
                 &id,
@@ -111,12 +119,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: SurfaceGeometry::Sphere {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
-                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                    radius,
-                },
+                geometry: SurfaceGeometry::Sphere(sphere_surface),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("{}:{}", section.name, row.id),
@@ -193,6 +196,40 @@ pub(in super::super) fn transfer_positional_tori(
         }) else {
             continue;
         };
+        let geometry = if frame.major_radius == 0.0 {
+            SurfaceGeometry::Sphere(
+                match cadmpeg_ir::geometry::SphereSurface::try_new(
+                    Point3::new(frame.center[0], frame.center[1], frame.center[2]),
+                    Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    Vector3::new(
+                        frame.ref_direction[0],
+                        frame.ref_direction[1],
+                        frame.ref_direction[2],
+                    ),
+                    frame.minor_radius,
+                ) {
+                    Ok(payload) => payload,
+                    Err(_) => continue,
+                },
+            )
+        } else {
+            SurfaceGeometry::Torus(
+                match cadmpeg_ir::geometry::TorusSurface::try_new(
+                    Point3::new(frame.center[0], frame.center[1], frame.center[2]),
+                    Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    Vector3::new(
+                        frame.ref_direction[0],
+                        frame.ref_direction[1],
+                        frame.ref_direction[2],
+                    ),
+                    frame.major_radius,
+                    frame.minor_radius,
+                ) {
+                    Ok(payload) => payload,
+                    Err(_) => continue,
+                },
+            )
+        };
         annotate(
             annotations,
             &id,
@@ -201,30 +238,6 @@ pub(in super::super) fn transfer_positional_tori(
             "positional_torus_frame",
             Exactness::Derived,
         );
-        let geometry = if frame.major_radius == 0.0 {
-            SurfaceGeometry::Sphere {
-                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
-                ref_direction: Vector3::new(
-                    frame.ref_direction[0],
-                    frame.ref_direction[1],
-                    frame.ref_direction[2],
-                ),
-                radius: frame.minor_radius,
-            }
-        } else {
-            SurfaceGeometry::Torus {
-                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
-                ref_direction: Vector3::new(
-                    frame.ref_direction[0],
-                    frame.ref_direction[1],
-                    frame.ref_direction[2],
-                ),
-                major_radius: frame.major_radius,
-                minor_radius: frame.minor_radius,
-            }
-        };
         ir.model.surfaces.push(Surface {
             id,
             geometry,
@@ -299,6 +312,27 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id
         ))
         .expect("identity grammar");
+        let Ok(line_curve) = cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(
+                frame.directrix[0][0],
+                frame.directrix[0][1],
+                frame.directrix[0][2],
+            ),
+            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+        ) else {
+            continue;
+        };
+        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(
+                frame.directrix[0][0],
+                frame.directrix[0][1],
+                frame.directrix[0][2],
+            ),
+            Vector3::new(normal[0], normal[1], normal[2]),
+            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &curve_id,
@@ -325,14 +359,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         );
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(
-                    frame.directrix[0][0],
-                    frame.directrix[0][1],
-                    frame.directrix[0][2],
-                ),
-                direction: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-            },
+            geometry: CurveGeometry::Line(line_curve),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:surface_directrix#{}", record.surface_id),
@@ -345,15 +372,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         });
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(
-                    frame.directrix[0][0],
-                    frame.directrix[0][1],
-                    frame.directrix[0][2],
-                ),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-            },
+            geometry: SurfaceGeometry::Plane(plane_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", record.surface_id),

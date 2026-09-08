@@ -709,63 +709,67 @@ pub(crate) fn reverse_pcurve_over_range(
         (value.u.is_finite() && value.v.is_finite()).then_some(value)
     };
     match pcurve {
-        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
-            origin: Point2::new(
-                origin.u + reflection * direction.u,
-                origin.v + reflection * direction.v,
-            ),
-            direction: Point2::new(-direction.u, -direction.v),
-        }),
-        PcurveGeometry::PolarHarmonic {
-            radial_center,
-            radial_cos,
-            radial_sin,
-            axial_origin,
-            axial_cos,
-            axial_sin,
-        } => {
+        PcurveGeometry::Line(line_pcurve) => {
+            let (origin, direction) = line_pcurve.parts();
+            Some(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(
+                        origin.u + reflection * direction.u,
+                        origin.v + reflection * direction.v,
+                    ),
+                    Point2::new(-direction.u, -direction.v),
+                )
+                .ok()?,
+            ))
+        }
+        PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve) => {
+            let (radial_center, radial_cos, radial_sin, axial_origin, axial_cos, axial_sin) =
+                polar_harmonic_pcurve.parts();
             let cosine = reflection.cos();
             let sine = reflection.sin();
-            Some(PcurveGeometry::PolarHarmonic {
-                radial_center: *radial_center,
-                radial_cos: Point2::new(
-                    cosine * radial_cos.u + sine * radial_sin.u,
-                    cosine * radial_cos.v + sine * radial_sin.v,
-                ),
-                radial_sin: Point2::new(
-                    sine * radial_cos.u - cosine * radial_sin.u,
-                    sine * radial_cos.v - cosine * radial_sin.v,
-                ),
-                axial_origin: *axial_origin,
-                axial_cos: cosine * axial_cos + sine * axial_sin,
-                axial_sin: sine * axial_cos - cosine * axial_sin,
-            })
+            Some(PcurveGeometry::PolarHarmonic(
+                cadmpeg_ir::geometry::PolarHarmonicPcurve::try_new(
+                    *radial_center,
+                    Point2::new(
+                        cosine * radial_cos.u + sine * radial_sin.u,
+                        cosine * radial_cos.v + sine * radial_sin.v,
+                    ),
+                    Point2::new(
+                        sine * radial_cos.u - cosine * radial_sin.u,
+                        sine * radial_cos.v - cosine * radial_sin.v,
+                    ),
+                    *axial_origin,
+                    cosine * axial_cos + sine * axial_sin,
+                    sine * axial_cos - cosine * axial_sin,
+                )
+                .ok()?,
+            ))
         }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine: source_cosine,
-            sine: source_sine,
-        } => {
+        PcurveGeometry::Harmonic(harmonic_pcurve) => {
+            let (center, source_cosine, source_sine) = harmonic_pcurve.parts();
             let cosine = reflection.cos();
             let sine = reflection.sin();
-            Some(PcurveGeometry::Harmonic {
-                center: *center,
-                cosine: combine(*source_cosine, cosine, *source_sine, sine)?,
-                sine: combine(*source_cosine, sine, *source_sine, -cosine)?,
-            })
+            Some(PcurveGeometry::Harmonic(
+                cadmpeg_ir::geometry::HarmonicPcurve::try_new(
+                    *center,
+                    combine(*source_cosine, cosine, *source_sine, sine)?,
+                    combine(*source_cosine, sine, *source_sine, -cosine)?,
+                )
+                .ok()?,
+            ))
         }
-        PcurveGeometry::Hyperbolic {
-            center,
-            cosine: source_cosine,
-            sine: source_sine,
-        } => {
+        PcurveGeometry::Hyperbolic(hyperbolic_pcurve) => {
+            let (center, source_cosine, source_sine) = hyperbolic_pcurve.parts();
             let cosine = reflection.cosh();
             let sine = reflection.sinh();
-            Some(PcurveGeometry::Hyperbolic {
-                center: *center,
-                cosine: combine(*source_cosine, cosine, *source_sine, sine)?,
-                sine: combine(*source_cosine, -sine, *source_sine, -cosine)?,
-            })
+            Some(PcurveGeometry::Hyperbolic(
+                cadmpeg_ir::geometry::HyperbolicPcurve::try_new(
+                    *center,
+                    combine(*source_cosine, cosine, *source_sine, sine)?,
+                    combine(*source_cosine, -sine, *source_sine, -cosine)?,
+                )
+                .ok()?,
+            ))
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
             let reversed_knots = nurbs
@@ -814,30 +818,26 @@ pub(crate) fn reverse_pcurve_over_range(
                 .flatten()
                 .map(|nurbs| PcurveGeometry::PolarNurbs { nurbs })
         }
-        PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin,
-            azimuth_rate,
-            plane_phase,
-            plane_slope,
-        } => {
+        PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
+            let (azimuth_origin, azimuth_rate, plane_phase, plane_slope) =
+                spherical_great_circle_pcurve.parts();
             let reversed_origin = azimuth_origin + azimuth_rate * reflection;
             let reversed_rate = -*azimuth_rate;
             [reversed_origin, reversed_rate, *plane_phase, *plane_slope]
                 .into_iter()
                 .all(f64::is_finite)
-                .then_some(PcurveGeometry::SphericalGreatCircle {
-                    azimuth_origin: reversed_origin,
-                    azimuth_rate: reversed_rate,
-                    plane_phase: *plane_phase,
-                    plane_slope: *plane_slope,
-                })
+                .then_some(PcurveGeometry::SphericalGreatCircle(
+                    cadmpeg_ir::geometry::SphericalGreatCirclePcurve::try_new(
+                        reversed_origin,
+                        reversed_rate,
+                        *plane_phase,
+                        *plane_slope,
+                    )
+                    .ok()?,
+                ))
         }
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            y_axis,
-            radius,
-        } => {
+        PcurveGeometry::Circle(circle_pcurve) => {
+            let (center, x_axis, y_axis, radius) = circle_pcurve.parts();
             let cosine = reflection.cos();
             let sine = reflection.sin();
             let reversed_x = Point2::new(
@@ -851,12 +851,12 @@ pub(crate) fn reverse_pcurve_over_range(
             [reversed_x.u, reversed_x.v, reversed_y.u, reversed_y.v]
                 .into_iter()
                 .all(f64::is_finite)
-                .then_some(PcurveGeometry::Circle {
-                    center: *center,
-                    x_axis: reversed_x,
-                    y_axis: reversed_y,
-                    radius: *radius,
-                })
+                .then_some(PcurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CirclePcurve::try_new(
+                        *center, reversed_x, reversed_y, *radius,
+                    )
+                    .ok()?,
+                ))
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let reversed_knots = nurbs
@@ -889,78 +889,85 @@ pub(crate) fn reverse_pcurve_over_range(
                 .flatten()
                 .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
         }
-        PcurveGeometry::Trimmed {
-            parameter_range,
-            basis,
-            same_sense,
-        } => Some(PcurveGeometry::Trimmed {
-            parameter_range: *parameter_range,
-            same_sense: *same_sense,
-            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
-        }),
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let (parameter_range, same_sense, basis) = trimmed_pcurve.parts();
+            Some(PcurveGeometry::Trimmed(
+                cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+                    *parameter_range,
+                    *same_sense,
+                    Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+                )
+                .ok()?,
+            ))
+        }
         PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {
             basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
             transform: *transform,
         }),
-        PcurveGeometry::Offset { distance, basis } => Some(PcurveGeometry::Offset {
-            distance: -*distance,
-            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
-        }),
-        PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } if reflection == 0.0 => Some(PcurveGeometry::Ellipse {
-            center: *center,
-            x_axis: *x_axis,
-            y_axis: Point2::new(-y_axis.u, -y_axis.v),
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        }),
-        PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
+        PcurveGeometry::Offset(offset_pcurve) => {
+            let (distance, basis) = offset_pcurve.parts();
+            Some(PcurveGeometry::Offset(
+                cadmpeg_ir::geometry::OffsetPcurve::try_new(
+                    -*distance,
+                    Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+                )
+                .ok()?,
+            ))
+        }
+        PcurveGeometry::Ellipse(ellipse_pcurve) if { reflection == 0.0 } => {
+            let (center, x_axis, y_axis, major_radius, minor_radius) = ellipse_pcurve.parts();
+            Some(PcurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                    *center,
+                    *x_axis,
+                    Point2::new(-y_axis.u, -y_axis.v),
+                    *major_radius,
+                    *minor_radius,
+                )
+                .ok()?,
+            ))
+        }
+        PcurveGeometry::Ellipse(ellipse_pcurve) => {
+            let (center, x_axis, y_axis, major_radius, minor_radius) = ellipse_pcurve.parts();
             let cosine = reflection.cos();
             let sine = reflection.sin();
-            Some(PcurveGeometry::Harmonic {
-                center: *center,
-                cosine: combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
-                sine: combine(
-                    *x_axis,
-                    major_radius * sine,
-                    *y_axis,
-                    -minor_radius * cosine,
-                )?,
-            })
+            Some(PcurveGeometry::Harmonic(
+                cadmpeg_ir::geometry::HarmonicPcurve::try_new(
+                    *center,
+                    combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
+                    combine(
+                        *x_axis,
+                        major_radius * sine,
+                        *y_axis,
+                        -minor_radius * cosine,
+                    )?,
+                )
+                .ok()?,
+            ))
         }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            focal_distance,
-        } if reflection == 0.0 => Some(PcurveGeometry::Parabola {
-            vertex: *vertex,
-            x_axis: *x_axis,
-            y_axis: Point2::new(-y_axis.u, -y_axis.v),
-            focal_distance: *focal_distance,
-        }),
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            focal_distance,
-        } if start.is_finite()
-            && end.is_finite()
-            && start < end
-            && focal_distance.is_finite()
-            && *focal_distance != 0.0 =>
+        PcurveGeometry::Parabola(parabola_pcurve) if { reflection == 0.0 } => {
+            let (vertex, x_axis, y_axis, focal_distance) = parabola_pcurve.parts();
+            Some(PcurveGeometry::Parabola(
+                cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                    *vertex,
+                    *x_axis,
+                    Point2::new(-y_axis.u, -y_axis.v),
+                    *focal_distance,
+                )
+                .ok()?,
+            ))
+        }
+        PcurveGeometry::Parabola(parabola_pcurve)
+            if {
+                let (_, _, _, focal_distance) = parabola_pcurve.parts();
+                start.is_finite()
+                    && end.is_finite()
+                    && start < end
+                    && focal_distance.is_finite()
+                    && *focal_distance != 0.0
+            } =>
         {
+            let (vertex, x_axis, y_axis, focal_distance) = parabola_pcurve.parts();
             let point = |parameter: f64| {
                 let axial = parameter * parameter / (4.0 * focal_distance);
                 Point2::new(
@@ -995,40 +1002,38 @@ pub(crate) fn reverse_pcurve_over_range(
                 .flatten()
                 .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
         }
-        PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } if reflection == 0.0 => Some(PcurveGeometry::Hyperbola {
-            center: *center,
-            x_axis: *x_axis,
-            y_axis: Point2::new(-y_axis.u, -y_axis.v),
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        }),
-        PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
+        PcurveGeometry::Hyperbola(hyperbola_pcurve) if { reflection == 0.0 } => {
+            let (center, x_axis, y_axis, major_radius, minor_radius) = hyperbola_pcurve.parts();
+            Some(PcurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                    *center,
+                    *x_axis,
+                    Point2::new(-y_axis.u, -y_axis.v),
+                    *major_radius,
+                    *minor_radius,
+                )
+                .ok()?,
+            ))
+        }
+        PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
+            let (center, x_axis, y_axis, major_radius, minor_radius) = hyperbola_pcurve.parts();
             let cosine = reflection.cosh();
             let sine = reflection.sinh();
-            Some(PcurveGeometry::Hyperbolic {
-                center: *center,
-                cosine: combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
-                sine: combine(
-                    *x_axis,
-                    -major_radius * sine,
-                    *y_axis,
-                    -minor_radius * cosine,
-                )?,
-            })
+            Some(PcurveGeometry::Hyperbolic(
+                cadmpeg_ir::geometry::HyperbolicPcurve::try_new(
+                    *center,
+                    combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
+                    combine(
+                        *x_axis,
+                        -major_radius * sine,
+                        *y_axis,
+                        -minor_radius * cosine,
+                    )?,
+                )
+                .ok()?,
+            ))
         }
-        PcurveGeometry::Parabola { .. } => None,
+        PcurveGeometry::Parabola(_) => None,
     }
 }
 
@@ -1225,12 +1230,12 @@ fn opposite_chart_transfer_priority(
         return 3;
     };
     match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-        SurfaceGeometry::Plane { .. }
-        | SurfaceGeometry::Cylinder { .. }
-        | SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. }
-        | SurfaceGeometry::Nurbs(_) => 0,
+        SurfaceGeometry::Plane(_) => 0,
+        SurfaceGeometry::Cylinder(_) => 0,
+        SurfaceGeometry::Cone(_) => 0,
+        SurfaceGeometry::Sphere(_) => 0,
+        SurfaceGeometry::Torus(_) => 0,
+        SurfaceGeometry::Nurbs(_) => 0,
         SurfaceGeometry::Transformed { .. } => 1,
         SurfaceGeometry::Procedural { .. }
             if blend_boundary_transfer_available(index, source_surface, target_surface)
@@ -1362,7 +1367,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         && model_index.curves(owner.as_str()).is_some_and(|curve| {
                             matches!(
                                 curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                                CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+                                CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_)
                             )
                         }) {
                         [0.0, std::f64::consts::TAU]
@@ -1597,7 +1602,7 @@ fn exact_boundary_pcurve_with_index(
     )?;
     if matches!(
         carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Plane(_)
     ) {
         let [first, second] = endpoints.map(|endpoint| {
             analytic_surface_parameters(
@@ -1635,13 +1640,16 @@ fn exact_boundary_pcurve_with_index(
             && direction.v.is_finite()
             && (direction.u != 0.0 || direction.v != 0.0))
             .then_some(())?;
-        let candidate = PcurveGeometry::Line {
-            origin: Point2::new(
-                first.u - direction.u * range[0],
-                first.v - direction.v * range[0],
-            ),
-            direction,
-        };
+        let candidate = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(
+                    first.u - direction.u * range[0],
+                    first.v - direction.v * range[0],
+                ),
+                direction,
+            )
+            .ok()?,
+        );
         return exact_boundary_pcurve_matches_carrier_with_index(
             index,
             curve,
@@ -1656,10 +1664,10 @@ fn exact_boundary_pcurve_with_index(
     }
     if matches!(
         carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
-        SurfaceGeometry::Cylinder { .. }
-            | SurfaceGeometry::Cone { .. }
-            | SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Torus { .. }
+        SurfaceGeometry::Cylinder(_)
+            | SurfaceGeometry::Cone(_)
+            | SurfaceGeometry::Sphere(_)
+            | SurfaceGeometry::Torus(_)
     ) {
         let [first, second] = endpoints.map(|endpoint| {
             analytic_surface_parameters(
@@ -1677,10 +1685,13 @@ fn exact_boundary_pcurve_with_index(
         let parameter_span = range[1] - range[0];
         let varying_scale = (second.v - first.v) / parameter_span;
         (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
-        let candidate = PcurveGeometry::Line {
-            origin: Point2::new(first.u, first.v - varying_scale * range[0]),
-            direction: Point2::new(0.0, varying_scale),
-        };
+        let candidate = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(first.u, first.v - varying_scale * range[0]),
+                Point2::new(0.0, varying_scale),
+            )
+            .ok()?,
+        );
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
             let uv = pcurve_uv(&candidate, parameter)?;
             if !geometry_budget.charge() {
@@ -1776,7 +1787,10 @@ fn exact_boundary_pcurve_with_index(
                     [parameters[0].u, parameters[1].u]
                 };
                 let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
-                (delta.is_finite() && delta != 0.0).then(|| {
+                {
+                    if !(delta.is_finite() && delta != 0.0) {
+                        return None;
+                    }
                     let (origin, direction) = if constant_axis == 0 {
                         (
                             Point2::new(boundary, varying[0] - delta * range[0]),
@@ -1788,8 +1802,10 @@ fn exact_boundary_pcurve_with_index(
                             Point2::new(delta, 0.0),
                         )
                     };
-                    PcurveGeometry::Line { origin, direction }
-                })
+                    cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction)
+                        .ok()
+                        .map(PcurveGeometry::Line)
+                }
             })
         })
         .filter(|candidate| {
@@ -1858,7 +1874,7 @@ pub(crate) fn exact_boundary_curve_breaks(
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
     let mut breaks = match geometry {
-        CurveGeometry::Line { .. } => range.to_vec(),
+        CurveGeometry::Line(_) => range.to_vec(),
         CurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -1922,21 +1938,23 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         .solved_cache()
         .unwrap_or(&curve_carrier.geometry)
     {
-        CurveGeometry::Circle { radius, .. } => radius.abs(),
-        CurveGeometry::Ellipse {
-            major_radius,
-            minor_radius,
-            ..
-        } => major_radius.abs().max(minor_radius.abs()),
+        CurveGeometry::Circle(circle_curve) => {
+            let (_, _, _, radius) = circle_curve.parts();
+            radius.abs()
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            major_radius.abs().max(minor_radius.abs())
+        }
         _ => return None,
     };
     let surface_carrier = index.surfaces(surface.as_str())?;
     matches!(
         surface_carrier.geometry,
-        SurfaceGeometry::Cylinder { .. }
-            | SurfaceGeometry::Cone { .. }
-            | SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Torus { .. }
+        SurfaceGeometry::Cylinder(_)
+            | SurfaceGeometry::Cone(_)
+            | SurfaceGeometry::Sphere(_)
+            | SurfaceGeometry::Torus(_)
     )
     .then_some(())?;
     let periods = surface_parameter_periods_with_index(index, surface);
@@ -1995,13 +2013,16 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     };
     (((*varying_scale).abs() - 1.0).abs() <= angular_tolerance).then_some(())?;
     *varying_scale = varying_scale.signum();
-    let candidate = PcurveGeometry::Line {
-        origin: Point2::new(
-            first.u - direction.u * range[0],
-            first.v - direction.v * range[0],
-        ),
-        direction,
-    };
+    let candidate = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(
+            Point2::new(
+                first.u - direction.u * range[0],
+                first.v - direction.v * range[0],
+            ),
+            direction,
+        )
+        .ok()?,
+    );
     let parameter = range[0];
     let uv = pcurve_uv(&candidate, parameter)?;
     geometry_budget.charge().then_some(())?;
@@ -2186,14 +2207,16 @@ fn boundary_curve_affine_breaks_with_index(
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
     let carrier = index.surfaces(surface.as_str())?;
-    let PcurveGeometry::Line { origin, direction } = pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
+    let (origin, direction) = line_pcurve.parts();
     match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        SurfaceGeometry::Plane { .. } => Some(range.to_vec()),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
-            if direction.u == 0.0 && direction.v != 0.0 =>
-        {
+        SurfaceGeometry::Plane(_) => Some(range.to_vec()),
+        SurfaceGeometry::Cylinder(_) if { direction.u == 0.0 && direction.v != 0.0 } => {
+            Some(range.to_vec())
+        }
+        SurfaceGeometry::Cone(_) if { direction.u == 0.0 && direction.v != 0.0 } => {
             Some(range.to_vec())
         }
         SurfaceGeometry::Nurbs(nurbs) => {
@@ -2245,9 +2268,10 @@ fn boundary_curve_speed_bound_with_index(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
     let carrier = index.surfaces(surface.as_str())?;
-    let PcurveGeometry::Line { origin, direction } = pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
+    let (origin, direction) = line_pcurve.parts();
     let affine_speed = || {
         let first = decoded_surface_point_inner_with_budget(
             index,
@@ -2269,44 +2293,42 @@ fn boundary_curve_speed_bound_with_index(
         speed.is_finite().then_some(speed)
     };
     match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-        SurfaceGeometry::Plane { .. } => affine_speed(),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
-            if direction.u == 0.0 && direction.v != 0.0 =>
-        {
+        SurfaceGeometry::Plane(_) => affine_speed(),
+        SurfaceGeometry::Cylinder(_) if { direction.u == 0.0 && direction.v != 0.0 } => {
             affine_speed()
         }
-        SurfaceGeometry::Cylinder { radius, .. } if direction.v == 0.0 && direction.u != 0.0 => {
+        SurfaceGeometry::Cone(_) if { direction.u == 0.0 && direction.v != 0.0 } => affine_speed(),
+        SurfaceGeometry::Cylinder(cylinder_surface)
+            if { direction.v == 0.0 && direction.u != 0.0 } =>
+        {
+            let (_, _, _, radius) = cylinder_surface.parts();
             let speed = radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Cone {
-            radius,
-            ratio,
-            half_angle,
-            ..
-        } if direction.v == 0.0 && direction.u != 0.0 => {
+        SurfaceGeometry::Cone(cone_surface) if { direction.v == 0.0 && direction.u != 0.0 } => {
+            let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
             let local_radius = radius + origin.v * half_angle.tan();
             let speed = local_radius.abs() * ratio.abs().max(1.0) * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Sphere { radius, .. } if direction.v == 0.0 && direction.u != 0.0 => {
+        SurfaceGeometry::Sphere(sphere_surface) if { direction.v == 0.0 && direction.u != 0.0 } => {
+            let (_, _, _, radius) = sphere_surface.parts();
             let speed = radius.abs() * origin.v.cos().abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Sphere { radius, .. } if direction.u == 0.0 && direction.v != 0.0 => {
+        SurfaceGeometry::Sphere(sphere_surface) if { direction.u == 0.0 && direction.v != 0.0 } => {
+            let (_, _, _, radius) = sphere_surface.parts();
             let speed = radius.abs() * direction.v.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } if direction.v == 0.0 && direction.u != 0.0 => {
+        SurfaceGeometry::Torus(torus_surface) if { direction.v == 0.0 && direction.u != 0.0 } => {
+            let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
             let ring_radius = major_radius + minor_radius * origin.v.cos();
             let speed = ring_radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
-        SurfaceGeometry::Torus { minor_radius, .. } if direction.u == 0.0 && direction.v != 0.0 => {
+        SurfaceGeometry::Torus(torus_surface) if { direction.u == 0.0 && direction.v != 0.0 } => {
+            let (_, _, _, _, minor_radius) = torus_surface.parts();
             let speed = minor_radius.abs() * direction.v.abs();
             speed.is_finite().then_some(speed)
         }
@@ -3760,10 +3782,13 @@ mod tests {
         });
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id,
-            geometry: PcurveGeometry::Line {
-                origin: Point2::new(0.0, 0.0),
-                direction: Point2::new(1.0, 0.0),
-            },
+            geometry: PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
         });
 
@@ -3786,10 +3811,13 @@ mod tests {
         assert_eq!(
             context.sides[1].pcurve,
             Some(
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                }
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 0.0),
+                        Point2::new(1.0, 0.0)
+                    )
+                    .unwrap()
+                )
                 .into()
             )
         );

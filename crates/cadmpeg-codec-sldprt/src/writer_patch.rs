@@ -329,11 +329,11 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
 
 fn surface_class(value: &SurfaceGeometry) -> u8 {
     match value {
-        SurfaceGeometry::Plane { .. } => 0,
-        SurfaceGeometry::Cylinder { .. } => 1,
-        SurfaceGeometry::Cone { .. } => 2,
-        SurfaceGeometry::Sphere { .. } => 3,
-        SurfaceGeometry::Torus { .. } => 4,
+        SurfaceGeometry::Plane(_) => 0,
+        SurfaceGeometry::Cylinder(_) => 1,
+        SurfaceGeometry::Cone(_) => 2,
+        SurfaceGeometry::Sphere(_) => 3,
+        SurfaceGeometry::Torus(_) => 4,
         SurfaceGeometry::Nurbs(_) => 5,
         SurfaceGeometry::Unknown { .. } => 6,
         SurfaceGeometry::Procedural { .. } => 7,
@@ -344,13 +344,13 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
 
 fn curve_class(value: &CurveGeometry) -> u8 {
     match value {
-        CurveGeometry::Line { .. } => 0,
-        CurveGeometry::Circle { .. } => 1,
-        CurveGeometry::Ellipse { .. } => 2,
+        CurveGeometry::Line(_) => 0,
+        CurveGeometry::Circle(_) => 1,
+        CurveGeometry::Ellipse(_) => 2,
         CurveGeometry::Nurbs(_) => 3,
-        CurveGeometry::Parabola { .. } => 4,
-        CurveGeometry::Hyperbola { .. } => 5,
-        CurveGeometry::Degenerate { .. } => 6,
+        CurveGeometry::Parabola(_) => 4,
+        CurveGeometry::Hyperbola(_) => 5,
+        CurveGeometry::Degenerate(_) => 6,
         CurveGeometry::Unknown { .. } => 7,
         CurveGeometry::Procedural { .. } => 8,
         CurveGeometry::Transformed { .. } => 8,

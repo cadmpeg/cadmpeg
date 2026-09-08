@@ -108,14 +108,11 @@ fn project_brep(
         .collect::<HashMap<_, _>>();
 
     for (face_ordinal, face) in brep.faces.iter().enumerate() {
-        let Some(SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        }) = surfaces.get(&face.surface).copied()
+        let Some(SurfaceGeometry::Plane(plane_surface)) = surfaces.get(&face.surface).copied()
         else {
             continue;
         };
+        let (origin, normal, u_axis) = plane_surface.parts();
         let sketch_id = SketchId(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
         ));

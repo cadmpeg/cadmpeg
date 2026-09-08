@@ -33,11 +33,14 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     assert!(matches!(
@@ -46,7 +49,13 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
     ));
 
     match &mut ir.model.surfaces[0].geometry {
-        SurfaceGeometry::Plane { origin, .. } => origin.y = 2.0,
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            let mut origin = *origin;
+            origin.y = 2.0;
+            *plane_surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+        }
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
@@ -74,11 +83,14 @@ fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
 fn plane_surface(origin_y: f64) -> Surface {
     Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, origin_y, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, origin_y, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     }
 }

@@ -176,12 +176,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .expect("identity grammar");
         model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(ordinal as f64, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.55,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(ordinal as f64, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.55,
+                )
+                .unwrap(),
+            ),
             source_object: None::<SourceObjectAssociation>,
         });
         model.faces.push(Face {
@@ -214,12 +217,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .expect("identity grammar");
             model.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Circle {
-                    center: Point3::new(ordinal as f64, boundary as f64, 0.0),
-                    axis: Vector3::new(0.0, 1.0, 0.0),
-                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                    radius: 2.55,
-                },
+                geometry: CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(ordinal as f64, boundary as f64, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        2.55,
+                    )
+                    .unwrap(),
+                ),
                 source_object: None,
             });
             model.edges.push(Edge {
@@ -328,11 +334,16 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             },
         )])
     );
-    let SurfaceGeometry::Cylinder { origin, .. } = &mut single_hole.model.surfaces[1].geometry
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut single_hole.model.surfaces[1].geometry
     else {
         unreachable!()
     };
+    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    let mut origin = *origin;
     origin.y = 91.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+            .unwrap();
     assert_eq!(
         super::super::hole_axis_placements_for_operations(
             &single_hole,
@@ -348,21 +359,31 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         )])
     );
     let mut opposite_axis = single_hole.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut opposite_axis.model.surfaces[1].geometry
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut opposite_axis.model.surfaces[1].geometry
     else {
         unreachable!()
     };
-    *axis = Vector3::new(0.0, -1.0, 0.0);
+    let (origin, _, ref_direction, radius) = cylinder_surface.parts();
+
+    let axis = Vector3::new(0.0, -1.0, 0.0);
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, *radius)
+            .unwrap();
     for curve in opposite_axis.model.curves.iter_mut().filter(|curve| {
         curve
             .id
             .as_str()
             .starts_with("test:model:entity#bore-curve-1-")
     }) {
-        let CurveGeometry::Circle { axis, .. } = &mut curve.geometry else {
+        let CurveGeometry::Circle(circle_curve) = &mut curve.geometry else {
             unreachable!()
         };
-        *axis = Vector3::new(0.0, -1.0, 0.0);
+        let (center, _, ref_direction, radius) = circle_curve.parts();
+
+        let axis = Vector3::new(0.0, -1.0, 0.0);
+        *circle_curve =
+            cadmpeg_ir::geometry::CircleCurve::try_new(*center, axis, *ref_direction, *radius)
+                .unwrap();
     }
     assert_eq!(
         super::super::hole_axis_placements_for_operations(
@@ -379,21 +400,32 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         )])
     );
     let mut different_radii = ir.clone();
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut different_radii.model.surfaces[1].geometry
+    let SurfaceGeometry::Cylinder(cylinder_surface) =
+        &mut different_radii.model.surfaces[1].geometry
     else {
         unreachable!()
     };
-    *radius = 3.1;
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+    let radius = 3.1;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+            .unwrap();
     for curve in different_radii.model.curves.iter_mut().filter(|curve| {
         curve
             .id
             .as_str()
             .starts_with("test:model:entity#bore-curve-1-")
     }) {
-        let CurveGeometry::Circle { radius, .. } = &mut curve.geometry else {
+        let CurveGeometry::Circle(circle_curve) = &mut curve.geometry else {
             unreachable!()
         };
-        *radius = 3.1;
+        let (center, axis, ref_direction, _) = circle_curve.parts();
+
+        let radius = 3.1;
+        *circle_curve =
+            cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius)
+                .unwrap();
     }
     assert!(hole_diameters_for_operations(&different_radii, &operations, &outputs,).is_empty());
     assert!(super::super::hole_body_projection(
@@ -429,26 +461,39 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     )
     .is_empty());
     let mut invalid_boundary = ir.clone();
-    let CurveGeometry::Circle { radius, .. } = &mut invalid_boundary.model.curves[0].geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = &mut invalid_boundary.model.curves[0].geometry else {
         unreachable!()
     };
-    *radius += 0.1;
+    let (center, axis, ref_direction, radius) = circle_curve.parts();
+    let mut radius = *radius;
+    radius += 0.1;
+    *circle_curve =
+        cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius).unwrap();
     assert!(hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty());
     let mut coincident_boundaries = ir.clone();
-    let CurveGeometry::Circle { center, .. } = &mut coincident_boundaries.model.curves[1].geometry
+    let CurveGeometry::Circle(circle_curve) = &mut coincident_boundaries.model.curves[1].geometry
     else {
         unreachable!()
     };
+    let (center, axis, ref_direction, radius) = circle_curve.parts();
+    let mut center = *center;
     center.y = 0.0;
+    *circle_curve =
+        cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, *radius).unwrap();
     assert!(
         hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,).is_empty()
     );
     let mut nonparallel = single_hole.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut nonparallel.model.surfaces[1].geometry else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut nonparallel.model.surfaces[1].geometry
+    else {
         unreachable!()
     };
-    *axis = Vector3::new(0.0, 0.0, 1.0);
+    let (origin, _, ref_direction, radius) = cylinder_surface.parts();
+
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, *radius)
+            .unwrap();
     assert!(super::super::hole_axis_placements_for_operations(
         &nonparallel,
         &single_operation,
@@ -514,20 +559,31 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     });
     distinct.model.faces[1].shell =
         ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut distinct.model.surfaces[1].geometry else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut distinct.model.surfaces[1].geometry
+    else {
         unreachable!()
     };
-    *radius = 3.0;
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+    let radius = 3.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+            .unwrap();
     for curve in distinct.model.curves.iter_mut().filter(|curve| {
         curve
             .id
             .as_str()
             .starts_with("test:model:entity#bore-curve-1-")
     }) {
-        let CurveGeometry::Circle { radius, .. } = &mut curve.geometry else {
+        let CurveGeometry::Circle(circle_curve) = &mut curve.geometry else {
             unreachable!()
         };
-        *radius = 3.0;
+        let (center, axis, ref_direction, _) = circle_curve.parts();
+
+        let radius = 3.0;
+        *circle_curve =
+            cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius)
+                .unwrap();
     }
     let distinct_outputs = std::collections::BTreeMap::from([
         (
@@ -589,14 +645,17 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             ];
             chamfered.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Cone {
-                    origin: Point3::new(bore as f64, end as f64, 0.0),
-                    axis: Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
-                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                    radius: 0.0,
-                    ratio: 1.0,
-                    half_angle: std::f64::consts::FRAC_PI_4,
-                },
+                geometry: SurfaceGeometry::Cone(
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                        Point3::new(bore as f64, end as f64, 0.0),
+                        Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        0.0,
+                        1.0,
+                        std::f64::consts::FRAC_PI_4,
+                    )
+                    .unwrap(),
+                ),
                 source_object: None,
             });
             chamfered.model.shells[0].faces.push(face.clone());
@@ -625,12 +684,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 .expect("identity grammar");
                 chamfered.model.curves.push(Curve {
                     id: curve.clone(),
-                    geometry: CurveGeometry::Circle {
-                        center: Point3::new(bore as f64, end as f64, 0.0),
-                        axis: Vector3::new(0.0, 1.0, 0.0),
-                        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                        radius,
-                    },
+                    geometry: CurveGeometry::Circle(
+                        cadmpeg_ir::geometry::CircleCurve::try_new(
+                            Point3::new(bore as f64, end as f64, 0.0),
+                            Vector3::new(0.0, 1.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            radius,
+                        )
+                        .unwrap(),
+                    ),
                     source_object: None,
                 });
                 chamfered.model.edges.push(Edge {
@@ -686,14 +748,17 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 1.0, 0.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
-            ratio: 0.0,
-            half_angle: 0.0,
-        },
+        geometry: SurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::ConeSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.0,
+                1.0,
+                0.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     unrelated.model.faces.push(Face {
@@ -715,7 +780,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         super::super::simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut unequal_chamfers = chamfered;
-    let CurveGeometry::Circle { radius, .. } = &mut unequal_chamfers
+    let CurveGeometry::Circle(circle_curve) = &mut unequal_chamfers
         .model
         .curves
         .last_mut()
@@ -724,14 +789,23 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     else {
         unreachable!()
     };
-    *radius += 0.1;
+    let (center, axis, ref_direction, radius) = circle_curve.parts();
+    let mut radius = *radius;
+    radius += 0.1;
+    *circle_curve =
+        cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius).unwrap();
     assert!(super::super::simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty());
 
     let mut mismatched = ir;
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut mismatched.model.surfaces[1].geometry
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut mismatched.model.surfaces[1].geometry
     else {
         unreachable!()
     };
-    *radius = 3.0;
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+    let radius = 3.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+            .unwrap();
     assert!(simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty());
 }

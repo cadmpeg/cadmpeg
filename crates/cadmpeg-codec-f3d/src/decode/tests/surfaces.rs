@@ -220,10 +220,15 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .iter_mut()
                 .find(|curve| curve.id == profile)
                 .expect("ruled profile")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
-                direction: cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -303,10 +308,15 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .iter_mut()
                 .find(|curve| curve.id == source)
                 .expect("sum source curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
-                direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
+                    cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -442,10 +452,15 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
-            direction: cadmpeg_ir::math::Vector3::new(5.0, -2.0, 1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
+                cadmpeg_ir::math::Vector3::new(5.0, -2.0, 1.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -684,10 +699,15 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            direction: cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -789,10 +809,15 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter_mut()
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(4.0, -1.0, 2.0),
-            direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(4.0, -1.0, 2.0),
+                cadmpeg_ir::math::Vector3::new(2.0, 3.0, -1.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

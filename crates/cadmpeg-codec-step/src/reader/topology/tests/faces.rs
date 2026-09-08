@@ -42,14 +42,10 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = &surface.geometry
-    else {
+    let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
         panic!("implicit face did not produce a plane");
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
     assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
@@ -71,9 +67,10 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
         .expect("base implicit plane");
-    let SurfaceGeometry::Plane { normal, origin, .. } = base_surface.geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = base_surface.geometry else {
         panic!("base face did not produce a plane");
     };
+    let (&origin, &normal, _) = plane_surface.parts();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(2.0, 1.5, 0.0));
 
@@ -107,9 +104,10 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
         .expect("reversed implicit plane");
-    let SurfaceGeometry::Plane { normal, .. } = reversed_surface.geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = reversed_surface.geometry else {
         panic!("reversed face did not produce a plane");
     };
+    let (_, &normal, _) = plane_surface.parts();
     assert_eq!(normal, Vector3::new(0.0, 0.0, -1.0));
 
     let non_planar = source.replace(
@@ -148,7 +146,10 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     );
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && match surface.geometry {
+                SurfaceGeometry::Plane(_) => true,
+                _ => false,
+            }
     }));
 
     let reordered = source.replace(
@@ -171,7 +172,10 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     );
     assert!(reordered.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && match surface.geometry {
+                SurfaceGeometry::Plane(_) => true,
+                _ => false,
+            }
     }));
     let validation =
         cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone());
@@ -255,7 +259,10 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#28")
         .expect("explicit face plane");
-    assert!(matches!(surface.geometry, SurfaceGeometry::Plane { .. }));
+    assert!(match surface.geometry {
+        SurfaceGeometry::Plane(_) => true,
+        _ => false,
+    });
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -283,9 +290,10 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane { normal, origin, .. } = surface.geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
         panic!("implicit face did not produce a plane");
     };
+    let (&origin, &normal, _) = plane_surface.parts();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(17.0 / 6.0, 17.0 / 6.0, 0.0));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
@@ -424,9 +432,10 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
         panic!("implicit face did not produce a plane");
     };
+    let (_, &normal, _) = plane_surface.parts();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         decoded.ir().model.faces[0].sense,
@@ -528,7 +537,10 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+            && match surface.geometry {
+                SurfaceGeometry::Cylinder(_) => true,
+                _ => false,
+            }
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

@@ -320,9 +320,10 @@ pub(in super::super) fn schema_feature_definition(
                 )
             },
             |hole| {
-                let SurfaceGeometry::Cylinder { origin, radius, .. } = hole.geometry else {
+                let SurfaceGeometry::Cylinder(cylinder_surface) = hole.geometry else {
                     unreachable!("simple hole helper returns a cylinder")
                 };
+                let (&origin, _, _, &radius) = cylinder_surface.parts();
                 (
                     hole.entry_surface_id.map(face_selection),
                     Some(origin),
@@ -765,7 +766,10 @@ fn reconciled_datum_plane_definition(
                 return None;
             };
             match &surface.geometry {
-                SurfaceGeometry::Plane { u_axis, .. } => Some(*u_axis),
+                SurfaceGeometry::Plane(plane_surface) => {
+                    let (_, _, u_axis) = plane_surface.parts();
+                    Some(*u_axis)
+                }
                 _ => None,
             }
         })

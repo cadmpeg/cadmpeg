@@ -487,7 +487,10 @@ Fa
         .find(|pcurve| pcurve.id == *pcurve_id)
         .expect("selected pcurve");
     match &pcurve.geometry {
-        PcurveGeometry::Line { origin, .. } => assert_eq!(origin.v, 0.0),
+        PcurveGeometry::Line(line_pcurve) => {
+            let (origin, _) = line_pcurve.parts();
+            assert_eq!(origin.v, 0.0)
+        }
         geometry => panic!("unexpected pcurve geometry: {geometry:?}"),
     }
 }
@@ -628,12 +631,15 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
 #[test]
 fn occt_parabola_ranges_convert_to_step_parameters() {
-    let geometry = CurveGeometry::Parabola {
-        vertex: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        focal_distance: 4.0,
-    };
+    let geometry = CurveGeometry::Parabola(
+        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         normalize_occt_curve_range(&geometry, Some([-2.0, 4.0])),
         Some([-0.25, 0.5])
@@ -643,12 +649,15 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
 
 #[test]
 fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
-    let geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+    let geometry = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
     let [start, end] =
         normalize_occt_curve_range(&geometry, Some([-1.0e-15, std::f64::consts::FRAC_PI_2]))
             .expect("periodic range");
@@ -1308,10 +1317,10 @@ Co 1001000 +2 1 +2 3 *
     else {
         panic!("located face must retain its exact transformed basis");
     };
-    assert!(matches!(
-        basis.as_ref(),
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
-    ));
+    assert!(match basis.as_ref() {
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(_) => true,
+        _ => false,
+    });
     assert_eq!(transform.rows()[0][0], -2.0);
     assert_eq!(transform.rows()[1][1], 2.0);
     let origin =

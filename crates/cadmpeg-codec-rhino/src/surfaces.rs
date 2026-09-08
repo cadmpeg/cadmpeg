@@ -953,12 +953,15 @@ fn read_plane_surface_with_parameterization(
     } else {
         (domain, v_domain)
     };
-    let plane = SurfaceGeometry::Plane {
-        origin: scale_native_point(native_plane.origin, scale)
-            .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
-        normal: vector(native_plane.zaxis),
-        u_axis: vector(native_plane.xaxis),
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            scale_native_point(native_plane.origin, scale)
+                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+            vector(native_plane.zaxis),
+            vector(native_plane.xaxis),
+        )
+        .map_err(|message| error(reader.position(), message))?,
+    );
     reader.skip_remaining()?;
     Ok((
         plane,

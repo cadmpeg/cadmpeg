@@ -4,10 +4,13 @@ use cadmpeg_ir::eval::nurbs_curve_point;
 
 #[test]
 fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
-    let line = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     assert_eq!(edge_parameter_range(&line, 2.0, 5.0), Some([2.0, 5.0]));
     assert_eq!(edge_parameter_range(&line, 5.0, 2.0), None);
     assert_eq!(edge_parameter_range(&line, 2.0, 2.0), None);
@@ -15,12 +18,15 @@ fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
 
 #[test]
 fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+    let circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
     let start = 1.5 + 20_000.0 * std::f64::consts::TAU;
     let end = 0.5 - 20_000.0 * std::f64::consts::TAU;
     let range = edge_parameter_range(&circle, start, end).expect("periodic interval");
@@ -80,23 +86,32 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
 #[test]
 fn surface_parameter_units_follow_the_surface_chart() {
     let ir = CadIr::empty();
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let sphere = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    let sphere = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
     let transformed = SurfaceGeometry::Transformed {
         basis: Box::new(cylinder.clone()),
         transform: Transform::identity(),
@@ -164,10 +179,13 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let sweep = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
@@ -246,19 +264,25 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
 fn directrix_parameter_units_follow_step_curve_equations() {
     let ir = CadIr::empty();
     let angle_scale = std::f64::consts::PI / 180.0;
-    let parabola = CurveGeometry::Parabola {
-        vertex: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        focal_distance: 2.0,
-    };
-    let hyperbola = CurveGeometry::Hyperbola {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 1.0,
-    };
+    let parabola = CurveGeometry::Parabola(
+        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    let hyperbola = CurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+        )
+        .unwrap(),
+    );
     let polyline = CurveGeometry::Polyline(
         cadmpeg_ir::geometry::PolylineCurve::new(
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -337,10 +361,13 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -380,15 +407,21 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
 
 #[test]
 fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
-    let original = PcurveGeometry::Circle {
-        center: Point2::new(1.0, -2.0),
-        x_axis: Point2::new(1.0, 0.0),
-        y_axis: Point2::new(0.0, 1.0),
-        radius: 3.0,
-    };
+    let original = PcurveGeometry::Circle(
+        cadmpeg_ir::geometry::CirclePcurve::try_new(
+            Point2::new(1.0, -2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            3.0,
+        )
+        .unwrap(),
+    );
     let mut scaled = original.clone();
-    assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));
-    assert!(matches!(scaled, PcurveGeometry::Harmonic { .. }));
+    assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
+    assert!(match scaled {
+        PcurveGeometry::Harmonic(_) => true,
+        _ => false,
+    });
     for parameter in [0.0, 0.25, 1.0, 2.0] {
         let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
@@ -400,15 +433,15 @@ fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
 #[test]
 fn anisotropic_replica_scaling_conjugates_the_parent_map() {
     let original = PcurveGeometry::Transformed {
-        basis: Box::new(PcurveGeometry::Line {
-            origin: Point2::new(1.0, 2.0),
-            direction: Point2::new(3.0, 4.0),
-        }),
+        basis: Box::new(PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(3.0, 4.0))
+                .unwrap(),
+        )),
         transform: Transform2::from_rows([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]])
             .expect("affine transform"),
     };
     let mut scaled = original.clone();
-    assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));
+    assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
     for parameter in [0.0, 0.5, 1.0] {
         let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
@@ -419,14 +452,20 @@ fn anisotropic_replica_scaling_conjugates_the_parent_map() {
 
 #[test]
 fn unsupported_anisotropic_pcurve_forms_are_not_reshaped_by_scalar_scaling() {
-    let mut parabola = PcurveGeometry::Parabola {
-        vertex: Point2::new(0.0, 0.0),
-        x_axis: Point2::new(1.0, 0.0),
-        y_axis: Point2::new(0.0, 1.0),
-        focal_distance: 1.0,
-    };
-    assert!(!scale_pcurve_geometry(&mut parabola, [2.0, 3.0]));
-    assert!(matches!(parabola, PcurveGeometry::Parabola { .. }));
+    let mut parabola = PcurveGeometry::Parabola(
+        cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            1.0,
+        )
+        .unwrap(),
+    );
+    assert!(!parabola.try_scale_coordinates([2.0, 3.0]).is_ok());
+    assert!(match parabola {
+        PcurveGeometry::Parabola(_) => true,
+        _ => false,
+    });
 }
 
 #[test]

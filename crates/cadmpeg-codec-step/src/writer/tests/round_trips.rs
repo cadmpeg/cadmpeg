@@ -27,61 +27,71 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
     let vector = |vector: Point2| Vector3::new(vector.u, vector.v, 0.0);
     let line = |origin: Point2, direction: Point2| {
         let length = direction.u.hypot(direction.v);
-        (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
-            origin: point(origin),
-            direction: vector(Point2::new(direction.u / length, direction.v / length)),
+        (length.is_finite() && length > 0.0).then(|| {
+            CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    point(origin),
+                    vector(Point2::new(direction.u / length, direction.v / length)),
+                )
+                .unwrap(),
+            )
         })
     };
     match geometry {
-        PcurveGeometry::Line { origin, direction } => line(*origin, *direction),
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            radius,
-            ..
-        } => Some(CurveGeometry::Circle {
-            center: point(*center),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: vector(*x_axis),
-            radius: *radius,
-        }),
-        PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(CurveGeometry::Ellipse {
-            center: point(*center),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: vector(*x_axis),
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        }),
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            focal_distance,
-            ..
-        } => Some(CurveGeometry::Parabola {
-            vertex: point(*vertex),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: vector(*x_axis),
-            focal_distance: *focal_distance,
-        }),
-        PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(CurveGeometry::Hyperbola {
-            center: point(*center),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: vector(*x_axis),
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        }),
+        PcurveGeometry::Line(line_pcurve) => {
+            let (origin, direction) = line_pcurve.parts();
+            line(*origin, *direction)
+        }
+        PcurveGeometry::Circle(circle_pcurve) => {
+            let (center, x_axis, _, radius) = circle_pcurve.parts();
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    point(*center),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    vector(*x_axis),
+                    *radius,
+                )
+                .unwrap(),
+            ))
+        }
+        PcurveGeometry::Ellipse(ellipse_pcurve) => {
+            let (center, x_axis, _, major_radius, minor_radius) = ellipse_pcurve.parts();
+            Some(CurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    point(*center),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    vector(*x_axis),
+                    *major_radius,
+                    *minor_radius,
+                )
+                .unwrap(),
+            ))
+        }
+        PcurveGeometry::Parabola(parabola_pcurve) => {
+            let (vertex, x_axis, _, focal_distance) = parabola_pcurve.parts();
+            Some(CurveGeometry::Parabola(
+                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                    point(*vertex),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    vector(*x_axis),
+                    *focal_distance,
+                )
+                .unwrap(),
+            ))
+        }
+        PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
+            let (center, x_axis, _, major_radius, minor_radius) = hyperbola_pcurve.parts();
+            Some(CurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                    point(*center),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    vector(*x_axis),
+                    *major_radius,
+                    *minor_radius,
+                )
+                .unwrap(),
+            ))
+        }
         PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Nurbs(
             NurbsCurve::new(
                 nurbs.degree(),
@@ -93,10 +103,10 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             .ok()?,
         )),
         PcurveGeometry::Transformed { basis, transform } => {
-            let CurveGeometry::Line { origin, direction } = curve_geometry_for_sheet_pcurve(basis)?
-            else {
+            let CurveGeometry::Line(line_curve) = curve_geometry_for_sheet_pcurve(basis)? else {
                 return None;
             };
+            let (origin, direction) = line_curve.parts();
             let transform = Transform::from_rows([
                 [
                     transform.rows()[0][0],
@@ -114,15 +124,24 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                 [0.0, 0.0, 0.0, 1.0],
             ])
             .expect("affine transform");
-            let direction = transform.apply_vector(direction);
+            let direction = transform.apply_vector(*direction);
             let length = direction.norm();
-            (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
-                origin: transform.apply_point(origin),
-                direction: direction.scale(1.0 / length),
+            (length.is_finite() && length > 0.0).then(|| {
+                CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        transform.apply_point(*origin),
+                        direction.scale(1.0 / length),
+                    )
+                    .unwrap(),
+                )
             })
         }
-        PcurveGeometry::Trimmed { basis, .. } => curve_geometry_for_sheet_pcurve(basis),
-        PcurveGeometry::Offset { distance, basis } => {
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let (_, _, basis) = trimmed_pcurve.parts();
+            curve_geometry_for_sheet_pcurve(basis)
+        }
+        PcurveGeometry::Offset(offset_pcurve) => {
+            let (distance, basis) = offset_pcurve.parts();
             let (origin, direction) = basis.line_parameters()?;
             let length = direction.u.hypot(direction.v);
             if !length.is_finite() || length == 0.0 {
@@ -136,11 +155,11 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                 Point2::new(direction.u / length, direction.v / length),
             )
         }
-        PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. }
-        | PcurveGeometry::Harmonic { .. }
-        | PcurveGeometry::Hyperbolic { .. } => None,
+        PcurveGeometry::PolarHarmonic(_) => None,
+        PcurveGeometry::PolarNurbs { .. } => None,
+        PcurveGeometry::SphericalGreatCircle(_) => None,
+        PcurveGeometry::Harmonic(_) => None,
+        PcurveGeometry::Hyperbolic(_) => None,
     }
 }
 
@@ -189,9 +208,10 @@ fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
             .clone()
     });
     let parameter_range = match geometry {
-        PcurveGeometry::Trimmed {
-            parameter_range, ..
-        } => *parameter_range,
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            *parameter_range
+        }
         _ => [0.0, 1.0],
     };
     let positions = parameter_range.map(|parameter| {
@@ -236,12 +256,15 @@ pub(crate) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 5.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                5.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir
@@ -307,54 +330,76 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
     let x_axis = Point2::new(0.6, 0.8);
     let y_axis = Point2::new(-0.8, 0.6);
     let cases = [
-        PcurveGeometry::Circle {
-            center: Point2::new(2.0, 3.0),
-            x_axis,
-            y_axis,
-            radius: 4.0,
-        },
-        PcurveGeometry::Ellipse {
-            center: Point2::new(2.0, 3.0),
-            x_axis,
-            y_axis,
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        PcurveGeometry::Parabola {
-            vertex: Point2::new(2.0, 3.0),
-            x_axis,
-            y_axis,
-            focal_distance: 1.5,
-        },
-        PcurveGeometry::Hyperbola {
-            center: Point2::new(2.0, 3.0),
-            x_axis,
-            y_axis,
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        PcurveGeometry::Trimmed {
-            parameter_range: [0.25, 1.75],
-            same_sense: true,
-            basis: Box::new(PcurveGeometry::Circle {
-                center: Point2::new(2.0, 3.0),
+        PcurveGeometry::Circle(
+            cadmpeg_ir::geometry::CirclePcurve::try_new(Point2::new(2.0, 3.0), x_axis, y_axis, 4.0)
+                .unwrap(),
+        ),
+        PcurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                Point2::new(2.0, 3.0),
                 x_axis,
                 y_axis,
-                radius: 4.0,
-            }),
-        },
-        PcurveGeometry::Offset {
-            distance: -0.5,
-            basis: Box::new(PcurveGeometry::Line {
-                origin: Point2::new(2.0, 3.0),
-                direction: Point2::new(4.0, 0.0),
-            }),
-        },
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Parabola(
+            cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                Point2::new(2.0, 3.0),
+                x_axis,
+                y_axis,
+                1.5,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                Point2::new(2.0, 3.0),
+                x_axis,
+                y_axis,
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Trimmed(
+            cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+                [0.25, 1.75],
+                true,
+                Box::new(PcurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CirclePcurve::try_new(
+                        Point2::new(2.0, 3.0),
+                        x_axis,
+                        y_axis,
+                        4.0,
+                    )
+                    .unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Offset(
+            cadmpeg_ir::geometry::OffsetPcurve::try_new(
+                -0.5,
+                Box::new(PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(2.0, 3.0),
+                        Point2::new(4.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
         PcurveGeometry::Transformed {
-            basis: Box::new(PcurveGeometry::Line {
-                origin: Point2::new(1.0, 2.0),
-                direction: Point2::new(3.0, 4.0),
-            }),
+            basis: Box::new(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(1.0, 2.0),
+                    Point2::new(3.0, 4.0),
+                )
+                .unwrap(),
+            )),
             transform: Transform2::from_rows([
                 [0.0, -2.0, 10.0],
                 [2.0, 0.0, 20.0],
@@ -630,19 +675,25 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
 
 #[test]
 pub(crate) fn analytic_conics_round_trip_through_step() {
-    let parabola = CurveGeometry::Parabola {
-        vertex: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(0.0, 1.0, 0.0),
-        focal_distance: 2.5,
-    };
-    let hyperbola = CurveGeometry::Hyperbola {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(0.0, 1.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 1.5,
-    };
+    let parabola = CurveGeometry::Parabola(
+        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.5,
+        )
+        .unwrap(),
+    );
+    let hyperbola = CurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            4.0,
+            1.5,
+        )
+        .unwrap(),
+    );
     let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
@@ -687,10 +738,13 @@ pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let output = export(&ir);
@@ -1061,42 +1115,54 @@ fn analytic_surfaces_map_to_their_step_entities() {
     // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
         (
-            SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 5.0,
-            },
+            SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .unwrap(),
+            ),
             "CYLINDRICAL_SURFACE",
         ),
         (
-            SurfaceGeometry::Cone {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-                ratio: 1.0,
-                half_angle: 0.5,
-            },
+            SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    1.0,
+                    0.5,
+                )
+                .unwrap(),
+            ),
             "CONICAL_SURFACE",
         ),
         (
-            SurfaceGeometry::Sphere {
-                center: Point3::new(1.0, 2.0, 3.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 4.0,
-            },
+            SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    4.0,
+                )
+                .unwrap(),
+            ),
             "SPHERICAL_SURFACE",
         ),
         (
-            SurfaceGeometry::Torus {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 3.0,
-                minor_radius: 1.0,
-            },
+            SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                    1.0,
+                )
+                .unwrap(),
+            ),
             "TOROIDAL_SURFACE",
         ),
     ];
@@ -1121,12 +1187,15 @@ fn analytic_surfaces_map_to_their_step_entities() {
 
 #[test]
 fn analytic_surface_placements_preserve_orientation() {
-    let geometry = SurfaceGeometry::Sphere {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 4.0,
-    };
+    let geometry = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            4.0,
+        )
+        .unwrap(),
+    );
     let s = emit_surface_only(&geometry);
     assert!(s.contains("DIRECTION('',(0.,1.,0.))"));
     assert!(s.contains("DIRECTION('',(0.,0.,1.))"));

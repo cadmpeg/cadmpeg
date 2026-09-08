@@ -507,10 +507,17 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
         .expect("active datum cylinder surface");
-    assert!(matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if (radius - 0.75).abs() < 1.0e-12
-    ));
+    assert!(match surface.geometry {
+        SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let (_, _, _, radius) = cylinder_surface.parts();
+                (radius - 0.75).abs() < 1.0e-12
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
     assert_eq!(
         surface
             .source_object

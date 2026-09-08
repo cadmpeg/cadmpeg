@@ -175,12 +175,12 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        match surface.geometry {
+            SurfaceGeometry::Cylinder(_) => true,
+            _ => false,
+        }
+    }));
     assert!(result
         .ir()
         .model
@@ -205,12 +205,12 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| { matches!(curve.geometry, CurveGeometry::Circle { .. }) }));
+    assert!(result.ir().model.curves.iter().any(|curve| {
+        match curve.geometry {
+            CurveGeometry::Circle(_) => true,
+            _ => false,
+        }
+    }));
     assert!(result.report().notes.iter().any(|note| note.contains("E5")));
     assert_valid(&result);
 }

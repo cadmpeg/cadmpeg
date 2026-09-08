@@ -1521,7 +1521,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .model
         .surfaces
         .iter()
-        .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane { .. }))
+        .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane(_)))
         .count();
     let unknowns = result
         .ir()

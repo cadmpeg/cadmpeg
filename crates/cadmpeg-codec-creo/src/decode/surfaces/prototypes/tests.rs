@@ -50,22 +50,24 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .iter()
         .find(|surface| surface.id.as_str().ends_with("#7"))
         .expect("first cone instance");
-    assert!(matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle,
-        } if (origin.x - 37.01).abs() < EPS_CONE_FRAME
-            && origin.y.abs() < EPS_CONE_FRAME
-            && origin.z.abs() < EPS_CONE_FRAME
-            && axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
-            && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-            && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME
-    ));
+    assert!(match surface.geometry {
+        SurfaceGeometry::Cone(cone_surface)
+            if {
+                let (origin, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
+                (*cone_surface.parts().3 == 0.0)
+                    && (*cone_surface.parts().4 == 1.0)
+                    && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
+                        && origin.y.abs() < EPS_CONE_FRAME
+                        && origin.z.abs() < EPS_CONE_FRAME
+                        && *axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+                        && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME)
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 }
 
 #[test]
@@ -157,16 +159,10 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("first instance surface");
-    let SurfaceGeometry::Torus {
-        center,
-        axis,
-        ref_direction,
-        major_radius,
-        minor_radius,
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Torus(torus_surface) = surface.geometry else {
         panic!("first instance geometry: {:?}", surface.geometry);
     };
+    let (&center, &axis, &ref_direction, &major_radius, &minor_radius) = torus_surface.parts();
     assert_eq!(center, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(ref_direction, [0.0, 1.0, 0.0].into());
@@ -303,15 +299,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy cylinder surface");
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
+    let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [0.0, 0.0, 1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -338,10 +329,17 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .iter()
         .find(|surface| surface.id.as_str() == "creo:novisgeom:surface#42")
         .expect("non-visible legacy cylinder surface");
-    assert!(matches!(
-        nonvisible_surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if radius == 50.8
-    ));
+    assert!(match nonvisible_surface.geometry {
+        SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let (_, _, _, radius) = cylinder_surface.parts();
+                *radius == 50.8
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
     assert_eq!(
         nonvisible_surface
             .source_object
@@ -401,17 +399,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy cone surface");
-    let SurfaceGeometry::Cone {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-        ratio,
-        half_angle,
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Cone(cone_surface) = surface.geometry else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
+    let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) = cone_surface.parts();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(axis, [0.0, 0.0, -1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -472,14 +463,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
         .expect("legacy plane surface");
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Plane(plane_surface) = surface.geometry else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
+    let (&origin, &normal, &u_axis) = plane_surface.parts();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(normal, [0.0, 0.0, 1.0].into());
     assert_eq!(u_axis, [1.0, 0.0, 0.0].into());

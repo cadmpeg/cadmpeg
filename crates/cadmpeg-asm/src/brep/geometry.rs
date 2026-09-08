@@ -83,11 +83,14 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let normal = unit(normal);
             let u_axis = unit(*c.vectors.get(1)?);
             Some((
-                SurfaceGeometry::Plane {
-                    origin: scale_point(origin),
-                    normal,
-                    u_axis,
-                },
+                SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        scale_point(origin),
+                        normal,
+                        u_axis,
+                    )
+                    .ok()?,
+                ),
                 false,
             ))
         }
@@ -111,12 +114,15 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let ref_direction = unit(major);
             if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some((
-                    SurfaceGeometry::Cylinder {
-                        origin: scale_point(origin),
-                        axis,
-                        ref_direction,
-                        radius,
-                    },
+                    SurfaceGeometry::Cylinder(
+                        cadmpeg_ir::geometry::CylinderSurface::try_new(
+                            scale_point(origin),
+                            axis,
+                            ref_direction,
+                            radius,
+                        )
+                        .ok()?,
+                    ),
                     cosine < 0.0,
                 ))
             } else {
@@ -130,17 +136,17 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                     axis
                 };
                 Some((
-                    SurfaceGeometry::Cone {
-                        origin: scale_point(origin),
-                        axis,
-                        ref_direction,
-                        radius,
-                        ratio,
-                        // Recover from the stored (sine, cosine) pair. `asin(|sine|)`
-                        // alone differs by 1 ULP across libm for common values such as
-                        // 1/2; `atan2` matches the writer round-trip on every platform.
-                        half_angle: sine.abs().atan2(cosine.abs()),
-                    },
+                    SurfaceGeometry::Cone(
+                        cadmpeg_ir::geometry::ConeSurface::try_new(
+                            scale_point(origin),
+                            axis,
+                            ref_direction,
+                            radius,
+                            ratio,
+                            sine.abs().atan2(cosine.abs()),
+                        )
+                        .ok()?,
+                    ),
                     cosine < 0.0,
                 ))
             }
@@ -150,12 +156,15 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let equator = unit(*c.vectors.first()?);
             let polar_axis = unit(*c.vectors.get(1)?);
             Some((
-                SurfaceGeometry::Sphere {
-                    center: scale_point(origin),
-                    axis: polar_axis,
-                    ref_direction: equator,
-                    radius: signed * LEN_TO_MM,
-                },
+                SurfaceGeometry::Sphere(
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                        scale_point(origin),
+                        polar_axis,
+                        equator,
+                        signed * LEN_TO_MM,
+                    )
+                    .ok()?,
+                ),
                 false,
             ))
         }
@@ -166,13 +175,16 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let major = *c.doubles.first()?;
             let minor = *c.doubles.get(1)?;
             Some((
-                SurfaceGeometry::Torus {
-                    center: scale_point(origin),
-                    axis,
-                    ref_direction,
-                    major_radius: major * LEN_TO_MM,
-                    minor_radius: minor * LEN_TO_MM,
-                },
+                SurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                        scale_point(origin),
+                        axis,
+                        ref_direction,
+                        major * LEN_TO_MM,
+                        minor * LEN_TO_MM,
+                    )
+                    .ok()?,
+                ),
                 false,
             ))
         }
@@ -379,35 +391,44 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let carrier = collect_carrier(rec);
     let base = *carrier.positions.first()?;
     match rec.head() {
-        "straight" => Some(CurveGeometry::Line {
-            origin: scale_point(base),
-            direction: unit(*carrier.vectors.first()?),
-        }),
+        "straight" => Some(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                scale_point(base),
+                unit(*carrier.vectors.first()?),
+            )
+            .ok()?,
+        )),
         "ellipse" => {
             let axis = *carrier.vectors.first()?;
             let reference = *carrier.vectors.get(1)?;
             let ratio = *carrier.doubles.first()?;
             let major_radius = norm3(reference) * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
-                Some(CurveGeometry::Circle {
-                    center: scale_point(base),
-                    axis: unit(axis),
-                    ref_direction: unit(reference),
-                    radius: major_radius,
-                })
+                Some(CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        scale_point(base),
+                        unit(axis),
+                        unit(reference),
+                        major_radius,
+                    )
+                    .ok()?,
+                ))
             } else {
-                Some(CurveGeometry::Ellipse {
-                    center: scale_point(base),
-                    axis: unit(axis),
-                    major_direction: unit(reference),
-                    major_radius,
-                    minor_radius: major_radius * ratio.abs(),
-                })
+                Some(CurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        scale_point(base),
+                        unit(axis),
+                        unit(reference),
+                        major_radius,
+                        major_radius * ratio.abs(),
+                    )
+                    .ok()?,
+                ))
             }
         }
-        "degenerate_curve" => Some(CurveGeometry::Degenerate {
-            point: scale_point(base),
-        }),
+        "degenerate_curve" => Some(CurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::DegenerateCurve::try_new(scale_point(base)).ok()?,
+        )),
         _ => None,
     }
 }
@@ -452,12 +473,9 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
 /// reverse poles and knots. Carriers without an orientation pass through.
 pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
     match geometry {
-        CurveGeometry::Line { direction, .. } => {
-            *direction = Vector3::new(-direction.x, -direction.y, -direction.z);
-        }
-        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
-            *axis = Vector3::new(-axis.x, -axis.y, -axis.z);
-        }
+        CurveGeometry::Line(line_curve) => line_curve.reverse_parameterization(),
+        CurveGeometry::Circle(circle_curve) => circle_curve.reverse_parameterization(),
+        CurveGeometry::Ellipse(ellipse_curve) => ellipse_curve.reverse_parameterization(),
         CurveGeometry::Nurbs(curve) => curve.reverse_parameterization(),
         _ => {}
     }
@@ -579,12 +597,10 @@ pub(crate) fn analytic_procedural_surface(
             if 1.0 - axis.dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10 {
                 return None;
             }
-            Some(SurfaceGeometry::Cylinder {
-                origin: center,
-                axis,
-                ref_direction,
-                radius,
-            })
+            Some(SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(center, axis, ref_direction, radius)
+                    .ok()?,
+            ))
         }
         DecodedProceduralSurfaceDefinition::Blend {
             supports,
@@ -620,19 +636,11 @@ fn analytic_rolling_ball_surface(
     let first = support(0)?;
     let second = support(1)?;
 
-    if let (
-        SurfaceGeometry::Plane {
-            origin: first_origin,
-            normal: first_normal,
-            ..
-        },
-        SurfaceGeometry::Plane {
-            origin: second_origin,
-            normal: second_normal,
-            ..
-        },
-    ) = (first, second)
+    if let (SurfaceGeometry::Plane(plane_surface), SurfaceGeometry::Plane(plane_surface_2)) =
+        (first, second)
     {
+        let (first_origin, first_normal, _) = plane_surface.parts();
+        let (second_origin, second_normal, _) = plane_surface_2.parts();
         let (origin, axis) = linear_nurbs_spine(spine)?;
         let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             * radius
@@ -662,43 +670,52 @@ fn analytic_rolling_ball_surface(
                 return None;
             }
         }
-        return Some(SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
-            radius,
-        });
+        return Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                origin,
+                axis,
+                cadmpeg_ir::geometry::derive_reference_direction(axis),
+                radius,
+            )
+            .ok()?,
+        ));
     }
 
-    let ((
-        SurfaceGeometry::Plane {
-            origin: plane_origin,
-            normal: plane_normal,
-            ..
-        },
-        SurfaceGeometry::Cylinder {
-            origin: cylinder_origin,
-            axis: cylinder_axis,
-            radius: cylinder_radius,
-            ..
-        },
-    )
-    | (
-        SurfaceGeometry::Cylinder {
-            origin: cylinder_origin,
-            axis: cylinder_axis,
-            radius: cylinder_radius,
-            ..
-        },
-        SurfaceGeometry::Plane {
-            origin: plane_origin,
-            normal: plane_normal,
-            ..
-        },
-    )) = (first, second)
-    else {
-        return None;
-    };
+    let (plane_origin, plane_normal, cylinder_origin, cylinder_axis, cylinder_radius) =
+        match (first, second) {
+            (
+                SurfaceGeometry::Plane(plane_surface),
+                SurfaceGeometry::Cylinder(cylinder_surface),
+            ) => {
+                let (plane_origin, plane_normal, _) = plane_surface.parts();
+                let (cylinder_origin, cylinder_axis, _, cylinder_radius) = cylinder_surface.parts();
+                (
+                    plane_origin,
+                    plane_normal,
+                    cylinder_origin,
+                    cylinder_axis,
+                    cylinder_radius,
+                )
+            }
+            (
+                SurfaceGeometry::Cylinder(cylinder_surface_2),
+                SurfaceGeometry::Plane(plane_surface_2),
+            ) => {
+                let (cylinder_origin, cylinder_axis, _, cylinder_radius) =
+                    cylinder_surface_2.parts();
+                let (plane_origin, plane_normal, _) = plane_surface_2.parts();
+                (
+                    plane_origin,
+                    plane_normal,
+                    cylinder_origin,
+                    cylinder_axis,
+                    cylinder_radius,
+                )
+            }
+            _ => {
+                return None;
+            }
+        };
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
@@ -715,13 +732,16 @@ fn analytic_rolling_ball_surface(
     {
         return None;
     }
-    Some(SurfaceGeometry::Torus {
-        center,
-        axis,
-        ref_direction,
-        major_radius,
-        minor_radius: signed_radius,
-    })
+    Some(SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            signed_radius,
+        )
+        .ok()?,
+    ))
 }
 
 fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point3, Vector3)> {

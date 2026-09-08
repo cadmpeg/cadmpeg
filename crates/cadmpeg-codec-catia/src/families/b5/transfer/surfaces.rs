@@ -38,12 +38,15 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             axis,
             radius,
             ..
-        } => Some(SurfaceGeometry::Cylinder {
-            origin: point(*origin),
-            axis: vector(*axis),
-            ref_direction: vector(*reference_x),
-            radius: *radius,
-        }),
+        } => Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                point(*origin),
+                vector(*axis),
+                vector(*reference_x),
+                *radius,
+            )
+            .ok()?,
+        )),
         B5Surface::Cone {
             apex,
             direction_x,
@@ -53,14 +56,17 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             ..
         } => {
             let slant = slant_range[0];
-            Some(SurfaceGeometry::Cone {
-                origin: point(add(*apex, scale(*axis, slant * half_angle.cos()))),
-                axis: vector(*axis),
-                ref_direction: vector(*direction_x),
-                radius: slant * half_angle.sin(),
-                ratio: 1.0,
-                half_angle: *half_angle,
-            })
+            Some(SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    point(add(*apex, scale(*axis, slant * half_angle.cos()))),
+                    vector(*axis),
+                    vector(*direction_x),
+                    slant * half_angle.sin(),
+                    1.0,
+                    *half_angle,
+                )
+                .ok()?,
+            ))
         }
         B5Surface::Sphere {
             center,
@@ -68,12 +74,15 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             axis,
             radius,
             ..
-        } => Some(SurfaceGeometry::Sphere {
-            center: point(*center),
-            axis: vector(*axis),
-            ref_direction: vector(*direction_x),
-            radius: *radius,
-        }),
+        } => Some(SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SphereSurface::try_new(
+                point(*center),
+                vector(*axis),
+                vector(*direction_x),
+                *radius,
+            )
+            .ok()?,
+        )),
         B5Surface::Torus {
             center,
             direction_x,
@@ -81,13 +90,16 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             major_radius,
             minor_radius,
             ..
-        } => Some(SurfaceGeometry::Torus {
-            center: point(*center),
-            axis: vector(*axis),
-            ref_direction: vector(*direction_x),
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        }),
+        } => Some(SurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::TorusSurface::try_new(
+                point(*center),
+                vector(*axis),
+                vector(*direction_x),
+                *major_radius,
+                *minor_radius,
+            )
+            .ok()?,
+        )),
         B5Surface::Nurbs(surface) => Some(SurfaceGeometry::Nurbs(surface.clone())),
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
@@ -440,11 +452,14 @@ pub(super) fn orthonormal_plane(
     {
         return None;
     }
-    Some(SurfaceGeometry::Plane {
-        origin: point(origin),
-        normal: vector(unit(cross(u, v))?),
-        u_axis: vector(u),
-    })
+    Some(SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            point(origin),
+            vector(unit(cross(u, v))?),
+            vector(u),
+        )
+        .ok()?,
+    ))
 }
 
 /// Emit the referenced surfaces, their procedural definitions, and the offset
@@ -858,22 +873,28 @@ mod tests {
                 supports: Box::new([
                     ResolvedExtrusionSupport {
                         surface_object_id: 10,
-                        surface: SurfaceGeometry::Plane {
-                            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                            normal: Vector3::new(1.0, 0.0, 0.0),
-                            u_axis: Vector3::new(0.0, 1.0, 0.0),
-                        },
+                        surface: SurfaceGeometry::Plane(
+                            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                                Vector3::new(0.0, 1.0, 0.0),
+                            )
+                            .unwrap(),
+                        ),
                         pcurve: pcurve(0.0),
                         pcurve_parameter_range: [0.0, 1.0],
                         curve: None,
                     },
                     ResolvedExtrusionSupport {
                         surface_object_id: 20,
-                        surface: SurfaceGeometry::Plane {
-                            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                            normal: Vector3::new(0.0, 1.0, 0.0),
-                            u_axis: Vector3::new(1.0, 0.0, 0.0),
-                        },
+                        surface: SurfaceGeometry::Plane(
+                            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                                Vector3::new(0.0, 1.0, 0.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                            )
+                            .unwrap(),
+                        ),
                         pcurve: pcurve(1.0),
                         pcurve_parameter_range: [0.25, 0.75],
                         curve: None,

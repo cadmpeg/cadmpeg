@@ -162,10 +162,15 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
         .iter_mut()
         .find(|curve| curve.id == member_curve)
         .expect("compound-loft member curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
-        direction: cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+            cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0)
+                .unit()
+                .unwrap(),
+        )
+        .unwrap(),
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -263,10 +268,15 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
             id: line_curve.clone(),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
-                direction: cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0),
-            },
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         source_less.model.procedural_surfaces[0].edit_definition(|definition| {
@@ -723,17 +733,24 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
             panic!("expected sub-surface")
         };
         assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
-        assert!(matches!(
-            decoded
-                .ir()
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == *support)
-                .map(|surface| &surface.geometry),
-            Some(SurfaceGeometry::Plane { origin, .. })
-                if *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
-        ));
+        assert!(match decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *support)
+            .map(|surface| &surface.geometry)
+        {
+            Some(SurfaceGeometry::Plane(plane_surface))
+                if {
+                    let (origin, _, _) = plane_surface.parts();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
+                } =>
+            {
+                true
+            }
+            _ => false,
+        });
         assert!(matches!(
             decoded
                 .ir()
@@ -894,10 +911,15 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
         .iter_mut()
         .find(|curve| curve.id == law_edge)
         .expect("law edge curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
-        direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
+            cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0)
+                .unit()
+                .unwrap(),
+        )
+        .unwrap(),
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -964,10 +986,15 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
         .iter_mut()
         .find(|curve| curve.id == profile_curve)
         .expect("skin profile curve")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(2.0, -1.0, 3.0),
-        direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(2.0, -1.0, 3.0),
+            cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
+                .unit()
+                .unwrap(),
+        )
+        .unwrap(),
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

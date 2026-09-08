@@ -88,19 +88,25 @@ pub(in super::super) fn revolved_section_surface(
             let reference = normalized(radial).or_else(|| normalized(radial_rate))?;
             if radial_speed <= EPS_RADIAL_SPEED {
                 (radius > EPS_RADIUS_NONZERO).then_some(())?;
-                return Some(SurfaceGeometry::Cylinder {
-                    origin: point(on_axis),
-                    axis: vector(axis),
-                    ref_direction: vector(reference),
-                    radius,
-                });
+                return Some(SurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        point(on_axis),
+                        vector(axis),
+                        vector(reference),
+                        radius,
+                    )
+                    .ok()?,
+                ));
             }
             if axial_rate.abs() <= EPS_AXIAL_RATE {
-                return Some(SurfaceGeometry::Plane {
-                    origin: point(on_axis),
-                    normal: vector(axis),
-                    u_axis: vector(reference),
-                });
+                return Some(SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        point(on_axis),
+                        vector(axis),
+                        vector(reference),
+                    )
+                    .ok()?,
+                ));
             }
             let radial_rate = dot(radial_rate, reference);
             let cone_axis = if radial_rate / axial_rate < 0.0 {
@@ -108,14 +114,17 @@ pub(in super::super) fn revolved_section_surface(
             } else {
                 axis
             };
-            Some(SurfaceGeometry::Cone {
-                origin: point(on_axis),
-                axis: vector(cone_axis),
-                ref_direction: vector(reference),
-                radius,
-                ratio: 1.0,
-                half_angle: radial_rate.abs().atan2(axial_rate.abs()),
-            })
+            Some(SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    point(on_axis),
+                    vector(cone_axis),
+                    vector(reference),
+                    radius,
+                    1.0,
+                    radial_rate.abs().atan2(axial_rate.abs()),
+                )
+                .ok()?,
+            ))
         }
         SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
@@ -132,20 +141,26 @@ pub(in super::super) fn revolved_section_surface(
                     })
             })?;
             if major_radius <= EPS_MAJOR_RADIUS {
-                Some(SurfaceGeometry::Sphere {
-                    center: point(center),
-                    axis: vector(axis),
-                    ref_direction: vector(reference),
-                    radius: radius.0,
-                })
+                Some(SurfaceGeometry::Sphere(
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                        point(center),
+                        vector(axis),
+                        vector(reference),
+                        radius.0,
+                    )
+                    .ok()?,
+                ))
             } else {
-                Some(SurfaceGeometry::Torus {
-                    center: point(on_axis),
-                    axis: vector(axis),
-                    ref_direction: vector(reference),
-                    major_radius,
-                    minor_radius: radius.0,
-                })
+                Some(SurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                        point(on_axis),
+                        vector(axis),
+                        vector(reference),
+                        major_radius,
+                        radius.0,
+                    )
+                    .ok()?,
+                ))
             }
         }
         _ => None,
@@ -161,10 +176,13 @@ pub(in super::super) fn placed_section_geometry_curve(
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
             let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            Some(CurveGeometry::Line {
-                origin: Point3::new(start[0], start[1], start[2]),
-                direction: Vector3::new(direction[0], direction[1], direction[2]),
-            })
+            Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(start[0], start[1], start[2]),
+                    Vector3::new(direction[0], direction[1], direction[2]),
+                )
+                .ok()?,
+            ))
         }
         SketchGeometry::ReferenceLine { origin, direction } => {
             let origin = section_point_in_model(transform, [origin.u, origin.v]);
@@ -173,27 +191,33 @@ pub(in super::super) fn placed_section_geometry_curve(
                 direction.u * transform.u_axis[1] + direction.v * transform.v_axis[1],
                 direction.u * transform.u_axis[2] + direction.v * transform.v_axis[2],
             ])?;
-            Some(CurveGeometry::Line {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                direction: Vector3::new(direction[0], direction[1], direction[2]),
-            })
+            Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(origin[0], origin[1], origin[2]),
+                    Vector3::new(direction[0], direction[1], direction[2]),
+                )
+                .ok()?,
+            ))
         }
         SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
-            Some(CurveGeometry::Circle {
-                center: Point3::new(center[0], center[1], center[2]),
-                axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
-                ),
-                ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
-                ),
-                radius: radius.0,
-            })
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(center[0], center[1], center[2]),
+                    Vector3::new(
+                        transform.normal[0],
+                        transform.normal[1],
+                        transform.normal[2],
+                    ),
+                    Vector3::new(
+                        transform.u_axis[0],
+                        transform.u_axis[1],
+                        transform.u_axis[2],
+                    ),
+                    radius.0,
+                )
+                .ok()?,
+            ))
         }
         _ => None,
     }
@@ -404,12 +428,15 @@ pub(in super::super) fn revolved_section_circle(
         .fold(1.0, f64::max);
     (radius > EPS_RADIUS_NONZERO * scale).then_some(())?;
     let reference = radial.map(|component| component / radius);
-    Some(CurveGeometry::Circle {
-        center: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis_direction[0], axis_direction[1], axis_direction[2]),
-        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-        radius,
-    })
+    Some(CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(center[0], center[1], center[2]),
+            Vector3::new(axis_direction[0], axis_direction[1], axis_direction[2]),
+            Vector3::new(reference[0], reference[1], reference[2]),
+            radius,
+        )
+        .ok()?,
+    ))
 }
 
 pub(in super::super) fn extruded_section_line(
@@ -418,10 +445,13 @@ pub(in super::super) fn extruded_section_line(
 ) -> Option<CurveGeometry> {
     let direction = normalized(transform.normal)?;
     let origin = section_point_in_model(transform, point);
-    Some(CurveGeometry::Line {
-        origin: Point3::new(origin[0], origin[1], origin[2]),
-        direction: Vector3::new(direction[0], direction[1], direction[2]),
-    })
+    Some(CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(origin[0], origin[1], origin[2]),
+            Vector3::new(direction[0], direction[1], direction[2]),
+        )
+        .ok()?,
+    ))
 }
 
 pub(in super::super) fn transfer_feature_extrusion_surfaces(

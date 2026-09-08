@@ -129,11 +129,17 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
-        matches!(
-            *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-            CurveGeometry::Line { origin, direction }
-                if same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
-        )
+        match *curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+            CurveGeometry::Line(line_curve)
+                if {
+                    let (origin, direction) = line_curve.parts();
+                    same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
     }));
     let validation =
         cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone());
@@ -263,11 +269,14 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(4.0, 5.0, 6.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(4.0, 5.0, 6.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         let plan =
@@ -286,17 +295,14 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{version:?}: {error}"));
         assert_eq!(decoded.ir().model.surfaces.len(), 1, "{version:?}");
-        let SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } = decoded.ir().model.surfaces[0]
+        let SurfaceGeometry::Plane(plane_surface) = decoded.ir().model.surfaces[0]
             .geometry
             .solved_cache()
             .unwrap_or(&decoded.ir().model.surfaces[0].geometry)
         else {
             panic!("{version:?}: expected a decoded plane");
         };
+        let (origin, normal, u_axis) = plane_surface.parts();
         assert!(same_float(origin.x, 4.0), "{version:?}");
         assert!(same_float(origin.y, 5.0), "{version:?}");
         assert!(same_float(origin.z, 6.0), "{version:?}");
@@ -428,13 +434,14 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
         .unwrap();
     assert_eq!(round_trip.ir().model.curves.len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 1);
-    assert!(matches!(
-        *round_trip.ir().model.curves[0]
-            .geometry
-            .solved_cache()
-            .unwrap_or(&round_trip.ir().model.curves[0].geometry),
-        CurveGeometry::Line { .. }
-    ));
+    assert!(match *round_trip.ir().model.curves[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&round_trip.ir().model.curves[0].geometry)
+    {
+        CurveGeometry::Line(_) => true,
+        _ => false,
+    });
     assert!(round_trip.report().losses.is_empty());
 }
 
@@ -591,11 +598,14 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(4.0, 5.0, 6.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(4.0, 5.0, 6.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -643,14 +653,12 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             surface.id == SurfaceId::mint("iges:model:surface#D9").expect("identity grammar")
         })
         .unwrap();
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = plane.geometry.solved_cache().unwrap_or(&plane.geometry)
+    let SurfaceGeometry::Plane(plane_surface) =
+        plane.geometry.solved_cache().unwrap_or(&plane.geometry)
     else {
         panic!("expected a decoded plane");
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
     assert!((origin.x - 4.0).abs() < 1.0e-10);
     assert!((origin.y - 5.0).abs() < 1.0e-10);
     assert!((origin.z - 6.0).abs() < 1.0e-10);
@@ -727,45 +735,57 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
-            geometry: SurfaceGeometry::Cone {
-                origin: Point3::new(-1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-                ratio: 1.0,
-                half_angle: std::f64::consts::FRAC_PI_6,
-            },
+            geometry: SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    Point3::new(-1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                    1.0,
+                    std::f64::consts::FRAC_PI_6,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
-            geometry: SurfaceGeometry::Sphere {
-                center: Point3::new(0.0, 4.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(
+                    Point3::new(0.0, 4.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
-            geometry: SurfaceGeometry::Torus {
-                center: Point3::new(0.0, 0.0, 5.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 4.0,
-                minor_radius: 1.0,
-            },
+            geometry: SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    4.0,
+                    1.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -791,12 +811,15 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
-        geometry: SurfaceGeometry::Sphere {
-            center: Point3::new(10.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.0,
-        },
+        geometry: SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SphereSurface::try_new(
+                Point3::new(10.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
 
@@ -876,11 +899,14 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     for (index, position) in positions.into_iter().enumerate() {
@@ -899,10 +925,13 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         let end = (index + 1) % 4;
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line {
-                origin: positions[index],
-                direction: positions[index].vector_from(positions[end]),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    positions[index],
+                    positions[index].vector_from(positions[end]),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model.edges.push(Edge {

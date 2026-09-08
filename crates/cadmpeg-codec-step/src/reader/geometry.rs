@@ -161,9 +161,8 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
         return None;
     }
     let periodic_domain = match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
-            Some([0.0, std::f64::consts::TAU])
-        }
+        CurveGeometry::Circle(_) => Some([0.0, std::f64::consts::TAU]),
+        CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
         CurveGeometry::Nurbs(nurbs) if nurbs.periodic() => nurbs_curve_parameter_domain(nurbs),
         CurveGeometry::Transformed { basis, .. } => {
             return edge_parameter_range(basis, start, end);
@@ -725,20 +724,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .and_then(|vector| vectors.get(&vector).copied())
                         .and_then(normalize),
                 )
-                .map(|(origin, direction)| CurveGeometry::Line { origin, direction }),
+                .and_then(|(origin, direction)| {
+                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
+                        .ok()
+                        .map(CurveGeometry::Line)
+                }),
             "CIRCLE" => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
                 .filter(|(_, radius)| radius.is_finite() && *radius > 0.0)
-                .map(
-                    |((center, axis, ref_direction), radius)| CurveGeometry::Circle {
+                .and_then(|((center, axis, ref_direction), radius)| {
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
                         center,
                         axis,
                         ref_direction,
-                        radius: radius * record_scale,
-                    },
-                ),
+                        radius * record_scale,
+                    )
+                    .ok()
+                    .map(CurveGeometry::Circle)
+                }),
             "ELLIPSE" => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
@@ -747,7 +752,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .filter(|((_, major), minor)| {
                     major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
                 })
-                .map(
+                .and_then(
                     |(((center, axis, reference_direction), first_radius), second_radius)| {
                         let first_radius = first_radius * record_scale;
                         let second_radius = second_radius * record_scale;
@@ -761,13 +766,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 // around its semi-major direction.
                                 (axis.cross(reference_direction), second_radius, first_radius)
                             };
-                        CurveGeometry::Ellipse {
+                        cadmpeg_ir::geometry::EllipseCurve::try_new(
                             center,
                             axis,
                             major_direction,
                             major_radius,
                             minor_radius,
-                        }
+                        )
+                        .ok()
+                        .map(CurveGeometry::Ellipse)
                     },
                 ),
             "PARABOLA" => named_parameter(record, "PARABOLA", 1)
@@ -775,14 +782,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
                 .filter(|(_, focal_distance)| focal_distance.is_finite() && *focal_distance > 0.0)
-                .map(
-                    |((vertex, axis, major_direction), focal_distance)| CurveGeometry::Parabola {
+                .and_then(|((vertex, axis, major_direction), focal_distance)| {
+                    cadmpeg_ir::geometry::ParabolaCurve::try_new(
                         vertex,
                         axis,
                         major_direction,
-                        focal_distance: focal_distance * record_scale,
-                    },
-                ),
+                        focal_distance * record_scale,
+                    )
+                    .ok()
+                    .map(CurveGeometry::Parabola)
+                }),
             "HYPERBOLA" => named_parameter(record, "HYPERBOLA", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
@@ -791,15 +800,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .filter(|((_, major), minor)| {
                     major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
                 })
-                .map(
+                .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
-                        CurveGeometry::Hyperbola {
+                        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                             center,
                             axis,
                             major_direction,
-                            major_radius: major_radius * record_scale,
-                            minor_radius: minor_radius * record_scale,
-                        }
+                            major_radius * record_scale,
+                            minor_radius * record_scale,
+                        )
+                        .ok()
+                        .map(CurveGeometry::Hyperbola)
                     },
                 ),
             "POLYLINE" => polyline(record, &points).map(CurveGeometry::Nurbs),
@@ -1331,57 +1342,65 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
         let geometry = match surface_type {
-            "PLANE" => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
+            "PLANE" => placement.and_then(|(origin, normal, u_axis)| {
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
+                    .ok()
+                    .map(SurfaceGeometry::Plane)
             }),
             "CYLINDRICAL_SURFACE" => placement
                 .zip(positive(named_parameter(record, "CYLINDRICAL_SURFACE", 2)))
-                .map(
-                    |((origin, axis, ref_direction), radius)| SurfaceGeometry::Cylinder {
+                .and_then(|((origin, axis, ref_direction), radius)| {
+                    cadmpeg_ir::geometry::CylinderSurface::try_new(
                         origin,
                         axis,
                         ref_direction,
-                        radius: radius * record_scale,
-                    },
-                ),
+                        radius * record_scale,
+                    )
+                    .ok()
+                    .map(SurfaceGeometry::Cylinder)
+                }),
             "CONICAL_SURFACE" => placement
                 .zip(nonnegative(named_parameter(record, "CONICAL_SURFACE", 2)))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
                 .filter(|(_, angle)| angle.is_finite())
-                .map(|(((origin, axis, ref_direction), radius), half_angle)| {
-                    SurfaceGeometry::Cone {
+                .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
                         origin,
                         axis,
                         ref_direction,
-                        radius: radius * record_scale,
-                        ratio: 1.0,
-                        half_angle: half_angle * record_angle_scale,
-                    }
+                        radius * record_scale,
+                        1.0,
+                        half_angle * record_angle_scale,
+                    )
+                    .ok()
+                    .map(SurfaceGeometry::Cone)
                 }),
             "SPHERICAL_SURFACE" => placement
                 .zip(positive(named_parameter(record, "SPHERICAL_SURFACE", 2)))
-                .map(
-                    |((center, axis, ref_direction), radius)| SurfaceGeometry::Sphere {
+                .and_then(|((center, axis, ref_direction), radius)| {
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
                         center,
                         axis,
                         ref_direction,
-                        radius: radius * record_scale,
-                    },
-                ),
+                        radius * record_scale,
+                    )
+                    .ok()
+                    .map(SurfaceGeometry::Sphere)
+                }),
             "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
                 .zip(positive(named_parameter(record, surface_type, 2)))
                 .zip(positive(named_parameter(record, surface_type, 3)))
-                .map(
+                .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
-                        SurfaceGeometry::Torus {
+                        cadmpeg_ir::geometry::TorusSurface::try_new(
                             center,
                             axis,
                             ref_direction,
-                            major_radius: major_radius * record_scale,
-                            minor_radius: minor_radius * record_scale,
-                        }
+                            major_radius * record_scale,
+                            minor_radius * record_scale,
+                        )
+                        .ok()
+                        .map(SurfaceGeometry::Torus)
                     },
                 ),
             "B_SPLINE_SURFACE_WITH_KNOTS"
@@ -1923,7 +1942,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         let mut geometry = geometry.clone();
-        if !scale_pcurve_geometry(&mut geometry, *scales) {
+        if !geometry.try_scale_coordinates(*scales).is_ok() {
             warnings.push(format!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
             ));
@@ -3544,7 +3563,8 @@ fn trimmed_curve_parameter_range(
 
 fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
     let period = match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => std::f64::consts::TAU,
+        CurveGeometry::Circle(_) => std::f64::consts::TAU,
+        CurveGeometry::Ellipse(_) => std::f64::consts::TAU,
         CurveGeometry::Nurbs(curve) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
             upper - lower
@@ -3636,22 +3656,23 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
             cache: Some(geometry),
             ..
         } => parameter_scale(geometry, angle_scale, linear_parameter_scale),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => angle_scale,
-        CurveGeometry::Line { .. } => linear_parameter_scale,
+        CurveGeometry::Circle(_) => angle_scale,
+        CurveGeometry::Ellipse(_) => angle_scale,
+        CurveGeometry::Line(_) => linear_parameter_scale,
         // A replica and the constructions that inherit a parent curve's
         // parameterization keep the parent's parameter units even when their
         // model-space dimensions change.
         CurveGeometry::Transformed { basis, .. } => {
             parameter_scale(basis, angle_scale, linear_parameter_scale)
         }
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_)
-        | CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => 1.0,
+        CurveGeometry::Parabola(_) => 1.0,
+        CurveGeometry::Hyperbola(_) => 1.0,
+        CurveGeometry::Nurbs(_) => 1.0,
+        CurveGeometry::Polyline(_) => 1.0,
+        CurveGeometry::Degenerate(_) => 1.0,
+        CurveGeometry::Composite { .. } => 1.0,
+        CurveGeometry::Procedural { .. } => 1.0,
+        CurveGeometry::Unknown { .. } => 1.0,
     }
 }
 
@@ -3749,24 +3770,18 @@ fn curve_parameter_at_point(
             cache: Some(geometry),
             ..
         } => curve_parameter_at_point(geometry, point, tolerance),
-        CurveGeometry::Line { origin, direction } => Some(offset(*origin).dot(*direction)),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            Some(offset(*origin).dot(*direction))
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, _) = circle_curve.parts();
             let radial = offset(*center);
             let y_axis = axis.cross(*ref_direction);
             Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             let radial = offset(*center);
             let minor_direction = axis.cross(*major_direction);
             Some(
@@ -4304,19 +4319,19 @@ fn decode_pcurve_geometry(
                     let direction = named_parameter(record, "LINE", 2)?
                         .reference()
                         .and_then(|vector| vectors.get(&vector).copied())?;
-                    PcurveGeometry::Line { origin, direction }
+                    PcurveGeometry::Line(
+                        cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).ok()?,
+                    )
                 }
                 "CIRCLE" => {
                     let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
                     let radius = positive(named_parameter(record, "CIRCLE", 2))?;
                     records.insert(placement);
-                    PcurveGeometry::Circle {
-                        center,
-                        x_axis,
-                        y_axis,
-                        radius,
-                    }
+                    PcurveGeometry::Circle(
+                        cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius)
+                            .ok()?,
+                    )
                 }
                 "ELLIPSE" => {
                     let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
@@ -4324,25 +4339,31 @@ fn decode_pcurve_geometry(
                     let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
                     let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
                     records.insert(placement);
-                    PcurveGeometry::Ellipse {
-                        center,
-                        x_axis,
-                        y_axis,
-                        major_radius,
-                        minor_radius,
-                    }
+                    PcurveGeometry::Ellipse(
+                        cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                            center,
+                            x_axis,
+                            y_axis,
+                            major_radius,
+                            minor_radius,
+                        )
+                        .ok()?,
+                    )
                 }
                 "PARABOLA" => {
                     let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
                     let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
                     let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
                     records.insert(placement);
-                    PcurveGeometry::Parabola {
-                        vertex,
-                        x_axis,
-                        y_axis,
-                        focal_distance,
-                    }
+                    PcurveGeometry::Parabola(
+                        cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                            vertex,
+                            x_axis,
+                            y_axis,
+                            focal_distance,
+                        )
+                        .ok()?,
+                    )
                 }
                 "HYPERBOLA" => {
                     let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
@@ -4350,13 +4371,16 @@ fn decode_pcurve_geometry(
                     let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
                     let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
                     records.insert(placement);
-                    PcurveGeometry::Hyperbola {
-                        center,
-                        x_axis,
-                        y_axis,
-                        major_radius,
-                        minor_radius,
-                    }
+                    PcurveGeometry::Hyperbola(
+                        cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                            center,
+                            x_axis,
+                            y_axis,
+                            major_radius,
+                            minor_radius,
+                        )
+                        .ok()?,
+                    )
                 }
                 "POLYLINE" => polyline_pcurve(record, points)?,
                 "CURVE_REPLICA" => {
@@ -4399,7 +4423,7 @@ fn decode_pcurve_geometry(
                     )?;
                     let scale = if matches!(
                         basis,
-                        PcurveGeometry::Circle { .. } | PcurveGeometry::Ellipse { .. }
+                        PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_)
                     ) {
                         angle_scale
                     } else {
@@ -4413,11 +4437,14 @@ fn decode_pcurve_geometry(
                     records.extend(basis_records);
                     let (parameter_range, same_sense) =
                         trimmed_pcurve_parameterization(&basis, start, end, sense);
-                    PcurveGeometry::Trimmed {
-                        parameter_range,
-                        same_sense,
-                        basis: Box::new(basis),
-                    }
+                    PcurveGeometry::Trimmed(
+                        cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+                            parameter_range,
+                            same_sense,
+                            Box::new(basis),
+                        )
+                        .ok()?,
+                    )
                 }
                 "OFFSET_CURVE_2D" => {
                     let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
@@ -4442,10 +4469,10 @@ fn decode_pcurve_geometry(
                         depth + 1,
                     )?;
                     records.extend(basis_records);
-                    PcurveGeometry::Offset {
-                        distance,
-                        basis: Box::new(basis),
-                    }
+                    PcurveGeometry::Offset(
+                        cadmpeg_ir::geometry::OffsetPcurve::try_new(distance, Box::new(basis))
+                            .ok()?,
+                    )
                 }
                 _ => {
                     return None;
@@ -4515,9 +4542,9 @@ fn trimmed_pcurve_parameterization(
 
 fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
     let period = match geometry {
-        PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Harmonic { .. } => std::f64::consts::TAU,
+        PcurveGeometry::Circle(_) => std::f64::consts::TAU,
+        PcurveGeometry::Ellipse(_) => std::f64::consts::TAU,
+        PcurveGeometry::Harmonic(_) => std::f64::consts::TAU,
         PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_period(
             nurbs.degree(),
             nurbs.knots(),
@@ -4526,7 +4553,10 @@ fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
         PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
             pcurve_nurbs_parameter_period(nurbs.degree(), nurbs.knots(), nurbs.poles().len())?
         }
-        PcurveGeometry::Offset { basis, .. } => pcurve_parameter_period(basis)?,
+        PcurveGeometry::Offset(offset_pcurve) => {
+            let (_, basis) = offset_pcurve.parts();
+            pcurve_parameter_period(basis)?
+        }
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_period(basis)?,
         _ => return None,
     };
@@ -4594,13 +4624,11 @@ fn surface_geometry_parameter_scales(
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     match geometry {
-        SurfaceGeometry::Plane { .. } => Some([length_scale, length_scale]),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            Some([angle_scale, length_scale])
-        }
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
-            Some([angle_scale, angle_scale])
-        }
+        SurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
+        SurfaceGeometry::Cylinder(_) => Some([angle_scale, length_scale]),
+        SurfaceGeometry::Cone(_) => Some([angle_scale, length_scale]),
+        SurfaceGeometry::Sphere(_) => Some([angle_scale, angle_scale]),
+        SurfaceGeometry::Torus(_) => Some([angle_scale, angle_scale]),
         SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
             ir,
@@ -4797,12 +4825,13 @@ fn directrix_geometry_parameter_scale(
             cache: Some(geometry),
             ..
         } => directrix_geometry_parameter_scale(ir, geometry, length_scale, angle_scale, active),
-        CurveGeometry::Line { .. } => Some(length_scale),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => Some(angle_scale),
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline(_) => Some(1.0),
+        CurveGeometry::Line(_) => Some(length_scale),
+        CurveGeometry::Circle(_) => Some(angle_scale),
+        CurveGeometry::Ellipse(_) => Some(angle_scale),
+        CurveGeometry::Parabola(_) => Some(1.0),
+        CurveGeometry::Hyperbola(_) => Some(1.0),
+        CurveGeometry::Nurbs(_) => Some(1.0),
+        CurveGeometry::Polyline(_) => Some(1.0),
         CurveGeometry::Transformed { basis, .. } => {
             directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
         }
@@ -4826,9 +4855,9 @@ fn directrix_geometry_parameter_scale(
                 } => directrix_parameter_scale_inner(ir, curve, length_scale, angle_scale, active),
                 _ => None,
             }),
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Degenerate(_) => None,
+        CurveGeometry::Composite { .. } => None,
+        CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -4838,11 +4867,10 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
             cache: Some(geometry),
             ..
         } => surface_parameter_periods(geometry),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            [Some(std::f64::consts::TAU), None]
-        }
-        SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
+        SurfaceGeometry::Cylinder(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Cone(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Torus(_) => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
         SurfaceGeometry::Nurbs(surface) => [
             surface
                 .u_periodic()
@@ -4866,10 +4894,10 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
                 .flatten(),
         ],
         SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
-        SurfaceGeometry::Plane { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Unknown { .. } => [None, None],
+        SurfaceGeometry::Plane(_) => [None, None],
+        SurfaceGeometry::Procedural { .. } => [None, None],
+        SurfaceGeometry::Polygonal(_) => [None, None],
+        SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
@@ -4880,167 +4908,6 @@ fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: u32) -> Opt
     let upper = *knots.get(count)?;
     let period = upper - lower;
     (period.is_finite() && period > 0.0).then_some(period)
-}
-
-/// Scale a pcurve's coordinates into the units of its owning surface.
-///
-/// The pcurve parameter itself is unchanged. Circle, ellipse, and hyperbola
-/// carriers keep their native trigonometric parameterization by using the
-/// general harmonic forms when the two coordinate scales differ. The remaining
-/// analytic forms require an affine 2D carrier to preserve that parameterization;
-/// report them as unsupported instead of applying a scalar approximation.
-pub(super) fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> bool {
-    let [u_scale, v_scale] = scales;
-    let scale_point = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
-    let isotropic = u_scale == v_scale;
-
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            *origin = scale_point(*origin);
-            *direction = scale_point(*direction);
-        }
-        PcurveGeometry::Circle {
-            center: center_slot,
-            x_axis,
-            y_axis,
-            radius,
-        } => {
-            let center = scale_point(*center_slot);
-            if isotropic {
-                *center_slot = center;
-                *radius *= u_scale;
-            } else {
-                *geometry = PcurveGeometry::Harmonic {
-                    center,
-                    cosine: scale_point(Point2::new(*radius * x_axis.u, *radius * x_axis.v)),
-                    sine: scale_point(Point2::new(*radius * y_axis.u, *radius * y_axis.v)),
-                };
-            }
-        }
-        PcurveGeometry::Ellipse {
-            center: center_slot,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
-            let center = scale_point(*center_slot);
-            if isotropic {
-                *center_slot = center;
-                *major_radius *= u_scale;
-                *minor_radius *= u_scale;
-            } else {
-                *geometry = PcurveGeometry::Harmonic {
-                    center,
-                    cosine: scale_point(Point2::new(
-                        *major_radius * x_axis.u,
-                        *major_radius * x_axis.v,
-                    )),
-                    sine: scale_point(Point2::new(
-                        *minor_radius * y_axis.u,
-                        *minor_radius * y_axis.v,
-                    )),
-                };
-            }
-        }
-        PcurveGeometry::Parabola {
-            vertex,
-            focal_distance,
-            ..
-        } => {
-            if !isotropic {
-                return false;
-            }
-            *vertex = scale_point(*vertex);
-            *focal_distance *= u_scale;
-        }
-        PcurveGeometry::Hyperbola {
-            center: center_slot,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
-            let center = scale_point(*center_slot);
-            if isotropic {
-                *center_slot = center;
-                *major_radius *= u_scale;
-                *minor_radius *= u_scale;
-            } else {
-                *geometry = PcurveGeometry::Hyperbolic {
-                    center,
-                    cosine: scale_point(Point2::new(
-                        *major_radius * x_axis.u,
-                        *major_radius * x_axis.v,
-                    )),
-                    sine: scale_point(Point2::new(
-                        *minor_radius * y_axis.u,
-                        *minor_radius * y_axis.v,
-                    )),
-                };
-            }
-        }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        }
-        | PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
-            *center = scale_point(*center);
-            *cosine = scale_point(*cosine);
-            *sine = scale_point(*sine);
-        }
-        PcurveGeometry::Nurbs { nurbs } => {
-            if nurbs
-                .edit_control_points(|points| {
-                    for control_point in points {
-                        *control_point = scale_point(*control_point);
-                    }
-                })
-                .is_err()
-            {
-                return false;
-            }
-        }
-        PcurveGeometry::Trimmed { basis, .. } => {
-            if !scale_pcurve_geometry(basis, scales) {
-                return false;
-            }
-        }
-        PcurveGeometry::Offset { distance, basis } => {
-            if !isotropic || !scale_pcurve_geometry(basis, scales) {
-                return false;
-            }
-            *distance *= u_scale;
-        }
-        PcurveGeometry::Transformed { basis, transform } => {
-            if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
-                return false;
-            }
-            // The basis is converted below. Conjugate the replica map so
-            // `S * T * x` remains `S * T * S^-1 * (S * x)`.
-            let mut rows = transform.rows();
-            rows[0][1] *= u_scale / v_scale;
-            rows[0][2] *= u_scale;
-            rows[1][0] *= v_scale / u_scale;
-            rows[1][2] *= v_scale;
-            let Some(scaled_transform) = Transform2::from_rows(rows) else {
-                return false;
-            };
-            if !scale_pcurve_geometry(basis, scales) {
-                return false;
-            }
-            *transform = scaled_transform;
-        }
-        PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => return isotropic && u_scale == 1.0,
-    }
-    true
 }
 
 fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {

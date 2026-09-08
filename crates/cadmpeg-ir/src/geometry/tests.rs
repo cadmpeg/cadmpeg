@@ -2,8 +2,13 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::geometry::SurfaceGeometry;
+use crate::geometry::{
+    CircleCurve, CirclePcurve, ConeSurface, CurveGeometry, CylinderSurface, EllipseCurve,
+    EllipsePcurve, HarmonicPcurve, LinePcurve, OffsetPcurve, PcurveGeometry, PlaneSurface,
+    SphereSurface, SphericalGreatCirclePcurve, SurfaceGeometry, TorusSurface, TrimmedPcurve,
+};
 use crate::ids::UnknownId;
+use crate::math::{Point2, Point3, Vector3};
 use crate::unknown::NativeUnknownRecord;
 
 /// Replace the surface of the cube's first face with an unknown surface,
@@ -93,10 +98,13 @@ fn support_side_rejects_orphan_legacy_parameter_range() {
 fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
     let pcurve = crate::geometry::Pcurve {
         id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
-        geometry: crate::geometry::PcurveGeometry::Line {
-            origin: crate::math::Point2::new(1.0, 2.0),
-            direction: crate::math::Point2::new(3.0, 4.0),
-        },
+        geometry: crate::geometry::PcurveGeometry::Line(
+            crate::geometry::LinePcurve::try_new(
+                crate::math::Point2::new(1.0, 2.0),
+                crate::math::Point2::new(3.0, 4.0),
+            )
+            .unwrap(),
+        ),
         metadata: crate::geometry::PcurveMetadata::AsmInline(crate::geometry::PcurveInlineForm {
             wrapper_reversed: false,
             native_tail_flags: [true, false, true, false],
@@ -663,9 +671,10 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
             .try_into()
             .expect("valid identity"),
         cache: Some(
-            SolvedCurveGeometry::new(CurveGeometry::Degenerate {
-                point: crate::math::Point3::new(1.0, 2.0, 3.0),
-            })
+            SolvedCurveGeometry::new(CurveGeometry::Degenerate(
+                crate::geometry::DegenerateCurve::try_new(crate::math::Point3::new(1.0, 2.0, 3.0))
+                    .unwrap(),
+            ))
             .unwrap(),
         ),
     };
@@ -796,4 +805,103 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         .iter()
         .flatten()
         .all(|point| point.z == 2.0));
+}
+
+#[test]
+fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
+    let center = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    for radius in [-1.0, 0.0, f64::NAN, f64::INFINITY] {
+        assert!(CircleCurve::try_new(center, axis, reference, radius).is_err());
+    }
+    assert!(CircleCurve::try_new(Point3::new(f64::NAN, 0.0, 0.0), axis, reference, 1.0).is_err());
+    assert!(CircleCurve::try_new(center, Vector3::new(0.0, 0.0, 2.0), reference, 1.0).is_err());
+    assert!(CircleCurve::try_new(center, axis, axis, 1.0).is_err());
+    let wire = serde_json::json!({
+        "kind": "circle",
+        "center": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "ref_direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+        "radius": 1.0
+    });
+    let curve: CurveGeometry = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(curve).unwrap(), wire);
+    let mut invalid = wire.clone();
+    invalid["radius"] = serde_json::json!(-1.0);
+    assert!(serde_json::from_value::<CurveGeometry>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("radius"));
+    let mut invalid = wire;
+    invalid["ref_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+    assert!(serde_json::from_value::<CurveGeometry>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("frame"));
+}
+
+#[test]
+fn analytic_surface_admission_preserves_signed_and_zero_radius_contracts() {
+    let center = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let tiny = 1e-200;
+    for radius in [tiny, -tiny] {
+        let sphere = SurfaceGeometry::Sphere(
+            SphereSurface::try_new(center, axis, reference, radius).unwrap(),
+        );
+        let wire = serde_json::to_value(&sphere).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SurfaceGeometry>(wire).unwrap(),
+            sphere
+        );
+    }
+    assert!(SphereSurface::try_new(center, axis, reference, 0.0).is_err());
+    assert!(TorusSurface::try_new(center, axis, reference, tiny, -tiny).is_ok());
+    assert!(TorusSurface::try_new(center, axis, reference, -tiny, tiny).is_err());
+    assert!(ConeSurface::try_new(center, axis, reference, 0.0, 1.0, -0.5).is_ok());
+    assert!(ConeSurface::try_new(center, axis, reference, -tiny, 1.0, 0.5).is_err());
+    assert!(CylinderSurface::try_new(center, axis, reference, 0.0).is_err());
+    assert!(PlaneSurface::try_new(center, Vector3::new(0.0, 0.0, 0.0), reference).is_err());
+}
+
+#[test]
+fn analytic_pcurve_admission_preserves_nonunit_axes_and_unordered_radii() {
+    let origin = Point2::new(0.0, 0.0);
+    let x = Point2::new(2.0, 0.0);
+    let y = Point2::new(1.0, 3.0);
+    assert!(CirclePcurve::try_new(origin, x, y, 1.0).is_ok());
+    assert!(EllipsePcurve::try_new(origin, x, y, 1.0, 2.0).is_ok());
+    assert!(EllipseCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        2.0,
+    )
+    .is_err());
+    assert!(LinePcurve::try_new(origin, origin).is_err());
+    assert!(HarmonicPcurve::try_new(origin, origin, x).is_ok());
+    assert!(HarmonicPcurve::try_new(origin, origin, origin).is_err());
+    assert!(SphericalGreatCirclePcurve::try_new(0.0, 1e-200, 0.0, 0.0).is_ok());
+    assert!(SphericalGreatCirclePcurve::try_new(0.0, 0.0, 0.0, 0.0).is_err());
+    let line = PcurveGeometry::Line(LinePcurve::try_new(origin, x).unwrap());
+    assert!(TrimmedPcurve::try_new([2.0, 1.0], true, Box::new(line.clone())).is_err());
+    assert!(TrimmedPcurve::try_new([1.0, 1.0], false, Box::new(line.clone())).is_ok());
+    assert!(OffsetPcurve::try_new(f64::INFINITY, Box::new(line.clone())).is_err());
+    let offset = PcurveGeometry::Offset(OffsetPcurve::try_new(-2.0, Box::new(line)).unwrap());
+    let mut wire = serde_json::to_value(offset).unwrap();
+    wire["basis"]["direction"] = serde_json::json!({"u": 0.0, "v": 0.0});
+    assert!(serde_json::from_value::<PcurveGeometry>(wire).is_err());
+}
+
+#[test]
+fn pcurve_coordinate_scaling_keeps_the_original_when_a_nested_result_overflows() {
+    let mut geometry = PcurveGeometry::Offset(
+        OffsetPcurve::try_new(1e300, Box::new(PcurveGeometry::Line(LinePcurve::U_AXIS))).unwrap(),
+    );
+    let original = geometry.clone();
+    assert!(geometry.try_scale_coordinates([1e300, 1e300]).is_err());
+    assert_eq!(geometry, original);
 }

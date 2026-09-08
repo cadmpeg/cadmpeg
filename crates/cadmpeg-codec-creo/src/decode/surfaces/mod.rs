@@ -380,6 +380,14 @@ pub(super) fn transfer_fc05_cap_circles(
         let id = CurveId::mint(format!("creo:visibgeom:curve#{}", circle.curve_id))
             .expect("identity grammar");
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
+            let Ok(circle_curve) = cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(center[0], center[1], center[2]),
+                Vector3::new(axis[0], axis[1], axis[2]),
+                Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                circle.radius_mm,
+            ) else {
+                continue;
+            };
             annotate(
                 annotations,
                 &id,
@@ -390,16 +398,7 @@ pub(super) fn transfer_fc05_cap_circles(
             );
             ir.model.curves.push(Curve {
                 id,
-                geometry: CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(
-                        ref_direction[0],
-                        ref_direction[1],
-                        ref_direction[2],
-                    ),
-                    radius: circle.radius_mm,
-                },
+                geometry: CurveGeometry::Circle(circle_curve),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{}", circle.curve_id),
@@ -421,6 +420,14 @@ pub(super) fn transfer_fc05_cap_circles(
         {
             continue;
         }
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(surface_origin[0], surface_origin[1], surface_origin[2]),
+            Vector3::new(axis[0], axis[1], axis[2]),
+            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            circle.radius_mm,
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &surface_id,
@@ -431,12 +438,7 @@ pub(super) fn transfer_fc05_cap_circles(
         );
         ir.model.surfaces.push(Surface {
             id: surface_id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(surface_origin[0], surface_origin[1], surface_origin[2]),
-                axis: Vector3::new(axis[0], axis[1], axis[2]),
-                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                radius: circle.radius_mm,
-            },
+            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{cylinder_id}"),

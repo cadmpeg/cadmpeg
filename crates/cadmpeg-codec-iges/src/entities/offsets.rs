@@ -48,21 +48,28 @@ fn placed_offset_source(
 ) -> Option<CurveGeometry> {
     let orientation = transform_orientation(transform)?;
     match geometry {
-        CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {
-            origin: transform.apply_point(*origin),
-            direction: unit_vector(transform.apply_vector(*direction))?,
-        }),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => Some(CurveGeometry::Circle {
-            center: transform.apply_point(*center),
-            axis: unit_vector(transform.apply_vector(*axis))?.scale(orientation),
-            ref_direction: unit_vector(transform.apply_vector(*ref_direction))?,
-            radius: *radius,
-        }),
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    transform.apply_point(*origin),
+                    unit_vector(transform.apply_vector(*direction))?,
+                )
+                .ok()?,
+            ))
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    transform.apply_point(*center),
+                    unit_vector(transform.apply_vector(*axis))?.scale(orientation),
+                    unit_vector(transform.apply_vector(*ref_direction))?,
+                    *radius,
+                )
+                .ok()?,
+            ))
+        }
         _ => None,
     }
 }
@@ -412,44 +419,64 @@ pub(super) fn project(
                     continue;
                 };
                 let distance = distance * factor;
-                let geometry = match &offset_source_geometry {
-                    CurveGeometry::Line { origin, direction }
-                        if normal.dot(*direction).abs() <= EPS_OFFSET_FRAME =>
-                    {
-                        CurveGeometry::Line {
-                            origin: origin.translated(normal.cross(*direction), distance),
-                            direction: *direction,
+                let geometry =
+                    match &offset_source_geometry {
+                        CurveGeometry::Line(line_curve)
+                            if {
+                                let (_, direction) = line_curve.parts();
+                                normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
+                            } =>
+                        {
+                            let (origin, direction) = line_curve.parts();
+                            CurveGeometry::Line(
+                                match cadmpeg_ir::geometry::LineCurve::try_new(
+                                    origin.translated(normal.cross(*direction), distance),
+                                    *direction,
+                                ) {
+                                    Ok(payload) => payload,
+                                    Err(message) => {
+                                        losses.push(entity_loss(entry, message));
+                                        continue;
+                                    }
+                                },
+                            )
                         }
-                    }
-                    CurveGeometry::Circle {
-                        center,
-                        axis,
-                        ref_direction,
-                        radius,
-                    } if normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME => {
-                        let offset_radius = radius - distance * normal.dot(*axis).signum();
-                        if offset_radius <= 0.0 {
+                        CurveGeometry::Circle(circle_curve)
+                            if {
+                                let (_, axis, _, _) = circle_curve.parts();
+                                normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
+                            } =>
+                        {
+                            let (center, axis, ref_direction, radius) = circle_curve.parts();
+                            let offset_radius = radius - distance * normal.dot(*axis).signum();
+                            if offset_radius <= 0.0 {
+                                losses.push(entity_loss(
+                                    entry,
+                                    "offset collapses or reverses the circle",
+                                ));
+                                continue;
+                            }
+                            CurveGeometry::Circle(match cadmpeg_ir::geometry::CircleCurve::try_new(
+                                *center,
+                                *axis,
+                                *ref_direction,
+                                offset_radius,
+                            ) {
+                                Ok(payload) => payload,
+                                Err(message) => {
+                                    losses.push(entity_loss(entry, message));
+                                    continue;
+                                }
+                            })
+                        }
+                        _ => {
                             losses.push(entity_loss(
                                 entry,
-                                "offset collapses or reverses the circle",
+                                "source curve has no exact uniform offset carrier",
                             ));
                             continue;
                         }
-                        CurveGeometry::Circle {
-                            center: *center,
-                            axis: *axis,
-                            ref_direction: *ref_direction,
-                            radius: offset_radius,
-                        }
-                    }
-                    _ => {
-                        losses.push(entity_loss(
-                            entry,
-                            "source curve has no exact uniform offset carrier",
-                        ));
-                        continue;
-                    }
-                };
+                    };
                 (distance, None, geometry)
             }
             2 => {
@@ -505,13 +532,14 @@ pub(super) fn project(
                     control_origin + td1 * control_factor,
                     control_origin + td2 * control_factor,
                 ];
-                let CurveGeometry::Line { direction, .. } = &offset_source_geometry else {
+                let CurveGeometry::Line(line_curve) = &offset_source_geometry else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source has no exact neutral carrier",
                     ));
                     continue;
                 };
+                let (_, direction) = line_curve.parts();
                 if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
@@ -622,13 +650,14 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let CurveGeometry::Line { direction, .. } = &offset_source_geometry else {
+                let CurveGeometry::Line(line_curve) = &offset_source_geometry else {
                     losses.push(entity_loss(
                         entry,
                         "function offset source has no exact neutral carrier",
                     ));
                     continue;
                 };
+                let (_, direction) = line_curve.parts();
                 if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,

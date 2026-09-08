@@ -564,7 +564,8 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
     let model = &target.model;
     for carrier in &model.curves {
         match *carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
-            CurveGeometry::Line { origin, direction } => {
+            CurveGeometry::Line(line_curve) => {
+                let (&origin, &direction) = line_curve.parts();
                 native_curve_base(records, "straight")?;
                 native_point(
                     records,
@@ -576,12 +577,8 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 );
                 native_vector(records, [direction.x, direction.y, direction.z]);
             }
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => {
+            CurveGeometry::Circle(circle_curve) => {
+                let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
                 native_curve_base(records, "ellipse")?;
                 native_point(
                     records,
@@ -602,13 +599,9 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 );
                 native_f64(records, 1.0);
             }
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } => {
+            CurveGeometry::Ellipse(ellipse_curve) => {
+                let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
+                    ellipse_curve.parts();
                 if major_radius == 0.0 {
                     return Err(CodecError::Malformed(
                         "source-less F3D ellipse has zero major radius".into(),
@@ -648,7 +641,8 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                     )));
                 }
             }
-            CurveGeometry::Degenerate { point } => {
+            CurveGeometry::Degenerate(degenerate_curve) => {
+                let (&point,) = degenerate_curve.parts();
                 native_curve_base(records, "degenerate_curve")?;
                 native_point(
                     records,
@@ -1099,11 +1093,8 @@ fn encode_face_topology_smbh(
 
     for surface in &model.surfaces {
         match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => {
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (&origin, &normal, &u_axis) = plane_surface.parts();
                 native_surface_base(&mut records, "plane")?;
                 native_point(
                     &mut records,
@@ -1117,12 +1108,8 @@ fn encode_face_topology_smbh(
                 native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
                 records.push(0x0b);
             }
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } => {
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
                 native_surface_base(&mut records, "cone")?;
                 native_point(
                     &mut records,
@@ -1148,14 +1135,9 @@ fn encode_face_topology_smbh(
                 native_f64(&mut records, radius / LEN_TO_MM);
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                ratio,
-                half_angle,
-            } => {
+            SurfaceGeometry::Cone(cone_surface) => {
+                let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) =
+                    cone_surface.parts();
                 native_surface_base(&mut records, "cone")?;
                 native_point(
                     &mut records,
@@ -1181,12 +1163,8 @@ fn encode_face_topology_smbh(
                 native_f64(&mut records, radius / LEN_TO_MM);
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => {
+            SurfaceGeometry::Sphere(sphere_surface) => {
+                let (&center, &axis, &ref_direction, &radius) = sphere_surface.parts();
                 native_surface_base(&mut records, "sphere")?;
                 native_point(
                     &mut records,
@@ -1210,13 +1188,9 @@ fn encode_face_topology_smbh(
                     native_nurbs_surface(&mut records, nurbs)?;
                 }
             }
-            SurfaceGeometry::Torus {
-                center,
-                axis,
-                ref_direction,
-                major_radius,
-                minor_radius,
-            } => {
+            SurfaceGeometry::Torus(torus_surface) => {
+                let (&center, &axis, &ref_direction, &major_radius, &minor_radius) =
+                    torus_surface.parts();
                 native_surface_base(&mut records, "torus")?;
                 native_point(
                     &mut records,
@@ -1526,7 +1500,7 @@ fn encode_source_less_edges_vertices_points(
         // and centimeters natively.
         if edge.curve.as_ref().is_some_and(|curve_id| {
             curve_ordinals.get(curve_id).is_some_and(|ordinal| {
-                matches!(model.curves[*ordinal].geometry, CurveGeometry::Line { .. })
+                matches!(model.curves[*ordinal].geometry, CurveGeometry::Line(_))
             })
         }) {
             range[0] /= LEN_TO_MM;

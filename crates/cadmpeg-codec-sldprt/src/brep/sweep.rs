@@ -140,25 +140,20 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
 pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
     let (center, axis, major, major_radius, minor_radius) = match geometry {
         CurveGeometry::Nurbs(curve) => return Some(curve.clone()),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => (*center, *axis, *ref_direction, *radius, *radius),
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            *center,
-            *axis,
-            *major_direction,
-            *major_radius,
-            *minor_radius,
-        ),
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            (*center, *axis, *ref_direction, *radius, *radius)
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            (
+                *center,
+                *axis,
+                *major_direction,
+                *major_radius,
+                *minor_radius,
+            )
+        }
         _ => return None,
     };
     let axis = axis.unit()?;
@@ -447,13 +442,16 @@ mod tests {
 
     #[test]
     fn analytic_ellipse_profile_has_exact_rational_form() {
-        let geometry = CurveGeometry::Ellipse {
-            center: Point3::new(3.0, -2.0, 7.0),
-            axis: Vector3::new(0.0, 0.0, 2.0),
-            major_direction: Vector3::new(4.0, 0.0, 0.0),
-            major_radius: 5.0,
-            minor_radius: 2.0,
-        };
+        let geometry = CurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipseCurve::try_new(
+                Point3::new(3.0, -2.0, 7.0),
+                Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
+                Vector3::new(4.0, 0.0, 0.0).unit().unwrap(),
+                5.0,
+                2.0,
+            )
+            .unwrap(),
+        );
         let curve = profile_nurbs(&geometry).expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
@@ -475,12 +473,15 @@ mod tests {
 
     #[test]
     fn analytic_circle_profile_has_exact_rational_form() {
-        let geometry = CurveGeometry::Circle {
-            center: Point3::new(-1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 2.0, 0.0),
-            ref_direction: Vector3::new(0.0, 0.0, 4.0),
-            radius: 6.0,
-        };
+        let geometry = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(-1.0, 2.0, 3.0),
+                Vector3::new(0.0, 2.0, 0.0).unit().unwrap(),
+                Vector3::new(0.0, 0.0, 4.0).unit().unwrap(),
+                6.0,
+            )
+            .unwrap(),
+        );
         let curve = profile_nurbs(&geometry).expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
@@ -488,27 +489,6 @@ mod tests {
             let radius = ((point.x + 1.0).powi(2) + (point.z - 3.0).powi(2)).sqrt();
             assert!((radius - 6.0).abs() < 1.0e-12, "radius {radius}");
             assert!((point.y - 2.0).abs() < 1.0e-12);
-        }
-    }
-
-    #[test]
-    fn analytic_profile_rejects_invalid_frame_or_radius() {
-        for geometry in [
-            CurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 1.0),
-                radius: 1.0,
-            },
-            CurveGeometry::Ellipse {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                major_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 1.0,
-                minor_radius: 0.0,
-            },
-        ] {
-            assert!(profile_nurbs(&geometry).is_none());
         }
     }
 

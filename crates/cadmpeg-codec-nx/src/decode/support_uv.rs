@@ -420,9 +420,12 @@ pub(crate) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
                 || missing_support_parameter(point.u)
                 || missing_support_parameter(point.v)
         }),
-        Some(PcurveGeometry::Line { origin, direction }) => [origin, direction]
-            .into_iter()
-            .any(|point| !point.u.is_finite() || !point.v.is_finite()),
+        Some(PcurveGeometry::Line(line_pcurve)) => {
+            let (&origin, &direction) = line_pcurve.parts();
+            [origin, direction]
+                .into_iter()
+                .any(|point| !point.u.is_finite() || !point.v.is_finite())
+        }
         Some(_) => false,
     }
 }
@@ -1299,10 +1302,10 @@ fn complete_support_uv_wave(
                 };
                 if matches!(
                     surface.geometry,
-                    SurfaceGeometry::Cylinder { .. }
-                        | SurfaceGeometry::Cone { .. }
-                        | SurfaceGeometry::Sphere { .. }
-                        | SurfaceGeometry::Torus { .. }
+                    SurfaceGeometry::Cylinder(_)
+                        | SurfaceGeometry::Cone(_)
+                        | SurfaceGeometry::Sphere(_)
+                        | SurfaceGeometry::Torus(_)
                 ) {
                     for index in 1..uv.len() {
                         let turns =
@@ -2321,11 +2324,14 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

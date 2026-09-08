@@ -84,24 +84,30 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let angle = std::f64::consts::FRAC_PI_6;
-    let support = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: angle,
-    };
+    let support = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            1.0,
+            angle,
+        )
+        .unwrap(),
+    );
     let expected = 2.0;
     let axial_shift = -expected * angle.sin();
-    let offset = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, axial_shift),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.0 + expected * angle.cos(),
-        ratio: 1.0,
-        half_angle: angle,
-    };
+    let offset = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, axial_shift),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0 + expected * angle.cos(),
+            1.0,
+            angle,
+        )
+        .unwrap(),
+    );
 
     let distance = analytic_surface_offset(&support, &offset).expect("offset");
     assert!((distance - expected).abs() <= 1.0e-12);
@@ -109,24 +115,57 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     assert!((reverse + expected).abs() <= 1.0e-12);
 
     let mut lateral = offset.clone();
-    let SurfaceGeometry::Cone { origin, .. } = &mut lateral else {
+    let SurfaceGeometry::Cone(cone_surface) = &mut lateral else {
         unreachable!()
     };
+    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+    let mut origin = *origin;
     origin.x = 0.1;
+    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+        origin,
+        *axis,
+        *ref_direction,
+        *radius,
+        *ratio,
+        *half_angle,
+    )
+    .unwrap();
     assert!(analytic_surface_offset(&support, &lateral).is_none());
 
     let mut shifted_parameterization = offset.clone();
-    let SurfaceGeometry::Cone { origin, .. } = &mut shifted_parameterization else {
+    let SurfaceGeometry::Cone(cone_surface) = &mut shifted_parameterization else {
         unreachable!()
     };
+    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+    let mut origin = *origin;
     origin.z += 0.1;
+    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+        origin,
+        *axis,
+        *ref_direction,
+        *radius,
+        *ratio,
+        *half_angle,
+    )
+    .unwrap();
     assert!(analytic_surface_offset(&support, &shifted_parameterization).is_none());
 
     let mut elliptical = offset;
-    let SurfaceGeometry::Cone { ratio, .. } = &mut elliptical else {
+    let SurfaceGeometry::Cone(cone_surface) = &mut elliptical else {
         unreachable!()
     };
-    *ratio = 0.5;
+    let (origin, axis, ref_direction, radius, _, half_angle) = cone_surface.parts();
+
+    let ratio = 0.5;
+    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        *radius,
+        ratio,
+        *half_angle,
+    )
+    .unwrap();
     assert!(analytic_surface_offset(&support, &elliptical).is_none());
 }
 
@@ -135,11 +174,16 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let sphere = |radius| SurfaceGeometry::Sphere {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
+    let sphere = |radius| {
+        SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SphereSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        )
     };
     assert_eq!(
         analytic_surface_offset(&sphere(4.0), &sphere(6.5)),
@@ -161,12 +205,17 @@ fn nx_torus_offset_lineage_requires_one_ring_orientation() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let torus = |minor_radius| SurfaceGeometry::Torus {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 10.0,
-        minor_radius,
+    let torus = |minor_radius| {
+        SurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::TorusSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                10.0,
+                minor_radius,
+            )
+            .unwrap(),
+        )
     };
     assert_eq!(analytic_surface_offset(&torus(2.0), &torus(3.5)), Some(1.5));
     assert_eq!(
@@ -747,10 +796,10 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
     const CONTACT_FIT_TOLERANCE: f64 = 1.0e-8;
     const CANDIDATE_COUNT: usize = 300;
 
-    let source_pcurve = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let source_pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
     let mut ir = blend_contact_transfer_fixture(
         CANDIDATE_COUNT,
         &source_pcurve,
@@ -818,10 +867,10 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
     const BLEND_BOUNDARY_FIT_TOLERANCE: f64 = 1.0e-8;
     const CANDIDATE_COUNT: usize = 300;
 
-    let source_pcurve = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let source_pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
     let mut ir = blend_contact_transfer_fixture(
         CANDIDATE_COUNT,
         &source_pcurve,
@@ -922,21 +971,27 @@ fn cylinder_plane_transfer_fixture(
     ir.model.surfaces.extend([
         Surface {
             id: source.clone(),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 10.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    10.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: target.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -960,10 +1015,13 @@ fn cylinder_plane_transfer_fixture(
                     IntcurveSupportSide {
                         surface: Some(source),
                         pcurve: Some(
-                            PcurveGeometry::Line {
-                                origin: Point2::new(0.0, 0.0),
-                                direction: Point2::new(source_pcurve_angle, 0.0),
-                            }
+                            PcurveGeometry::Line(
+                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    Point2::new(0.0, 0.0),
+                                    Point2::new(source_pcurve_angle, 0.0),
+                                )
+                                .unwrap(),
+                            )
                             .into(),
                         ),
                     },
@@ -1014,29 +1072,38 @@ fn blend_contact_transfer_fixture(
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: other_support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: offset.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 2.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 2.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -1056,10 +1123,13 @@ fn blend_contact_transfer_fixture(
         CurveId::mint("test:model:entity#synthetic:blend-contact-spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: spine.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 2.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 2.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
@@ -1130,10 +1200,13 @@ fn blend_contact_transfer_fixture(
         .expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         let procedural = ProceduralCurve::try_new(
@@ -1196,11 +1269,14 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         },
         Surface {
             id: other_support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -1216,10 +1292,13 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         CurveId::mint("test:model:entity#synthetic:target-spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: spine.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
@@ -1249,10 +1328,13 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(2.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
@@ -1265,10 +1347,13 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                         IntcurveSupportSide {
                             surface: Some(source),
                             pcurve: Some(
-                                PcurveGeometry::Line {
-                                    origin: Point2::new(0.0, 0.0),
-                                    direction: Point2::new(1.0, 0.0),
-                                }
+                                PcurveGeometry::Line(
+                                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                                        Point2::new(0.0, 0.0),
+                                        Point2::new(1.0, 0.0),
+                                    )
+                                    .unwrap(),
+                                )
                                 .into(),
                             ),
                         },
@@ -1349,11 +1434,14 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         },
         Surface {
             id: plane.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -1363,10 +1451,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(10.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(10.0, 0.0, 0.0).unit().unwrap(),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
@@ -1493,30 +1584,39 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     ir.model.surfaces.extend([
         Surface {
             id: first_support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: second_support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
     let curve = CurveId::mint("test:model:entity#nx:test:boundary-line").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(10.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(10.0, 0.0, 0.0).unit().unwrap(),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let points = [
@@ -1745,7 +1845,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         .model
         .surfaces
         .iter()
-        .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane { .. }))
+        .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane(_)))
         .count();
     let cyls: Vec<_> = result
         .ir()
@@ -1753,27 +1853,48 @@ fn decode_transfers_point_plane_cylinder_line() {
         .surfaces
         .iter()
         .filter_map(|s| match &s.geometry {
-            SurfaceGeometry::Cylinder { radius, .. } => Some(*radius),
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (_, _, _, radius) = cylinder_surface.parts();
+                Some(*radius)
+            }
             _ => None,
         })
         .collect();
     assert_eq!(planes, 1);
     assert_eq!(cyls.len(), 1);
     assert!((cyls[0] - 4.05).abs() < 1.0e-6);
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Plane {
-            u_axis: axis,
-            ..
-        } if axis == Vector3::new(1.0, 0.0, 0.0)
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder {
-            ref_direction: direction,
-            ..
-        } if direction == Vector3::new(1.0, 0.0, 0.0)
-    )));
+    assert!(result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| match surface.geometry {
+            SurfaceGeometry::Plane(plane_surface)
+                if {
+                    let (_, _, axis) = plane_surface.parts();
+                    *axis == Vector3::new(1.0, 0.0, 0.0)
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }));
+    assert!(result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| match surface.geometry {
+            SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let (_, _, direction, _) = cylinder_surface.parts();
+                    *direction == Vector3::new(1.0, 0.0, 0.0)
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }));
 
     // One line decoded, with a unit direction.
     let lines: Vec<_> = result
@@ -1781,7 +1902,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         .model
         .curves
         .iter()
-        .filter(|c| matches!(c.geometry, CurveGeometry::Line { .. }))
+        .filter(|c| matches!(c.geometry, CurveGeometry::Line(_)))
         .collect();
     assert_eq!(lines.len(), 1);
 

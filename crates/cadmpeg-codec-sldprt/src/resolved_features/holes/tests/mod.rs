@@ -153,12 +153,15 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(x, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(x, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     }
 }

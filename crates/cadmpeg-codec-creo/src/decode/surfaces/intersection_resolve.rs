@@ -74,7 +74,8 @@ pub(in super::super) fn curve_contains_points(
     points: [[f64; 3]; 2],
 ) -> bool {
     match geometry {
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
             let origin = [origin.x, origin.y, origin.z];
             let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
                 return false;
@@ -86,7 +87,7 @@ pub(in super::super) fn curve_contains_points(
                 dot(residual, residual).sqrt() <= EPS_ON_CURVE * scale
             })
         }
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+        CurveGeometry::Circle(_) => {
             let Some(PeriodicConicFrame {
                 center,
                 normal,
@@ -107,7 +108,31 @@ pub(in super::super) fn curve_contains_points(
                     && (x.mul_add(x, y * y) - 1.0).abs() <= EPS_ON_CURVE
             })
         }
-        CurveGeometry::Parabola { .. } | CurveGeometry::Hyperbola { .. } => points
+        CurveGeometry::Ellipse(_) => {
+            let Some(PeriodicConicFrame {
+                center,
+                normal,
+                x_axis,
+                y_axis,
+                radii,
+            }) = periodic_conic_frame(geometry)
+            else {
+                return false;
+            };
+            points.into_iter().all(|point| {
+                let relative: [f64; 3] = std::array::from_fn(|index| point[index] - center[index]);
+                let scale = radii.into_iter().fold(1.0, f64::max);
+                let x = dot(relative, x_axis) / radii[0];
+                let y = dot(relative, y_axis) / radii[1];
+                dot(relative, normal).abs() <= EPS_ON_CURVE * scale
+                    && x.mul_add(x, y * y).is_finite()
+                    && (x.mul_add(x, y * y) - 1.0).abs() <= EPS_ON_CURVE
+            })
+        }
+        CurveGeometry::Parabola(_) => points
+            .into_iter()
+            .all(|point| nonperiodic_conic_parameter(geometry, point).is_some()),
+        CurveGeometry::Hyperbola(_) => points
             .into_iter()
             .all(|point| nonperiodic_conic_parameter(geometry, point).is_some()),
         _ => false,
@@ -174,9 +199,10 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
             if *tag != "coaxial_cone_cylinder_secant_circle" {
                 return false;
             }
-            let CurveGeometry::Circle { center, axis, .. } = geometry else {
+            let CurveGeometry::Circle(circle_curve) = geometry else {
                 return false;
             };
+            let (center, axis, _, _) = circle_curve.parts();
             let axis = [axis.x, axis.y, axis.z];
             let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
                 ((value.abs() - 1.0).abs() <= EPS_AXIS_COMPONENT).then_some(index)

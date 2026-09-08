@@ -340,10 +340,15 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
-            direction: cadmpeg_ir::math::Vector3::new(2.0, 4.0, -1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
+                cadmpeg_ir::math::Vector3::new(2.0, 4.0, -1.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

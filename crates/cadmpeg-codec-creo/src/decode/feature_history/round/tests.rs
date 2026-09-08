@@ -129,11 +129,14 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
             .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        },
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
 
@@ -154,7 +157,13 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 
     let mut conflicting_ir = ir.clone();
     match &mut conflicting_ir.model.surfaces[0].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = 0.25,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            let mut origin = *origin;
+            origin.x = 0.25;
+            *plane_surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+        }
         _ => panic!("transferred plane geometry"),
     }
     assert_eq!(
@@ -262,24 +271,30 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-                origin: cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                radius: 0.0,
-                ratio: 1.0,
-                half_angle: std::f64::consts::FRAC_PI_4,
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                    0.0,
+                    1.0,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -339,24 +354,39 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
-                normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
     match &mut ir.model.surfaces[0].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = -8.5,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            let mut origin = *origin;
+            origin.x = -8.5;
+            *plane_surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+        }
         _ => panic!("transferred support plane"),
     }
     assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
 
     match &mut ir.model.surfaces[0].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = -9.0,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            let mut origin = *origin;
+            origin.x = -9.0;
+            *plane_surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+        }
         _ => panic!("transferred support plane"),
     }
     scan.features.affected_ids[0].ids.insert(3, 99);
@@ -460,23 +490,29 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -530,12 +566,15 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius: 0.5,
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    0.5,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -584,21 +623,29 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
 
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
-    if let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } =
+    if let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface) =
         &mut ir.model.surfaces[1].geometry
     {
-        *radius = 0.75;
+        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+        let radius = 0.75;
+        *cylinder_surface =
+            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+                .unwrap();
     }
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
     ir.model.surfaces.pop();

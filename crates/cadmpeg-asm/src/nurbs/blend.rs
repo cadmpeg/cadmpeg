@@ -319,14 +319,17 @@ pub(crate) fn decode_rolling_ball_curve(
         "straight" => {
             let origin = take_native_vec3(bytes, position, 0x13)?;
             let direction = take_native_vec3(bytes, position, 0x14)?;
-            CurveGeometry::Line {
-                origin: Point3::new(
-                    origin[0] * LEN_TO_MM,
-                    origin[1] * LEN_TO_MM,
-                    origin[2] * LEN_TO_MM,
-                ),
-                direction: unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
-            }
+            CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(
+                        origin[0] * LEN_TO_MM,
+                        origin[1] * LEN_TO_MM,
+                        origin[2] * LEN_TO_MM,
+                    ),
+                    unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
+                )
+                .ok()?,
+            )
         }
         "ellipse" => {
             let center = take_native_vec3(bytes, position, 0x13)?;
@@ -336,39 +339,46 @@ pub(crate) fn decode_rolling_ball_curve(
             let reference = Vector3::new(reference[0], reference[1], reference[2]);
             let major_radius = reference.norm() * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
-                CurveGeometry::Circle {
-                    center: Point3::new(
-                        center[0] * LEN_TO_MM,
-                        center[1] * LEN_TO_MM,
-                        center[2] * LEN_TO_MM,
-                    ),
-                    axis: unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                    ref_direction: unit_vector(reference)?,
-                    radius: major_radius,
-                }
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(
+                            center[0] * LEN_TO_MM,
+                            center[1] * LEN_TO_MM,
+                            center[2] * LEN_TO_MM,
+                        ),
+                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        unit_vector(reference)?,
+                        major_radius,
+                    )
+                    .ok()?,
+                )
             } else {
-                CurveGeometry::Ellipse {
-                    center: Point3::new(
-                        center[0] * LEN_TO_MM,
-                        center[1] * LEN_TO_MM,
-                        center[2] * LEN_TO_MM,
-                    ),
-                    axis: unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                    major_direction: unit_vector(reference)?,
-                    major_radius,
-                    minor_radius: major_radius * ratio.abs(),
-                }
+                CurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        Point3::new(
+                            center[0] * LEN_TO_MM,
+                            center[1] * LEN_TO_MM,
+                            center[2] * LEN_TO_MM,
+                        ),
+                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        unit_vector(reference)?,
+                        major_radius,
+                        major_radius * ratio.abs(),
+                    )
+                    .ok()?,
+                )
             }
         }
         "degenerate_curve" => {
             let point = take_native_vec3(bytes, position, 0x13)?;
-            CurveGeometry::Degenerate {
-                point: Point3::new(
+            CurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
                     point[0] * LEN_TO_MM,
                     point[1] * LEN_TO_MM,
                     point[2] * LEN_TO_MM,
-                ),
-            }
+                ))
+                .ok()?,
+            )
         }
         _ => return None,
     };
@@ -544,14 +554,17 @@ pub(crate) fn rolling_ball_curve(
         "straight" => {
             let origin = cur.take_position()?;
             let direction = cur.take_vector3()?;
-            CurveGeometry::Line {
-                origin: Point3::new(
-                    origin[0] * LEN_TO_MM,
-                    origin[1] * LEN_TO_MM,
-                    origin[2] * LEN_TO_MM,
-                ),
-                direction: unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
-            }
+            CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(
+                        origin[0] * LEN_TO_MM,
+                        origin[1] * LEN_TO_MM,
+                        origin[2] * LEN_TO_MM,
+                    ),
+                    unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
+                )
+                .ok()?,
+            )
         }
         "ellipse" => {
             let center = cur.take_position()?;
@@ -561,39 +574,46 @@ pub(crate) fn rolling_ball_curve(
             let reference = Vector3::new(reference[0], reference[1], reference[2]);
             let major_radius = reference.norm() * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
-                CurveGeometry::Circle {
-                    center: Point3::new(
-                        center[0] * LEN_TO_MM,
-                        center[1] * LEN_TO_MM,
-                        center[2] * LEN_TO_MM,
-                    ),
-                    axis: unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                    ref_direction: unit_vector(reference)?,
-                    radius: major_radius,
-                }
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(
+                            center[0] * LEN_TO_MM,
+                            center[1] * LEN_TO_MM,
+                            center[2] * LEN_TO_MM,
+                        ),
+                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        unit_vector(reference)?,
+                        major_radius,
+                    )
+                    .ok()?,
+                )
             } else {
-                CurveGeometry::Ellipse {
-                    center: Point3::new(
-                        center[0] * LEN_TO_MM,
-                        center[1] * LEN_TO_MM,
-                        center[2] * LEN_TO_MM,
-                    ),
-                    axis: unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                    major_direction: unit_vector(reference)?,
-                    major_radius,
-                    minor_radius: major_radius * ratio.abs(),
-                }
+                CurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        Point3::new(
+                            center[0] * LEN_TO_MM,
+                            center[1] * LEN_TO_MM,
+                            center[2] * LEN_TO_MM,
+                        ),
+                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        unit_vector(reference)?,
+                        major_radius,
+                        major_radius * ratio.abs(),
+                    )
+                    .ok()?,
+                )
             }
         }
         "degenerate_curve" => {
             let point = cur.take_position()?;
-            CurveGeometry::Degenerate {
-                point: Point3::new(
+            CurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
                     point[0] * LEN_TO_MM,
                     point[1] * LEN_TO_MM,
                     point[2] * LEN_TO_MM,
-                ),
-            }
+                ))
+                .ok()?,
+            )
         }
         _ => return None,
     };

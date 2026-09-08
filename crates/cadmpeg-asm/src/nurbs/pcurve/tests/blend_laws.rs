@@ -264,11 +264,17 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
                 panic!("expected sub-surface")
             };
             assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
-            assert!(matches!(
-                support,
-                SurfaceGeometry::Plane { origin, .. }
-                    if origin == Point3::new(1.0, -2.0, 3.0)
-            ));
+            assert!(match support {
+                SurfaceGeometry::Plane(plane_surface)
+                    if {
+                        let (origin, _, _) = plane_surface.parts();
+                        *origin == Point3::new(1.0, -2.0, 3.0)
+                    } =>
+                {
+                    true
+                }
+                _ => false,
+            });
             assert_eq!(decoded.cache_fit_tolerance, None);
         }
     }
@@ -328,15 +334,22 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         straight.push(0x0a);
         push_f64(&mut straight, 3.0);
         let mut position = 0;
-        assert!(matches!(
-            decode_rolling_ball_curve(&straight, &mut position, int_width, None),
-            Some(RollingBallSupportCurve {
-                curve: CurveGeometry::Line { origin, direction },
-                parameter_range: [Some(-2.0), Some(3.0)],
-            })
-                if origin == Point3::new(10.0, 20.0, 30.0)
-                    && direction == Vector3::new(0.0, 1.0, 0.0)
-        ));
+        assert!(
+            match decode_rolling_ball_curve(&straight, &mut position, int_width, None) {
+                Some(RollingBallSupportCurve {
+                    curve: CurveGeometry::Line(line_curve),
+                    parameter_range: [Some(-2.0), Some(3.0)],
+                }) if {
+                    let (origin, direction) = line_curve.parts();
+                    *origin == Point3::new(10.0, 20.0, 30.0)
+                        && *direction == Vector3::new(0.0, 1.0, 0.0)
+                } =>
+                {
+                    true
+                }
+                _ => false,
+            }
+        );
         assert_eq!(position, straight.len());
 
         let mut intcurve = Vec::new();

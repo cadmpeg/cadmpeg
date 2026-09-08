@@ -158,11 +158,14 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     });
     ir.model.surfaces.push(Surface {
         id: surface,
-        geometry: SurfaceGeometry::Plane {
-            origin: points[0],
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                points[0],
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     for index in 0..points.len() {
@@ -186,10 +189,9 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
         });
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line {
-                origin: points[index],
-                direction,
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(points[index], direction).unwrap(),
+            ),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -284,10 +286,13 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         });
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line {
-                origin: points[index],
-                direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    points[index],
+                    Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -408,11 +413,14 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         });
         ir.model.surfaces.push(Surface {
             id: surface_ids[index].clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: positions[0],
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    positions[0],
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -453,14 +461,17 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         );
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(
-                    positions[start].x - 2.0 * delta.x,
-                    positions[start].y - 2.0 * delta.y,
-                    positions[start].z - 2.0 * delta.z,
-                ),
-                direction: delta,
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(
+                        positions[start].x - 2.0 * delta.x,
+                        positions[start].y - 2.0 * delta.y,
+                        positions[start].z - 2.0 * delta.z,
+                    ),
+                    delta,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -615,14 +626,17 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(
-                    positions[start].x - 2.0 * direction.x,
-                    positions[start].y - 2.0 * direction.y,
-                    positions[start].z - 2.0 * direction.z,
-                ),
-                direction,
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(
+                        positions[start].x - 2.0 * direction.x,
+                        positions[start].y - 2.0 * direction.y,
+                        positions[start].z - 2.0 * direction.z,
+                    ),
+                    direction,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model.edges.push(Edge {
@@ -692,11 +706,14 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         });
         ir.model.surfaces.push(Surface {
             id: surface_ids[face].clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: positions[face_uses[face][0].0],
-                normal: planes[face].0,
-                u_axis: planes[face].1,
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    positions[face_uses[face][0].0],
+                    planes[face].0,
+                    planes[face].1,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         for offset in 0..3 {
@@ -805,7 +822,9 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
             .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
-            geometry: PcurveGeometry::Line { origin, direction },
+            geometry: PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+            ),
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                 None,
                 Some(domain),
@@ -899,7 +918,9 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
             .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
-            geometry: PcurveGeometry::Line { origin, direction },
+            geometry: PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+            ),
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                 None,
                 Some(domain),
@@ -968,7 +989,9 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
-            geometry: PcurveGeometry::Line { origin, direction },
+            geometry: PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+            ),
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                 None,
                 Some(domain),
