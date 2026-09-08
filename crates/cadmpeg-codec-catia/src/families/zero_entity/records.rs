@@ -172,6 +172,35 @@ impl ZeroEntityLoopMembers {
     }
 }
 
+/// Admitted zero-entity loop classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ZeroEntityLoopClass {
+    /// Outer loop with forward face sense.
+    Outer41 = 0x41,
+    /// Inner bound loop.
+    Bound50 = 0x50,
+    /// Outer loop with reversed face sense.
+    ReversedC1 = 0xc1,
+}
+
+impl ZeroEntityLoopClass {
+    /// Admit a declared loop-class byte.
+    pub const fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x41 => Some(Self::Outer41),
+            0x50 => Some(Self::Bound50),
+            0xc1 => Some(Self::ReversedC1),
+            _ => None,
+        }
+    }
+
+    /// Native loop-class byte.
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+}
+
 /// One counted zero-entity `62xx` loop record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityLoop {
@@ -188,7 +217,7 @@ pub struct ZeroEntityLoop {
     /// Face-local support record ordinals selected by the logical members.
     pub support_record_ordinals: Vec<u32>,
     /// Stored loop-class byte.
-    pub loop_class: u8,
+    pub loop_class: ZeroEntityLoopClass,
     /// Absolute coedge senses in member order; `true` is forward.
     pub forward_senses: Vec<bool>,
     /// Complete sense-oriented model-space endpoint pairs in member order.
@@ -827,8 +856,12 @@ pub(crate) fn zero_entity_support_runs_in_range(
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
             face_loops.first().is_some_and(|outer| {
-                matches!(outer.loop_class, 0x41 | 0xc1)
-                    && face_loops[1..].iter().all(|inner| inner.loop_class == 0x50)
+                matches!(
+                    outer.loop_class,
+                    ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
+                ) && face_loops[1..]
+                    .iter()
+                    .all(|inner| inner.loop_class == ZeroEntityLoopClass::Bound50)
             })
         })
     };
@@ -1054,9 +1087,8 @@ fn zero_entity_loops_from_records(
             let trailer = record
                 .pos
                 .checked_add(13 + reference_count.checked_mul(5)?)?;
-            if data.get(trailer) != Some(&(0x80 + u8::try_from(edge_count).ok()?))
-                || !matches!(data.get(trailer + 1), Some(0x41 | 0x50 | 0xc1))
-            {
+            let loop_class = ZeroEntityLoopClass::from_byte(*data.get(trailer + 1)?)?;
+            if data.get(trailer) != Some(&(0x80 + u8::try_from(edge_count).ok()?)) {
                 return None;
             }
             let packed_length = edge_count.checked_mul(3)?.checked_add(7)? / 8;
@@ -1087,7 +1119,7 @@ fn zero_entity_loops_from_records(
                 members,
                 typed_references,
                 support_record_ordinals: Vec::new(),
-                loop_class: data[trailer + 1],
+                loop_class,
                 forward_senses,
                 oriented_model_endpoints: Vec::new(),
             })
@@ -2961,7 +2993,7 @@ mod tests {
         assert_eq!(loop_record.typed_references, [1]);
         assert_eq!(loop_record.members.terminal_id(), 7);
         assert_eq!(loop_record.members.gap(), 1);
-        assert_eq!(loop_record.loop_class, 0x41);
+        assert_eq!(loop_record.loop_class.as_byte(), 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
     }

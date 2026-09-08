@@ -7863,7 +7863,7 @@ fn zero_entity_support_runs(
                                 support_record_ordinals: loop_record.support_record_ordinals,
                                 terminal_id: loop_record.members.terminal_id(),
                                 gap: loop_record.members.gap(),
-                                loop_class: loop_record.loop_class,
+                                loop_class: loop_record.loop_class.as_byte(),
                                 forward_senses: loop_record.forward_senses,
                                 oriented_model_endpoints: loop_record.oriented_model_endpoints,
                             }

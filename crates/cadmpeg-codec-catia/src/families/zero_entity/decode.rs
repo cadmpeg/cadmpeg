@@ -937,7 +937,7 @@ pub(crate) fn try_decode_zero_entity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::families::zero_entity::records::ZeroEntityLoopMembers;
+    use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurve};
     use cadmpeg_ir::math::Vector3;
     use std::num::NonZeroUsize;
@@ -1020,7 +1020,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1103,7 +1103,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1119,7 +1119,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![4, 5],
                             support_record_ordinals: vec![5, 4],
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1135,7 +1135,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![3],
                             support_record_ordinals: vec![99],
-                            loop_class: 0x50,
+                            loop_class: ZeroEntityLoopClass::Bound50,
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, corner]],
                         },
@@ -1269,7 +1269,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1377,7 +1377,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 4],
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1472,7 +1472,7 @@ mod tests {
                             .unwrap(),
                             typed_references: vec![1],
                             support_record_ordinals: vec![4],
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, second]],
                         },

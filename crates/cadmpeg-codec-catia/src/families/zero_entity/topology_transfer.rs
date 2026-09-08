@@ -20,7 +20,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::assemble::annotate;
 use crate::nurbs::canonical_model_curve_range;
 
-use super::records::{ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
+use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
 use super::topology::{
     endpoint_locus_candidates_with_budget, zero_entity_endpoint_pair_candidates_with_budget,
 };
@@ -513,9 +513,9 @@ pub(crate) fn transfer_closed_face_topology(
             .and_then(|loops| loops.first())?
             .loop_class
         {
-            0x41 => Sense::Forward,
-            0xc1 => Sense::Reversed,
-            _ => return None,
+            ZeroEntityLoopClass::Outer41 => Sense::Forward,
+            ZeroEntityLoopClass::ReversedC1 => Sense::Reversed,
+            ZeroEntityLoopClass::Bound50 => return None,
         };
         annotate(
             annotations,
@@ -913,7 +913,7 @@ mod tests {
                     typed_references: vec![1, 2, 3],
                     support_record_ordinals,
 
-                    loop_class: 0x41,
+                    loop_class: ZeroEntityLoopClass::Outer41,
                     forward_senses: vec![true, true, true],
                     oriented_model_endpoints: order
                         .into_iter()
