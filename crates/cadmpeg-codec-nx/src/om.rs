@@ -231,39 +231,6 @@ pub struct RecordAreaHeader<'a> {
     pub product: StoreVersion<'a>,
 }
 
-/// One value in an NX OM compact-index lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompactIndex {
-    /// `ff` null/sentinel entry.
-    Null,
-    /// Decoded non-null index.
-    Value(u32),
-}
-
-/// Decode a complete NX OM compact-index lane.
-///
-/// `00..7f` are direct values, `80..fe` introduce one low byte, and `ff` is
-/// null. A dangling two-byte prefix rejects the whole lane.
-pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
-    let mut values = Vec::new();
-    let mut at = 0usize;
-    while at < bytes.len() {
-        let (value, width) = compact_index(bytes.get(at..)?)?;
-        at += width;
-        values.push(value);
-    }
-    Some(values)
-}
-
-fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
-    let token = NullableCompactIndex::read(bytes, 0)?;
-    let value = match token.atom {
-        None => CompactIndex::Null,
-        Some(atom) => CompactIndex::Value(atom.value()),
-    };
-    Some((value, token.raw().len()))
-}
-
 /// One RGB definition from an NX part color table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorTableDefinition<'a> {
@@ -2122,11 +2089,9 @@ pub fn operation_body_11_continuations(
                     return None;
                 }
                 at += 1;
-                let (CompactIndex::Value(_), width) = compact_index(record.bytes().get(at..)?)?
-                else {
-                    return None;
-                };
-                at += width;
+                let token = NullableCompactIndex::read(record.bytes(), at)?;
+                token.atom?;
+                at += token.raw().len();
                 if record.bytes().get(at) != Some(&0x00) {
                     return None;
                 }
