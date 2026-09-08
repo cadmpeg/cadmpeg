@@ -10,6 +10,7 @@ use crate::native::features::{
 use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
 pub(crate) mod om_location;
 use om_location::OmLocation;
+mod row_wire;
 
 /// Classify the semantic role of one linked OM registry.
 ///
@@ -99,7 +100,8 @@ pub struct SegmentStreamLink {
     /// Globally unique link identity.
     pub id: String,
     /// Owning segment-index row.
-    pub row: String,
+    #[serde(with = "row_wire")]
+    pub row: usize,
     /// Row word containing the wrapper offset.
     pub slot: SegmentIndexSlot,
     /// Zero-based stream ordinal in first segment-wrapper order.
@@ -596,7 +598,7 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
         };
         links.push(SegmentStreamLink {
             id: format!("nx:segment-stream-links:link#{}", links.len()),
-            row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
+            row: wrapper.row_ordinal,
             slot,
             stream_ordinal: stream_ordinal as u32,
             stream_kind: stream.kind(),
@@ -627,7 +629,7 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
             )
         })
         .filter_map(|link| {
-            let row = link.row.rsplit_once('#')?.1.parse::<usize>().ok()?;
+            let row = link.row;
             let slot = match link.slot {
                 SegmentIndexSlot::TypeCode => 0,
                 SegmentIndexSlot::SubtypeCode => 1,
@@ -699,7 +701,7 @@ mod tests {
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");
         assert_eq!(links.len(), 1);
-        assert_eq!(links[0].row, "nx:segment-index:row#0");
+        assert_eq!(links[0].row, 0);
         assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
         assert_eq!(links[0].stream_ordinal, 0);
         assert_eq!(links[0].stream_kind.label(), "deltas");
