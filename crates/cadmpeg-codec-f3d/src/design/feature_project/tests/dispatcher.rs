@@ -17,21 +17,21 @@ fn dispatcher_projects_datum_feature_scopes() {
     transform[2][3] = 3.0;
 
     let mut joint_origin = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#1",
+        "f3d:native/BulkStream.dat:parameter-scope#1",
         crate::records::feature::DesignFeatureKind::JointOrigin,
         1,
     );
     joint_origin.with_joint_origin_transform(transform.try_into().unwrap());
 
     let mut work_plane = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#2",
+        "f3d:native/BulkStream.dat:parameter-scope#2",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         2,
     );
     work_plane.with_work_plane_transform(transform.try_into().unwrap());
 
     let mut work_point = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#3",
+        "f3d:native/BulkStream.dat:parameter-scope#3",
         crate::records::feature::DesignFeatureKind::WorkPoint,
         3,
     );
@@ -80,7 +80,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 #[test]
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
     let mut scale = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#4",
+        "f3d:native/BulkStream.dat:parameter-scope#4",
         crate::records::feature::DesignFeatureKind::Scale,
         4,
     );
@@ -128,7 +128,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
 #[test]
 fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#10",
+        "f3d:native/BulkStream.dat:parameter-scope#10",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         10,
     );
@@ -161,7 +161,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: record_index + 3,
         recipe_record_byte_offset: 2,
-        recipe_id: format!("f3d:native:construction-recipe#{record_index}"),
+        recipe_id: format!("f3d:native/BulkStream.dat:construction-recipe#{record_index}"),
         recipe_prefix_offset: 3,
         recipe_prefix_bytes: Vec::new(),
         recipe_references: Vec::new(),
@@ -175,7 +175,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         next_byte_offset: 5,
     };
     let mut plane = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#20",
+        "f3d:native/BulkStream.dat:parameter-scope#20",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         20,
     );
@@ -210,7 +210,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
 
     let planes = [10, 20, 30].map(|record_index| {
-        let id = format!("f3d:native:parameter-scope#{record_index}");
+        let id = format!("f3d:native/BulkStream.dat:parameter-scope#{record_index}");
         let mut scope = DesignParameterScope::empty(
             &id,
             crate::records::feature::DesignFeatureKind::WorkPlane,
@@ -246,7 +246,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         })),
     };
     let mut point = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#40",
+        "f3d:native/BulkStream.dat:parameter-scope#40",
         crate::records::feature::DesignFeatureKind::WorkPoint,
         40,
     );
@@ -271,7 +271,9 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
     let point = features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:parameter-scope#40"))
+        .find(|feature| {
+            feature.native_ref.as_deref() == Some("f3d:native/BulkStream.dat:parameter-scope#40")
+        })
         .expect("projected work point");
     let FeatureDefinition::DatumPoint {
         construction: Some(construction),
@@ -304,12 +306,12 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
 
     let mut predecessor = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#10",
+        "f3d:native/BulkStream.dat:parameter-scope#10",
         crate::records::feature::DesignFeatureKind::Extrude,
         10,
     );
     predecessor.history_state_id = Some(4);
-    let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
+    let recipe_id = "f3d:native/BulkStream.dat:construction-recipe#vertex".to_string();
     let recipe = DesignVertexRecipe {
         record_index: 12,
         byte_offset: 0,
@@ -331,7 +333,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         next_byte_offset: 5,
     };
     let mut point = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#20",
+        "f3d:native/BulkStream.dat:parameter-scope#20",
         crate::records::feature::DesignFeatureKind::WorkPoint,
         20,
     );
@@ -357,7 +359,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         });
     }
     let timeline = DesignFeatureTimeline::try_new(
-        crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:native/BulkStream.dat", 0),
         crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
@@ -451,7 +453,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     use crate::records::topology::DesignConstructionOperandGroupFrame;
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
 
-    let stream = "f3d:native";
+    let stream = "f3d:native/BulkStream.dat";
     let group = |scope_record_index: u32,
                  scope_reference_ordinal: u32,
                  record_index: u32,

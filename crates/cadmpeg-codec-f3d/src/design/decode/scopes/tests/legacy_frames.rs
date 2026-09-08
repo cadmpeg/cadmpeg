@@ -340,7 +340,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         bytes.extend_from_slice(&support_record_index.to_le_bytes());
 
         let mut scope = DesignParameterScope::empty(
-            "f3d:test:work-axis#1",
+            "f3d:test/BulkStream.dat:work-axis#1",
             crate::records::feature::DesignFeatureKind::WorkAxis,
             1,
         );
