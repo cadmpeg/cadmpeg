@@ -668,6 +668,9 @@ pub(super) fn cylinder_helix(
     })
 }
 
+/// Emitted pcurve carriers and intervals indexed by native loop and member.
+pub(super) type PcurveUses = HashMap<(u32, usize), (PcurveId, [f64; 2])>;
+
 /// Emit distinct pcurve occurrences grouped by native parameter range,
 /// returning each emitted carrier and its forward interval by
 /// `(loop_id, member_index)`.
@@ -676,7 +679,7 @@ pub(super) fn emit_pcurves(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> Result<HashMap<(u32, usize), (PcurveId, [f64; 2])>, cadmpeg_core::CodecError> {
+) -> Result<PcurveUses, cadmpeg_core::CodecError> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {

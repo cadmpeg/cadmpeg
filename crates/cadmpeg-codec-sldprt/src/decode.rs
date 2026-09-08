@@ -2264,8 +2264,11 @@ fn build_geometry_ir(
     crate::history::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
-    let (mut sketches, mut sketch_entities, mut sketch_constraints) =
-        crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
+    let crate::resolved_features::sketch_projection::ProjectedSketches {
+        mut sketches,
+        entities: mut sketch_entities,
+        constraints: mut sketch_constraints,
+    } = crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -3223,8 +3226,11 @@ fn build_metadata_ir(
     let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
-    let (sketches, sketch_entities, sketch_constraints) =
-        crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
+    let crate::resolved_features::sketch_projection::ProjectedSketches {
+        sketches,
+        entities: sketch_entities,
+        constraints: sketch_constraints,
+    } = crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
     model_attributes.extend(crate::history::custom_property_attributes(&histories));
     ir.model.attributes = model_attributes;

@@ -462,14 +462,14 @@ pub(crate) fn validate_tolerant_vertex_edits(
             )));
         }
         if tolerance
-            != baseline_vertices[after.vertex.as_str()]
-                .tolerance
-                .map(cadmpeg_ir::units::PositiveScalar::get)
-                .unwrap_or(if before.evaluated_unset {
+            != baseline_vertices[after.vertex.as_str()].tolerance.map_or(
+                if before.evaluated_unset {
                     -1.0
                 } else {
                     tolerance
-                })
+                },
+                cadmpeg_ir::units::PositiveScalar::get,
+            )
             || after.leading_tolerances != before.leading_tolerances
         {
             // A negative tolerance is the unevaluated sentinel, stored

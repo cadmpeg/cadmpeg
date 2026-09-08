@@ -1070,7 +1070,7 @@ pub(crate) fn transfer_e5_topology(
             )
         })
         .collect();
-    match emit_e5_curves_and_edges(
+    if emit_e5_curves_and_edges(
         ir,
         annotations,
         topology,
@@ -1079,18 +1079,17 @@ pub(crate) fn transfer_e5_topology(
         &edge_curve_plan,
         &intersection_plan,
         &surface_curve_plan,
-    ) {
-        Ok(value) => value,
-        Err(_) => return false,
-    };
-    match emit_e5_pcurves(ir, annotations, &pcurve_plan) {
-        Ok(value) => value,
-        Err(_) => return false,
-    };
-    match emit_e5_bodies(ir, annotations, &bodies) {
-        Ok(value) => value,
-        Err(_) => return false,
-    };
+    )
+    .is_err()
+    {
+        return false;
+    }
+    if emit_e5_pcurves(ir, annotations, &pcurve_plan).is_err() {
+        return false;
+    }
+    if emit_e5_bodies(ir, annotations, &bodies).is_err() {
+        return false;
+    }
     if !emit_e5_faces_loops_coedges(
         ir,
         annotations,

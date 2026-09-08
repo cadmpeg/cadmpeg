@@ -174,7 +174,7 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
     assert!(matches!(
         &asset.content,
         cadmpeg_ir::assets::AssetContent::Embedded { data }
-            if data.as_slice() == &[b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
+            if data.as_slice() == [b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
     ));
     assert_eq!(
         asset.native_ref.as_deref(),

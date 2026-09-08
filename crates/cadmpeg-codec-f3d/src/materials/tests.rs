@@ -488,7 +488,7 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
         );
         let record = appearance_record(schema, properties);
         assert_eq!(
-            super::appearance_base_color(&record).map(|color| color.g()),
+            super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
             Some(0.25),
             "{schema} selects {primary_id}"
         );
@@ -514,7 +514,7 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
     assert_eq!(
-        super::appearance_base_color(&record).map(|color| color.g()),
+        super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
         Some(0.625)
     );
 }

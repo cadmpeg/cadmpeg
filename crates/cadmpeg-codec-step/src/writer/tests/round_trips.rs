@@ -944,7 +944,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         .model
         .appearances
         .iter()
-        .filter_map(|appearance| appearance.base_color.map(|color| color.a()))
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
         .collect::<Vec<_>>();
     assert_eq!(alphas.len(), 2);
     assert!(alphas.iter().any(|alpha| (*alpha - 0.35).abs() < EPS_ALPHA));
