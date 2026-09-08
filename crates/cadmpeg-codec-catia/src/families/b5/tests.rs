@@ -215,7 +215,12 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let graph = crate::families::b5::graph::parse(&bytes).expect("B5 object topology");
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);
-    assert_eq!(graph.faces[0].terminal_control, Some(0x05));
+    assert_eq!(
+        graph.faces[0]
+            .terminal_control
+            .map(crate::families::b5::graph::controls::B5FramingControl::as_byte),
+        Some(0x05)
+    );
     assert_eq!(
         graph.loops[&400]
             .members

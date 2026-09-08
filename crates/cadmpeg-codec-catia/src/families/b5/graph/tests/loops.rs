@@ -17,7 +17,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         loop_metadata(&base, 2),
         Some((
             B5LoopMetadata {
-                framing_controls: [0x05, 0x05],
+                framing_controls: [B5FramingControl::Control05; 2],
                 extension: None,
             },
             vec![[1, -1, 1], [-1, 1, -1]],
@@ -28,7 +28,10 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         let extended = extended_loop_metadata(metadata_control);
         let (metadata, edge_controls) =
             loop_metadata(&extended, 1).expect("complete extended metadata");
-        assert_eq!(metadata.framing_controls, [0x03, 0x05]);
+        assert_eq!(
+            metadata.framing_controls.map(B5FramingControl::as_byte),
+            [0x03, 0x05]
+        );
         assert_eq!(edge_controls, [[1, -1, 1]]);
         assert_eq!(
             metadata.extension,
@@ -46,7 +49,10 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
     ];
     let (metadata, edge_controls) =
         loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
-    assert_eq!(metadata.framing_controls, [0x05, 0x03]);
+    assert_eq!(
+        metadata.framing_controls.map(B5FramingControl::as_byte),
+        [0x05, 0x03]
+    );
     assert_eq!(edge_controls, [[1, -1, 1], [-1, 1, -1]]);
     assert_eq!(metadata.extension, None);
 }
@@ -665,7 +671,7 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
             Some(B5FaceRecord {
                 object_id: 3,
                 references: vec![1, 2],
-                terminal_control: Some(terminal_control),
+                terminal_control: Some(B5FramingControl::from_byte(terminal_control).unwrap()),
             })
         );
 
@@ -705,7 +711,7 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
     let record = B5FaceRecord {
         object_id: 30,
         references: vec![10, 11, 20],
-        terminal_control: Some(0x05),
+        terminal_control: Some(B5FramingControl::Control05),
     };
     let loops = BTreeMap::from([(
         20,
@@ -1256,7 +1262,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             B5VertexIncidenceLink {
                 object_id: 10,
                 incidence: 20,
-                terminal_control: 0x00,
+                terminal_control: B5VertexIncidenceControl::Control00,
             },
         )]),
         &by_id,
@@ -1284,7 +1290,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             B5VertexIncidenceLink {
                 object_id: 10,
                 incidence: 20,
-                terminal_control: 0x00,
+                terminal_control: B5VertexIncidenceControl::Control00,
             },
         )]),
         &conflicting_by_id,
@@ -1305,7 +1311,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             B5VertexIncidenceLink {
                 object_id: 10,
                 incidence: 20,
-                terminal_control: 0x00,
+                terminal_control: B5VertexIncidenceControl::Control00,
             },
         )]),
         &out_of_domain_by_id,

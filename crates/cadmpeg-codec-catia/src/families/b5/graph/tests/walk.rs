@@ -1365,7 +1365,7 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
             support: 18,
             vertices: [15, 21],
             parameter_incidences: [19, 20],
-            terminal_control: 0x21,
+            terminal_control: B5EdgeTerminalControl::Control21,
         })
     );
 
@@ -1373,7 +1373,7 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
     for terminal_control in [0x01, 0x02, 0x21, 0x22, 0x25, 0x26, 0x29, 0x2a] {
         *standard.payload.last_mut().expect("tail") = terminal_control;
         assert_eq!(
-            parse_edge(&standard).map(|edge| edge.terminal_control),
+            parse_edge(&standard).map(|edge| edge.terminal_control.as_byte()),
             Some(terminal_control)
         );
     }
@@ -1406,7 +1406,7 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
             support: 600,
             vertices: [10, 11],
             parameter_incidences: [20, 21],
-            terminal_control: 0x01,
+            terminal_control: B5EdgeTerminalControl::Control01,
         },
     );
     graph.edges.insert(
@@ -1416,7 +1416,7 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
             support: 601,
             vertices: [12, 13],
             parameter_incidences: [22, 23],
-            terminal_control: 0x01,
+            terminal_control: B5EdgeTerminalControl::Control01,
         },
     );
 
@@ -1457,11 +1457,17 @@ fn vertex_incidence_link_accepts_both_exact_terminal_controls() {
     };
     for terminal_control in [0x00, 0x04] {
         assert_eq!(
+            B5VertexIncidenceControl::from_byte(terminal_control)
+                .unwrap()
+                .as_byte(),
+            terminal_control
+        );
+        assert_eq!(
             parse_vertex_incidence_link(&record(terminal_control)),
             Some(B5VertexIncidenceLink {
                 object_id: 17,
                 incidence: 18,
-                terminal_control,
+                terminal_control: B5VertexIncidenceControl::from_byte(terminal_control).unwrap(),
             })
         );
     }
