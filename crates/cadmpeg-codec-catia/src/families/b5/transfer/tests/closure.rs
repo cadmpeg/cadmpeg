@@ -96,10 +96,13 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             [10.0, 20.0],
             [0.0, 2.0],
         ),
-        Some(CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                Point3::new(20.0, 0.0, 0.0),
-                Vector3::new(5.0, 0.0, 0.0)
+        Some(CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 2.0, 2.0],
+                vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
+                None,
+                false,
             )
             .unwrap()
         ))

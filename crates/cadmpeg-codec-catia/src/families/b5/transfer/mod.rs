@@ -1017,6 +1017,26 @@ fn curve_on_parameter_range(
         }
         CurveGeometry::Line(line_curve) => {
             let (&origin, &direction) = line_curve.parts();
+            if source_per_target != 1.0 {
+                return NurbsCurve::new(
+                    1,
+                    vec![target[0], target[0], target[1], target[1]],
+                    source
+                        .into_iter()
+                        .map(|parameter| {
+                            Point3::new(
+                                origin.x + parameter * direction.x,
+                                origin.y + parameter * direction.y,
+                                origin.z + parameter * direction.z,
+                            )
+                        })
+                        .collect(),
+                    None,
+                    false,
+                )
+                .ok()
+                .map(CurveGeometry::Nurbs);
+            }
             Some(CurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(
@@ -1024,11 +1044,7 @@ fn curve_on_parameter_range(
                         origin.y + (source[0] - target[0] * source_per_target) * direction.y,
                         origin.z + (source[0] - target[0] * source_per_target) * direction.z,
                     ),
-                    Vector3::new(
-                        direction.x * source_per_target,
-                        direction.y * source_per_target,
-                        direction.z * source_per_target,
-                    ),
+                    direction,
                 )
                 .ok()?,
             ))
