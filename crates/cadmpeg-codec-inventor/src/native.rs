@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor-native structural records.
 
+pub(crate) mod digest;
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
