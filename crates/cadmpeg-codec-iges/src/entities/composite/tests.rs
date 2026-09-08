@@ -672,11 +672,14 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
         ir.model.curves.push(Curve {
             id: composite_id.clone(),
             geometry: CurveGeometry::Composite {
-                segments: vec![CompositeCurveSegment {
-                    curve: child_id,
-                    same_sense: true,
-                    transition: CompositeCurveTransition::Continuous,
-                }],
+                segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                    CompositeCurveSegment {
+                        curve: child_id,
+                        same_sense: true,
+                        transition: CompositeCurveTransition::Continuous,
+                    },
+                ])
+                .unwrap(),
                 self_intersect: None,
             },
             source_object: None,
@@ -1349,7 +1352,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         Curve {
             id: composite_id.clone(),
             geometry: CurveGeometry::Composite {
-                segments: vec![
+                segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
                     CompositeCurveSegment {
                         curve: first_id.clone(),
                         same_sense: true,
@@ -1360,7 +1363,8 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                         same_sense: true,
                         transition: CompositeCurveTransition::Continuous,
                     },
-                ],
+                ])
+                .unwrap(),
                 self_intersect: None,
             },
             source_object: None,

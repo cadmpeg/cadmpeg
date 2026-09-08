@@ -2849,7 +2849,7 @@ pub enum CurveGeometry {
     /// Ordered child curves joined into one bounded carrier.
     Composite {
         /// Ordered curve uses and their continuity contracts.
-        segments: Vec<CompositeCurveSegment>,
+        segments: CompositeCurveSegments,
         /// Whether the source classifies the complete curve as self-intersecting.
         self_intersect: Option<bool>,
     },
@@ -2976,6 +2976,46 @@ impl CurveGeometry {
 
     pub(crate) fn wire_geometry(&self) -> &CurveGeometry {
         self.solved_cache().unwrap_or(self)
+    }
+}
+
+/// Non-empty ordered child uses of a composite curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<CompositeCurveSegment>")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CompositeCurveSegments(Vec<CompositeCurveSegment>);
+
+impl TryFrom<Vec<CompositeCurveSegment>> for CompositeCurveSegments {
+    type Error = &'static str;
+
+    fn try_from(segments: Vec<CompositeCurveSegment>) -> Result<Self, Self::Error> {
+        if segments.is_empty() {
+            return Err("composite curve segments must not be empty");
+        }
+        Ok(Self(segments))
+    }
+}
+
+impl std::ops::Deref for CompositeCurveSegments {
+    type Target = [CompositeCurveSegment];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for CompositeCurveSegments {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a CompositeCurveSegments {
+    type Item = &'a CompositeCurveSegment;
+    type IntoIter = std::slice::Iter<'a, CompositeCurveSegment>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 

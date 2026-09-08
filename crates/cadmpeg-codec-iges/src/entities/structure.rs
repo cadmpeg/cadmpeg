@@ -1521,7 +1521,6 @@ fn bounded_plane_curve_is_simple(
             self_intersect,
         } => {
             self_intersect == &Some(false)
-                && !segments.is_empty()
                 && segments.iter().all(|segment| {
                     let Some(curve) = context.index.curves(segment.curve.as_str()) else {
                         return false;

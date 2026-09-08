@@ -314,7 +314,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Composite {
-            segments: Vec::new(),
+            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(Vec::new()).unwrap(),
             self_intersect: None,
         },
         source_object: None,

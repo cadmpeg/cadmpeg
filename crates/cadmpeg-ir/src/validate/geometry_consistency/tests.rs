@@ -653,11 +653,14 @@ fn self_referential_composite_curve_is_invalid() {
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Composite {
-            segments: vec![CompositeCurveSegment {
-                curve: id,
-                same_sense: true,
-                transition: CompositeCurveTransition::Continuous,
-            }],
+            segments: crate::geometry::CompositeCurveSegments::try_from(vec![
+                CompositeCurveSegment {
+                    curve: id,
+                    same_sense: true,
+                    transition: CompositeCurveTransition::Continuous,
+                },
+            ])
+            .unwrap(),
             self_intersect: Some(false),
         },
         source_object: None,

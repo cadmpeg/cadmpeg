@@ -1296,7 +1296,7 @@ fn project_native_composite(
                 CompositeCurveTransition::Discontinuous
             },
         })
-        .collect();
+        .collect::<Vec<_>>();
     let stem = format!("D{}", entry.sequence);
     let start_point =
         PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
@@ -1335,7 +1335,7 @@ fn project_native_composite(
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Composite {
-            segments,
+            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()?,
             self_intersect: None,
         },
         source_object: Some(source_object(entry)),
