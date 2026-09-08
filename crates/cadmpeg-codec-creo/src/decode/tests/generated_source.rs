@@ -1794,12 +1794,12 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
         end: Point2::new(1.0, 0.0),
     };
     let counterclockwise = vec![
-        ProfileEntity::new(arc.clone(), false).unwrap(),
-        ProfileEntity::new(line.clone(), false).unwrap(),
+        ProfileEntity::new(arc.clone(), false).expect("valid profile entity"),
+        ProfileEntity::new(line.clone(), false).expect("valid profile entity"),
     ];
     let clockwise = vec![
-        ProfileEntity::new(arc, true).unwrap(),
-        ProfileEntity::new(line, true).unwrap(),
+        ProfileEntity::new(arc, true).expect("valid profile entity"),
+        ProfileEntity::new(line, true).expect("valid profile entity"),
     ];
     assert!(
         (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
@@ -1826,7 +1826,7 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
         },
         false,
     )
-    .unwrap()];
+    .expect("valid profile entity")];
     let profiles = ordered_extrusion_profiles(vec![profile.clone()])
         .expect("a full-turn arc is a closed profile");
     let area = profiles[0].area();
@@ -1879,7 +1879,9 @@ fn circle_remains_a_closed_extrusion_profile() {
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
     assert_eq!(
         profiles,
-        vec![vec![ProfileEntity::new(circle.clone(), false).unwrap()]]
+        vec![vec![
+            ProfileEntity::new(circle.clone(), false).expect("valid profile entity")
+        ]]
     );
     let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
     let area = ordered[0].area();
@@ -1920,7 +1922,9 @@ fn circle_remains_a_closed_extrusion_profile() {
             ]
         );
         assert_eq!(
-            profile_arc(&ProfileEntity::new(circle.clone(), reversed).unwrap()),
+            profile_arc(
+                &ProfileEntity::new(circle.clone(), reversed).expect("valid profile entity")
+            ),
             Some((
                 [1.0, -2.0],
                 3.0,
@@ -1935,7 +1939,8 @@ fn circle_remains_a_closed_extrusion_profile() {
     }
     assert!(point_on_profile_arc(
         seam,
-        profile_arc(&ProfileEntity::new(circle, false).unwrap()).expect("circle arc"),
+        profile_arc(&ProfileEntity::new(circle, false).expect("valid profile entity"))
+            .expect("circle arc"),
         1.0e-9,
     ));
     assert_eq!(

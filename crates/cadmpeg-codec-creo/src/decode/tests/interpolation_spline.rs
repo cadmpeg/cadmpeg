@@ -142,7 +142,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         },
         false,
     )
-    .unwrap();
+    .expect("valid profile entity");
     let crossing_line = ProfileEntity::new(
         SketchGeometry::Line {
             start: Point2::new(0.0, 1.0),
@@ -150,7 +150,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         },
         false,
     )
-    .unwrap();
+    .expect("valid profile entity");
     assert!(profile_segments_intersect(
         &diagonal,
         &crossing_line,
@@ -251,7 +251,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                     },
                     false,
                 )
-                .unwrap()
+                .expect("valid profile entity")
             })
             .collect::<ExtrusionProfile>()
     };
@@ -295,7 +295,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
             },
             true,
         )
-        .unwrap()
+        .expect("valid profile entity")
     })
     .collect::<ExtrusionProfile>();
     let profiles = ordered_extrusion_profiles(vec![
