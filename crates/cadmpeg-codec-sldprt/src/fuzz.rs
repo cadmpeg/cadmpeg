@@ -63,10 +63,19 @@ pub fn pmi(data: &[u8]) {
         let again = crate::pmi::parse_payload(&patched, &mut again_losses);
         if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
             assert_eq!(parsed.value.to_bits(), edited.to_bits());
-            for field in ["value", "valPrecision", "isBasic", "isInspection", "isReferenceOnly"] {
+            for field in [
+                "value",
+                "valPrecision",
+                "isBasic",
+                "isInspection",
+                "isReferenceOnly",
+            ] {
                 let original = crate::pmi::patch_slots::field_offset(data, record.offset, field);
                 assert!(original.is_ok(), "parsed PMI field {field} has a slot");
-                assert_eq!(crate::pmi::patch_slots::field_offset(&patched, parsed.offset, field), original);
+                assert_eq!(
+                    crate::pmi::patch_slots::field_offset(&patched, parsed.offset, field),
+                    original
+                );
             }
             assert_eq!(parsed.display_text_offset(), record.display_text_offset());
         }
