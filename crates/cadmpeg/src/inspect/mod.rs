@@ -64,14 +64,12 @@ pub struct SummaryArgs {
 
 fn native_input_parser(
 ) -> impl TypedValueParser<Value = &'static cadmpeg_registry::NativeDescriptor> {
-    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().filter(
-        |name| {
-            matches!(
-                cadmpeg_registry::forced_input(name),
-                Some(cadmpeg_registry::ForcedInput::Codec(_))
-            )
-        },
-    ))
+    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().filter(|name| {
+        matches!(
+            cadmpeg_registry::forced_input(name),
+            Some(cadmpeg_registry::ForcedInput::Codec(_))
+        )
+    }))
     .try_map(|name| match cadmpeg_registry::forced_input(&name) {
         Some(cadmpeg_registry::ForcedInput::Codec(native)) => Ok(native),
         _ => Err(format!("unsupported native input format: {name}")),
