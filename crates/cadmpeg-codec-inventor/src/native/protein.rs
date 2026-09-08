@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Protein state and its owned package entries on the native wire.
 
+use cadmpeg_container::ZipCompression;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};
 
@@ -176,12 +177,21 @@ impl ProteinRecordWire {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ZipCompression", rename_all = "lowercase")]
+enum ZipCompressionWire {
+    Stored,
+    Deflate,
+    Zstd,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ProteinEntryRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) name: String,
-    pub(crate) compression: String,
+    #[serde(with = "ZipCompressionWire")]
+    pub(crate) compression: ZipCompression,
     pub(crate) crc32: u32,
     pub(crate) compressed_size: u64,
     pub(crate) uncompressed_size: u64,
@@ -219,7 +229,7 @@ mod tests {
                 id: "inventor:protein:entry#0".into(),
                 ordinal: 0,
                 name: "asset.bin".into(),
-                compression: "stored".into(),
+                compression: super::ZipCompression::Stored,
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
@@ -275,6 +285,39 @@ mod tests {
                 ProteinRecord::read(&namespace).expect("valid test fixture"),
                 record
             );
+        }
+    }
+    #[test]
+    fn protein_compression_wire_uses_the_archive_vocabulary() {
+        for compression in [
+            super::ZipCompression::Stored,
+            super::ZipCompression::Deflate,
+            super::ZipCompression::Zstd,
+        ] {
+            let entry = ProteinEntryRecord {
+                id: "inventor:protein:entry#0".into(),
+                ordinal: 0,
+                name: "asset.bin".into(),
+                compression,
+                crc32: 0,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            };
+            let mut wire = serde_json::to_value(&entry).expect("Protein entry fixture serializes");
+            assert_eq!(wire["compression"], compression.label());
+            assert_eq!(
+                serde_json::from_value::<ProteinEntryRecord>(wire.clone())
+                    .expect("Protein entry fixture serializes"),
+                entry
+            );
+            wire["compression"] = serde_json::json!("banana");
+            let mut namespace = NativeNamespace::default();
+            namespace
+                .set_arena("protein_entries", &[wire])
+                .expect("Protein entry fixture serializes");
+            assert!(namespace
+                .arena_as::<ProteinEntryRecord>("protein_entries")
+                .is_err());
         }
     }
 }

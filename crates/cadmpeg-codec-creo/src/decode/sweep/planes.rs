@@ -241,9 +241,9 @@ fn cylinder_frame_agrees_with_model(
         return matches!(surface.geometry, SurfaceGeometry::Unknown { .. });
     };
     let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
-        normalized(frame.axis),
+        normalized(frame.axis()),
         normalized([axis.x, axis.y, axis.z]),
-        normalized(frame.ref_direction),
+        normalized(frame.ref_direction()),
         normalized([ref_direction.x, ref_direction.y, ref_direction.z]),
     ) else {
         return false;
@@ -262,16 +262,16 @@ fn cylinder_frame_agrees_with_model(
             .into_iter()
             .zip(model_ref)
             .all(|(left, right)| close(left, right))
-        || !close(frame.radius, *radius)
+        || !close(frame.radius(), *radius)
     {
         return false;
     }
     let model_origin = [origin.x, origin.y, origin.z];
-    let relative = std::array::from_fn(|index| model_origin[index] - frame.origin[index]);
+    let relative = std::array::from_fn(|index| model_origin[index] - frame.origin()[index]);
     let axial = dot(relative, frame_axis);
     let radial = std::array::from_fn(|index| relative[index] - axial * frame_axis[index]);
     let scale = frame
-        .origin
+        .origin()
         .into_iter()
         .chain(model_origin)
         .map(f64::abs)
@@ -383,8 +383,8 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let normal = normalized(transform.normal)?;
     let first = *frames.first()?;
-    let length = first.length.filter(|length| *length > 0.0)?;
-    let direction = normalized(first.axis)?;
+    let length = first.length().filter(|length| *length > 0.0)?;
+    let direction = normalized(first.axis())?;
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
@@ -392,16 +392,18 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
         .iter()
         .all(|frame| {
             frame
-                .length
+                .length()
                 .is_some_and(|candidate| close(candidate, length))
-                && normalized(frame.axis).is_some_and(|axis| {
+                && normalized(frame.axis()).is_some_and(|axis| {
                     axis.iter()
                         .zip(direction)
                         .all(|(left, right)| close(*left, right))
                 })
                 && close(
                     dot(
-                        std::array::from_fn(|index| frame.origin[index] - transform.origin[index]),
+                        std::array::from_fn(|index| {
+                            frame.origin()[index] - transform.origin[index]
+                        }),
                         normal,
                     ),
                     0.0,

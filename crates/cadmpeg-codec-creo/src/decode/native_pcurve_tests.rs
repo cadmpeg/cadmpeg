@@ -147,7 +147,7 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
     .is_empty());
     assert!(solve_pcurve_vertex_domains(
         &constraints,
-        &BTreeMap::from([(2, Some([9.0, 0.0, 0.0]))]),
+        &BTreeMap::from([(2, [9.0, 0.0, 0.0])]),
         &BTreeMap::new(),
         &BTreeMap::new(),
     )
@@ -208,7 +208,7 @@ fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
     assert_eq!(
         solve_pcurve_vertex_domains_with_authoritative_points(
             &constraints,
-            &BTreeMap::from([(1, Some(witness)), (2, Some(adjacent))]),
+            &BTreeMap::from([(1, witness), (2, adjacent)]),
             &analytic_domains,
             &incident_curves,
             &BTreeMap::from([(1, witness)]),

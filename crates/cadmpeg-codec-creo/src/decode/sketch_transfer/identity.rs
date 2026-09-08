@@ -159,24 +159,21 @@ pub(in super::super) fn unresolved_saved_section_entity(
     ambiguous_segment_ids: &BTreeSet<u32>,
 ) -> (SketchEntity, usize) {
     let (internal_id, offset, kind) = saved_section_entity_identity(saved);
-    let unique_internal_id = internal_id.is_some_and(|id| unique_saved_ids.contains(&id));
-    let external_id = if unique_internal_id {
+    let unique_internal_id = internal_id.filter(|id| unique_saved_ids.contains(id));
+    let external_id = if let Some(internal_id) = unique_internal_id {
         definition.order_table.as_ref().and_then(|order| {
-            saved_section_external_id(order, unique_saved_ids, ambiguous_segment_ids, internal_id?)
+            saved_section_external_id(order, unique_saved_ids, ambiguous_segment_ids, internal_id)
         })
     } else {
         None
     };
-    let suffix = if unique_internal_id {
+    let suffix = if let Some(internal_id) = unique_internal_id {
         external_id.map_or_else(
-            || {
-                let internal_id = internal_id.expect("unique saved entity has an id");
-                match kind {
-                    SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
-                        internal_id.to_string()
-                    }
-                    _ => format!("saved{internal_id}"),
+            || match kind {
+                SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
+                    internal_id.to_string()
                 }
+                _ => format!("saved{internal_id}"),
             },
             |external_id| external_id.to_string(),
         )

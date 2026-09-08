@@ -320,9 +320,8 @@ pub(in super::super) fn schema_feature_definition(
                 )
             },
             |hole| {
-                let SurfaceGeometry::Cylinder { origin, radius, .. } = hole.geometry else {
-                    unreachable!("simple hole helper returns a cylinder")
-                };
+                let origin = hole.geometry.origin;
+                let radius = hole.geometry.radius;
                 (
                     hole.entry_surface_id.map(face_selection),
                     Some(origin),

@@ -17,8 +17,9 @@ use cadmpeg_ir::CadIr;
 use super::{
     cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
     linear_boundary_relationship_is_valid, linear_boundary_rings, pcurve_within_declared_bounds,
-    BoundaryEndpoint, BoundaryVertexClusterError, BoundaryVertexSourceEndpoint, DeclaredInterval,
-    FaceTolerancePolicy, LinearBoundaryGeometry, SimpleRing,
+    BoundaryEndpoint, BoundarySpace, BoundarySurfaceKind, BoundaryVertexClusterError,
+    BoundaryVertexSourceEndpoint, DeclaredInterval, FaceTolerancePolicy, LinearBoundaryGeometry,
+    SimpleRing,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -679,7 +680,7 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
         [1.0, 0.0],
         [0.0, 0.0],
     ]))];
-    let rings = linear_boundary_rings(&candidates, true).unwrap();
+    let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter).unwrap();
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -689,7 +690,7 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
     assert_eq!(
         linear_boundary_relationship_is_valid(
             rings.as_deref(),
-            true,
+            BoundarySurfaceKind::Trimmed,
             true,
             &plane,
             None,

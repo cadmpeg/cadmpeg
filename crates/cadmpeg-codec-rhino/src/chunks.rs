@@ -795,23 +795,14 @@ pub(crate) fn anonymous_version(
     Ok((reader.i32()?, reader.i32()?))
 }
 
-/// The validated EOF marker and its declared file size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Eof {
-    /// Offset of the EOF chunk.
-    pub(crate) offset: usize,
-    /// File size stored by the archive.
-    pub(crate) file_size: u64,
-}
-
 /// Parses and validates EOF semantics for a complete input buffer.
 pub(crate) fn parse_eof(
     bytes: &[u8],
     offset: usize,
     archive: ArchiveVersion,
-) -> Result<Option<Eof>, FramingError> {
+) -> Result<(), FramingError> {
     if offset == bytes.len() && archive.allows_optional_eof() {
-        return Ok(None);
+        return Ok(());
     }
     if offset >= bytes.len() {
         return Err(FramingError::MissingEof);
@@ -829,13 +820,7 @@ pub(crate) fn parse_eof(
     {
         return Err(FramingError::MissingEof);
     }
-    let mut body = BoundedReader::new(bytes, body.start, body.end)?;
-    let file_size = if archive.uses_eight_byte_values() {
-        body.u64()?
-    } else {
-        u64::from(body.u32()?)
-    };
-    Ok(Some(Eof { offset, file_size }))
+    Ok(())
 }
 
 #[cfg(test)]

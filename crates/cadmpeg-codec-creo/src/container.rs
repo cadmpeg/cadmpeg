@@ -209,7 +209,7 @@ pub struct ModelDoubleXarTable {
     /// Offset of the table label in the expanded section.
     pub expanded_offset: usize,
     /// Entries in stored order.
-    pub entries: Vec<crate::scalar::DoubleXarEntry>,
+    pub entries: Vec<crate::scalar::DoubleXarSlot>,
 }
 
 /// The byte-backed count headers read from the visible-geometry section.
@@ -2234,11 +2234,11 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
         .iter()
         .filter(|record| record.name == field_name)
         .filter_map(|record| {
-            let parent_id = record.parent.as_deref()?;
+            let parent_id = record.parent?;
             let parent = persistence
                 .objects
                 .iter()
-                .find(|object| object.id == parent_id)?;
+                .find(|object| object.offset == parent_id)?;
             (parent.name == "Sld_GeomDepend").then_some(())?;
             let legacy::NumericPayload::Scalar { value } = &record.payload else {
                 return None;

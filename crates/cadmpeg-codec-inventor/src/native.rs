@@ -162,6 +162,10 @@ impl PropertyValueKind {
         let Some(type_code) = type_code else {
             return Err(format!("property value_kind {text} requires type_code"));
         };
+        let expected = crate::property_set::property_kind_name(type_code);
+        if text.split(':').next() != Some(expected) {
+            return Err(format!("property value_kind {text} disagrees with type_code {type_code}: expected {expected}"));
+        }
         match text {
             "empty" => Ok(Self::Empty { type_code }),
             "signed" => Ok(Self::Signed { type_code }),
@@ -344,8 +348,8 @@ pub(crate) struct AssemblyPlacementRecord {
     pub(crate) attribute_reference: u32,
     pub(crate) state: u8,
     pub(crate) transform_prefix: bool,
-    pub(crate) transform_encoding: [u16; 2],
-    pub(crate) transform: [[f64; 4]; 4],
+    #[serde(flatten, with = "crate::compact_matrix::assembly_wire")]
+    pub(crate) transform: crate::compact_matrix::CompactMatrix,
     pub(crate) branch: u8,
     pub(crate) graphics_state: u8,
     pub(crate) occurrence_id: u32,
@@ -512,6 +516,14 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
                 return Err("rendering style extension fields must be present together".into());
             }
         };
+        if extension.is_some() != (wire.segment_version_major >= 17) {
+            return Err("rendering style extension disagrees with segment_version_major".into());
+        }
+        if wire.segment_version_major >= 17 && !wire.comment.is_empty() {
+            return Err(
+                "rendering style comment must be empty for segment_version_major >= 17".into(),
+            );
+        }
         Ok(Self {
             id: wire.id,
             segment_token: wire.segment_token,
@@ -780,7 +792,7 @@ pub(crate) struct SegmentMetaRecord {
 pub(crate) struct MetaSectionRecord {
     pub(crate) id: String,
     pub(crate) token: String,
-    pub(crate) number: u8,
+    pub(crate) number: crate::records::MetaSectionNumber,
     pub(crate) discriminator: u32,
     pub(crate) payload_len: u64,
     pub(crate) payload_sha256: String,
@@ -1330,7 +1342,9 @@ pub(crate) struct SegmentBulkIssueRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActiveCarrierRecord, SegmentBulkFrame, SegmentBulkRecord};
+    use super::{
+        ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
+    };
 
     #[test]
     fn bulk_wire_requires_expansion_and_preserves_exclusive_frame_fields() {
@@ -1429,5 +1443,107 @@ mod tests {
         );
         wire["segment_token"] = serde_json::json!("segment");
         assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
+    }
+    #[test]
+    fn rendering_style_version_controls_comment_and_extension() {
+        let legacy = serde_json::json!({
+            "id": "style", "segment_token": "segment", "record_ordinal": 0,
+            "segment_version_major": 16, "header_value": 0, "header_id": 0,
+            "state": 0, "flags": 0, "values": [0, 0], "default_state": 0,
+            "value": 0, "name_reference": 0, "name": "", "comment": "comment",
+            "long_name": "", "suffix_len": 0, "suffix_sha256": ""
+        });
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(legacy.clone()).is_ok());
+        let mut modern = legacy.clone();
+        modern["segment_version_major"] = serde_json::json!(17);
+        modern["comment"] = serde_json::json!("");
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_err());
+        for (field, value) in [
+            ("style_state", serde_json::json!(0)),
+            ("style_label", serde_json::json!("")),
+            ("asset_guid", serde_json::json!("")),
+            ("material_id", serde_json::json!("")),
+            ("asset_library_id", serde_json::json!("")),
+            ("style_values", serde_json::json!([0, 0])),
+            ("guid", serde_json::json!("")),
+        ] {
+            modern[field] = value;
+        }
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_ok());
+        let mut invalid = modern.clone();
+        invalid["comment"] = serde_json::json!("comment");
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(invalid).is_err());
+        modern["segment_version_major"] = serde_json::json!(16);
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern).is_err());
+    }
+    #[test]
+    fn property_kind_wire_agrees_with_ole_type_code() {
+        for (code, kind) in [
+            (0, "empty"),
+            (1, "empty"),
+            (2, "signed"),
+            (3, "signed"),
+            (4, "float"),
+            (5, "float"),
+            (6, "signed"),
+            (7, "float"),
+            (8, "string"),
+            (10, "signed"),
+            (11, "bool"),
+            (16, "signed"),
+            (17, "unsigned"),
+            (18, "unsigned"),
+            (19, "unsigned"),
+            (20, "signed"),
+            (21, "unsigned"),
+            (22, "signed"),
+            (23, "unsigned"),
+            (30, "string"),
+            (31, "string"),
+            (64, "filetime"),
+            (65, "binary:8"),
+            (70, "binary:0"),
+            (71, "clipboard:3:8"),
+            (72, "guid"),
+            (0x100c, "vector:3"),
+            (0x1003, "vector:0"),
+            (0x999, "unknown"),
+        ] {
+            let value = super::PropertyValueKind::from_wire(kind, Some(code))
+                .expect("kind matches the OLE type code");
+            assert_eq!(value.to_string(), kind);
+            assert_eq!(value.type_code(), Some(code));
+            let wrong = if kind == "signed" {
+                "unsigned"
+            } else {
+                "signed"
+            };
+            assert!(super::PropertyValueKind::from_wire(wrong, Some(code)).is_err());
+        }
+        assert!(super::PropertyValueKind::from_wire("unknown", Some(3)).is_err());
+        assert!(super::PropertyValueKind::from_wire("dictionary", Some(0)).is_err());
+        assert!(super::PropertyValueKind::from_wire("dictionary", None).is_ok());
+    }
+    #[test]
+    fn assembly_matrix_wire_preserves_keys_and_rejects_mask_disagreement() {
+        let mut wire = serde_json::json!({
+            "id": "placement", "segment_token": "segment", "record_ordinal": 0,
+            "header_id": 0, "owner_reference": 0, "attribute_reference": 0,
+            "state": 0, "transform_prefix": false, "transform_encoding": [33825, 31710],
+            "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+                          [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            "branch": 0, "graphics_state": 0, "occurrence_id": 0,
+            "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": ""
+        });
+        let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
+            .expect("assembly matrix fixture agrees with its masks");
+        assert_eq!(
+            serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
+            wire
+        );
+        wire["transform"][0][0] = serde_json::json!(2.0);
+        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire.clone()).is_err());
+        wire["transform_encoding"] = serde_json::json!([0, 0]);
+        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire).is_ok());
     }
 }

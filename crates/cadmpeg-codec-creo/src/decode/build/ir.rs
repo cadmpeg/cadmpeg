@@ -352,7 +352,7 @@ fn transfer_display_tessellations(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         let mut triangles = Vec::new();
@@ -395,9 +395,12 @@ fn transfer_display_tessellations(
                 Vec::new(),
                 Vec::new(),
             )
-            .expect("decoded Creo triangle strip is a valid tessellation"),
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+            })?,
         );
     }
+    Ok(())
 }
 
 fn transfer_datum_plane_surfaces(
@@ -515,7 +518,7 @@ pub(in super::super) fn build_ir(
     transfer_reference_lines(scan, &mut ir, &mut annotations);
     transfer_reference_circles(scan, &mut ir, &mut annotations);
     transfer_reference_ellipses(scan, &mut ir, &mut annotations);
-    transfer_display_tessellations(scan, &mut ir, &mut annotations);
+    transfer_display_tessellations(scan, &mut ir, &mut annotations)?;
     transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations);
     transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations);
     transfer_and_record_scanned_geometry(

@@ -1164,7 +1164,7 @@ pub(crate) fn try_decode_geometry(
         dialect_losses,
         notes,
     );
-    report_untransferred_streams(scan, &mut report, true);
+    report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
     Ok(Some((ir, report, annotations, unknowns)))
 }
 

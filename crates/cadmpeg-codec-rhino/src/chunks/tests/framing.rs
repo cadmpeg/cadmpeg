@@ -178,13 +178,7 @@ fn validates_eof_width_size_and_truncation() {
         let marker_start = file_header::LEN;
         let replacement = eof(archive, size);
         bytes[marker_start..].copy_from_slice(&replacement);
-        assert_eq!(
-            parse_eof(&bytes, marker_start, archive)
-                .expect("required invariant")
-                .expect("required invariant")
-                .file_size,
-            size as u64
-        );
+        parse_eof(&bytes, marker_start, archive).expect("valid EOF");
         let mut mismatch = bytes.clone();
         let size_offset = marker_start
             + if archive.uses_eight_byte_values() {
@@ -193,20 +187,11 @@ fn validates_eof_width_size_and_truncation() {
                 8
             };
         mismatch[size_offset] ^= 1;
-        assert_ne!(
-            parse_eof(&mismatch, marker_start, archive)
-                .expect("size is informational")
-                .expect("EOF marker")
-                .file_size,
-            size as u64
-        );
+        parse_eof(&mismatch, marker_start, archive).expect("size is informational");
         assert!(parse_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
     }
     let bytes = vec![0; file_header::LEN];
-    assert_eq!(
-        parse_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("required invariant"),
-        None
-    );
+    parse_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("optional EOF");
     assert!(matches!(
         parse_eof(&bytes, file_header::LEN, ArchiveVersion::V2),
         Err(FramingError::MissingEof)

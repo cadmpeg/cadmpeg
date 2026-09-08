@@ -4,6 +4,65 @@
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
 
+/// Position in the eight-reference datum-CSYS construction lane.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub(crate) enum DatumCsysSlot {
+    Zero = 0,
+    One = 1,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+}
+
+impl DatumCsysSlot {
+    pub(crate) const ALL: [Self; 8] = [
+        Self::Zero,
+        Self::One,
+        Self::Two,
+        Self::Three,
+        Self::Four,
+        Self::Five,
+        Self::Six,
+        Self::Seven,
+    ];
+}
+
+impl From<DatumCsysSlot> for u8 {
+    fn from(value: DatumCsysSlot) -> Self {
+        value as u8
+    }
+}
+
+impl TryFrom<u8> for DatumCsysSlot {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Zero),
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            3 => Ok(Self::Three),
+            4 => Ok(Self::Four),
+            5 => Ok(Self::Five),
+            6 => Ok(Self::Six),
+            7 => Ok(Self::Seven),
+            _ => Err("DatumCsysSlot: expected 0..=7"),
+        }
+    }
+}
+
+impl std::fmt::Display for DatumCsysSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&u8::from(*self), f)
+    }
+}
+
 const HEADER_SUFFIX: [u8; 13] = [
     0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
 ];
@@ -108,6 +167,20 @@ pub(crate) fn datum_csys_references(record: OperationPayload<'_>) -> Option<Datu
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn construction_slots_reject_out_of_lane_wire_indices() {
+        for value in 0..=u8::MAX {
+            let decoded = serde_json::from_value::<super::DatumCsysSlot>(value.into());
+            assert_eq!(decoded.is_ok(), value < 8);
+            if let Ok(slot) = decoded {
+                assert_eq!(
+                    serde_json::to_value(slot).unwrap(),
+                    serde_json::json!(value)
+                );
+            }
+        }
+    }
+
     use super::*;
 
     #[test]

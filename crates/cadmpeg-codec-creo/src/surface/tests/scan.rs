@@ -607,12 +607,10 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     );
     assert_eq!(
         prototype.field("local_sys").map(|field| &field.value),
-        Some(&crate::surface::SurfaceNamedValue::ScalarArray {
-            dimensions: 4,
-            count: 3,
-            values: vec![Some(1.0); 12],
-            tokens: None,
-        })
+        Some(&crate::surface::SurfaceNamedValue::ScalarArray(
+            crate::surface::arrays::DimensionedScalars::try_new(4, 3, vec![Some(1.0); 12], None)
+                .expect("valid scalar array")
+        ))
     );
     assert_eq!(
         prototype.field("radius").map(|field| &field.value),

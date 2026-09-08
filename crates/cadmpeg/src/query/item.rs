@@ -15,7 +15,8 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::document::reject_non_cadir;
+use super::document::{reject_non_cadir, resolve_one, ResolveError};
+use super::output::{Output, OutputArgs};
 use super::{print_json, read_input};
 
 /// Input selection for `query item`.
@@ -33,34 +34,9 @@ pub struct ItemArgs {
     /// Print the first N records in arena order. Conflicts with explicit IDs.
     #[arg(long, value_name = "N", conflicts_with = "ids")]
     pub head: Option<usize>,
-    /// Comma-separated dotted field paths; project as TSV (no expressions).
-    /// Conflicts with `--json`.
-    #[arg(long, value_delimiter = ',', conflicts_with = "json")]
-    pub fields: Option<Vec<String>>,
-    /// Wrap matched records in the JSON envelope.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl ItemArgs {
-    /// Resolves the flat clap output fields into one output mode.
-    pub(crate) fn mode(&self) -> Output<'_> {
-        if self.json {
-            Output::Json
-        } else if let Some(paths) = self.fields.as_deref() {
-            Output::Tsv(paths)
-        } else {
-            Output::Pretty
-        }
-    }
-}
-
-/// Record-oriented query output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Output<'a> {
-    Pretty,
-    Tsv(&'a [String]),
-    Json,
+    /// Record output selection.
+    #[command(flatten)]
+    pub(crate) output: OutputArgs,
 }
 
 /// Where the requested arena lives in the document.
@@ -121,13 +97,21 @@ struct Capture {
     addressable: Vec<(String, u64)>,
 }
 
-#[derive(Default)]
 struct TargetCapture {
     entry_count: u64,
-    /// Kept raw records (ID hits or first-N).
-    kept: Vec<Box<RawValue>>,
-    /// Every JSON-string `id` observed in the target arena (ID mode).
-    all_ids: Vec<String>,
+    kept: Kept,
+}
+
+enum Kept {
+    Head {
+        limit: usize,
+        records: Vec<Box<RawValue>>,
+    },
+    Ids {
+        ids: Vec<String>,
+        records: Vec<Box<RawValue>>,
+        all_ids: Vec<String>,
+    },
 }
 
 /// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
@@ -147,7 +131,8 @@ fn string_id(raw: &RawValue) -> Option<String> {
 }
 
 /// Runs `query item` against one artifact.
-pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
+pub fn run(args: &ItemArgs) -> Result<()> {
+    let output = args.output.mode();
     let bytes = read_input(&args.file)?;
     reject_non_cadir(&bytes, &args.file, "item")?;
 
@@ -172,14 +157,24 @@ pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
         bail!("{}", unknown_arena_message(&target, &capture.addressable));
     };
 
-    match mode {
-        KeepMode::Head(_) => {
-            let values = parse_kept(&target_capture.kept)?;
+    match target_capture.kept {
+        Kept::Head { records, .. } => {
+            let values = parse_kept(&records)?;
             emit_values("item", output, &values)
         }
-        KeepMode::Ids(ids) => {
+        Kept::Ids {
+            ids,
+            records,
+            all_ids,
+        } => {
             let dotted = target.dotted();
-            let (values, errors) = resolve_ids(ids, &target_capture, &dotted)?;
+            let (values, errors) = resolve_ids(
+                &ids,
+                &records,
+                &all_ids,
+                target_capture.entry_count,
+                &dotted,
+            )?;
             match (emit_values("item", output, &values), errors.is_empty()) {
                 (Ok(()), true) => Ok(()),
                 (Ok(()), false) => bail!("{}", errors.join("\n")),
@@ -201,11 +196,13 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
 
 fn resolve_ids(
     ids: &[String],
-    capture: &TargetCapture,
+    kept: &[Box<RawValue>],
+    all_ids: &[String],
+    entry_count: u64,
     dotted: &str,
 ) -> Result<(Vec<serde_json::Value>, Vec<String>)> {
-    let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(capture.kept.len());
-    for raw in &capture.kept {
+    let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(kept.len());
+    for raw in kept {
         indexed.push((string_id(raw), raw.as_ref()));
     }
 
@@ -213,7 +210,10 @@ fn resolve_ids(
     let mut errors = Vec::new();
 
     for request in ids {
-        match resolve_one(request, &indexed) {
+        match resolve_one(
+            request,
+            indexed.iter().map(|(id, raw)| (id.as_deref(), *raw)),
+        ) {
             Ok(raw) => {
                 let value: serde_json::Value = serde_json::from_str(raw.get())
                     .with_context(|| format!("parsing record for id {request:?}"))?;
@@ -223,53 +223,11 @@ fn resolve_ids(
                 errors.push(ambiguous_message(request, dotted, &matches));
             }
             Err(ResolveError::Missing) => {
-                errors.push(miss_id_message(
-                    dotted,
-                    request,
-                    capture.entry_count,
-                    &capture.all_ids,
-                ));
+                errors.push(miss_id_message(dotted, request, entry_count, all_ids));
             }
         }
     }
     Ok((values, errors))
-}
-
-enum ResolveError {
-    Missing,
-    Ambiguous(Vec<String>),
-}
-
-fn resolve_one<'a>(
-    request: &str,
-    indexed: &[(Option<String>, &'a RawValue)],
-) -> Result<&'a RawValue, ResolveError> {
-    let mut exact: Option<&RawValue> = None;
-    for (id, raw) in indexed {
-        if id.as_deref() == Some(request) {
-            exact = Some(*raw);
-            break;
-        }
-    }
-    if let Some(raw) = exact {
-        return Ok(raw);
-    }
-
-    let mut suffix: Vec<(String, &RawValue)> = Vec::new();
-    for (id, raw) in indexed {
-        if let Some(id) = id {
-            if id.ends_with(request) {
-                suffix.push((id.clone(), *raw));
-            }
-        }
-    }
-    match suffix.len() {
-        0 => Err(ResolveError::Missing),
-        1 => Ok(suffix[0].1),
-        _ => Err(ResolveError::Ambiguous(
-            suffix.into_iter().map(|(id, _)| id).collect(),
-        )),
-    }
 }
 
 /// Pretty-print records, TSV `--fields`, or the `--json` envelope.
@@ -731,27 +689,38 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
-        let target = self
-            .capture
-            .target
-            .get_or_insert_with(TargetCapture::default);
-        match self.mode {
-            KeepMode::Head(n) => {
-                while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    target.entry_count += 1;
-                    if target.kept.len() < *n {
-                        target.kept.push(raw);
+        let target = self.capture.target.get_or_insert_with(|| TargetCapture {
+            entry_count: 0,
+            kept: match self.mode {
+                KeepMode::Head(limit) => Kept::Head {
+                    limit: *limit,
+                    records: Vec::new(),
+                },
+                KeepMode::Ids(ids) => Kept::Ids {
+                    ids: ids.to_vec(),
+                    records: Vec::new(),
+                    all_ids: Vec::new(),
+                },
+            },
+        });
+        while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
+            target.entry_count += 1;
+            match &mut target.kept {
+                Kept::Head { limit, records } => {
+                    if records.len() < *limit {
+                        records.push(raw);
                     }
                 }
-            }
-            KeepMode::Ids(ids) => {
-                while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    target.entry_count += 1;
-                    let id = string_id(&raw);
-                    if let Some(ref id) = id {
-                        target.all_ids.push(id.clone());
-                        if ids.iter().any(|req| id == req || id.ends_with(req)) {
-                            target.kept.push(raw);
+                Kept::Ids {
+                    ids,
+                    records,
+                    all_ids,
+                } => {
+                    if let Some(id) = string_id(&raw) {
+                        let matched = ids.iter().any(|req| id == *req || id.ends_with(req));
+                        all_ids.push(id);
+                        if matched {
+                            records.push(raw);
                         }
                     }
                 }

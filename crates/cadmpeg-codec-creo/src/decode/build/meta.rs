@@ -10,7 +10,7 @@ use super::super::expanded::feature_surface_replay_associations;
 use super::super::sketch::{
     resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
 };
-use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage};
+use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyNumericCoverage};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::document::SourceMeta;
 
@@ -130,37 +130,35 @@ pub(in super::super) fn source_meta(
             crate::coverage::UNRESOLVED_LEGACY_OBJECT_VALUE_COUNT,
             legacy.persistence.unresolved_object_value_count,
         );
-        let (integer_scalars, integer_arrays, integer_elements) =
-            legacy_numeric_coverage(&legacy.persistence.integer_values);
+        let integer_counts = legacy_numeric_coverage(&legacy.persistence.integer_values);
         coverage.record(
             crate::coverage::DECODED_LEGACY_INTEGER_SCALAR_COUNT,
-            integer_scalars,
+            integer_counts.scalars,
         );
         coverage.record(
             crate::coverage::DECODED_LEGACY_INTEGER_ARRAY_COUNT,
-            integer_arrays,
+            integer_counts.arrays,
         );
         coverage.record(
             crate::coverage::DECODED_LEGACY_INTEGER_ELEMENT_COUNT,
-            integer_elements,
+            integer_counts.elements,
         );
         coverage.record(
             crate::coverage::UNRESOLVED_LEGACY_INTEGER_VALUE_COUNT,
             legacy.persistence.unresolved_integer_value_count,
         );
-        let (real_scalars, real_arrays, real_elements) =
-            legacy_numeric_coverage(&legacy.persistence.real_values);
+        let real_counts = legacy_numeric_coverage(&legacy.persistence.real_values);
         coverage.record(
             crate::coverage::DECODED_LEGACY_REAL_SCALAR_COUNT,
-            real_scalars,
+            real_counts.scalars,
         );
         coverage.record(
             crate::coverage::DECODED_LEGACY_REAL_ARRAY_COUNT,
-            real_arrays,
+            real_counts.arrays,
         );
         coverage.record(
             crate::coverage::DECODED_LEGACY_REAL_ELEMENT_COUNT,
-            real_elements,
+            real_counts.elements,
         );
         coverage.record(
             crate::coverage::UNRESOLVED_LEGACY_REAL_VALUE_COUNT,
@@ -216,15 +214,15 @@ pub(in super::super) fn source_meta(
                 crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
                 crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
                 crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
-                legacy.persistence.type_3_values.as_slice(),
-                legacy.persistence.unresolved_type_3_value_count,
+                legacy.persistence.type_3_values.rows.as_slice(),
+                legacy.persistence.type_3_values.unresolved_count,
             ),
             (
                 crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
                 crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
                 crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
-                legacy.persistence.type_4_values.as_slice(),
-                legacy.persistence.unresolved_type_4_value_count,
+                legacy.persistence.type_4_values.rows.as_slice(),
+                legacy.persistence.type_4_values.unresolved_count,
             ),
         ] {
             let scalars = records.len();
@@ -241,11 +239,11 @@ pub(in super::super) fn source_meta(
              array_key,
              element_key,
              unresolved_key,
-             (scalars, arrays, elements),
+             counts: LegacyNumericCoverage,
              unresolved| {
-                coverage.record(scalar_key, scalars);
-                coverage.record(array_key, arrays);
-                coverage.record(element_key, elements);
+                coverage.record(scalar_key, counts.scalars);
+                coverage.record(array_key, counts.arrays);
+                coverage.record(element_key, counts.elements);
                 coverage.record(unresolved_key, unresolved);
             };
         insert_numbered_numeric_coverage(
@@ -253,40 +251,40 @@ pub(in super::super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_5_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_5_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_5_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_5_values),
-            legacy.persistence.unresolved_type_5_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_5_values.rows),
+            legacy.persistence.type_5_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_6_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_6_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_6_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_6_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_6_values),
-            legacy.persistence.unresolved_type_6_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_6_values.rows),
+            legacy.persistence.type_6_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_7_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_7_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_7_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_7_values),
-            legacy.persistence.unresolved_type_7_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_7_values.rows),
+            legacy.persistence.type_7_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_9_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_9_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_9_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_9_values),
-            legacy.persistence.unresolved_type_9_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_9_values.rows),
+            legacy.persistence.type_9_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_11_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_11_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_11_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_11_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_11_values),
-            legacy.persistence.unresolved_type_11_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_11_values.rows),
+            legacy.persistence.type_11_values.unresolved_count,
         );
     }
     coverage.record(
