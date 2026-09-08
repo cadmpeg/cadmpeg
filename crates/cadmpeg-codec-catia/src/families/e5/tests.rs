@@ -440,13 +440,9 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     ));
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-            degree: 5,
-            ref stations,
-        } if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
-            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
-            && stations.len() == 2
-    ));
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
+            && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
+            && jet.stations().len() == 2));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking

@@ -1404,10 +1404,13 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
-            ProceduralSurfaceDefinition::RollingBallJet {
-                degree: crate::families::a5a8::records::A5FreeformCurve::DEGREE,
-                stations,
-            },
+            ProceduralSurfaceDefinition::RollingBallJet(
+                cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+                    crate::families::a5a8::records::A5FreeformCurve::DEGREE,
+                    stations,
+                )
+                .ok()?,
+            ),
             None,
         ));
     }

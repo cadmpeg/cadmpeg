@@ -1167,7 +1167,7 @@ fn native_procedural_surface_definition(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::RollingBallJet { .. }
+        ProceduralSurfaceDefinition::RollingBallJet(_)
         | ProceduralSurfaceDefinition::LinearSweep { .. }
         | ProceduralSurfaceDefinition::AxisRevolution { .. }
         | ProceduralSurfaceDefinition::ParallelOffset { .. }

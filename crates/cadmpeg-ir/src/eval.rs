@@ -4550,20 +4550,17 @@ pub fn rolling_ball_jet_point(
     t: f64,
     s: f64,
 ) -> Option<Point3> {
-    let ProceduralSurfaceDefinition::RollingBallJet { degree, stations } = definition else {
+    let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {
         return None;
     };
-    if *degree != 5
-        || stations.len() < 2
-        || stations.first().map(|station| station.multiplicity) != Some(*degree + 1)
-        || stations.last().map(|station| station.multiplicity) != Some(*degree + 1)
+    let degree = jet.degree();
+    let stations = jet.stations();
+    if degree != 5
         || stations
             .iter()
             .skip(1)
-            .take(stations.len().saturating_sub(2))
+            .take(stations.len() - 2)
             .any(|station| station.multiplicity != 3)
-        || stations.iter().any(|station| !station.knot.is_finite())
-        || stations.windows(2).any(|pair| pair[0].knot >= pair[1].knot)
         || !t.is_finite()
         || !s.is_finite()
         || !(0.0..=1.0).contains(&s)
@@ -4574,56 +4571,13 @@ pub fn rolling_ball_jet_point(
         .site
         .first_limit
         .distance(stations[0].site.center);
-    if !radius.is_finite() || radius <= 0.0 {
-        return None;
-    }
     if stations.iter().any(|station| {
         let site = &station.site;
         let first_radius = site.first_limit.distance(site.center);
         let second_radius = site.second_limit.distance(site.center);
-        !first_radius.is_finite()
-            || !second_radius.is_finite()
-            || first_radius <= 0.0
-            || second_radius <= 0.0
+        second_radius <= 0.0
             || (first_radius - radius).abs()
                 > ROLLING_BALL_JET_RADIUS_TOLERANCE * first_radius.abs().max(radius.abs()).max(1.0)
-            || (first_radius - second_radius).abs()
-                > ROLLING_BALL_JET_RADIUS_TOLERANCE
-                    * first_radius.abs().max(second_radius.abs()).max(1.0)
-            || ![
-                site.first_limit.x,
-                site.first_limit.y,
-                site.first_limit.z,
-                site.second_limit.x,
-                site.second_limit.y,
-                site.second_limit.z,
-                site.center.x,
-                site.center.y,
-                site.center.z,
-                site.angle,
-                site.first_derivative.first_limit.x,
-                site.first_derivative.first_limit.y,
-                site.first_derivative.first_limit.z,
-                site.first_derivative.second_limit.x,
-                site.first_derivative.second_limit.y,
-                site.first_derivative.second_limit.z,
-                site.first_derivative.center.x,
-                site.first_derivative.center.y,
-                site.first_derivative.center.z,
-                site.first_derivative.angle,
-                site.second_derivative.first_limit.x,
-                site.second_derivative.first_limit.y,
-                site.second_derivative.first_limit.z,
-                site.second_derivative.second_limit.x,
-                site.second_derivative.second_limit.y,
-                site.second_derivative.second_limit.z,
-                site.second_derivative.center.x,
-                site.second_derivative.center.y,
-                site.second_derivative.center.z,
-                site.second_derivative.angle,
-            ]
-            .into_iter()
-            .all(f64::is_finite)
     }) {
         return None;
     }
@@ -4631,7 +4585,7 @@ pub fn rolling_ball_jet_point(
         .windows(2)
         .position(|pair| t >= pair[0].knot && t <= pair[1].knot)?;
     let span_width = stations[span + 1].knot - stations[span].knot;
-    if !span_width.is_finite() || span_width <= 0.0 {
+    if !span_width.is_finite() {
         return None;
     }
     let fraction = ((t - stations[span].knot) / span_width).clamp(0.0, 1.0);
@@ -5089,7 +5043,7 @@ pub fn model_surface_point(
             u,
             v,
         ),
-        ProceduralSurfaceDefinition::RollingBallJet { .. } => {
+        ProceduralSurfaceDefinition::RollingBallJet(_) => {
             rolling_ball_jet_point(procedural.definition(), u, v)
         }
         _ => None,
@@ -6760,7 +6714,7 @@ fn model_surface_point_by_id_inner(
                     None
                 }
             }
-            Some(ProceduralSurfaceDefinition::RollingBallJet { .. }) => procedural
+            Some(ProceduralSurfaceDefinition::RollingBallJet(_)) => procedural
                 .and_then(|procedural| rolling_ball_jet_point(procedural.definition(), u, v))
                 .map(|point| SurfaceEvaluation {
                     point,

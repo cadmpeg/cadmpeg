@@ -399,31 +399,37 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
             )
             .unwrap(),
         ));
-    let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet {
-        degree: 5,
-        stations: vec![cadmpeg_ir::geometry::RollingBallJetStation {
-            knot: 0.0,
-            multiplicity: 6,
-            site: RollingBallJetSite {
-                first_limit: Point3::new(0.0, 0.0, 0.0),
-                second_limit: Point3::new(0.0, 1.0, 0.0),
-                center: Point3::new(0.0, 0.5, 0.0),
-                angle: std::f64::consts::PI,
-                first_derivative: RollingBallJetDerivative {
-                    first_limit: Vector3::new(0.0, 0.0, 0.0),
-                    second_limit: Vector3::new(0.0, 0.0, 0.0),
-                    center: Vector3::new(0.0, 0.0, 0.0),
-                    angle: 0.0,
-                },
-                second_derivative: RollingBallJetDerivative {
-                    first_limit: Vector3::new(0.0, 0.0, 0.0),
-                    second_limit: Vector3::new(0.0, 0.0, 0.0),
-                    center: Vector3::new(0.0, 0.0, 0.0),
-                    angle: 0.0,
-                },
-            },
-        }],
-    };
+    let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet(
+        cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+            5,
+            [0.0, 1.0]
+                .into_iter()
+                .map(|knot| cadmpeg_ir::geometry::RollingBallJetStation {
+                    knot,
+                    multiplicity: 6,
+                    site: RollingBallJetSite {
+                        first_limit: Point3::new(0.0, 0.0, 0.0),
+                        second_limit: Point3::new(0.0, 1.0, 0.0),
+                        center: Point3::new(0.0, 0.5, 0.0),
+                        angle: std::f64::consts::PI,
+                        first_derivative: RollingBallJetDerivative {
+                            first_limit: Vector3::new(0.0, 0.0, 0.0),
+                            second_limit: Vector3::new(0.0, 0.0, 0.0),
+                            center: Vector3::new(0.0, 0.0, 0.0),
+                            angle: 0.0,
+                        },
+                        second_derivative: RollingBallJetDerivative {
+                            first_limit: Vector3::new(0.0, 0.0, 0.0),
+                            second_limit: Vector3::new(0.0, 0.0, 0.0),
+                            center: Vector3::new(0.0, 0.0, 0.0),
+                            angle: 0.0,
+                        },
+                    },
+                })
+                .collect(),
+        )
+        .unwrap(),
+    );
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
         carriers: [

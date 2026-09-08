@@ -3,7 +3,6 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
-const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
 const EPS_HELIX_RADIUS: f64 = 1.0e-9;
 
@@ -1296,73 +1295,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     procedural.id.as_str(),
                     "rolling-ball blend construction payload is invalid",
-                );
-            }
-        }
-        if let ProceduralSurfaceDefinition::RollingBallJet { degree, stations } =
-            procedural.definition()
-        {
-            let point_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let derivative_finite = |derivative: &crate::geometry::RollingBallJetDerivative| {
-                [
-                    &derivative.first_limit,
-                    &derivative.second_limit,
-                    &derivative.center,
-                ]
-                .iter()
-                .all(|vector| vector_finite(vector))
-                    && derivative.angle.is_finite()
-            };
-            let sites_valid = stations.iter().all(|station| {
-                let site = &station.site;
-                let radius = |point: &crate::math::Point3| {
-                    ((point.x - site.center.x).powi(2)
-                        + (point.y - site.center.y).powi(2)
-                        + (point.z - site.center.z).powi(2))
-                    .sqrt()
-                };
-                let first_radius = radius(&site.first_limit);
-                let second_radius = radius(&site.second_limit);
-                point_finite(&site.first_limit)
-                    && point_finite(&site.second_limit)
-                    && point_finite(&site.center)
-                    && site.angle.is_finite()
-                    && derivative_finite(&site.first_derivative)
-                    && derivative_finite(&site.second_derivative)
-                    && first_radius.is_finite()
-                    && first_radius > 0.0
-                    && second_radius.is_finite()
-                    && (first_radius - second_radius).abs()
-                        <= EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
-            });
-            let maximum_multiplicity = u64::from(*degree) + 1;
-            if *degree == 0
-                || stations
-                    .first()
-                    .map(|station| u64::from(station.multiplicity))
-                    != Some(maximum_multiplicity)
-                || stations
-                    .last()
-                    .map(|station| u64::from(station.multiplicity))
-                    != Some(maximum_multiplicity)
-                || stations.iter().any(|station| {
-                    station.multiplicity == 0
-                        || u64::from(station.multiplicity) > maximum_multiplicity
-                })
-                || stations.len() < 2
-                || stations.iter().any(|station| !station.knot.is_finite())
-                || stations.windows(2).any(|pair| pair[0].knot >= pair[1].knot)
-                || !sites_valid
-            {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "rolling-ball jet payload is invalid",
                 );
             }
         }

@@ -621,14 +621,10 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         Some(StandardSurfaceProcedure::RollingBall {
             carrier_object_id: 42,
             source: StandardRollingBallSource::E5D8,
-            definition: ProceduralSurfaceDefinition::RollingBallJet {
-                degree: 5,
-                stations,
-            },
-    }) if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == vec![2.0, 5.0]
-            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
-            && stations.len() == 2
-    ));
+            definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
+    }) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot).collect::<Vec<_>>() == vec![2.0, 5.0]
+            && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
+            && jet.stations().len() == 2));
 
     let mut opposite_records = records.clone();
     let StandardSurfaceRecord::Freeform { forward, .. } = &mut opposite_records[0] else {

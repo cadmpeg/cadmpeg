@@ -1163,7 +1163,7 @@ pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
                 *tag,
                 StandardSurfaceProcedure::RollingBall {
                     carrier_object_id: jet.record_id,
-                    definition: jet.definition(),
+                    definition: jet.definition()?,
                     source: StandardRollingBallSource::E5D8,
                 },
             ))
@@ -1976,10 +1976,7 @@ fn try_decode_standard_population(
                 )
             }
         };
-        let cacheless = matches!(
-            &definition,
-            ProceduralSurfaceDefinition::RollingBallJet { .. }
-        );
+        let cacheless = matches!(&definition, ProceduralSurfaceDefinition::RollingBallJet(_));
         let attached = surfaces
             .iter_mut()
             .find(|candidate| candidate.id == surface)

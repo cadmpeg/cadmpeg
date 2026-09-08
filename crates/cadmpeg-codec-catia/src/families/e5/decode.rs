@@ -222,7 +222,7 @@ pub(crate) fn try_decode_e5(
             .derived(&procedural_id, "definition");
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
-            jet.definition(),
+            jet.definition()?,
             None,
         ));
     }

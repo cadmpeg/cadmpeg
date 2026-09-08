@@ -1344,18 +1344,20 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { degree, stations } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
         procedural.definition()
     else {
         panic!("rolling-ball jet");
     };
+    let degree = jet.degree();
+    let stations = jet.stations();
     let knots: Vec<_> = stations.iter().map(|station| station.knot).collect();
     let multiplicities: Vec<_> = stations
         .iter()
         .map(|station| station.multiplicity)
         .collect();
     let sites: Vec<_> = stations.iter().map(|station| &station.site).collect();
-    assert_eq!(*degree, 5);
+    assert_eq!(degree, 5);
     assert_eq!(knots, &[0.0, 1.0]);
     assert_eq!(multiplicities, &[6, 6]);
     assert_eq!(sites.len(), 2);

@@ -73,12 +73,14 @@ impl E5RollingBallJet {
     pub const DEGREE: u32 = 5;
 
     /// Convert the admitted carrier payload to the exact neutral jet form.
-    #[must_use]
-    pub fn definition(&self) -> ProceduralSurfaceDefinition {
-        ProceduralSurfaceDefinition::RollingBallJet {
-            degree: Self::DEGREE,
-            stations: self.stations.clone(),
-        }
+    pub fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
+        Some(ProceduralSurfaceDefinition::RollingBallJet(
+            cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+                Self::DEGREE,
+                self.stations.clone(),
+            )
+            .ok()?,
+        ))
     }
 }
 
@@ -827,12 +829,8 @@ mod tests {
         );
         assert_close(jet.stations[1].site.second_derivative.angle, 4.0);
         assert!(matches!(
-            jet.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-                degree: 5,
-                ref stations,
-            } if stations.len() == 2 && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
-        ));
+            jet.definition().unwrap(),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));
     }
 
     #[test]
