@@ -3502,7 +3502,7 @@ pub(crate) fn emit_pcurves(
     for r in records {
         let i = r.index as i64;
         if kept_pcurves.contains(&i) {
-            if let Some(geometry) = pcurve_geo.remove(&i) {
+            if let Some(geometry) = pcurve_geo.remove(&super::PcurveRecordIndex(i)) {
                 let wrapper_reversed = match r.chunk(4) {
                     Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(true),
                     Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(false),
@@ -3906,7 +3906,9 @@ pub(crate) fn emit_coedges(
                     .map(|p| cadmpeg_ir::topology::PcurveUse {
                         pcurve: PcurveId::mint(id(format, p)).expect("identity grammar"),
                         isoparametric: None,
-                        parameter_range: pcurve_parameter_ranges.get(&i).copied(),
+                        parameter_range: pcurve_parameter_ranges
+                            .get(&super::CoedgeRecordIndex(i))
+                            .copied(),
                     })
                     .into_iter()
                     .collect(),
