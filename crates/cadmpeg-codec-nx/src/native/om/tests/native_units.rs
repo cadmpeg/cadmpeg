@@ -12,7 +12,7 @@ fn graph_scopes_equal_names_by_native_unit_label() {
             expression: formula.into(),
             value,
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
         };
     let mut expressions = vec![

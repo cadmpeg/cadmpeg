@@ -8705,14 +8705,7 @@ pub(crate) fn attach_expression_parameters(
         .collect::<BTreeMap<_, _>>();
     let mut tables = BTreeMap::<String, Vec<&crate::native::om::Expression>>::new();
     for expression in expressions {
-        let table = if expression.source_table.is_empty() {
-            let Some((section, _)) = expression.id.split_once(":expression#") else {
-                continue;
-            };
-            section
-        } else {
-            expression.source_table.as_str()
-        };
+        let table = expression.source_table.as_str();
         tables
             .entry(table.to_string())
             .or_default()
