@@ -1285,7 +1285,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
     let mut pending = None::<PendingCurveExpressionSolveBlock>;
     for (index, line) in lines.iter().enumerate() {
         let source = line.text.trim();
-        if pending.is_none() {
+        let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(source, "solve") {
                 program.line_indices.insert(index);
                 pending = Some(PendingCurveExpressionSolveBlock {
@@ -1298,23 +1298,22 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 program.unresolved_control = true;
             }
             continue;
-        }
+        };
 
         program.line_indices.insert(index);
         if starts_relation_keyword(source, "solve") {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
         if starts_relation_keyword(source, "for") {
             let unknowns = conditional_keyword_expression(source, "for")
                 .and_then(curve_expression_solve_unknowns);
-            let mut block = pending.take().expect("pending solve block");
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
             let mut assignment_line_indices = Vec::new();
             if let Some(unknowns) = &unknowns {
-                for statement in block.statements {
+                for statement in std::mem::take(&mut block.statements) {
                     if statement.equation.dependencies.iter().any(|dependency| {
                         unknowns
                             .iter()
@@ -1343,6 +1342,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             } else {
                 program.unresolved_control = true;
             }
+            pending = None;
             continue;
         }
         if source.is_empty() || source.starts_with("/*") {
@@ -1350,13 +1350,13 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
         }
         let Some((left, right)) = split_expression_assignment(source) else {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         };
         let (left, right) = (left.trim(), right.trim());
         if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
         let mut dependencies = Vec::new();
@@ -1364,23 +1364,19 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             || extend_expression_dependencies(&mut dependencies, right).is_none()
         {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
-        pending
-            .as_mut()
-            .expect("pending solve block")
-            .statements
-            .push(PendingCurveExpressionSolveStatement {
-                equation: CurveExpressionEquation {
-                    left: left.to_owned(),
-                    right: right.to_owned(),
-                    dependencies,
-                    offset: line.offset,
-                },
-                assignment: expression_assignment(line),
-                line_index: index,
-            });
+        block.statements.push(PendingCurveExpressionSolveStatement {
+            equation: CurveExpressionEquation {
+                left: left.to_owned(),
+                right: right.to_owned(),
+                dependencies,
+                offset: line.offset,
+            },
+            assignment: expression_assignment(line),
+            line_index: index,
+        });
     }
     if pending.is_some() {
         program.unresolved_control = true;
