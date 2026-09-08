@@ -5,7 +5,7 @@
 use super::super::*;
 use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
+    SketchConstraintDefinitionInput, SketchConstraintId, SpatialSketchConstraint,
     SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
 };
 use cadmpeg_ir::CadIr;
@@ -14,10 +14,10 @@ use std::collections::BTreeMap;
 #[test]
 fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     assert!(sketch_constraint_has_complete_neutral_semantics(
-        &SketchConstraintDefinition::Disabled
+        &SketchConstraintDefinitionInput::Disabled
     ));
     assert!(!sketch_constraint_has_complete_neutral_semantics(
-        &SketchConstraintDefinition::Native {
+        &SketchConstraintDefinitionInput::Native {
             native_kind: "unresolved".into(),
             native_state: None,
             native_flags: None,

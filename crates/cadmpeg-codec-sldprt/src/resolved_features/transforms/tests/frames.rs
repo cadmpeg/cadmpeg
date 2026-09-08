@@ -15,7 +15,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     SketchPlacement,
 };
@@ -194,7 +194,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             ..
@@ -213,7 +213,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             ..
@@ -256,7 +256,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     directional_parameter.value = Some(ParameterValue::Length(Length(0.05)));
     assert!(matches!(
@@ -268,7 +268,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::VerticalDistance { .. })
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
     directional_entities[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 1.0),
@@ -284,7 +284,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci { .. })
+        Some(SketchConstraintDefinitionInput::DistanceLoci { .. })
     ));
 
     let mut ambiguous_entities = entities;
@@ -1317,15 +1317,18 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let mut constraints = vec![SketchConstraint {
         id: constraint_id.clone(),
         sketch: sketch_id.clone(),
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "endpoint".into(),
-            native_state: None,
-            native_flags: None,
-            native_properties: BTreeMap::new(),
-            entities: vec![entity_id.clone()],
-            parameter: None,
-            operands: Vec::new(),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: "endpoint".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: BTreeMap::new(),
+                entities: vec![entity_id.clone()],
+                parameter: None,
+                operands: Vec::new(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,

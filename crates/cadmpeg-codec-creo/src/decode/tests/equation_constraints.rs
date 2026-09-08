@@ -13,7 +13,7 @@ use crate::decode::sketch_transfer::constraints::{
 use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
     SketchLocus,
 };
 use std::collections::BTreeSet;
@@ -52,13 +52,13 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         "creo:featdefs:sketch_constraint#40:equation:offset:28"
     );
     assert_eq!(constraint.active, Some(true));
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_state,
         native_properties,
         operands,
         ..
-    } = &constraint.definition
+    } = constraint.definition.kind()
     else {
         panic!("equation fallback must be native");
     };
@@ -125,8 +125,8 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     let disabled_constraints =
         section_equation_native_constraints(&disabled, &sketch, &BTreeSet::new());
     assert_eq!(disabled_constraints[0].0.active, Some(false));
-    let SketchConstraintDefinition::Native { native_state, .. } =
-        &disabled_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { native_state, .. } =
+        disabled_constraints[0].0.definition.kind()
     else {
         panic!("equation fallback must be native");
     };
@@ -210,8 +210,8 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
@@ -260,8 +260,8 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
@@ -365,8 +365,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::Radius {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:13").unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#40:100")
                 .expect("identity grammar"),
@@ -490,8 +490,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
     assert_eq!(constraints[0].1, 28);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::PolarDistance {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PolarDistance {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
             ),
@@ -523,8 +523,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         section_equation_polar_distance_constraints(&propagated_polar, &sketch);
     assert_eq!(propagated_constraints.len(), 1);
     assert_eq!(
-        propagated_constraints[0].0.definition,
-        SketchConstraintDefinition::PolarDistance {
+        *(propagated_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PolarDistance {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
             ),
@@ -664,8 +664,8 @@ fn equation_function_six_emits_fixed_distance_constraint() {
     assert_eq!(constraints[0].1, 28);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::DistanceLociValue {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::DistanceLociValue {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10").unwrap()
             ),
@@ -825,8 +825,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     assert_eq!(midpoint_constraints[0].1, 28);
     assert_eq!(midpoint_constraints[0].0.active, Some(true));
     assert_eq!(
-        midpoint_constraints[0].0.definition,
-        SketchConstraintDefinition::MidpointCoordinate {
+        *(midpoint_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::MidpointCoordinate {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:30").unwrap()
             ),
@@ -856,8 +856,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         );
     assert_eq!(propagated_constraints.len(), 1);
     assert_eq!(
-        propagated_constraints[0].0.definition,
-        SketchConstraintDefinition::MidpointCoordinate {
+        *(propagated_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::MidpointCoordinate {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:30").unwrap()
             ),
@@ -946,8 +946,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     assert_eq!(point_constraints[0].1, 28);
     assert_eq!(point_constraints[0].0.active, Some(true));
     assert_eq!(
-        point_constraints[0].0.definition,
-        SketchConstraintDefinition::PointCoordinateValues {
+        *(point_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PointCoordinateValues {
             point: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:30").unwrap()
             ),
@@ -972,8 +972,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     );
     assert_eq!(propagated_constraints.len(), 1);
     assert_eq!(
-        propagated_constraints[0].0.definition,
-        SketchConstraintDefinition::PointCoordinateValues {
+        *(propagated_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PointCoordinateValues {
             point: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:30").unwrap()
             ),
@@ -1093,8 +1093,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::EqualDistance {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::EqualDistance {
             first: SketchDistancePair {
                 first: SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
@@ -1240,8 +1240,8 @@ fn equation_function_thirty_five_emits_point_on_line() {
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::PointOnObject {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PointOnObject {
             point: SketchLocus::Entity(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
             ),
@@ -1406,8 +1406,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::HorizontalDistance {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
             ),
@@ -1426,8 +1426,9 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     assert!(matches!(
         section_equation_unsigned_distance_constraints(&vertical, &sketch)[0]
             .0
-            .definition,
-        SketchConstraintDefinition::VerticalDistance { .. }
+            .definition
+            .kind(),
+        SketchConstraintDefinitionInput::VerticalDistance { .. }
     ));
 
     let mut disabled = definition;
@@ -1563,8 +1564,8 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
     assert_eq!(horizontal.len(), 1);
     assert_eq!(horizontal[0].0.active, Some(true));
     assert_eq!(
-        horizontal[0].0.definition,
-        SketchConstraintDefinition::HorizontalDistance {
+        *(horizontal[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10").unwrap()
             ),
@@ -1579,8 +1580,10 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
     let vertical =
         section_equation_axis_distance_constraints(&definition([0.0, 10.0], 10.0), &sketch);
     assert!(matches!(
-        vertical.first().map(|constraint| &constraint.0.definition),
-        Some(SketchConstraintDefinition::VerticalDistance { .. })
+        vertical
+            .first()
+            .map(|constraint| constraint.0.definition.kind()),
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
 
     let mut missing = definition([10.0, 0.0], 10.0);

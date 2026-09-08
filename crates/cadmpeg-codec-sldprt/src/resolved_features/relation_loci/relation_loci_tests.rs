@@ -15,7 +15,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -254,10 +254,12 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             &markers,
             &loci,
         ),
-        Some(cadmpeg_ir::sketches::SketchConstraintDefinition::Diameter {
-            entity: circle.id().clone(),
-            parameter: parameter.id,
-        })
+        Some(
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
+                entity: circle.id().clone(),
+                parameter: parameter.id,
+            }
+        )
     );
 }
 
@@ -338,7 +340,7 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
 
     assert_eq!(
         definition,
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(second_line.id().clone()),
             parameter: parameter.id,
@@ -396,7 +398,7 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(intended_line.id().clone()),
             parameter: parameter.id,
@@ -434,7 +436,7 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
@@ -573,7 +575,7 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
             parameter: parameter.id,
@@ -638,7 +640,7 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_line.id().clone(), second_line.id().clone()],
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
@@ -699,7 +701,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
             &markers_by_id,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
             parameter: parameter.id.clone(),
@@ -719,7 +721,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         None
     );
 
-    let definition = SketchConstraintDefinition::DistanceLoci {
+    let definition = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
         second: SketchLocus::Entity(
             SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
@@ -843,7 +845,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: first_locus.clone(),
             second: second_locus.clone(),
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
@@ -863,7 +865,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: first_locus.clone(),
             second: second_locus.clone(),
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
@@ -883,7 +885,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::VerticalDistance {
+        Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: first_locus,
             second: second_locus,
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
@@ -918,7 +920,7 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
             parameter: parameter.id,
@@ -956,7 +958,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
             parameter: parameter.id.clone(),
@@ -984,7 +986,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::VerticalDistance {
+        Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(
                 SketchEntityId::mint("synthetic:test:id#vertical-first").unwrap()
             ),
@@ -1072,7 +1074,7 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
             &HashMap::new(),
             Some(ProfileAxis::U),
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
             parameter: parameter.id,
@@ -1143,7 +1145,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Center(arc.id().clone()),
             parameter: parameter.id,
@@ -1300,7 +1302,7 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
             &markers_by_id,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(alternate_line.id().clone()),
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
@@ -1400,7 +1402,7 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
             &markers_by_id,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_alternate.id().clone(), second_line.id().clone()],
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
@@ -1450,7 +1452,7 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
@@ -1539,7 +1541,7 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, .. })
+        Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities == vec![SketchEntityId::mint("synthetic:test:id#first-line").unwrap(), SketchEntityId::mint("synthetic:test:id#second-line").unwrap()]
     ));
 }
@@ -1619,7 +1621,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first: first_line.id().clone(),
             second: second_line.id().clone(),
             parameter: parameter.id,
@@ -1668,7 +1670,7 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::Angle { .. })
+        Some(SketchConstraintDefinitionInput::Angle { .. })
     ));
 }
 
@@ -1711,7 +1713,7 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first: first.id().clone(),
             second: second.id().clone(),
             parameter: parameter.id,
@@ -1775,7 +1777,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
             &markers_by_id,
             &loci_by_marker,
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first: known.id().clone(),
             second: partner.id().clone(),
             parameter: parameter.id,
@@ -1826,7 +1828,7 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::Angle { .. })
+        Some(SketchConstraintDefinitionInput::Angle { .. })
     ));
 }
 
@@ -1879,7 +1881,7 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::Angle { .. })
+        Some(SketchConstraintDefinitionInput::Angle { .. })
     ));
 }
 mod repeated_circle_dimensions;

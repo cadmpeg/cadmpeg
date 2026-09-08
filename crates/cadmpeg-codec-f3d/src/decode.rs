@@ -136,8 +136,8 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
     }
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
-            constraint.definition,
-            cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
         ) {
             if let Some(native_ref) = &constraint.native_ref {
                 if let Some(companion) = native
@@ -1074,7 +1074,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
     use cadmpeg_ir::features::{FeatureDefinition, NativeFeatureKind, PathRef, ProfileRef};
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     use std::collections::{HashMap, HashSet};
 
     let source_lost_edge_reference_ids = native
@@ -1177,7 +1177,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .sketch_constraints
             .iter()
             .flat_map(|constraint| {
-                crate::design::dimensions::constraint_parameters(&constraint.definition)
+                crate::design::dimensions::constraint_parameters(constraint.definition.kind())
             })
             .chain(
                 ir.model.spatial_sketch_constraints.iter().filter_map(
@@ -1234,8 +1234,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     let mut native_dimensions = 0;
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Native { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Native { .. }
         ) {
             continue;
         }

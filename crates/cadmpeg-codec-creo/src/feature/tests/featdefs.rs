@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
+use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId};
 
 use crate::container::{self};
 use crate::test_support::*;
@@ -455,13 +455,13 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
                     == format!("creo:featdefs:sketch_constraint#40:segtab-{field}:43")
             })
             .expect("segment radius binding");
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("untyped segment radius binding must remain native");
         };
@@ -481,13 +481,13 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .iter()
         .find(|constraint| constraint.id.as_str() == "creo:featdefs:sketch_constraint#40:verhor:4")
         .expect("point verhor constraint");
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_properties,
         entities,
         operands,
         ..
-    } = &point_verhor.definition
+    } = point_verhor.definition.kind()
     else {
         panic!("point verhor must remain native");
     };

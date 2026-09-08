@@ -203,9 +203,9 @@ fn encoder_writes_source_less_line_sketches() {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
-        SketchLocus,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -242,12 +242,15 @@ fn encoder_writes_source_less_line_sketches() {
             id: SketchConstraintId::mint(format!("synthetic:test:constraint#coincident-{index}"))
                 .unwrap(),
             sketch: sketch_id.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci {
-                loci: vec![
-                    SketchLocus::End(entity_ids[index].clone()),
-                    SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
-                ],
-            },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::CoincidentLoci {
+                    loci: vec![
+                        SketchLocus::End(entity_ids[index].clone()),
+                        SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
+                    ],
+                },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -263,19 +266,19 @@ fn encoder_writes_source_less_line_sketches() {
     for (suffix, definition) in [
         (
             "fixed",
-            SketchConstraintDefinition::Fixed {
+            SketchConstraintDefinitionInput::Fixed {
                 entity: entity_ids[1].clone(),
             },
         ),
         (
             "horizontal",
-            SketchConstraintDefinition::Horizontal {
+            SketchConstraintDefinitionInput::Horizontal {
                 entity: entity_ids[0].clone(),
             },
         ),
         (
             "vertical",
-            SketchConstraintDefinition::Vertical {
+            SketchConstraintDefinitionInput::Vertical {
                 entity: entity_ids[2].clone(),
             },
         ),
@@ -283,7 +286,8 @@ fn encoder_writes_source_less_line_sketches() {
         ir.model.sketch_constraints.push(SketchConstraint {
             id: SketchConstraintId::mint(format!("synthetic:test:constraint#{suffix}")).unwrap(),
             sketch: sketch_id.clone(),
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -526,8 +530,8 @@ fn encoder_writes_source_less_line_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Horizontal { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Horizontal { .. }
             )
         }));
     assert!(decoded
@@ -537,8 +541,8 @@ fn encoder_writes_source_less_line_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Vertical { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Vertical { .. }
             )
         }));
     assert!(decoded
@@ -548,8 +552,8 @@ fn encoder_writes_source_less_line_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Fixed { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Fixed { .. }
             )
         }));
     assert_eq!(
@@ -826,8 +830,9 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
 fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -863,7 +868,10 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
         sketch: sketch_id,
-        definition: SketchConstraintDefinition::Horizontal { entity: entity_id },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Horizontal { entity: entity_id },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,

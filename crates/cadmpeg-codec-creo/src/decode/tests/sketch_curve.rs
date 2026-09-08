@@ -20,7 +20,8 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
 };
 use cadmpeg_ir::topology::{Body, BodyKind};
 use std::collections::{BTreeMap, BTreeSet};
@@ -136,19 +137,19 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone()),
-        Some(SketchConstraintDefinition::Vertical {
+        Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone()),
-        Some(SketchConstraintDefinition::Horizontal {
+        Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(2);
-    let Some(SketchConstraintDefinition::Native {
+    let Some(SketchConstraintDefinitionInput::Native {
         native_properties,
         entities,
         operands,
@@ -169,7 +170,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
         section_segment_verhor_definition(&segment, &sketch, entity),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
     assert_eq!(
@@ -306,8 +307,8 @@ fn dimension_identity_includes_its_feature_definition() {
     let radius = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(radius.len(), 1);
     assert_eq!(
-        radius[0].0.definition,
-        SketchConstraintDefinition::Radius {
+        *(radius[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
@@ -320,13 +321,13 @@ fn dimension_identity_includes_its_feature_definition() {
         &BTreeSet::new(),
     );
     assert_eq!(retained_without_circle.len(), 1);
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_properties,
         entities,
         operands,
         ..
-    } = &retained_without_circle[0].0.definition
+    } = retained_without_circle[0].0.definition.kind()
     else {
         panic!("a missing circle entity must retain its native radius relation");
     };
@@ -352,8 +353,8 @@ fn dimension_identity_includes_its_feature_definition() {
         &BTreeSet::new(),
     );
     assert!(matches!(
-        &retained_without_parameter[0].0.definition,
-        SketchConstraintDefinition::Native {
+        retained_without_parameter[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             native_kind,
             entities,
             ..
@@ -372,8 +373,8 @@ fn dimension_identity_includes_its_feature_definition() {
     let diameter = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(diameter.len(), 1);
     assert_eq!(
-        diameter[0].0.definition,
-        SketchConstraintDefinition::Diameter {
+        *(diameter[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
@@ -397,8 +398,8 @@ fn dimension_identity_includes_its_feature_definition() {
         section_segment_radius_constraints(&duplicate_circle_id, &sketch_917);
     assert_eq!(duplicate_constraints.len(), 2);
     assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::Native { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     )));
     definition
         .segments
@@ -410,10 +411,11 @@ fn dimension_identity_includes_its_feature_definition() {
         BTreeMap::from([(0, 2.5)])
     );
     assert_eq!(
-        section_segment_radius_constraints(&definition, &sketch_917)[0]
+        *(section_segment_radius_constraints(&definition, &sketch_917)[0]
             .0
-            .definition,
-        SketchConstraintDefinition::Diameter {
+            .definition)
+            .kind(),
+        SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
@@ -433,8 +435,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert!(resolved_section_radii(&definition).is_empty());
     let unresolved_kind = section_segment_radius_constraints(&definition, &sketch_917);
     assert!(matches!(
-        unresolved_kind[0].0.definition,
-        SketchConstraintDefinition::Native { .. }
+        unresolved_kind[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     ));
     let segments = definition.segments.as_mut().expect("segment table");
     let circle = segments.rows.edit_circles(|rows| rows.remove(0));
@@ -461,13 +463,13 @@ fn dimension_identity_includes_its_feature_definition() {
         .iter()
         .find(|(constraint, _)| constraint.id.as_str().ends_with("radius2:42"))
         .expect("secondary radius binding");
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_properties,
         entities,
         operands,
         ..
-    } = &secondary.0.definition
+    } = secondary.0.definition.kind()
     else {
         panic!("secondary radius binding must remain native");
     };
@@ -516,8 +518,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert!(typed_slots.iter().any(|(constraint, _)| {
         constraint.id.as_str().ends_with("segtab-radius:43")
             && matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::Native {
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native {
                     native_properties,
                     ..
                 } if native_properties["dimension_ordinal"] == "8"
@@ -526,8 +528,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert!(typed_slots.iter().any(|(constraint, _)| {
         constraint.id.as_str().ends_with("segtab-radius2:43")
             && matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::Native {
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native {
                     native_properties,
                     ..
                 } if native_properties["dimension_ordinal"] == "9"

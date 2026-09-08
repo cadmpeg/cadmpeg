@@ -165,11 +165,11 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let [constraint] = constraints.as_slice() else {
         panic!("expected one recipe-backed dimension")
     };
-    let SketchConstraintDefinition::RepeatedDistance {
+    let SketchConstraintDefinitionInput::RepeatedDistance {
         measurements,
         parameter: projected_parameter,
         ..
-    } = &constraint.definition
+    } = constraint.definition.kind()
     else {
         panic!("expected repeated recipe-backed dimension")
     };
@@ -223,14 +223,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         radial_constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Radius {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Radius {
                 entity,
                 parameter: actual_parameter,
-            },
-            ..
-        }] if entity == circle.id()
+            } if entity == circle.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
-    ));
+    )));
 
     let annotation_point = SketchPoint {
         id: format!("{stream}:sketch-point#50"),
@@ -336,14 +336,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         extension_constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Radius {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Radius {
                 entity,
                 parameter: actual_parameter,
-            },
-            ..
-        }] if entity == circle.id()
+            } if entity == circle.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
-    ));
+    )));
 
     let curves = [40, 41].map(|record_index| SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#{record_index}"),
@@ -419,12 +419,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert_eq!(with_independent_relation.len(), 2);
     assert!(with_independent_relation.iter().any(|constraint| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::RepeatedDistance { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::RepeatedDistance { .. }
     )));
     assert!(with_independent_relation.iter().any(|constraint| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::Parallel { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Parallel { .. }
     )));
     let mut radial_parameter = parameter.clone();
     radial_parameter.source = crate::records::DesignParameterSource::new(
@@ -454,14 +454,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(radial_with_independent_relation
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Parallel { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Parallel { .. }
         )));
     assert!(radial_with_independent_relation
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Native {
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Native {
                 parameter: Some(_),
                 ..
             }
@@ -485,8 +485,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert_eq!(without_dimension_frame.len(), 2);
     assert!(without_dimension_frame.iter().any(|constraint| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             parameter: Some(_),
             ..
         }
@@ -518,10 +518,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native { operands, .. },
+            definition,
             ..
-        }] if operands.len() == 2
-    ));
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Native { operands, .. } if operands.len() == 2
+    )));
 
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -543,7 +543,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native {
+            definition,
+            native_ref: Some(native_ref),
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Native {
                 native_kind,
                 native_state: None,
                 native_flags: None,
@@ -551,10 +554,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: Some(actual_parameter),
                 operands,
                 ..
-            },
-            native_ref: Some(native_ref),
-            ..
-        }] if native_kind == "Linear Dimension-4"
+            } if native_kind == "Linear Dimension-4"
             && entities.is_empty()
             && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == &companion.id
@@ -566,7 +566,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             }] if native_kind == "dimension_companion"
                 && field == "companion_payload"
                 && operand_ref == &companion.id)
-    ));
+    )));
 
     let mut radial_parameter = parameter.clone();
     radial_parameter.source = crate::records::DesignParameterSource::new(
@@ -604,16 +604,16 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Radius {
-                entity,
-                parameter: actual_parameter,
-            },
+            definition,
             native_ref: Some(native_ref),
             ..
-        }] if entity == radial_entity.id()
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Radius {
+                entity,
+                parameter: actual_parameter,
+            } if entity == radial_entity.id()
             && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == &companion.id
-    ));
+    )));
 
     let mut empty_companion = companion.clone();
     empty_companion.payload_byte_length = 0;
@@ -665,16 +665,16 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::DistanceLoci {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::DistanceLoci {
                 first: cadmpeg_ir::sketches::SketchLocus::Start(first),
                 second: cadmpeg_ir::sketches::SketchLocus::End(second),
                 parameter: actual_parameter,
-            },
-            ..
-        }] if first == line.id()
+            } if first == line.id()
             && second == line.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
-    ));
+    )));
 
     let second_line = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-measured-line").unwrap(),
@@ -705,14 +705,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::RepeatedLength {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::RepeatedLength {
                 entities,
                 parameter,
-            },
-            ..
-        }] if entities.len() == 2
+            } if entities.len() == 2
             && parameter == &neutral_parameter_id_parts(stream, radial_parameter.record_index)
-    ));
+    )));
 }
 
 #[test]
@@ -743,7 +743,7 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
             &parameter,
             0.0,
         ).as_slice(),
-        [SketchConstraintDefinition::VerticalDistance { first, second, parameter: actual }]
+        [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
                 && *actual == parameter
@@ -799,7 +799,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ).as_slice(),
-        [SketchConstraintDefinition::Distance { entities, .. }]
+        [SketchConstraintDefinitionInput::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
     let point = |name: &str, position| {
@@ -824,7 +824,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ).as_slice(),
-        [SketchConstraintDefinition::Distance { entities, .. }]
+        [SketchConstraintDefinitionInput::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
 
@@ -864,7 +864,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
         }) if entities.as_slice()
@@ -896,7 +896,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::ParallelLineSetDistance {
+        Some(SketchConstraintDefinitionInput::ParallelLineSetDistance {
             first,
             second,
             ..
@@ -925,7 +925,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
         }) if entities.as_slice()
@@ -1003,7 +1003,7 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
             &entities,
             &sketch,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { first, second, parameter: actual })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { first, second, parameter: actual })
             if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#carrier-start").unwrap())
                 && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#extension").unwrap())
                 && actual == parameter
@@ -1093,7 +1093,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     .expect("two disjoint concentric pairs");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::RepeatedDistance {
+        SketchConstraintDefinitionInput::RepeatedDistance {
             measurements,
             ..
         } if measurements == vec![

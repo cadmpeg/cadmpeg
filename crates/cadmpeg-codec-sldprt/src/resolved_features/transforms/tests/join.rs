@@ -12,8 +12,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -147,7 +147,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert!(marker_entities("cycle", &markers, &joins).is_empty());
     assert_eq!(
         typed_marker_relation_definition(markers["reference"], &markers, &joins,),
-        Some(SketchConstraintDefinition::Vertical {
+        Some(SketchConstraintDefinitionInput::Vertical {
             entity: first.clone(),
         })
     );
@@ -155,14 +155,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     nested_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
     assert!(matches!(
         typed_marker_relation_definition(&nested_horizontal, &markers, &joins),
-        Some(SketchConstraintDefinition::Native { ref native_kind, .. })
+        Some(SketchConstraintDefinitionInput::Native { ref native_kind, .. })
             if native_kind == "sldprt:marker-relation:25"
     ));
     let mut nested_native = nested_reference.clone();
     nested_native.kind = SketchInputKind::from_native_code(28);
     assert_eq!(
         typed_marker_relation_definition(&nested_native, &markers, &joins),
-        Some(SketchConstraintDefinition::Native {
+        Some(SketchConstraintDefinitionInput::Native {
             native_kind: "sldprt:marker-relation:28".into(),
             native_state: None,
             native_flags: None,
@@ -224,7 +224,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(point_horizontal.id.as_str(), &point_horizontal);
     assert!(matches!(
         typed_marker_relation_definition(&point_horizontal, &markers, &point_loci),
-        Some(SketchConstraintDefinition::Native { entities, .. })
+        Some(SketchConstraintDefinitionInput::Native { entities, .. })
             if entities == vec![relation_point]
     ));
 
@@ -257,7 +257,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(parallel.id.as_str(), &parallel);
     assert_eq!(
         typed_marker_relation_definition(&parallel, &markers, &joins),
-        Some(SketchConstraintDefinition::Parallel {
+        Some(SketchConstraintDefinitionInput::Parallel {
             first: first.clone(),
             second: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
         })
@@ -268,7 +268,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(symmetric.id.as_str(), &symmetric);
     assert_eq!(
         typed_marker_relation_definition(&symmetric, &markers, &joins),
-        Some(SketchConstraintDefinition::Native {
+        Some(SketchConstraintDefinitionInput::Native {
             native_kind: "sldprt:marker-relation:11".into(),
             native_state: None,
             native_flags: None,
@@ -306,7 +306,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(coincident.id.as_str(), &coincident);
     assert_eq!(
         typed_marker_relation_definition(&coincident, &markers, &joins),
-        Some(SketchConstraintDefinition::CoincidentLoci {
+        Some(SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                 cadmpeg_ir::sketches::SketchLocus::End(
@@ -321,7 +321,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(horizontal_points.id.as_str(), &horizontal_points);
     assert_eq!(
         typed_marker_relation_definition(&horizontal_points, &markers, &joins),
-        Some(SketchConstraintDefinition::SameCoordinate {
+        Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                 cadmpeg_ir::sketches::SketchLocus::End(
@@ -341,7 +341,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     assert_eq!(
         typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
-        Some(SketchConstraintDefinition::SameCoordinate {
+        Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                 cadmpeg_ir::sketches::SketchLocus::End(
@@ -380,7 +380,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(midpoint.id.as_str(), &midpoint);
     assert_eq!(
         typed_marker_relation_definition(&midpoint, &markers, &midpoint_loci),
-        Some(SketchConstraintDefinition::Midpoint {
+        Some(SketchConstraintDefinitionInput::Midpoint {
             point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
             entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
         })
@@ -414,7 +414,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         );
         assert_eq!(
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
-            Some(SketchConstraintDefinition::ArcAngle {
+            Some(SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
                 angle: cadmpeg_ir::features::Angle(angle),
             })
@@ -424,7 +424,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .clone_from(&entity_marker.id);
         assert!(matches!(
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
-            Some(SketchConstraintDefinition::Native {
+            Some(SketchConstraintDefinitionInput::Native {
                 native_kind,
                 entities,
                 parameter: None,
@@ -487,7 +487,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &markers,
             &joins,
         ),
-        Some(cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci {
+        Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci {
             parameter,
             ..
         }) if parameter.as_str() == "distance"
@@ -536,7 +536,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &markers,
             &joins,
         ),
-        Some(SketchConstraintDefinition::Radius { parameter, .. })
+        Some(SketchConstraintDefinitionInput::Radius { parameter, .. })
             if parameter.as_str() == "circle"
     ));
     let diameter = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Diameter));
@@ -549,7 +549,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &markers,
             &joins,
         ),
-        Some(SketchConstraintDefinition::Diameter { parameter, .. })
+        Some(SketchConstraintDefinitionInput::Diameter { parameter, .. })
             if parameter.as_str() == "circle"
     ));
     let undisplayed = parameter("synthetic:test:id#circle", None);
@@ -589,7 +589,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &markers,
             &joins,
         ),
-        Some(SketchConstraintDefinition::Radius { entity, .. })
+        Some(SketchConstraintDefinitionInput::Radius { entity, .. })
             if entity == circle_entity.id().clone()
     ));
     let duplicate_circle = SketchEntity::new(

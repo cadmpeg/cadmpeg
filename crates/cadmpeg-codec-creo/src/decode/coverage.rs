@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition};
+use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput};
 
 use crate::container::ContainerScan;
 
@@ -164,8 +164,8 @@ pub(crate) fn design_constraint_transfer_coverage(
             DesignConstraintTransferCoverage::default(),
             |mut coverage, constraint| {
                 coverage.transferred += 1;
-                let native_kind_text = match &constraint.definition {
-                    SketchConstraintDefinition::Native { native_kind, .. }
+                let native_kind_text = match constraint.definition.kind() {
+                    SketchConstraintDefinitionInput::Native { native_kind, .. }
                         if native_kind.starts_with(native_kind_prefix) =>
                     {
                         Some(native_kind.as_str())

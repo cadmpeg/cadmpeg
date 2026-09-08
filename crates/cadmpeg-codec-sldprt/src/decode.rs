@@ -225,9 +225,9 @@ fn incomplete_binder_target(
 }
 
 fn sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Constraint;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
 
     match definition {
         Constraint::Native { .. } => false,
@@ -888,7 +888,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .sketch_constraints
         .iter()
         .filter(|constraint| {
-            !sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+            !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
                 && constraint.active != Some(false)
         })
         .count();

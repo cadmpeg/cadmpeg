@@ -48,7 +48,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchLocus,
 };
@@ -1487,7 +1487,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     let constraint = |id: &str, definition| SketchConstraint {
         id: SketchConstraintId::mint(id.to_string()).unwrap(),
         sketch: sketch.clone(),
-        definition,
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -1503,13 +1503,13 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     let mut constraints = vec![
         constraint(
             "sketch:relation:1",
-            SketchConstraintDefinition::Fixed {
+            SketchConstraintDefinitionInput::Fixed {
                 entity: entity.clone(),
             },
         ),
         constraint(
             "sketch:relation:2",
-            SketchConstraintDefinition::Native {
+            SketchConstraintDefinitionInput::Native {
                 native_kind: "creo:relation:9".to_string(),
                 entities: vec![entity.clone()],
                 parameter: None,
@@ -1521,7 +1521,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         ),
         constraint(
             "sketch:skamp:3",
-            SketchConstraintDefinition::Fixed { entity },
+            SketchConstraintDefinitionInput::Fixed { entity },
         ),
     ];
     constraints[0].active = Some(true);
@@ -1582,7 +1582,7 @@ fn native_curve_families_accept_only_their_defined_loci() {
         ),
         (circle.clone(), SketchGeometry::native("circle".to_string())),
     ]);
-    let compatible = SketchConstraintDefinition::CoincidentLoci {
+    let compatible = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![
             SketchLocus::Entity(point),
             SketchLocus::Start(bounded),
@@ -1590,11 +1590,11 @@ fn native_curve_families_accept_only_their_defined_loci() {
         ],
     };
     assert!(sketch_constraint_loci_compatible(&compatible, &geometry));
-    let incompatible = SketchConstraintDefinition::CoincidentLoci {
+    let incompatible = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
-    let centered_midpoint = SketchConstraintDefinition::Midpoint {
+    let centered_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(
             SketchEntityId::mint("synthetic:test:id#line".to_string()).unwrap(),
         ),
@@ -1604,7 +1604,7 @@ fn native_curve_families_accept_only_their_defined_loci() {
         &centered_midpoint,
         &geometry
     ));
-    let incompatible_midpoint = SketchConstraintDefinition::Midpoint {
+    let incompatible_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(reference_line),
         entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap(),
     };

@@ -14,7 +14,7 @@ use crate::decode::sketch_transfer::loci::{
 use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
-    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     SketchNativeOperand,
 };
@@ -114,7 +114,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         native_ref: Some(native_ref),
                     });
                 }
-                Some(SketchConstraintDefinition::Native {
+                Some(SketchConstraintDefinitionInput::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
                     native_state: Some(u64::from(skamp.status)),
                     native_flags: Some(u64::from(skamp.flags)),
@@ -198,7 +198,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             && section_skamp_center_entity(definition, sketch, second)
                                 .is_some() =>
                     {
-                        SketchConstraintDefinition::Concentric {
+                        SketchConstraintDefinitionInput::Concentric {
                             first: section_skamp_center_entity(definition, sketch, first)?,
                             second: section_skamp_center_entity(definition, sketch, second)?,
                         }
@@ -211,7 +211,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             )
                             .is_some() =>
                     {
-                        SketchConstraintDefinition::CoincidentLoci {
+                        SketchConstraintDefinitionInput::CoincidentLoci {
                             loci: vec![
                                 section_skamp_incidence_locus(definition, sketch, first, geometry)?,
                                 section_skamp_incidence_locus(
@@ -224,7 +224,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         if let (Some(first), Some(second)) =
                             (point_entity(first), point_entity(second))
                         {
-                            SketchConstraintDefinition::CoincidentLoci {
+                            SketchConstraintDefinitionInput::CoincidentLoci {
                                 loci: vec![SketchLocus::Entity(first), SketchLocus::Entity(second)],
                             }
                         } else {
@@ -240,7 +240,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 })
                                 .collect::<Vec<_>>();
                             if let [(entity, point)] = point_on_curve.as_slice() {
-                                SketchConstraintDefinition::PointOnObject {
+                                SketchConstraintDefinitionInput::PointOnObject {
                                     point: point.clone(),
                                     entity: entity.clone(),
                                 }
@@ -255,7 +255,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                     })
                                     .collect::<Vec<_>>();
                                 if let [loci] = point_coincidence.as_slice() {
-                                    SketchConstraintDefinition::CoincidentLoci {
+                                    SketchConstraintDefinitionInput::CoincidentLoci {
                                         loci: loci.to_vec(),
                                     }
                                 } else {
@@ -267,9 +267,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     (kind @ (1 | 2), [item]) => {
                         match section_skamp_oriented_line(definition, sketch, item, geometry) {
                             Some(entity) if kind == 1 => {
-                                SketchConstraintDefinition::Horizontal { entity }
+                                SketchConstraintDefinitionInput::Horizontal { entity }
                             }
-                            Some(entity) => SketchConstraintDefinition::Vertical { entity },
+                            Some(entity) => SketchConstraintDefinitionInput::Vertical { entity },
                             None => native_constraint()?,
                         }
                     }
@@ -277,11 +277,11 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         if let Some([first, second]) = section_skamp_tangent_loci(
                             definition, sketch, first, second, active, geometry,
                         ) {
-                            SketchConstraintDefinition::TangentLoci { first, second }
+                            SketchConstraintDefinitionInput::TangentLoci { first, second }
                         } else if section_skamp_curve_entity(definition, sketch, first).is_some()
                             && section_skamp_curve_entity(definition, sketch, second).is_some()
                         {
-                            SketchConstraintDefinition::Tangent {
+                            SketchConstraintDefinitionInput::Tangent {
                                 first: section_skamp_curve_entity(definition, sketch, first)?,
                                 second: section_skamp_curve_entity(definition, sketch, second)?,
                             }
@@ -295,7 +295,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             section_skamp_curve_entity(definition, sketch, second),
                         ) {
                             (Some(first), Some(second)) => {
-                                SketchConstraintDefinition::Perpendicular { first, second }
+                                SketchConstraintDefinitionInput::Perpendicular { first, second }
                             }
                             _ => native_constraint()?,
                         }
@@ -305,7 +305,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             && section_skamp_circular_entity(definition, sketch, second)
                                 .is_some() =>
                     {
-                        SketchConstraintDefinition::Equal {
+                        SketchConstraintDefinitionInput::Equal {
                             first: section_skamp_circular_entity(definition, sketch, first)?,
                             second: section_skamp_circular_entity(definition, sketch, second)?,
                         }
@@ -315,21 +315,21 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     {
                         let [first, second] =
                             section_skamp_line_pair(definition, sketch, first, second)?;
-                        SketchConstraintDefinition::Parallel { first, second }
+                        SketchConstraintDefinitionInput::Parallel { first, second }
                     }
                     (8, [first, second])
                         if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
                     {
                         let [first, second] =
                             section_skamp_line_pair(definition, sketch, first, second)?;
-                        SketchConstraintDefinition::Equal { first, second }
+                        SketchConstraintDefinitionInput::Equal { first, second }
                     }
                     (9, [first, second])
                         if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
                     {
                         let [first, second] =
                             section_skamp_line_pair(definition, sketch, first, second)?;
-                        SketchConstraintDefinition::Collinear { first, second }
+                        SketchConstraintDefinitionInput::Collinear { first, second }
                     }
                     (9, [first, second])
                         if first.sense == 0
@@ -344,7 +344,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         } else {
                             (second, first)
                         };
-                        SketchConstraintDefinition::PointOnObject {
+                        SketchConstraintDefinitionInput::PointOnObject {
                             point: section_skamp_locus(definition, sketch, point)?,
                             entity: sketch_entity_id(sketch, line.entity_id)?,
                         }
@@ -352,7 +352,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     (kind @ (10 | 11), [item])
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
-                        SketchConstraintDefinition::ArcAngle {
+                        SketchConstraintDefinitionInput::ArcAngle {
                             entity: sketch_entity_id(sketch, item.entity_id)?,
                             angle: Angle(if kind == 10 {
                                 std::f64::consts::FRAC_PI_2
@@ -372,7 +372,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         } else {
                             SketchCoordinateAxis::U
                         };
-                        SketchConstraintDefinition::SameCoordinate {
+                        SketchConstraintDefinitionInput::SameCoordinate {
                             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                 first, second, axis,
                             )
@@ -402,7 +402,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .is_none_or(|(source, result)| source == result)
                         });
                         if geometry_agrees {
-                            SketchConstraintDefinition::ProjectedCopy { source, result }
+                            SketchConstraintDefinitionInput::ProjectedCopy { source, result }
                         } else {
                             native_constraint()?
                         }
@@ -413,7 +413,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             && unique_bounded_curve_segment(definition, item.entity_id)
                                 .is_some() =>
                     {
-                        SketchConstraintDefinition::Fixed {
+                        SketchConstraintDefinitionInput::Fixed {
                             entity: sketch_entity_id(sketch, item.entity_id)?,
                         }
                     }
@@ -423,7 +423,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             && section_skamp_point_locus(definition, sketch, first).is_some()
                             && section_skamp_point_locus(definition, sketch, second).is_some() =>
                     {
-                        SketchConstraintDefinition::Symmetric {
+                        SketchConstraintDefinitionInput::Symmetric {
                             first: section_skamp_point_locus(definition, sketch, first)?,
                             second: section_skamp_point_locus(definition, sketch, second)?,
                             axis: sketch_entity_id(sketch, axis.entity_id)?,
@@ -434,7 +434,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             && inactive_point_locus(first).is_some()
                             && inactive_point_locus(second).is_some() =>
                     {
-                        SketchConstraintDefinition::PointSymmetric {
+                        SketchConstraintDefinitionInput::PointSymmetric {
                             first: inactive_point_locus(first)?,
                             second: inactive_point_locus(second)?,
                             center: SketchLocus::Entity(point_entity(center)?),
@@ -444,7 +444,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         if let Some((first, second, axis)) =
                             section_skamp_same_coordinate(definition, sketch, skamp, active)
                         {
-                            SketchConstraintDefinition::SameCoordinate {
+                            SketchConstraintDefinitionInput::SameCoordinate {
                                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                     first, second, axis,
                                 )
@@ -467,7 +467,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                             [axis.index()],
                                     ) {
                                         Ok(relation) => {
-                                            SketchConstraintDefinition::SameCoordinate { relation }
+                                            SketchConstraintDefinitionInput::SameCoordinate {
+                                                relation,
+                                            }
                                         }
                                         Err(_) => native_constraint()?,
                                     }
@@ -482,7 +484,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         if let Some((point, entity)) =
                             section_skamp_midpoint(definition, sketch, first, second, geometry)
                         {
-                            SketchConstraintDefinition::Midpoint { point, entity }
+                            SketchConstraintDefinitionInput::Midpoint { point, entity }
                         } else {
                             native_constraint()?
                         }
@@ -509,7 +511,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         sketch_constraint_id(sketch, format_args!("skamp:offset:{}", skamp.offset))?
                     },
                     sketch: sketch.clone(),
-                    definition: constraint_definition,
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        constraint_definition,
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(active),
@@ -529,20 +534,20 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
 
 #[cfg(test)]
 pub(in super::super) fn sketch_constraint_loci_compatible(
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
 ) -> bool {
     sketch_constraint_loci_compatible_with_policy(definition, geometry, false)
 }
 
 pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
     allow_unknown_native_endpoints: bool,
 ) -> bool {
     let native_line_center_allowed = matches!(
         definition,
-        SketchConstraintDefinition::Midpoint {
+        SketchConstraintDefinitionInput::Midpoint {
             point: SketchLocus::Center(_),
             ..
         }
@@ -588,38 +593,40 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         })
     };
     match definition {
-        SketchConstraintDefinition::CoincidentLoci { loci }
-        | SketchConstraintDefinition::Group { elements: loci }
-        | SketchConstraintDefinition::Text { elements: loci, .. } => {
+        SketchConstraintDefinitionInput::CoincidentLoci { loci }
+        | SketchConstraintDefinitionInput::Group { elements: loci }
+        | SketchConstraintDefinitionInput::Text { elements: loci, .. } => {
             loci.iter().all(locus_compatible)
         }
-        SketchConstraintDefinition::SameCoordinate { relation } => {
+        SketchConstraintDefinitionInput::SameCoordinate { relation } => {
             locus_compatible(relation.first()) && locus_compatible(relation.second())
         }
-        SketchConstraintDefinition::TangentLoci { first, second }
-        | SketchConstraintDefinition::DistanceLoci { first, second, .. }
-        | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
-        | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
-        | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
-        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+        SketchConstraintDefinitionInput::TangentLoci { first, second }
+        | SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinitionInput::DistanceLociValue { first, second, .. }
+        | SketchConstraintDefinitionInput::MidpointCoordinate { first, second, .. }
+        | SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. }
+        | SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
-        SketchConstraintDefinition::Midpoint { point, entity }
-        | SketchConstraintDefinition::PointOnObject { point, entity } => {
+        SketchConstraintDefinitionInput::Midpoint { point, entity }
+        | SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
             locus_compatible(point) && geometry.contains_key(entity)
         }
-        SketchConstraintDefinition::PointCoordinateValues { point, .. } => locus_compatible(point),
-        SketchConstraintDefinition::Symmetric {
+        SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => {
+            locus_compatible(point)
+        }
+        SketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
         } => locus_compatible(first) && locus_compatible(second) && geometry.contains_key(axis),
-        SketchConstraintDefinition::PointSymmetric {
+        SketchConstraintDefinitionInput::PointSymmetric {
             first,
             second,
             center,
         } => locus_compatible(first) && locus_compatible(second) && locus_compatible(center),
-        SketchConstraintDefinition::SnellsLaw {
+        SketchConstraintDefinitionInput::SnellsLaw {
             incident,
             refracted,
             interface,
@@ -629,28 +636,30 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
                 && locus_compatible(refracted)
                 && geometry.contains_key(interface)
         }
-        SketchConstraintDefinition::Concentric { first, second }
-        | SketchConstraintDefinition::Coradial { first, second }
-        | SketchConstraintDefinition::Collinear { first, second }
-        | SketchConstraintDefinition::ProjectedCopy {
+        SketchConstraintDefinitionInput::Concentric { first, second }
+        | SketchConstraintDefinitionInput::Coradial { first, second }
+        | SketchConstraintDefinitionInput::Collinear { first, second }
+        | SketchConstraintDefinitionInput::ProjectedCopy {
             source: first,
             result: second,
         }
-        | SketchConstraintDefinition::Parallel { first, second }
-        | SketchConstraintDefinition::Perpendicular { first, second }
-        | SketchConstraintDefinition::Tangent { first, second }
-        | SketchConstraintDefinition::Equal { first, second }
-        | SketchConstraintDefinition::Angle { first, second, .. } => {
+        | SketchConstraintDefinitionInput::Parallel { first, second }
+        | SketchConstraintDefinitionInput::Perpendicular { first, second }
+        | SketchConstraintDefinitionInput::Tangent { first, second }
+        | SketchConstraintDefinitionInput::Equal { first, second }
+        | SketchConstraintDefinitionInput::Angle { first, second, .. } => {
             geometry.contains_key(first) && geometry.contains_key(second)
         }
-        SketchConstraintDefinition::Horizontal { entity }
-        | SketchConstraintDefinition::Vertical { entity }
-        | SketchConstraintDefinition::Fixed { entity }
-        | SketchConstraintDefinition::Radius { entity, .. }
-        | SketchConstraintDefinition::Diameter { entity, .. }
-        | SketchConstraintDefinition::ArcAngle { entity, .. }
-        | SketchConstraintDefinition::EllipseAngle { entity, .. } => geometry.contains_key(entity),
-        SketchConstraintDefinition::AtIntersection {
+        SketchConstraintDefinitionInput::Horizontal { entity }
+        | SketchConstraintDefinitionInput::Vertical { entity }
+        | SketchConstraintDefinitionInput::Fixed { entity }
+        | SketchConstraintDefinitionInput::Radius { entity, .. }
+        | SketchConstraintDefinitionInput::Diameter { entity, .. }
+        | SketchConstraintDefinitionInput::ArcAngle { entity, .. }
+        | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => {
+            geometry.contains_key(entity)
+        }
+        SketchConstraintDefinitionInput::AtIntersection {
             point,
             first,
             second,
@@ -666,7 +675,7 @@ mod tests {
     use super::sketch_constraint_loci_compatible_with_policy;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
         SketchLocus,
     };
     use std::collections::BTreeMap;
@@ -692,7 +701,7 @@ mod tests {
                 .unwrap(),
             ),
         ]);
-        let symmetry = SketchConstraintDefinition::Symmetric {
+        let symmetry = SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(first.clone()),
             second: SketchLocus::Entity(second.clone()),
             axis: axis.clone(),
@@ -701,7 +710,7 @@ mod tests {
             &symmetry, &geometry, false,
         ));
 
-        let projected = SketchConstraintDefinition::ProjectedCopy {
+        let projected = SketchConstraintDefinitionInput::ProjectedCopy {
             source: first.clone(),
             result: axis.clone(),
         };

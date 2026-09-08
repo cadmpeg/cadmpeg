@@ -22,7 +22,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
     SketchId, SketchLocus, SketchNativeOperand,
 };
@@ -2168,7 +2168,7 @@ fn parse_constraints(
                 11 => Alignment::ParabolaFocalAxis,
                 _ => return None,
             };
-            Some(SketchConstraintDefinition::InternalAlignment {
+            Some(SketchConstraintDefinitionInput::InternalAlignment {
                 helper: locus_entity(resolved.first()?).clone(),
                 parent: locus_entity(resolved.get(1)?).clone(),
                 alignment,
@@ -2179,13 +2179,13 @@ fn parse_constraints(
                 return None;
             }
             match type_code {
-                Some(20) => Some(SketchConstraintDefinition::Group {
+                Some(20) => Some(SketchConstraintDefinitionInput::Group {
                     elements: resolved.clone(),
                 }),
                 Some(21) => {
                     let metadata = node.attribute("MetaData")?;
                     let metadata: serde_json::Value = serde_json::from_str(metadata).ok()?;
-                    Some(SketchConstraintDefinition::Text {
+                    Some(SketchConstraintDefinitionInput::Text {
                         elements: resolved.clone(),
                         text: metadata.get("text")?.as_str()?.to_owned(),
                         font: metadata
@@ -2213,7 +2213,7 @@ fn parse_constraints(
                     neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
                 })
             })
-            .unwrap_or_else(|| SketchConstraintDefinition::Native {
+            .unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
                 native_kind,
                 native_state: None,
                 native_flags: None,
@@ -2247,7 +2247,8 @@ fn parse_constraints(
             ))
             .map_err(cadmpeg_core::CodecError::malformed)?,
             sketch: sketch.clone(),
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             name: nonempty_attr(node, "Name"),
             driving: bool_attr(node, "IsDriving"),
             active: bool_attr(node, "IsActive"),
@@ -2256,8 +2257,14 @@ fn parse_constraints(
             orientation: node
                 .attribute("Orientation")
                 .and_then(|value| value.parse().ok()),
-            label_distance: finite_attr(node, "LabelDistance"),
-            label_position: finite_attr(node, "LabelPosition"),
+            label_distance: finite_attr(node, "LabelDistance")
+                .map(cadmpeg_ir::sketches::SketchLabelValue::try_from)
+                .transpose()
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            label_position: finite_attr(node, "LabelPosition")
+                .map(cadmpeg_ir::sketches::SketchLabelValue::try_from)
+                .transpose()
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             metadata: nonempty_attr(node, "MetaData"),
             native_ref: Some(property.id.clone()),
         });
@@ -2269,7 +2276,7 @@ fn midpoint_constraint(
     kind: i64,
     operands: &[(i64, i64)],
     entities: &[SketchEntity],
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     if kind != 1 || operands.len() != 2 {
         return None;
     }
@@ -2299,7 +2306,7 @@ fn midpoint_constraint(
         ) {
             continue;
         }
-        return Some(SketchConstraintDefinition::Midpoint {
+        return Some(SketchConstraintDefinitionInput::Midpoint {
             point,
             entity: bounded.id().clone(),
         });
@@ -2494,102 +2501,102 @@ fn neutral_constraint(
     loci: &[SketchLocus],
     parameter: Option<ParameterId>,
     complete: bool,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     if !complete {
         return None;
     }
     let entity = |index| loci.get(index).map(locus_entity).cloned();
     let pair = || Some((entity(0)?, entity(1)?));
     Some(match kind {
-        0 => SketchConstraintDefinition::Disabled,
-        1 => SketchConstraintDefinition::CoincidentLoci {
+        0 => SketchConstraintDefinitionInput::Disabled,
+        1 => SketchConstraintDefinitionInput::CoincidentLoci {
             loci: loci.to_vec(),
         },
-        2 => SketchConstraintDefinition::Horizontal { entity: entity(0)? },
-        3 => SketchConstraintDefinition::Vertical { entity: entity(0)? },
+        2 => SketchConstraintDefinitionInput::Horizontal { entity: entity(0)? },
+        3 => SketchConstraintDefinitionInput::Vertical { entity: entity(0)? },
         4 => {
             let (first, second) = pair()?;
-            SketchConstraintDefinition::Parallel { first, second }
+            SketchConstraintDefinitionInput::Parallel { first, second }
         }
         5 => {
             let (first, second) = pair()?;
-            SketchConstraintDefinition::Tangent { first, second }
+            SketchConstraintDefinitionInput::Tangent { first, second }
         }
         10 => {
             let (first, second) = pair()?;
-            SketchConstraintDefinition::Perpendicular { first, second }
+            SketchConstraintDefinitionInput::Perpendicular { first, second }
         }
         12 => {
             let (first, second) = pair()?;
-            SketchConstraintDefinition::Equal { first, second }
+            SketchConstraintDefinitionInput::Equal { first, second }
         }
-        13 => SketchConstraintDefinition::PointOnObject {
+        13 => SketchConstraintDefinitionInput::PointOnObject {
             point: loci.first()?.clone(),
             entity: entity(1)?,
         },
-        17 => SketchConstraintDefinition::Fixed { entity: entity(0)? },
-        6 if loci.len() == 2 => SketchConstraintDefinition::DistanceLoci {
+        17 => SketchConstraintDefinitionInput::Fixed { entity: entity(0)? },
+        6 if loci.len() == 2 => SketchConstraintDefinitionInput::DistanceLoci {
             first: loci[0].clone(),
             second: loci[1].clone(),
             parameter: parameter?,
         },
-        6 => SketchConstraintDefinition::Distance {
+        6 => SketchConstraintDefinitionInput::Distance {
             entities: loci.iter().map(locus_entity).cloned().collect(),
             parameter: parameter?,
         },
-        7 => SketchConstraintDefinition::HorizontalDistance {
+        7 => SketchConstraintDefinitionInput::HorizontalDistance {
             first: loci.first()?.clone(),
             second: loci.get(1)?.clone(),
             parameter: parameter?,
         },
-        8 => SketchConstraintDefinition::VerticalDistance {
+        8 => SketchConstraintDefinitionInput::VerticalDistance {
             first: loci.first()?.clone(),
             second: loci.get(1)?.clone(),
             parameter: parameter?,
         },
         9 if loci.len() == 2 && sketch_axis(&loci[0]).is_some() => {
-            SketchConstraintDefinition::AngleToAxis {
+            SketchConstraintDefinitionInput::AngleToAxis {
                 entity: entity(1)?,
                 axis: sketch_axis(&loci[0])?,
                 parameter: parameter?,
             }
         }
         9 if loci.len() == 2 && sketch_axis(&loci[1]).is_some() => {
-            SketchConstraintDefinition::AngleToAxis {
+            SketchConstraintDefinitionInput::AngleToAxis {
                 entity: entity(0)?,
                 axis: sketch_axis(&loci[1])?,
                 parameter: parameter?,
             }
         }
-        9 if loci.len() == 1 => SketchConstraintDefinition::AngleToAxis {
+        9 if loci.len() == 1 => SketchConstraintDefinitionInput::AngleToAxis {
             entity: entity(0)?,
             axis: SketchAxis::Horizontal,
             parameter: parameter?,
         },
-        9 => SketchConstraintDefinition::Angle {
+        9 => SketchConstraintDefinitionInput::Angle {
             first: entity(0)?,
             second: entity(1)?,
             parameter: parameter?,
         },
-        11 => SketchConstraintDefinition::Radius {
+        11 => SketchConstraintDefinitionInput::Radius {
             entity: entity(0)?,
             parameter: parameter?,
         },
-        18 => SketchConstraintDefinition::Diameter {
+        18 => SketchConstraintDefinitionInput::Diameter {
             entity: entity(0)?,
             parameter: parameter?,
         },
-        16 => SketchConstraintDefinition::SnellsLaw {
+        16 => SketchConstraintDefinitionInput::SnellsLaw {
             incident: loci.first()?.clone(),
             refracted: loci.get(1)?.clone(),
             interface: entity(2)?,
             parameter: parameter?,
         },
-        19 => SketchConstraintDefinition::Weight {
+        19 => SketchConstraintDefinitionInput::Weight {
             entity: entity(0)?,
             parameter: parameter?,
         },
-        14 => SketchConstraintDefinition::Symmetric {
+        14 => SketchConstraintDefinitionInput::Symmetric {
             first: loci.first()?.clone(),
             second: loci.get(1)?.clone(),
             axis: entity(2)?,
@@ -3135,7 +3142,8 @@ fn explicit_endpoint_relations(
         if constraint.active == Some(false) {
             continue;
         }
-        let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::CoincidentLoci { loci } = constraint.definition.kind()
+        else {
             continue;
         };
         let endpoints = loci
@@ -6394,12 +6402,15 @@ mod profile_tests {
         let constraint = SketchConstraint {
             id: SketchConstraintId::mint("test:test:constraint#1").unwrap(),
             sketch: entities[0].sketch.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci {
-                loci: vec![
-                    SketchLocus::End(entities[0].id().clone()),
-                    SketchLocus::Start(entities[1].id().clone()),
-                ],
-            },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::CoincidentLoci {
+                    loci: vec![
+                        SketchLocus::End(entities[0].id().clone()),
+                        SketchLocus::Start(entities[1].id().clone()),
+                    ],
+                },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -6449,12 +6460,15 @@ mod profile_tests {
         let constraint = SketchConstraint {
             id: SketchConstraintId::mint("test:test:constraint#explicit-precedence").unwrap(),
             sketch: entities[0].sketch.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci {
-                loci: vec![
-                    SketchLocus::End(entities[0].id().clone()),
-                    SketchLocus::Start(entities[2].id().clone()),
-                ],
-            },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::CoincidentLoci {
+                    loci: vec![
+                        SketchLocus::End(entities[0].id().clone()),
+                        SketchLocus::Start(entities[2].id().clone()),
+                    ],
+                },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -6547,13 +6561,16 @@ mod profile_tests {
         let constraint = SketchConstraint {
             id: SketchConstraintId::mint("test:test:constraint#ambiguous-explicit").unwrap(),
             sketch: entities[0].sketch.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci {
-                loci: vec![
-                    SketchLocus::End(entities[0].id().clone()),
-                    SketchLocus::Start(entities[1].id().clone()),
-                    SketchLocus::Start(entities[2].id().clone()),
-                ],
-            },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::CoincidentLoci {
+                    loci: vec![
+                        SketchLocus::End(entities[0].id().clone()),
+                        SketchLocus::Start(entities[1].id().clone()),
+                        SketchLocus::Start(entities[2].id().clone()),
+                    ],
+                },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,

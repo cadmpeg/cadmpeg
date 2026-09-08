@@ -1205,8 +1205,8 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1250,15 +1250,18 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("test:test:sketch-constraint#0").unwrap(),
         sketch: sketch_id,
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "test".into(),
-            entities: vec![entity_id],
-            parameter: None,
-            operands: Vec::new(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: "test".into(),
+                entities: vec![entity_id],
+                parameter: None,
+                operands: Vec::new(),
+                native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,

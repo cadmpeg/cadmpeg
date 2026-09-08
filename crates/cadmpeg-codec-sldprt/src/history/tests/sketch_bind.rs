@@ -11,7 +11,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_nested_feature_input_profile_as_a_sketch() {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometryDefinition, SketchLocus};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus,
+    };
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
     let decoded = SldprtCodec
@@ -57,8 +59,8 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
         .iter()
         .all(|constraint| {
             matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::CoincidentLoci { loci }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::CoincidentLoci { loci }
                     if loci.len() == 2
                         && loci.iter().all(|locus| matches!(
                             locus,

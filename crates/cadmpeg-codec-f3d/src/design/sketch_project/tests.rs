@@ -12,7 +12,7 @@ use crate::records::{
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition,
 };
 use cadmpeg_ir::sketches::{
@@ -609,12 +609,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         &entities,
     );
     assert!(matches!(
-        constraints[0].definition,
-        SketchConstraintDefinition::Horizontal { .. }
+        constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     assert!(matches!(
-        constraints[1].definition,
-        SketchConstraintDefinition::Native {
+        constraints[1].definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             ref native_kind,
             native_state: Some(0x1_0000_0040),
             native_flags: None,
@@ -633,24 +633,24 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 ]
     ));
     assert!(matches!(
-        constraints[2].definition,
-        SketchConstraintDefinition::Coincident { ref entities } if entities.len() == 2
+        constraints[2].definition.kind(),
+        SketchConstraintDefinitionInput::Coincident { ref entities } if entities.len() == 2
     ));
     assert!(matches!(
-        constraints[3].definition,
-        SketchConstraintDefinition::Midpoint { .. }
+        constraints[3].definition.kind(),
+        SketchConstraintDefinitionInput::Midpoint { .. }
     ));
     assert!(matches!(
-        constraints[4].definition,
-        SketchConstraintDefinition::Native {
+        constraints[4].definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ref entities,
             ..
         } if native_kind == "curvature" && entities.len() == 4
     ));
     assert!(matches!(
-        constraints[5].definition,
-        SketchConstraintDefinition::SplineGroup { ref entities }
+        constraints[5].definition.kind(),
+        SketchConstraintDefinitionInput::SplineGroup { ref entities }
             if entities == &[
                 neutral_sketch_curve_id(&sketches[0].id, 20, 0).unwrap(),
                 neutral_sketch_curve_id(&sketches[0].id, 21, 0).unwrap(),
@@ -685,16 +685,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
+        Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
+        Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
     assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
-        Some(SketchConstraintDefinition::Midpoint { .. })
+        Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
         SketchConstraintKind::Tangent,
@@ -714,15 +714,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Tangent { .. })
+        Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Curvature { .. })
+        Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Equal { .. })
+        Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
         SketchConstraintKind::Colinear,

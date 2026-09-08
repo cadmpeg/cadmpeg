@@ -637,7 +637,10 @@ pub(in super::super) fn transfer_sketches(
                 Some(SketchConstraint {
                     id,
                     sketch: sketch_id.clone(),
-                    definition: constraint_definition,
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        constraint_definition,
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: None,
@@ -663,14 +666,20 @@ pub(in super::super) fn transfer_sketches(
             else {
                 continue;
             };
-            if !reconcile_section_dimension_constraint(
-                &mut constraint.definition,
-                definition,
-                &sketch_id,
-                relation,
-                &emitted_entity_ids,
-                &available_parameter_ids,
-            ) {
+            if !constraint
+                .definition
+                .edit(|kind| {
+                    reconcile_section_dimension_constraint(
+                        kind,
+                        definition,
+                        &sketch_id,
+                        relation,
+                        &emitted_entity_ids,
+                        &available_parameter_ids,
+                    )
+                })
+                .unwrap_or(false)
+            {
                 continue;
             }
             annotate(
@@ -749,14 +758,16 @@ pub(in super::super) fn transfer_sketches(
         let mut rejected_equation_offsets = BTreeSet::new();
         let mut reconciled_equation_constraints = Vec::new();
         for (mut constraint, offset) in equation_constraints {
-            let entity_reconciled = reconcile_constraint_entity_references(
-                &mut constraint.definition,
-                &emitted_entity_ids,
-            );
-            let parameter_reconciled = reconcile_constraint_parameter_reference(
-                &mut constraint.definition,
-                &available_parameter_ids,
-            );
+            let entity_reconciled = constraint
+                .definition
+                .edit(|kind| reconcile_constraint_entity_references(kind, &emitted_entity_ids))
+                .unwrap_or(false);
+            let parameter_reconciled = constraint
+                .definition
+                .edit(|kind| {
+                    reconcile_constraint_parameter_reference(kind, &available_parameter_ids)
+                })
+                .unwrap_or(false);
             if !entity_reconciled || !parameter_reconciled {
                 rejected_equation_offsets.insert(offset);
                 continue;
@@ -801,10 +812,11 @@ pub(in super::super) fn transfer_sketches(
             &sketch_id,
             Some(&emitted_entity_geometry),
         ) {
-            if !reconcile_constraint_entity_references(
-                &mut constraint.definition,
-                &emitted_entity_ids,
-            ) {
+            if !constraint
+                .definition
+                .edit(|kind| reconcile_constraint_entity_references(kind, &emitted_entity_ids))
+                .unwrap_or(false)
+            {
                 continue;
             }
             annotate(

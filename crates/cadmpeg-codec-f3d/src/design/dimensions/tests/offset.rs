@@ -613,12 +613,12 @@ fn counted_roles_require_matching_solved_geometry() {
 
     assert!(matches!(
         counted_role_relation(&[&horizontal], 0x40),
-        Some(SketchConstraintDefinition::Horizontal { entity })
+        Some(SketchConstraintDefinitionInput::Horizontal { entity })
             if &entity == horizontal.id()
     ));
     assert!(matches!(
         counted_role_relation(&[&vertical], 0x80),
-        Some(SketchConstraintDefinition::Vertical { entity })
+        Some(SketchConstraintDefinitionInput::Vertical { entity })
             if &entity == vertical.id()
     ));
     assert!(counted_role_relation(&[&horizontal], 0x80).is_none());
@@ -637,7 +637,7 @@ fn counted_roles_require_matching_solved_geometry() {
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &horizontal], 0x100),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == horizontal.id()
     ));
 
@@ -654,7 +654,7 @@ fn counted_roles_require_matching_solved_geometry() {
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &tangent_arc], 0x100),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == tangent_arc.id()
     ));
 
@@ -684,7 +684,7 @@ fn counted_roles_require_matching_solved_geometry() {
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &interior_tangent_arc], 0x100),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == interior_tangent_arc.id()
     ));
 
@@ -714,7 +714,7 @@ fn counted_roles_require_matching_solved_geometry() {
             0x100,
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == tangent_circle.id() && &second == rounded_tangent_arc.id()
     ));
 
@@ -725,7 +725,7 @@ fn counted_roles_require_matching_solved_geometry() {
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &equal_arc], 0x800),
-        Some(SketchConstraintDefinition::Equal { first, second })
+        Some(SketchConstraintDefinitionInput::Equal { first, second })
             if &first == arc.id() && &second == equal_arc.id()
     ));
     equal_arc

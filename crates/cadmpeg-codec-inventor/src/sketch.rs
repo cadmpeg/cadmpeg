@@ -8,9 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
-    SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
+    NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
+    SketchConstraintId, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1252,7 +1252,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Coincident { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Coincident {
+                SketchConstraintDefinitionInput::Coincident {
                     entities: members.iter().map(|entity| entity.id().clone()).collect(),
                 },
                 None,
@@ -1266,7 +1266,7 @@ fn project_constraint(
         } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Parallel {
+                SketchConstraintDefinitionInput::Parallel {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1281,7 +1281,7 @@ fn project_constraint(
         } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Perpendicular {
+                SketchConstraintDefinitionInput::Perpendicular {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1296,7 +1296,7 @@ fn project_constraint(
         } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Tangent {
+                SketchConstraintDefinitionInput::Tangent {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1307,7 +1307,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Horizontal { entity, state } => {
             let member = resolve(entity)?;
             (
-                SketchConstraintDefinition::Horizontal {
+                SketchConstraintDefinitionInput::Horizontal {
                     entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
@@ -1317,7 +1317,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Vertical { entity, state } => {
             let member = resolve(entity)?;
             (
-                SketchConstraintDefinition::Vertical {
+                SketchConstraintDefinitionInput::Vertical {
                     entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
@@ -1333,7 +1333,7 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
-                SketchConstraintDefinition::HorizontalDistance {
+                SketchConstraintDefinitionInput::HorizontalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
@@ -1351,7 +1351,7 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
-                SketchConstraintDefinition::VerticalDistance {
+                SketchConstraintDefinitionInput::VerticalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
@@ -1364,7 +1364,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
-                SketchConstraintDefinition::Radius {
+                SketchConstraintDefinitionInput::Radius {
                     entity: member.id().clone(),
                     parameter,
                 },
@@ -1376,7 +1376,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
-                SketchConstraintDefinition::Diameter {
+                SketchConstraintDefinitionInput::Diameter {
                     entity: member.id().clone(),
                     parameter,
                 },
@@ -1387,7 +1387,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::CircleCenter { entity, center } => {
             let members = [resolve(entity)?, resolve(center)?];
             (
-                SketchConstraintDefinition::Native {
+                SketchConstraintDefinitionInput::Native {
                     native_kind: "circle_center_alignment".into(),
                     native_state: Some(constraint.header.state as u32 as u64),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
@@ -1406,7 +1406,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::EqualRadius { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Equal {
+                SketchConstraintDefinitionInput::Equal {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1425,7 +1425,7 @@ fn project_constraint(
         ))
         .ok()?,
         sketch: members[0].sketch.clone(),
-        definition,
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?,
         name: None,
         driving: None,
         active: None,

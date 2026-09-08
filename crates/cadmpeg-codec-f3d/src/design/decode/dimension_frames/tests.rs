@@ -23,7 +23,7 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchAxis, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId,
 };
 use std::collections::{HashMap, HashSet};
@@ -734,7 +734,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter.clone(),
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::AngleToAxis {
+        Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
@@ -778,7 +778,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter.clone(),
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::Diameter {
+        Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
         }) if actual_entity == radial_entity.id() && actual_parameter == &parameter

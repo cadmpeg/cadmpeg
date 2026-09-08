@@ -199,7 +199,7 @@ fn collect_pattern_paths<'a>(
     }
 }
 use crate::index::ModelIndex;
-use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
+use crate::sketches::{SketchConstraintDefinitionInput as Definition, SketchLocus};
 
 pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
     findings.push(Finding {
@@ -1798,7 +1798,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 constraint.sketch.as_str(),
             );
         }
-        let (entities, parameter) = match &constraint.definition {
+        let (entities, parameter) = match constraint.definition.kind() {
             Definition::Disabled => (Vec::new(), None),
             Definition::Polygon { polygon } => (polygon.entities().to_vec(), None),
             Definition::Coincident { entities }
@@ -2062,7 +2062,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 Some(parameter.as_str()),
             ),
         };
-        let parameter = parameter.or(match &constraint.definition {
+        let parameter = parameter.or(match constraint.definition.kind() {
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
@@ -2093,7 +2093,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ref_error(findings, constraint.id.as_str(), "parameter", parameter);
             }
         }
-        if let Definition::RectangularPattern { pattern } = &constraint.definition {
+        if let Definition::RectangularPattern { pattern } = constraint.definition.kind() {
             for parameter in pattern.directions().iter().flat_map(|direction| {
                 [
                     direction
@@ -2115,7 +2115,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
         }
-        if let Definition::CircularPattern { pattern } = &constraint.definition {
+        if let Definition::CircularPattern { pattern } = constraint.definition.kind() {
             for parameter in [pattern.angle_parameter(), pattern.count_parameter()]
                 .into_iter()
                 .flatten()

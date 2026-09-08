@@ -30,7 +30,7 @@ use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{HashMap, HashSet};
@@ -45,7 +45,7 @@ pub(super) fn typed_marker_relation_definition(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     typed_marker_relation_definition_in_sketch(
         marker,
         &SketchId::mint(String::new()).unwrap(),
@@ -92,7 +92,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
         Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
@@ -146,7 +146,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 native_ref: Some(owner.id.clone()),
             })
         }));
-        SketchConstraintDefinition::Native {
+        SketchConstraintDefinitionInput::Native {
             native_kind: match marker.kind {
                 SketchInputKind::Relation(kind) => {
                     format!("sldprt:marker-relation:{}", kind.native_code())
@@ -175,7 +175,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             markers_by_id,
             loci_by_marker,
         ) {
-            return Some(SketchConstraintDefinition::Fixed { entity });
+            return Some(SketchConstraintDefinitionInput::Fixed { entity });
         }
     }
     if matches!(kind, Horizontal | Vertical) {
@@ -231,7 +231,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let (Some(first), Some(second)) = (point_locus(first_link), point_locus(second_link))
             {
                 if first != second {
-                    return Some(SketchConstraintDefinition::SameCoordinate {
+                    return Some(SketchConstraintDefinitionInput::SameCoordinate {
                         relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                             first,
                             second,
@@ -257,7 +257,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     markers_by_id,
                     loci_by_marker,
                 ) {
-                    return Some(SketchConstraintDefinition::SameCoordinate {
+                    return Some(SketchConstraintDefinitionInput::SameCoordinate {
                         relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                             first,
                             second,
@@ -291,7 +291,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             relation_operand_loci(marker, markers_by_id, loci_by_marker)
                         {
                             if let [first, second] = loci.as_slice() {
-                                return Some(SketchConstraintDefinition::SameCoordinate {
+                                return Some(SketchConstraintDefinitionInput::SameCoordinate {
                                     relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                         first.clone(),
                                         second.clone(),
@@ -383,13 +383,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 }
                 match kind {
-                    Horizontal => SketchConstraintDefinition::Horizontal {
+                    Horizontal => SketchConstraintDefinitionInput::Horizontal {
                         entity: entity.clone(),
                     },
-                    Vertical => SketchConstraintDefinition::Vertical {
+                    Vertical => SketchConstraintDefinitionInput::Vertical {
                         entity: entity.clone(),
                     },
-                    Fixed => SketchConstraintDefinition::Fixed {
+                    Fixed => SketchConstraintDefinitionInput::Fixed {
                         entity: entity.clone(),
                     },
                     _ => unreachable!("relation kind was filtered above"),
@@ -421,7 +421,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         SketchCoordinateAxis::U
                     },
                 )
-                .map(|relation| SketchConstraintDefinition::SameCoordinate { relation })
+                .map(|relation| SketchConstraintDefinitionInput::SameCoordinate { relation })
                 .unwrap_or_else(|_| native())
             } else {
                 return Some(native());
@@ -462,7 +462,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 }
             }
-            SketchConstraintDefinition::ArcAngle {
+            SketchConstraintDefinitionInput::ArcAngle {
                 entity,
                 angle: cadmpeg_ir::features::Angle(angle),
             }
@@ -502,7 +502,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if !same_dimension_angle(sweep, angle) {
                 return Some(native());
             }
-            SketchConstraintDefinition::EllipseAngle {
+            SketchConstraintDefinitionInput::EllipseAngle {
                 entity,
                 angle: cadmpeg_ir::features::Angle(angle),
             }
@@ -605,31 +605,31 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 };
             }
             match kind {
-                Parallel => SketchConstraintDefinition::Parallel {
+                Parallel => SketchConstraintDefinitionInput::Parallel {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Perpendicular => SketchConstraintDefinition::Perpendicular {
+                Perpendicular => SketchConstraintDefinitionInput::Perpendicular {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Tangent => SketchConstraintDefinition::Tangent {
+                Tangent => SketchConstraintDefinitionInput::Tangent {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Equal => SketchConstraintDefinition::Equal {
+                Equal => SketchConstraintDefinitionInput::Equal {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Collinear => SketchConstraintDefinition::Collinear {
+                Collinear => SketchConstraintDefinitionInput::Collinear {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Concentric => SketchConstraintDefinition::Concentric {
+                Concentric => SketchConstraintDefinitionInput::Concentric {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Coradial => SketchConstraintDefinition::Coradial {
+                Coradial => SketchConstraintDefinitionInput::Coradial {
                     first: first.clone(),
                     second: second.clone(),
                 },
@@ -650,7 +650,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             {
                 return Some(native());
             }
-            SketchConstraintDefinition::CoincidentLoci { loci }
+            SketchConstraintDefinitionInput::CoincidentLoci { loci }
         }
         HorizontalPoints | VerticalPoints => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
@@ -668,7 +668,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     SketchCoordinateAxis::U
                 },
             )
-            .map(|relation| SketchConstraintDefinition::SameCoordinate { relation })
+            .map(|relation| SketchConstraintDefinitionInput::SameCoordinate { relation })
             .unwrap_or_else(|_| native())
         }
         AtIntersection => {
@@ -717,7 +717,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }) {
                 return Some(native());
             }
-            SketchConstraintDefinition::AtIntersection {
+            SketchConstraintDefinitionInput::AtIntersection {
                 point,
                 first: first.clone(),
                 second: second.clone(),
@@ -770,7 +770,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
                 return Some(native());
             }
-            SketchConstraintDefinition::Symmetric {
+            SketchConstraintDefinitionInput::Symmetric {
                 first: first.clone(),
                 second: second.clone(),
                 axis,
@@ -799,7 +799,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 }
             }
-            SketchConstraintDefinition::Midpoint { point, entity }
+            SketchConstraintDefinitionInput::Midpoint { point, entity }
         }
         crate::records::SketchRelationKind::Distance
         | crate::records::SketchRelationKind::Angle
@@ -1488,27 +1488,30 @@ pub(super) fn relation_link_is_geometric_operand(
 }
 
 fn typed_axis_relation_is_inactive(
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Option<bool> {
     let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
     match definition {
-        SketchConstraintDefinition::Horizontal { entity: id }
-        | SketchConstraintDefinition::Vertical { entity: id } => {
+        SketchConstraintDefinitionInput::Horizontal { entity: id }
+        | SketchConstraintDefinitionInput::Vertical { entity: id } => {
             let SketchGeometryDefinition::Line { start, end } =
                 (&entity(id)?.geometry).definition()
             else {
                 return Some(true);
             };
             Some(
-                if matches!(definition, SketchConstraintDefinition::Horizontal { .. }) {
+                if matches!(
+                    definition,
+                    SketchConstraintDefinitionInput::Horizontal { .. }
+                ) {
                     !same_dimension_length(start.v, end.v)
                 } else {
                     !same_dimension_length(start.u, end.u)
                 },
             )
         }
-        SketchConstraintDefinition::SameCoordinate { relation } => {
+        SketchConstraintDefinitionInput::SameCoordinate { relation } => {
             let first = relation.first();
             let second = relation.second();
             let axis = relation.axis();
@@ -1525,19 +1528,19 @@ fn typed_axis_relation_is_inactive(
 
 fn typed_binary_relation_is_inactive(
     kind: crate::records::SketchRelationKind,
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Option<bool> {
     use crate::records::SketchRelationKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
-    let ((Parallel, SketchConstraintDefinition::Parallel { first, second })
-    | (Perpendicular, SketchConstraintDefinition::Perpendicular { first, second })
-    | (Tangent, SketchConstraintDefinition::Tangent { first, second })
-    | (Equal, SketchConstraintDefinition::Equal { first, second })
-    | (Collinear, SketchConstraintDefinition::Collinear { first, second })
-    | (Concentric, SketchConstraintDefinition::Concentric { first, second })
-    | (Coradial, SketchConstraintDefinition::Coradial { first, second })) = (kind, definition)
+    let ((Parallel, SketchConstraintDefinitionInput::Parallel { first, second })
+    | (Perpendicular, SketchConstraintDefinitionInput::Perpendicular { first, second })
+    | (Tangent, SketchConstraintDefinitionInput::Tangent { first, second })
+    | (Equal, SketchConstraintDefinitionInput::Equal { first, second })
+    | (Collinear, SketchConstraintDefinitionInput::Collinear { first, second })
+    | (Concentric, SketchConstraintDefinitionInput::Concentric { first, second })
+    | (Coradial, SketchConstraintDefinitionInput::Coradial { first, second })) = (kind, definition)
     else {
         return None;
     };
@@ -1552,7 +1555,7 @@ fn typed_binary_relation_is_inactive(
 
 pub(super) fn marker_relation_is_inactive(
     marker: &SketchInputEntity,
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> bool {
     use crate::records::SketchRelationKind::{
@@ -1570,7 +1573,7 @@ pub(super) fn marker_relation_is_inactive(
     if let Some(inactive) = typed_binary_relation_is_inactive(kind, definition, sketch_entities) {
         return inactive;
     }
-    if let SketchConstraintDefinition::CoincidentLoci { loci } = definition {
+    if let SketchConstraintDefinitionInput::CoincidentLoci { loci } = definition {
         let Some(points) = loci
             .iter()
             .map(|locus| profile_locus_point(locus, sketch_entities))
@@ -1583,7 +1586,7 @@ pub(super) fn marker_relation_is_inactive(
                 || !same_dimension_length(point.v, points[0].v)
         });
     }
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     } = definition
     else {

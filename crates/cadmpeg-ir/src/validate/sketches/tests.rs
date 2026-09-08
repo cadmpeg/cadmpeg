@@ -121,85 +121,13 @@ fn mixed_full_circle_arc_validate_as_offsets() {
 }
 
 #[test]
-fn malformed_sketch_geometry_and_constraints_are_rejected() {
-    use crate::features::Length;
-    use crate::math::{Point2, Point3, Vector3};
-    use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
-    };
-
-    let mut ir = unit_cube();
-    let sketch_id = SketchId::mint("synthetic:test:sketch#0").unwrap();
-    let circle_id = SketchEntityId::mint("synthetic:test:sketch-entity#0").unwrap();
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: crate::sketches::SketchPlacement::try_resolved(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 1.0),
-        )
-        .unwrap(),
-        profiles: crate::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
-            entity: circle_id.clone(),
-            reversed: false,
-        }]])
-        .unwrap(),
-        native_ref: None,
-    });
-    ir.model.sketch_entities.push(SketchEntity::new(
-        circle_id.clone(),
-        sketch_id.clone(),
-        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius: Length(-1.0),
-        })
-        .unwrap(),
-    ));
-    ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId::mint("synthetic:test:sketch-constraint#0").unwrap(),
-        sketch: sketch_id,
-        definition: SketchConstraintDefinition::Coincident {
-            entities: vec![circle_id],
-        },
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    });
-    ir.finalize();
-
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::GeometricConsistency
-            && finding.entity.as_deref() == Some("synthetic:test:sketch#0")
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::Bounds
-            && finding.entity.as_deref() == Some("synthetic:test:sketch-entity#0")
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::Counts
-            && finding.entity.as_deref() == Some("synthetic:test:sketch-constraint#0")
-    }));
-}
-
-#[test]
 fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     use crate::features::Length;
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchOffsetPair,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+        SketchOffsetPair,
     };
 
     let mut ir = CadIr::empty();
@@ -265,15 +193,18 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     ir.model.sketch_constraints.push(SketchConstraint {
         id: constraint.clone(),
         sketch,
-        definition: SketchConstraintDefinition::Offset {
-            pairs: vec![SketchOffsetPair {
-                source: source.clone(),
-                result: result.clone(),
-                source_reversed: false,
-            }],
-            distance: Length(2.0),
-            parameter: None,
-        },
+        definition: crate::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Offset {
+                pairs: vec![SketchOffsetPair {
+                    source: source.clone(),
+                    result: result.clone(),
+                    source_reversed: false,
+                }],
+                distance: Length(2.0),
+                parameter: None,
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -347,8 +278,9 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
 fn sketch_profiles_and_constraints_enforce_local_connectivity() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchId,
     };
 
     let mut ir = unit_cube();
@@ -418,10 +350,13 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
     ir.model.sketch_constraints.push(SketchConstraint {
         id: constraint.clone(),
         sketch: first_sketch.clone(),
-        definition: SketchConstraintDefinition::Parallel {
-            first,
-            second: foreign,
-        },
+        definition: crate::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Parallel {
+                first,
+                second: foreign,
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -477,24 +412,27 @@ fn sketch_constraint_native_ref_must_resolve() {
         .push(crate::sketches::SketchConstraint {
             id: id.clone(),
             sketch: crate::sketches::SketchId::mint("synthetic:test:sketch#missing").unwrap(),
-            definition: crate::sketches::SketchConstraintDefinition::Native {
-                native_kind: "test".into(),
-                native_state: None,
-                native_flags: Some(0x4000),
-                native_properties: std::collections::BTreeMap::from([(
-                    "mode".to_string(),
-                    "7".to_string(),
-                )]),
-                entities: Vec::new(),
-                parameter: None,
-                operands: vec![crate::sketches::SketchNativeOperand {
-                    native_kind: crate::products::NonEmptyString::new("test")
-                        .expect("source operand kind is nonempty"),
-                    field: None,
-                    object_index: 0,
-                    native_ref: Some("native:missing-operand#0".into()),
-                }],
-            },
+            definition: crate::sketches::SketchConstraintDefinition::try_from(
+                crate::sketches::SketchConstraintDefinitionInput::Native {
+                    native_kind: "test".into(),
+                    native_state: None,
+                    native_flags: Some(0x4000),
+                    native_properties: std::collections::BTreeMap::from([(
+                        "mode".to_string(),
+                        "7".to_string(),
+                    )]),
+                    entities: Vec::new(),
+                    parameter: None,
+                    operands: vec![crate::sketches::SketchNativeOperand {
+                        native_kind: crate::products::NonEmptyString::new("test")
+                            .expect("source operand kind is nonempty"),
+                        field: None,
+                        object_index: 0,
+                        native_ref: Some("native:missing-operand#0".into()),
+                    }],
+                },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -526,15 +464,15 @@ fn sketch_constraint_native_ref_must_resolve() {
     let serialized = serde_json::to_string(&ir).unwrap();
     let round_trip = CadIr::from_json(&serialized).unwrap();
     assert!(matches!(
-        round_trip.model.sketch_constraints[0].definition,
-        crate::sketches::SketchConstraintDefinition::Native {
+        round_trip.model.sketch_constraints[0].definition.kind(),
+        crate::sketches::SketchConstraintDefinitionInput::Native {
             native_flags: Some(0x4000),
             ..
         }
     ));
-    let crate::sketches::SketchConstraintDefinition::Native {
+    let crate::sketches::SketchConstraintDefinitionInput::Native {
         native_properties, ..
-    } = &round_trip.model.sketch_constraints[0].definition
+    } = round_trip.model.sketch_constraints[0].definition.kind()
     else {
         unreachable!("test constraint is native")
     };
@@ -545,9 +483,9 @@ fn sketch_constraint_native_ref_must_resolve() {
         .unwrap()
         .remove("native_properties");
     let legacy = CadIr::from_json(&serde_json::to_string(&legacy).unwrap()).unwrap();
-    let crate::sketches::SketchConstraintDefinition::Native {
+    let crate::sketches::SketchConstraintDefinitionInput::Native {
         native_properties, ..
-    } = &legacy.model.sketch_constraints[0].definition
+    } = legacy.model.sketch_constraints[0].definition.kind()
     else {
         unreachable!("test constraint is native")
     };

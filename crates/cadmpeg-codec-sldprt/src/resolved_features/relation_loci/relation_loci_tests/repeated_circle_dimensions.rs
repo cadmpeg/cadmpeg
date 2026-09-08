@@ -65,7 +65,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(cadmpeg_ir::sketches::SketchConstraintDefinition::RepeatedDiameter {
+        Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::RepeatedDiameter {
             entities: repeated,
             parameter: parameter_id,
         }) if repeated == vec![SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
@@ -144,7 +144,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
             &HashMap::new(),
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::RepeatedDiameter {
+        Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             parameter: parameter.id,
         })
@@ -182,7 +182,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         pmi: None,
         native_ref: Some("driver".into()),
     };
-    let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::RepeatedDiameter {
+    let definition = cadmpeg_ir::sketches::SketchConstraintDefinitionInput::RepeatedDiameter {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
         parameter: parameter.id.clone(),
     };

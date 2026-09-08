@@ -1466,10 +1466,10 @@ pub struct SketchConstraint {
     pub orientation: Option<u32>,
     /// Persisted label offset from the constrained geometry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_distance: Option<f64>,
+    pub label_distance: Option<SketchLabelValue>,
     /// Persisted position along the dimension label path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_position: Option<f64>,
+    pub label_position: Option<SketchLabelValue>,
     /// Application metadata text attached to this relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
@@ -2409,11 +2409,178 @@ impl SketchSameCoordinate {
     }
 }
 
-/// Neutral geometric and dimensional sketch relations.
+/// A finite sketch constraint label coordinate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "f64")]
+pub struct SketchLabelValue(f64);
+
+impl TryFrom<f64> for SketchLabelValue {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if !value.is_finite() {
+            return Err("sketch constraint label coordinate must be finite");
+        }
+        Ok(Self(value))
+    }
+}
+
+impl SketchLabelValue {
+    /// Return the admitted label coordinate.
+    #[must_use]
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
+const EPS_POLAR_DISTANCE_ZERO: f64 = 1.0e-12;
+
+/// A sketch constraint definition with admitted local arity and scalar values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchConstraintDefinitionInput")]
+pub struct SketchConstraintDefinition(SketchConstraintDefinitionInput);
+
+impl SketchConstraintDefinition {
+    /// Borrow the admitted constraint kind.
+    #[must_use]
+    pub fn kind(&self) -> &SketchConstraintDefinitionInput {
+        &self.0
+    }
+
+    /// Consume the admitted definition and return its kind.
+    #[must_use]
+    pub fn into_kind(self) -> SketchConstraintDefinitionInput {
+        self.0
+    }
+
+    /// Replace the kind only after all edited local invariants pass.
+    pub fn edit<R>(
+        &mut self,
+        edit: impl FnOnce(&mut SketchConstraintDefinitionInput) -> R,
+    ) -> Result<R, &'static str> {
+        let mut kind = self.0.clone();
+        let result = edit(&mut kind);
+        *self = kind.try_into()?;
+        Ok(result)
+    }
+}
+
+impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
+    type Error = &'static str;
+
+    fn try_from(kind: SketchConstraintDefinitionInput) -> Result<Self, Self::Error> {
+        use SketchConstraintDefinitionInput as Kind;
+        let valid = match &kind {
+            Kind::Coincident { entities } | Kind::SplineGroup { entities } => entities.len() >= 2,
+            Kind::CoincidentLoci { loci } => loci.len() >= 2,
+            Kind::Distance { entities, .. } => !entities.is_empty(),
+            Kind::TextFrame { text, frame } => {
+                !frame.is_empty() && frame.iter().all(|entity| entity != text)
+            }
+            Kind::TextPath {
+                text,
+                path,
+                glyph_transforms,
+            } => text != path && !glyph_transforms.is_empty(),
+            Kind::DistanceLociValue { distance, .. } => distance.0.is_finite() && distance.0 >= 0.0,
+            Kind::PointCoordinateValues { values, .. } => {
+                values.iter().all(|value| value.0.is_finite())
+            }
+            Kind::MidpointCoordinate { value, .. } => value.0.is_finite(),
+            Kind::PolarDistance {
+                distance, angle, ..
+            } => {
+                distance.0.is_finite()
+                    && distance.0 >= 0.0
+                    && if distance.0 <= EPS_POLAR_DISTANCE_ZERO {
+                        angle.is_none()
+                    } else {
+                        angle.is_some_and(|angle| angle.0.is_finite())
+                    }
+            }
+            Kind::AngleDifference { value, .. } => {
+                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
+            }
+            Kind::ScalarEquality { first, second } => first != second,
+            Kind::RepeatedDistance { measurements, .. } => {
+                let mut entities = std::collections::HashSet::new();
+                !measurements.is_empty()
+                    && measurements.iter().all(|measurement| {
+                        let (first, second) = match measurement {
+                            SketchDistanceMeasurement::Distance { first, second }
+                            | SketchDistanceMeasurement::Horizontal { first, second }
+                            | SketchDistanceMeasurement::Vertical { first, second } => {
+                                (first, second)
+                            }
+                        };
+                        let entity = |locus: &SketchLocus| match locus {
+                            SketchLocus::Entity(id)
+                            | SketchLocus::Start(id)
+                            | SketchLocus::End(id)
+                            | SketchLocus::Center(id) => id.clone(),
+                        };
+                        entities.insert(entity(first)) && entities.insert(entity(second))
+                    })
+            }
+            Kind::RepeatedLength { entities, .. }
+            | Kind::RepeatedRadius { entities, .. }
+            | Kind::RepeatedDiameter { entities, .. } => {
+                entities.len() >= 2
+                    && entities
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == entities.len()
+            }
+            Kind::ParallelLineSetDistance { first, second, .. } => {
+                !first.is_empty()
+                    && !second.is_empty()
+                    && (first.len() > 1 || second.len() > 1)
+                    && first
+                        .iter()
+                        .chain(second)
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == first.len() + second.len()
+            }
+            Kind::Offset {
+                pairs, distance, ..
+            } => {
+                let mut sources = std::collections::HashSet::new();
+                let mut results = std::collections::HashSet::new();
+                !pairs.is_empty()
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
+                    && pairs.iter().all(|pair| {
+                        pair.source != pair.result
+                            && sources.insert(&pair.source)
+                            && results.insert(&pair.result)
+                    })
+            }
+            Kind::ProjectedCopy { source, result } => source != result,
+            Kind::Group { elements } | Kind::Text { elements, .. } => !elements.is_empty(),
+            Kind::Native {
+                native_kind,
+                entities,
+                operands,
+                ..
+            } => !native_kind.is_empty() && (!entities.is_empty() || !operands.is_empty()),
+            _ => true,
+        };
+        if !valid {
+            return Err("invalid sketch constraint local arity or scalar value");
+        }
+        Ok(Self(kind))
+    }
+}
+
+/// Candidate geometric and dimensional sketch relations for checked admission.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SketchConstraintDefinition {
+pub enum SketchConstraintDefinitionInput {
     /// Persisted no-op relation slot.
     Disabled,
     /// Two entity loci coincide.
