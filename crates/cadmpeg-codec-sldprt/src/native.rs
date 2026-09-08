@@ -216,6 +216,8 @@ pub(crate) struct SldprtNative {
     pub(crate) pmi_dimensions: Vec<PmiDimension>,
 }
 
+pub(crate) mod lanes;
+
 impl SldprtNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
@@ -691,6 +693,7 @@ impl SldprtNative {
                 .collect();
             lane.sketch_entities.sort_by_key(|record| record.ordinal);
         }
+        lanes::admit(&native)?;
         Ok(native)
     }
 

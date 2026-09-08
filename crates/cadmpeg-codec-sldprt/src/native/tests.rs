@@ -350,3 +350,39 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
 }
+
+#[test]
+fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let original = decoded.ir().native.namespace("sldprt").unwrap();
+    for (arena, message) in [
+        ("feature_input_classes", "class index"),
+        ("feature_input_names", "name structure"),
+        ("feature_input_scalars", "scalar index"),
+        ("feature_input_relation_bindings", "relation bindings"),
+        ("feature_input_relation_instances", "relation instances"),
+        ("feature_input_references", "reference index"),
+    ] {
+        let mut wire = serde_json::to_value(original).unwrap();
+        let record = wire[arena].as_array_mut().unwrap().first_mut().unwrap();
+        let ordinal = record["ordinal"].as_u64().unwrap();
+        record["ordinal"] = serde_json::json!(ordinal + 100);
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(error.to_string().contains(message), "{arena}: {error}");
+    }
+    let mut wire = serde_json::to_value(original).unwrap();
+    assert!(!wire["sketch_input_entities"].as_array().unwrap().is_empty());
+    wire["sketch_input_entities"] = serde_json::json!([]);
+    let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(error.to_string().contains("omits marker"), "{error}");
+}

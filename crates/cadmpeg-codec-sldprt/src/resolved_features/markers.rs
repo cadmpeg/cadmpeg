@@ -860,7 +860,7 @@ fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32)
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
-pub(super) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
+pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
     if !sketch_marker_prefix_at(payload, offset) {
         return false;
     }
