@@ -439,6 +439,24 @@ pub struct Scope {
     pub conflicting_declaration_count: usize,
 }
 
+/// Parsed rows and unresolved-row count for one legacy declaration type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypedValues<T> {
+    /// Complete typed rows in source order.
+    pub rows: Vec<T>,
+    /// Source rows not represented by a complete typed value.
+    pub unresolved_count: usize,
+}
+
+impl<T> Default for TypedValues<T> {
+    fn default() -> Self {
+        Self {
+            rows: Vec::new(),
+            unresolved_count: 0,
+        }
+    }
+}
+
 /// Structurally resolved legacy ASCII persistence scopes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Persistence {
@@ -465,33 +483,19 @@ pub struct Persistence {
     /// Type-10 rows that use an undefined continuation form.
     pub unresolved_string_value_count: usize,
     /// Type-3 nullable byte-string scalars in source order.
-    pub type_3_values: Vec<ScalarStringRecord>,
-    /// Type-3 rows that use an undefined continuation form.
-    pub unresolved_type_3_value_count: usize,
+    pub type_3_values: TypedValues<ScalarStringRecord>,
     /// Type-4 byte-string scalars in source order.
-    pub type_4_values: Vec<ScalarStringRecord>,
-    /// Type-4 rows that use an undefined continuation form.
-    pub unresolved_type_4_value_count: usize,
+    pub type_4_values: TypedValues<ScalarStringRecord>,
     /// Type-5 unsigned-decimal scalars and arrays in source order.
-    pub type_5_values: Vec<UnsignedRecord>,
-    /// Type-5 rows not represented by a complete scalar or array.
-    pub unresolved_type_5_value_count: usize,
+    pub type_5_values: TypedValues<UnsignedRecord>,
     /// Type-6 compact-real scalars and arrays in source order.
-    pub type_6_values: Vec<RealRecord>,
-    /// Type-6 rows not represented by a complete finite scalar or array.
-    pub unresolved_type_6_value_count: usize,
+    pub type_6_values: TypedValues<RealRecord>,
     /// Type-7 unsigned-decimal scalars and arrays in source order.
-    pub type_7_values: Vec<UnsignedRecord>,
-    /// Type-7 rows not represented by a complete scalar or array.
-    pub unresolved_type_7_value_count: usize,
+    pub type_7_values: TypedValues<UnsignedRecord>,
     /// Type-9 unsigned-decimal scalars and arrays in source order.
-    pub type_9_values: Vec<UnsignedRecord>,
-    /// Type-9 rows not represented by a complete scalar or array.
-    pub unresolved_type_9_value_count: usize,
+    pub type_9_values: TypedValues<UnsignedRecord>,
     /// Type-11 unsigned-decimal scalars and arrays in source order.
-    pub type_11_values: Vec<UnsignedRecord>,
-    /// Type-11 rows not represented by a complete scalar or array.
-    pub unresolved_type_11_value_count: usize,
+    pub type_11_values: TypedValues<UnsignedRecord>,
 }
 
 impl Persistence {
@@ -1023,7 +1027,7 @@ fn scalar_string_records(
     identity_kind: ValueKind,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
-) -> (Vec<ScalarStringRecord>, usize) {
+) -> TypedValues<ScalarStringRecord> {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
@@ -1060,7 +1064,10 @@ fn scalar_string_records(
             });
         }
     }
-    (records, unresolved)
+    TypedValues {
+        rows: records,
+        unresolved_count: unresolved,
+    }
 }
 
 fn string_records(
@@ -1167,7 +1174,7 @@ fn numeric_records<T>(
     identity_kind: ValueKind,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
-) -> (Vec<NumericRecord<T>>, usize) {
+) -> TypedValues<NumericRecord<T>> {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
@@ -1265,7 +1272,10 @@ fn numeric_records<T>(
             index = next_index;
         }
     }
-    (records, unresolved)
+    TypedValues {
+        rows: records,
+        unresolved_count: unresolved,
+    }
 }
 
 fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
@@ -1375,7 +1385,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         object_records(data, &scopes, &parents);
     let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
         string_records(data, &scopes, &parents);
-    let (type_3_values, unresolved_type_3_value_count) = scalar_string_records(
+    let type_3_values = scalar_string_records(
         data,
         &scopes,
         LegacyTypeCode::NullableString,
@@ -1383,7 +1393,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         NullToken::RepresentsNull,
         &parents,
     );
-    let (type_4_values, unresolved_type_4_value_count) = scalar_string_records(
+    let type_4_values = scalar_string_records(
         data,
         &scopes,
         LegacyTypeCode::ByteString,
@@ -1391,7 +1401,10 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         NullToken::RepresentsBytes,
         &parents,
     );
-    let (real_values, unresolved_real_value_count) = numeric_records(
+    let TypedValues {
+        rows: real_values,
+        unresolved_count: unresolved_real_value_count,
+    } = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Real,
@@ -1399,7 +1412,10 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         compact_real,
         &parents,
     );
-    let (integer_values, unresolved_integer_value_count) = numeric_records(
+    let TypedValues {
+        rows: integer_values,
+        unresolved_count: unresolved_integer_value_count,
+    } = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Integer,
@@ -1407,7 +1423,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         signed_integer,
         &parents,
     );
-    let (type_5_values, unresolved_type_5_value_count) = numeric_records(
+    let type_5_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Unsigned5,
@@ -1415,7 +1431,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         unsigned_integer,
         &parents,
     );
-    let (type_6_values, unresolved_type_6_value_count) = numeric_records(
+    let type_6_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Real6,
@@ -1423,7 +1439,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         compact_real,
         &parents,
     );
-    let (type_7_values, unresolved_type_7_value_count) = numeric_records(
+    let type_7_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Unsigned7,
@@ -1431,7 +1447,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         unsigned_integer,
         &parents,
     );
-    let (type_9_values, unresolved_type_9_value_count) = numeric_records(
+    let type_9_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Unsigned9,
@@ -1439,7 +1455,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         unsigned_integer,
         &parents,
     );
-    let (type_11_values, unresolved_type_11_value_count) = numeric_records(
+    let type_11_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Unsigned11,
@@ -1460,19 +1476,12 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         incomplete_string_array_count,
         unresolved_string_value_count,
         type_3_values,
-        unresolved_type_3_value_count,
         type_4_values,
-        unresolved_type_4_value_count,
         type_5_values,
-        unresolved_type_5_value_count,
         type_6_values,
-        unresolved_type_6_value_count,
         type_7_values,
-        unresolved_type_7_value_count,
         type_9_values,
-        unresolved_type_9_value_count,
         type_11_values,
-        unresolved_type_11_value_count,
     }
 }
 

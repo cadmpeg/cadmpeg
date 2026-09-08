@@ -168,7 +168,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_3_values",
-        &legacy.persistence.type_3_values,
+        &legacy.persistence.type_3_values.rows,
         "legacy_type_3_value",
     )?;
     emit_legacy_value_arena(
@@ -176,7 +176,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_4_values",
-        &legacy.persistence.type_4_values,
+        &legacy.persistence.type_4_values.rows,
         "legacy_type_4_value",
     )?;
     emit_legacy_value_arena(
@@ -192,7 +192,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_5_values",
-        &legacy.persistence.type_5_values,
+        &legacy.persistence.type_5_values.rows,
         "legacy_type_5_value",
     )?;
     emit_legacy_value_arena(
@@ -200,7 +200,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_6_values",
-        &legacy.persistence.type_6_values,
+        &legacy.persistence.type_6_values.rows,
         "legacy_type_6_value",
     )?;
     emit_legacy_value_arena(
@@ -208,7 +208,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_7_values",
-        &legacy.persistence.type_7_values,
+        &legacy.persistence.type_7_values.rows,
         "legacy_type_7_value",
     )?;
     emit_legacy_value_arena(
@@ -216,7 +216,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_9_values",
-        &legacy.persistence.type_9_values,
+        &legacy.persistence.type_9_values.rows,
         "legacy_type_9_value",
     )?;
     emit_legacy_value_arena(
@@ -224,7 +224,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_type_11_values",
-        &legacy.persistence.type_11_values,
+        &legacy.persistence.type_11_values.rows,
         "legacy_type_11_value",
     )?;
     if let Some(table) = &scan.framing.legacy_family_table {

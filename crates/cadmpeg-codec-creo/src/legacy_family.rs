@@ -182,13 +182,13 @@ impl<'a> Index<'a> {
         add_typed_field_names(&mut typed_field_names, &persistence.integer_values);
         add_typed_field_names(&mut typed_field_names, &persistence.real_values);
         add_typed_field_names(&mut typed_field_names, &persistence.string_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_3_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_4_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_5_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_6_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_7_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_9_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_11_values);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_3_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_4_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_5_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_6_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_7_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_9_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.type_11_values.rows);
 
         Some(Self {
             object_by_id,
