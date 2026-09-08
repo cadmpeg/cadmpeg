@@ -353,7 +353,15 @@ fn main() -> ExitCode {
         } => commands::dump(
             &inputs,
             file.path(),
-            &DestinationPolicy::new(output, force, false),
+            &match output {
+                Some(path) => DestinationPolicy::File(FileDestination {
+                    path,
+                    overwrite: force,
+                }),
+                None => DestinationPolicy::Stdout {
+                    allow_binary: false,
+                },
+            },
             FileDestination::optional(report, force).as_ref(),
             input_args.input_format,
             &decode,
@@ -419,7 +427,15 @@ fn main() -> ExitCode {
                 losses: reject_lossy.unwrap_or_default(),
                 allow_errors,
                 allow_empty,
-                destination: DestinationPolicy::new(output, force, binary_stdout),
+                destination: match output {
+                    Some(path) => DestinationPolicy::File(FileDestination {
+                        path,
+                        overwrite: force,
+                    }),
+                    None => DestinationPolicy::Stdout {
+                        allow_binary: binary_stdout,
+                    },
+                },
                 report: FileDestination::optional(report, force),
                 forced_input: input_args.input_format,
             };
