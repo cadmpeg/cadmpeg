@@ -512,9 +512,14 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     let groups = standard_fbb_groups(&bytes);
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
-        group.face_run.face_count == 1
-            && group.topology.face_count() == 1
-            && group.topology.edge_rows().len() == 4
+        let layout = fbb_population_layouts(&bytes)
+            .into_iter()
+            .find(|layout| layout.face_run == *group)
+            .expect("matching population layout");
+        let spine = population_spine(&bytes, &layout).expect("complete population spine");
+        let topology =
+            crate::families::standard::fbb::parse_standard(spine).expect("complete group topology");
+        group.face_count == 1 && topology.face_count() == 1 && topology.edge_rows().len() == 4
     }));
     assert_eq!(standard_face_count(&bytes), None);
     assert!(crate::families::standard::fbb::parse_standard(&bytes).is_none());
