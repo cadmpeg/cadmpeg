@@ -264,7 +264,7 @@ pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
-) -> Vec<AssemblyJoint> {
+) -> Result<Vec<AssemblyJoint>, cadmpeg_core::CodecError> {
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
         let Some(stream) = native_stream(&occurrence.id) else {
@@ -293,7 +293,9 @@ pub(crate) fn project_assembly_joints(
                 limits,
                 ..
             }) => (
-                carriers.frames(solved_frame),
+                carriers
+                    .frames(solved_frame)
+                    .map_err(cadmpeg_core::CodecError::NotImplemented)?,
                 carriers.selections().map(|selection| {
                     JointOperand::root(
                         crate::ids::neutral_assembly_legacy_object_id(selection),
@@ -335,8 +337,8 @@ pub(crate) fn project_assembly_joints(
         };
         let id = crate::ids::neutral_assembly_joint_id(scope);
         let [first_operand, second_operand] = operands;
-        let [first_frame, second_frame] =
-            std::array::from_fn(|index| neutral_transform(frames[index].transform));
+        let first_frame = super::components::neutral_transform(frames[0].transform)?;
+        let second_frame = super::components::neutral_transform(frames[1].transform)?;
         joints.entry(id.as_str().to_owned()).or_insert_with(|| {
             let mut joint = AssemblyJoint::paired(
                 id,
@@ -364,7 +366,7 @@ pub(crate) fn project_assembly_joints(
             joint
         });
     }
-    joints.into_values().collect()
+    Ok(joints.into_values().collect())
 }
 
 fn project_qualified_operands(
@@ -489,13 +491,6 @@ fn unique_feature<'a>(features: &'a [Feature], native_ref: &str) -> Option<&'a F
     matches.next().is_none().then_some(feature)
 }
 
-fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Transform {
-    for row in &mut transform[..3] {
-        row[3] *= 10.0;
-    }
-    cadmpeg_ir::transform::Transform::from_rows(transform).expect("affine transform")
-}
-
 #[cfg(test)]
 mod tests {
     use crate::records::feature::DesignAssemblyOperandQualifier;
@@ -604,6 +599,85 @@ mod tests {
     }
 
     #[test]
+    fn writer_rejects_cadir_assembly_translation_overflow() {
+        use crate::records::feature::{
+            DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+            DesignFeatureKind, DesignScopePayload,
+        };
+        let mut scopes = Vec::new();
+        for index in [1, 2] {
+            let mut scope = DesignParameterScope::empty(
+                &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{index}"),
+                DesignFeatureKind::JointOrigin,
+                index,
+            );
+            scope.with_joint_origin_transform(cadmpeg_ir::transform::Transform::identity().rows());
+            scopes.push(scope);
+        }
+        let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+        rows[0][3] = f64::MAX;
+        let frames = [1, 2].map(|index| DesignAssemblyOperandFrame {
+            reference_record_index: index,
+            reference_offset: 0,
+            transform: rows.try_into().unwrap(),
+            transform_offset: 0,
+        });
+        let qualifiers =
+            [1, 2].map(
+                |scope_record_index| DesignAssemblyOperandQualifier::AxialTarget {
+                    target: DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                        scope_record_index,
+                    },
+                },
+            );
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#3",
+            DesignFeatureKind::Assemble,
+            3,
+        );
+        scope.payload = DesignScopePayload::Assemble(Some(DesignAssemblyAlignment {
+            angle: 0.0,
+            offset: [0.0; 3],
+            owners: Vec::new(),
+            form: Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+        }));
+        scopes.push(scope);
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: scopes,
+            ..Default::default()
+        };
+        let native = serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
+        let result = crate::writer::primitives::validate_assembly_projection(
+            &cadmpeg_ir::document::CadIr::empty(),
+            Some(&native),
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::NotImplemented(_))
+        ));
+    }
+
+    #[test]
+    fn affine_projection_rejects_nonfinite_cadir_coefficients() {
+        let mut transform = cadmpeg_ir::transform::Transform::identity().rows();
+        transform[0][0] = f64::NAN;
+        assert!(
+            std::panic::catch_unwind(|| crate::design::components::neutral_transform(transform))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn affine_projection_rejects_translation_overflow() {
+        let mut transform = cadmpeg_ir::transform::Transform::identity().rows();
+        transform[0][3] = f64::MAX;
+        assert!(
+            std::panic::catch_unwind(|| crate::design::components::neutral_transform(transform))
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn assembly_frame_conversion_scales_only_translation() {
         let transform = [
             [0.0, -1.0, 0.0, 1.25],
@@ -612,7 +686,9 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform).rows(),
+            crate::design::components::neutral_transform(transform)
+                .unwrap()
+                .rows(),
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],

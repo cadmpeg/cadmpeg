@@ -218,7 +218,7 @@ fn valid_class_307_joint_origin_qualifier(
                     && target_scope.paired_class_tag == *paired_class_tag
                     && target_scope.paired_byte_offset == *paired_byte_offset
                     && target_scope.frame_length == class_307_joint_origin::LEN as u64
-                    && target_scope.joint_origin_transform() == Some(frame.transform)
+                    && target_scope.joint_origin_transform() == Some(frame.transform.rows())
             })
             .count()
             == 1
@@ -530,7 +530,8 @@ fn valid_axial_assembly_targets(
                                 && target_scope.kind()
                                     == crate::records::feature::DesignFeatureKind::JointOrigin
                                 && target_scope.record_index == *scope_record_index
-                                && target_scope.joint_origin_transform() == Some(frame.transform)
+                                && target_scope.joint_origin_transform()
+                                    == Some(frame.transform.rows())
                         })
                         .count()
                         == 1
@@ -2720,7 +2721,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 .as_str()
                                 .eq_ignore_ascii_case(operation.copied_occurrence_guid.as_str())
                             && copied.transform().map(|frame| frame.value)
-                                == Some(operation.copied_transform)
+                                == Some(operation.copied_transform.rows())
                     })
             }
         };
@@ -3025,7 +3026,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             alignment.operand_frames().is_some_and(|frames| {
                                 frames.iter().any(|frame| {
                                     frame.reference_record_index == scope.record_index
-                                        && frame.transform == transform
+                                        && frame.transform.rows() == transform
                                         && frame.transform_offset == transform_offset
                                 })
                             })

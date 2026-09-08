@@ -790,12 +790,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
-        Some(axial_frames[0].transform)
+        Some(axial_frames[0].transform.rows())
     );
     assert_eq!(linked_scopes[2].joint_origin_transform_offset(), Some(178));
     assert_eq!(
         linked_scopes[2].joint_origin_transform(),
-        Some(axial_frames[1].transform)
+        Some(axial_frames[1].transform.rows())
     );
     assert_eq!(
         linked_scopes[0].assembly_alignment().and_then(
@@ -845,7 +845,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform(),
-        Some(axial_frames[0].transform)
+        Some(axial_frames[0].transform.rows())
     );
     assert_eq!(single_frame_scopes[1].joint_origin_reference(), Some(90));
     assert_eq!(

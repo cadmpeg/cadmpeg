@@ -584,9 +584,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            source_transform: identity_matrix(),
+            source_transform: identity_matrix().try_into().unwrap(),
             source_transform_offset: 0,
-            copied_transform: identity_matrix(),
+            copied_transform: identity_matrix().try_into().unwrap(),
             copied_transform_offset: 0,
         });
     }

@@ -927,7 +927,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             for frame in frames {
                 candidates.push((
                     frame.reference_record_index,
-                    frame.transform,
+                    frame.transform.rows(),
                     frame.transform_offset,
                     None,
                 ));
@@ -1112,7 +1112,7 @@ fn exact_assembly_axial_operand_target(
     let mut origins = scopes.iter().filter(|scope| {
         scope.kind() == crate::records::feature::DesignFeatureKind::JointOrigin
             && scope.record_index == frame.reference_record_index
-            && scope.joint_origin_transform() == Some(frame.transform)
+            && scope.joint_origin_transform() == Some(frame.transform.rows())
     });
     let root = match (origins.next(), origins.next()) {
         (Some(origin), None) => Some(DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
@@ -1171,7 +1171,7 @@ fn exact_assembly_axial_component_operand_at(
     let construction_paired_class_tag =
         exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
     let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
-    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
+    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform.rows() {
         return None;
     }
     let (first_axis_record_index, first_axis_record_index_offset) =
@@ -2100,7 +2100,7 @@ pub(crate) fn exact_derived_instance_construction(
         carrier_record_index,
         component_guid: carrier.component_guid.clone(),
         occurrence_guid: carrier.occurrence_guid.clone(),
-        transform,
+        transform: transform.try_into().ok()?,
         transform_offset: u64::try_from(transform_offset).ok()?,
     })
 }
@@ -2374,7 +2374,7 @@ pub(crate) fn exact_component_insert_construction(
             (Some(offset), carrier_offset) => {
                 Some(crate::records::feature::DesignComponentInsertMatrix {
                     scope: crate::records::Located {
-                        value: transform,
+                        value: transform.try_into().ok()?,
                         offset: u64::try_from(offset).ok()?,
                     },
                     carrier_offset: carrier_offset.map(u64::try_from).transpose().ok()?,
@@ -2919,9 +2919,9 @@ fn exact_copy_paste_component_operation(
         component_guid: copied.component_guid.clone(),
         source_occurrence_guid: source.occurrence_guid.clone(),
         copied_occurrence_guid: copied.occurrence_guid.clone(),
-        source_transform,
+        source_transform: source_transform.try_into().ok()?,
         source_transform_offset: u64::try_from(start + 38).ok()?,
-        copied_transform,
+        copied_transform: copied_transform.try_into().ok()?,
         copied_transform_offset: u64::try_from(start + 194).ok()?,
     })
 }
@@ -3155,7 +3155,7 @@ fn exact_assembly_operand_frames(
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset: (reference_at + 1) as u64,
-            transform,
+            transform: transform.try_into().ok()?,
             transform_offset: transform_at as u64,
         })
     };
@@ -3518,7 +3518,7 @@ fn exact_legacy_class_383_operand_path(
         ) == Some(scope.record_index),
         carrier_paired_at == carrier_at.checked_add(class_383_carrier::LEN)?,
         rigid_transform_at(bytes, carrier_at.checked_add(class_383_carrier::TRANSFORM)?)?
-            == frame.transform,
+            == frame.transform.rows(),
     ];
     if structural_checks.iter().any(|check| !check) {
         return None;
@@ -3950,7 +3950,7 @@ fn exact_as_built_operand_frames(
         Some(DesignAssemblyOperandFrame {
             reference_record_index: marked_record_reference(bytes, reference_at)?,
             reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            transform: rigid_transform_at(bytes, transform_at)?,
+            transform: rigid_transform_at(bytes, transform_at)?.try_into().ok()?,
             transform_offset: u64::try_from(transform_at).ok()?,
         })
     });
