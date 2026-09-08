@@ -50,7 +50,6 @@ macro_rules! lane_family {
     ($arena:literal, $field:ident) => {
         SldprtFamilyRow {
             arena: $arena,
-            tag: None,
             exactness: (),
             phase: Phase::ArenaOnly,
             emit: |model, row, namespace| {
@@ -79,7 +78,6 @@ macro_rules! lane_family {
 const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     SldprtFamilyRow {
         arena: "feature_histories",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -103,7 +101,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "pmi_dimensions",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| emit_owned(model.pmi_dimensions.clone(), row, namespace),
@@ -112,7 +109,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "configurations",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -137,7 +133,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "features",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -162,7 +157,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "feature_input_lanes",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {

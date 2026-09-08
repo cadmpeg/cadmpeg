@@ -6978,7 +6978,6 @@ macro_rules! define_catia_arenas {
     (@family $kind:ident, $field:ident) => {
         CatiaFamilyRow {
             arena: stringify!($field),
-            tag: None,
             exactness: (),
             phase: Phase::ArenaOnly,
             emit: |projection, row, namespace| {
