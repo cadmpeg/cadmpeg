@@ -47,6 +47,20 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn object_wire_rejects_nonpositive_partial_load_capability() {
+        for value in [0, -1] {
+            let wire = serde_json::json!({
+                "id": "object", "name": "A", "type_name": "App::Feature",
+                "persistent_id": null, "view_type": null, "attributes": {},
+                "dependencies": [], "dependency_allow_partial": value, "order": 0,
+                "raw_xml": null, "byte_start": null, "byte_end": null
+            });
+            let error = serde_json::from_value::<super::ObjectRecord>(wire).unwrap_err();
+            assert!(error.to_string().contains("dependency_allow_partial"));
+        }
+    }
+
+    #[test]
     fn canonical_ids_escape_names_without_aliasing_literal_escapes() {
         assert_eq!(
             native_id("object", "A B#C"),
@@ -1093,7 +1107,7 @@ pub struct ObjectRecord {
     /// Ordered dependency identities.
     pub dependencies: Vec<String>,
     /// Positive partial-load capability from the dependency record.
-    pub dependency_allow_partial: Option<i64>,
+    pub dependency_allow_partial: Option<std::num::NonZeroU64>,
     /// Source-order index.
     pub order: usize,
     /// Exact object-data XML and its source span, when present.
@@ -1120,7 +1134,7 @@ struct ObjectRecordWire {
     view_type: Option<String>,
     attributes: BTreeMap<String, String>,
     dependencies: Vec<String>,
-    dependency_allow_partial: Option<i64>,
+    dependency_allow_partial: Option<i128>,
     order: usize,
     raw_xml: Option<String>,
     byte_start: Option<u64>,
@@ -1145,7 +1159,9 @@ impl From<ObjectRecord> for ObjectRecordWire {
             view_type: value.view_type,
             attributes: value.attributes,
             dependencies: value.dependencies,
-            dependency_allow_partial: value.dependency_allow_partial,
+            dependency_allow_partial: value
+                .dependency_allow_partial
+                .map(|value| i128::from(value.get())),
             order: value.order,
             raw_xml,
             byte_start,
@@ -1179,7 +1195,15 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
             view_type: wire.view_type,
             attributes: wire.attributes,
             dependencies: wire.dependencies,
-            dependency_allow_partial: wire.dependency_allow_partial,
+            dependency_allow_partial: wire
+                .dependency_allow_partial
+                .map(|value| {
+                    u64::try_from(value)
+                        .ok()
+                        .and_then(std::num::NonZeroU64::new)
+                        .ok_or_else(|| "dependency_allow_partial must be positive".to_owned())
+                })
+                .transpose()?,
             order: wire.order,
             data,
         })
