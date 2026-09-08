@@ -310,5 +310,5 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
     )
     .expect("the radial identity selects its declared center");
     assert_eq!(carrier.marker.id, "center-one");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.center(), [0.010, 0.020]);
 }
