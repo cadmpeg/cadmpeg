@@ -113,8 +113,8 @@ impl Region {
     }
 }
 
-/// An oriented boundary of a region.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// An oriented nonempty boundary of a region.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Shell {
     /// Arena id.
@@ -122,13 +122,156 @@ pub struct Shell {
     /// Owning region.
     pub region: RegionId,
     /// Faces of the shell.
-    pub faces: Vec<FaceId>,
+    faces: Vec<FaceId>,
     /// Edges belonging directly to a wire shell.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub wire_edges: Vec<EdgeId>,
+    wire_edges: Vec<EdgeId>,
     /// Vertices belonging directly to a shell and not bounding an edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub free_vertices: Vec<VertexId>,
+    free_vertices: Vec<VertexId>,
+}
+
+impl Shell {
+    /// Admits a shell that owns at least one face, wire edge, or free vertex.
+    pub fn new(
+        id: ShellId,
+        region: RegionId,
+        faces: Vec<FaceId>,
+        wire_edges: Vec<EdgeId>,
+        free_vertices: Vec<VertexId>,
+    ) -> Result<Self, &'static str> {
+        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
+            return Err("shell faces, wire_edges, and free_vertices must not all be empty");
+        }
+        Ok(Self {
+            id,
+            region,
+            faces,
+            wire_edges,
+            free_vertices,
+        })
+    }
+
+    /// Constructs a shell with one face.
+    pub fn with_face(id: ShellId, region: RegionId, face: FaceId) -> Self {
+        Self {
+            id,
+            region,
+            faces: vec![face],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        }
+    }
+
+    /// Constructs a shell with one wire edge.
+    pub fn with_wire_edge(id: ShellId, region: RegionId, edge: EdgeId) -> Self {
+        Self {
+            id,
+            region,
+            faces: Vec::new(),
+            wire_edges: vec![edge],
+            free_vertices: Vec::new(),
+        }
+    }
+
+    /// Constructs a shell with one free vertex.
+    pub fn with_free_vertex(id: ShellId, region: RegionId, vertex: VertexId) -> Self {
+        Self {
+            id,
+            region,
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: vec![vertex],
+        }
+    }
+
+    /// Faces of the shell.
+    pub fn faces(&self) -> &[FaceId] {
+        &self.faces
+    }
+
+    /// Edges belonging directly to the shell.
+    pub fn wire_edges(&self) -> &[EdgeId] {
+        &self.wire_edges
+    }
+
+    /// Vertices belonging directly to the shell.
+    pub fn free_vertices(&self) -> &[VertexId] {
+        &self.free_vertices
+    }
+
+    /// Mutable face identities with fixed membership counts.
+    pub fn faces_mut(&mut self) -> &mut [FaceId] {
+        &mut self.faces
+    }
+
+    /// Mutable wire edge identities with fixed membership counts.
+    pub fn wire_edges_mut(&mut self) -> &mut [EdgeId] {
+        &mut self.wire_edges
+    }
+
+    /// Mutable free vertex identities with fixed membership counts.
+    pub fn free_vertices_mut(&mut self) -> &mut [VertexId] {
+        &mut self.free_vertices
+    }
+
+    /// Edits topology members and preserves the shell when admission fails.
+    pub fn edit_topology<R>(
+        &mut self,
+        edit: impl FnOnce(&mut Vec<FaceId>, &mut Vec<EdgeId>, &mut Vec<VertexId>) -> R,
+    ) -> Result<R, &'static str> {
+        let mut faces = self.faces.clone();
+        let mut wire_edges = self.wire_edges.clone();
+        let mut free_vertices = self.free_vertices.clone();
+        let result = edit(&mut faces, &mut wire_edges, &mut free_vertices);
+        *self = Self::new(
+            self.id.clone(),
+            self.region.clone(),
+            faces,
+            wire_edges,
+            free_vertices,
+        )?;
+        Ok(result)
+    }
+
+    /// Appends a face to the shell.
+    pub fn add_face(&mut self, face: FaceId) {
+        self.faces.push(face);
+    }
+
+    /// Appends a wire edge to the shell.
+    pub fn add_wire_edge(&mut self, edge: EdgeId) {
+        self.wire_edges.push(edge);
+    }
+
+    /// Appends a free vertex to the shell.
+    pub fn add_free_vertex(&mut self, vertex: VertexId) {
+        self.free_vertices.push(vertex);
+    }
+}
+
+impl<'de> Deserialize<'de> for Shell {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Wire {
+            id: ShellId,
+            region: RegionId,
+            faces: Vec<FaceId>,
+            #[serde(default)]
+            wire_edges: Vec<EdgeId>,
+            #[serde(default)]
+            free_vertices: Vec<VertexId>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.id,
+            wire.region,
+            wire.faces,
+            wire.wire_edges,
+            wire.free_vertices,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 /// A face: a bounded region of a surface.
@@ -1128,6 +1271,79 @@ pub struct Point {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shell_admission_requires_one_topology_member_and_preserves_wire_fields() {
+        let id = super::ShellId::mint("test:model:shell#1").unwrap();
+        let region = super::RegionId::mint("test:model:region#1").unwrap();
+        let face = super::FaceId::mint("test:model:face#1").unwrap();
+        let edge = super::EdgeId::mint("test:model:edge#1").unwrap();
+        let vertex = super::VertexId::mint("test:model:vertex#1").unwrap();
+        for mask in 0..8 {
+            let faces = if mask & 1 != 0 {
+                vec![face.clone(), face.clone()]
+            } else {
+                Vec::new()
+            };
+            let edges = if mask & 2 != 0 {
+                vec![edge.clone()]
+            } else {
+                Vec::new()
+            };
+            let vertices = if mask & 4 != 0 {
+                vec![vertex.clone()]
+            } else {
+                Vec::new()
+            };
+            let admitted = super::Shell::new(
+                id.clone(),
+                region.clone(),
+                faces.clone(),
+                edges.clone(),
+                vertices.clone(),
+            );
+            assert_eq!(admitted.is_ok(), mask != 0);
+            let mut wire = serde_json::json!({"id":id,"region":region,"faces":faces});
+            if !edges.is_empty() {
+                wire["wire_edges"] = serde_json::json!(edges);
+            }
+            if !vertices.is_empty() {
+                wire["free_vertices"] = serde_json::json!(vertices);
+            }
+            let decoded = serde_json::from_value::<super::Shell>(wire.clone());
+            assert_eq!(decoded.is_ok(), mask != 0);
+            if let Ok(shell) = decoded {
+                assert_eq!(serde_json::to_value(shell).unwrap(), wire);
+            }
+        }
+    }
+
+    #[test]
+    fn shell_topology_edits_admit_the_whole_replacement_and_keep_old_values_on_failure() {
+        let mut shell = super::Shell::with_face(
+            super::ShellId::mint("test:model:shell#1").unwrap(),
+            super::RegionId::mint("test:model:region#1").unwrap(),
+            super::FaceId::mint("test:model:face#1").unwrap(),
+        );
+        let original = shell.clone();
+        assert!(shell
+            .edit_topology(|faces, edges, vertices| {
+                faces.clear();
+                edges.clear();
+                vertices.clear();
+            })
+            .is_err());
+        assert_eq!(shell, original);
+        let vertex = super::VertexId::mint("test:model:vertex#1").unwrap();
+        shell
+            .edit_topology(|faces, _, vertices| {
+                faces.clear();
+                vertices.push(vertex.clone());
+            })
+            .unwrap();
+        assert!(shell.faces().is_empty());
+        assert_eq!(shell.free_vertices(), &[vertex]);
+    }
+
     use super::{
         with_topology_serialization, AnchoredVertexUse, Coedge, CoedgeUseCurve, Loop, LoopBoundary,
         LoopRing,

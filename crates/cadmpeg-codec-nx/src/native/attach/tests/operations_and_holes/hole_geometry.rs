@@ -256,16 +256,19 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         body: body.clone(),
         shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
     });
-    model.shells.push(Shell {
-        id: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        region: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-        faces: vec![
-            FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
-            FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
-        ],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    model.shells.push(
+        Shell::new(
+            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            vec![
+                FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
+                FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model = model;
     let outputs = std::collections::BTreeMap::from([
@@ -325,8 +328,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     )
     .is_empty());
     let mut single_hole = ir.clone();
-    single_hole.model.shells[0].faces =
-        vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
+    {
+        let members = vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
+        single_hole.model.shells[0].edit_topology(|faces, _, _| *faces = members)
+    }
+    .unwrap();
     let single_operation = [operations[1].clone()];
     let single_output = std::collections::BTreeMap::from([(
         operations[1].clone(),
@@ -520,7 +526,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     );
 
     let mut distinct = ir.clone();
-    distinct.model.shells[0].faces.pop();
+    distinct.model.shells[0]
+        .edit_topology(|faces, _, _| faces.pop())
+        .unwrap();
     distinct.model.bodies.push(Body {
         id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
         kind: BodyKind::Solid,
@@ -535,13 +543,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
         shells: vec![ShellId::mint("test:model:entity#second-shell").expect("identity grammar")],
     });
-    distinct.model.shells.push(Shell {
-        id: ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
-        region: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-        faces: vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    distinct.model.shells.push(Shell::with_face(
+        ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
+        RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+        FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
+    ));
     distinct.model.faces[1].shell =
         ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
     let SurfaceGeometry::Cylinder { radius, .. } = &mut distinct.model.surfaces[1].geometry else {
@@ -641,7 +647,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 },
                 source_object: None,
             });
-            chamfered.model.shells[0].faces.push(face.clone());
+            chamfered.model.shells[0].add_face(face.clone());
             chamfered.model.faces.push(Face {
                 id: face,
                 shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),

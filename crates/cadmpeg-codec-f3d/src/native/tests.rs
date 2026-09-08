@@ -122,7 +122,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 
     assert_eq!(decoded.ir().model.coedges.len(), 3);
     assert_eq!(decoded.ir().model.edges.len(), 3);
-    assert_eq!(decoded.ir().model.shells[0].faces.len(), 1);
+    assert_eq!(decoded.ir().model.shells[0].faces().len(), 1);
     assert_eq!(
         f3d_native(decoded.ir())
             .tolerant_coedge_parameters

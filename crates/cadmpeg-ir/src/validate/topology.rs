@@ -87,17 +87,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         if ids.regions(s.region.as_str()).is_none() {
             ref_error(findings, s.id.as_str(), "region", s.region.as_str());
         }
-        for f in &s.faces {
+        for f in s.faces() {
             if ids.faces(f.as_str()).is_none() {
                 ref_error(findings, s.id.as_str(), "face", f.as_str());
             }
         }
-        for e in &s.wire_edges {
+        for e in s.wire_edges() {
             if ids.edges(e.as_str()).is_none() {
                 ref_error(findings, s.id.as_str(), "wire edge", e.as_str());
             }
         }
-        for v in &s.free_vertices {
+        for v in s.free_vertices() {
             if ids.vertices(v.as_str()).is_none() {
                 ref_error(findings, s.id.as_str(), "free vertex", v.as_str());
             }
@@ -5111,10 +5111,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut free_owners = HashMap::<&str, usize>::new();
 
     for shell in &ir.model.shells {
-        if shell.faces.is_empty() && shell.wire_edges.is_empty() && shell.free_vertices.is_empty() {
-            wire_error(findings, shell.id.as_str(), "shell owns no topology");
-        }
-        for edge in &shell.wire_edges {
+        for edge in shell.wire_edges() {
             *wire_owners.entry(edge.as_str()).or_default() += 1;
             if coedge_edges.contains(edge.as_str()) {
                 wire_error(
@@ -5124,7 +5121,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        for vertex in &shell.free_vertices {
+        for vertex in shell.free_vertices() {
             *free_owners.entry(vertex.as_str()).or_default() += 1;
             if edge_vertices.contains(vertex.as_str()) {
                 wire_error(
@@ -5180,7 +5177,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
                     region.shells.iter().any(|shell_id| {
                         shells
                             .get(shell_id.as_str())
-                            .is_some_and(|shell| !shell.faces.is_empty())
+                            .is_some_and(|shell| !shell.faces().is_empty())
                     })
                 })
             })
@@ -5264,8 +5261,8 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
     }
 
     for shell in &ir.model.shells {
-        if shell.faces.len() < 2
-            || shell.faces.iter().any(|face| {
+        if shell.faces().len() < 2
+            || shell.faces().iter().any(|face| {
                 faces
                     .get(face.as_str())
                     .is_none_or(|face| face.loops.is_empty())
@@ -5274,12 +5271,12 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
             continue;
         }
         let owned = shell
-            .faces
+            .faces()
             .iter()
             .map(super::super::ids::FaceId::as_str)
             .collect::<HashSet<_>>();
-        let mut reached = HashSet::from([shell.faces[0].as_str()]);
-        let mut pending = vec![shell.faces[0].as_str()];
+        let mut reached = HashSet::from([shell.faces()[0].as_str()]);
+        let mut pending = vec![shell.faces()[0].as_str()];
         while let Some(face) = pending.pop() {
             for &neighbor in neighbors.get(face).into_iter().flatten() {
                 if owned.contains(neighbor) && reached.insert(neighbor) {

@@ -125,7 +125,7 @@ pub(crate) fn decode_kernel_carrier(
         &stream,
         IdFormat("inventor"),
         DecodePurpose::Model,
-    );
+    )?;
     Ok(DecodedKernelCarrier {
         header: header.clone(),
         brep,

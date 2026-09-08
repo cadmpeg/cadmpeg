@@ -5101,7 +5101,7 @@ fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
                 .shells
                 .iter()
                 .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-            for face_id in &shell.faces {
+            for face_id in shell.faces() {
                 let face = ir
                     .model
                     .faces
@@ -5136,7 +5136,7 @@ fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec
         .iter()
         .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
     shell
-        .faces
+        .faces()
         .iter()
         .map(|face_id| {
             ir.model

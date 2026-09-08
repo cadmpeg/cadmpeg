@@ -115,7 +115,7 @@ fuzz_target!(|data: &[u8]| {
             // Put a coedge-owned edge into a shell's wire set.
             if let (Some(shell), Some(edge)) = (ir.model.shells.first_mut(), ir.model.edges.first())
             {
-                shell.wire_edges.push(edge.id.clone());
+                shell.add_wire_edge(edge.id.clone());
             }
         }
         12 => {

@@ -245,8 +245,8 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
             .model
             .shells
             .iter()
-            .map(|v| (&v.id, &v.region, &v.faces))
-            .eq(native.shells.iter().map(|v| (&v.id, &v.region, &v.faces)))
+            .map(|v| (&v.id, &v.region, v.faces()))
+            .eq(native.shells.iter().map(|v| (&v.id, &v.region, v.faces())))
         && ir
             .model
             .faces

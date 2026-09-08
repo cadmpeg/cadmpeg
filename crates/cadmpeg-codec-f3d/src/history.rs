@@ -480,7 +480,11 @@ fn bind_complete_record_tables(
         let Some(records) = materialize_record_table(state, &archive) else {
             return false;
         };
-        let decoded = crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT);
+        let Ok(decoded) =
+            crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT)
+        else {
+            return false;
+        };
         let Some(topology) = historical_topology_with_tags(&decoded) else {
             return false;
         };
@@ -1566,7 +1570,7 @@ fn unique_external_body_candidate(
         .iter()
         .filter_map(|shell| {
             let body = body_by_region.get(&shell.region)?;
-            Some(shell.faces.iter().map(move |face| (face, *body)))
+            Some(shell.faces().iter().map(move |face| (face, *body)))
         })
         .flatten()
         .collect::<HashMap<_, _>>();
@@ -1886,7 +1890,7 @@ fn body_recipe_face_body_candidates(
         .iter()
         .filter_map(|shell| {
             let body = body_by_region.get(&shell.region)?;
-            Some(shell.faces.iter().map(move |face| (face, *body)))
+            Some(shell.faces().iter().map(move |face| (face, *body)))
         })
         .flatten()
         .collect::<std::collections::HashMap<_, _>>();
@@ -8784,7 +8788,7 @@ pub(crate) fn historical_topology(
             (
                 shell.id.as_str(),
                 shell
-                    .faces
+                    .faces()
                     .iter()
                     .map(cadmpeg_ir::ids::FaceId::as_str)
                     .collect(),
@@ -8794,7 +8798,7 @@ pub(crate) fn historical_topology(
             (
                 shell.id.as_str(),
                 shell
-                    .wire_edges
+                    .wire_edges()
                     .iter()
                     .map(cadmpeg_ir::ids::EdgeId::as_str)
                     .collect(),
@@ -8804,7 +8808,7 @@ pub(crate) fn historical_topology(
             (
                 shell.id.as_str(),
                 shell
-                    .free_vertices
+                    .free_vertices()
                     .iter()
                     .map(cadmpeg_ir::ids::VertexId::as_str)
                     .collect(),

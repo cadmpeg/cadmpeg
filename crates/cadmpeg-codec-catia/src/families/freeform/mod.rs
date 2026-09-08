@@ -958,13 +958,14 @@ fn attach_standalone_wires(
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: Vec::new(),
-        wire_edges: edge_ids,
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(
+        match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
+            Ok(shell) => shell,
+            Err(_) => {
+                return false;
+            }
+        },
+    );
     true
 }
 
@@ -2868,7 +2869,7 @@ mod tests {
             cadmpeg_ir::topology::BodyKind::Wire
         );
         assert_eq!(
-            ir.model.shells[0].wire_edges,
+            ir.model.shells[0].wire_edges(),
             [ir.model.edges[0].id.clone()]
         );
         assert_eq!(ir.model.points[1].position, Point3::new(2.0, 3.0, 5.0));

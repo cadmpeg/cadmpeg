@@ -569,12 +569,12 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
         },
     ];
-    let shell = |id: &str, region: &str, face: &str| Shell {
-        id: ShellId::mint(id).expect("identity grammar"),
-        region: RegionId::mint(region).expect("identity grammar"),
-        faces: vec![FaceId::mint(face).expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
+    let shell = |id: &str, region: &str, face: &str| {
+        Shell::with_face(
+            ShellId::mint(id).expect("identity grammar"),
+            RegionId::mint(region).expect("identity grammar"),
+            FaceId::mint(face).expect("identity grammar"),
+        )
     };
     let shells = [
         shell(
@@ -900,13 +900,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         body: body.id.clone(),
         shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
     };
-    let shell = Shell {
-        id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
-        region: region.id.clone(),
-        faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    };
+    let shell = Shell::with_face(
+        ShellId::mint("test:model:shell#1").expect("identity grammar"),
+        region.id.clone(),
+        FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
+    );
     let inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),

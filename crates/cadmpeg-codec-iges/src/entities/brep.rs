@@ -1143,13 +1143,21 @@ pub(super) fn project(
             if !valid {
                 break;
             }
-            candidate.model_mut().shells.push(Shell {
-                id: shell_id.clone(),
-                region: region_id.clone(),
-                faces: shell_faces,
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            });
+            candidate.model_mut().shells.push(
+                match Shell::new(
+                    shell_id.clone(),
+                    region_id.clone(),
+                    shell_faces,
+                    Vec::new(),
+                    Vec::new(),
+                ) {
+                    Ok(shell) => shell,
+                    Err(_) => {
+                        valid = false;
+                        break;
+                    }
+                },
+            );
             region_shells.push(shell_id);
             consumed.insert(shell_sequence);
         }
