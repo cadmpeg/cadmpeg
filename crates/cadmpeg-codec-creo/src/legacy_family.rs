@@ -271,7 +271,7 @@ fn optional_integer(index: &Index<'_>, parent: usize, name: &str) -> Result<Opti
     }
     match &records[0].payload {
         NumericPayload::Scalar { value } => Ok(Some(*value)),
-        NumericPayload::Array { .. } => Err(()),
+        NumericPayload::Array(_) => Err(()),
     }
 }
 
@@ -320,7 +320,7 @@ fn typed_value(
             }
             let value = match &records[0].payload {
                 NumericPayload::Scalar { value } => *value,
-                NumericPayload::Array { .. } => return None,
+                NumericPayload::Array(_) => return None,
             };
             Some((records[0].offset, FamilyTableValuePayload::Real { value }))
         }
@@ -346,7 +346,7 @@ fn typed_value(
             }
             let value = match &records[0].payload {
                 NumericPayload::Scalar { value } => *value,
-                NumericPayload::Array { .. } => return None,
+                NumericPayload::Array(_) => return None,
             };
             Some((
                 records[0].offset,

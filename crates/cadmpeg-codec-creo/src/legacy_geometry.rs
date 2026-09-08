@@ -318,10 +318,12 @@ fn curve_pcurve(
     reals: &RealFieldIndex<'_>,
 ) -> Option<PcurveEndpoints> {
     let record = real_record(reals, curve_object.offset, "crv_pnt_arr")?;
-    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+    let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let [sample_count, lane_width] = dimensions.as_slice() else {
+    let dimensions = array.dimensions();
+    let runs = array.runs();
+    let [sample_count, lane_width] = dimensions else {
         return None;
     };
     if *lane_width != 4 || *sample_count < 2 {
@@ -329,9 +331,6 @@ fn curve_pcurve(
     }
     let sample_count = usize::try_from(*sample_count).ok()?;
     let expected_elements = sample_count.checked_mul(4)?;
-    if record.payload.element_count() != u64::try_from(expected_elements).ok()? {
-        return None;
-    }
     let mut values = Vec::new();
     for run in runs {
         let count = usize::try_from(run.count).ok()?;
@@ -622,13 +621,14 @@ fn real_vector_array(
 ) -> Option<Vec<[f64; 3]>> {
     let record = real_record(records, parent, name)?;
     let values = real_array_values(record)?;
-    let NumericPayload::Array { dimensions, .. } = &record.payload else {
+    let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let [count, width] = dimensions.as_slice() else {
+    let dimensions = array.dimensions();
+    let [_, width] = dimensions else {
         return None;
     };
-    (*width == 3 && values.len() == usize::try_from(*count).ok()?.checked_mul(3)?).then_some(())?;
+    (*width == 3).then_some(())?;
     values
         .chunks_exact(3)
         .map(|vector| vector.try_into().ok())
@@ -637,18 +637,20 @@ fn real_vector_array(
 
 fn real_scalar_array(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<f64>> {
     let record = real_record(records, parent, name)?;
-    let NumericPayload::Array { dimensions, .. } = &record.payload else {
+    let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
+    let dimensions = array.dimensions();
     (dimensions.len() == 1).then_some(())?;
-    let values = real_array_values(record)?;
-    (values.len() == usize::try_from(dimensions[0]).ok()?).then_some(values)
+    real_array_values(record)
 }
 
 fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
-    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+    let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
+    let dimensions = array.dimensions();
+    let runs = array.runs();
     let expected = dimensions.iter().try_fold(1usize, |product, dimension| {
         product.checked_mul(usize::try_from(*dimension).ok()?)
     })?;
@@ -659,7 +661,7 @@ fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
         let count = usize::try_from(run.count).ok()?;
         values.extend(std::iter::repeat_n(value, count));
     }
-    (values.len() == expected).then_some(values)
+    Some(values)
 }
 
 fn object_id_index(objects: &[ObjectRecord]) -> ObjectIdIndex<'_> {
@@ -715,19 +717,16 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> 
     let record = integer_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(*value),
-        NumericPayload::Array { .. } => None,
+        NumericPayload::Array(_) => None,
     }
 }
 
 fn integer_array(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<i32>> {
     let record = integer_record(records, parent, name)?;
-    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+    let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
-        count.checked_mul(u64::from(*dimension))
-    })?;
-    (record.payload.element_count() == expected).then_some(())?;
+    let runs = array.runs();
     let mut values = Vec::new();
     for run in runs {
         let count = usize::try_from(run.count).ok()?;
@@ -735,7 +734,7 @@ fn integer_array(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> 
             values.push(run.value);
         }
     }
-    (u64::try_from(values.len()).ok()? == expected).then_some(values)
+    Some(values)
 }
 
 fn real_record<'a>(
@@ -751,7 +750,7 @@ fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Optio
     let record = real_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(value.value()),
-        NumericPayload::Array { .. } => None,
+        NumericPayload::Array(_) => None,
     }
 }
 
@@ -817,10 +816,12 @@ fn legacy_spline_boundary_derivatives(
 }
 
 fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
-    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+    let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    (dimensions.as_slice() == [4, 3] && record.payload.element_count() == 12).then_some(())?;
+    let dimensions = array.dimensions();
+    let runs = array.runs();
+    (dimensions == [4, 3]).then_some(())?;
     let mut slots = Vec::with_capacity(12);
     for run in runs {
         let count = usize::try_from(run.count).ok()?;
@@ -918,7 +919,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             scope_offset: 0,
             parent: Some(fixture_offset(parent)),
             depth: 0,
-            payload: RealPayload::Array { dimensions, runs },
+            payload: RealPayload::array(dimensions, runs).expect("complete numeric array"),
             offset,
         }
     }
@@ -1417,10 +1418,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             scope_offset: 0,
             parent: Some(fixture_offset(parent)),
             depth: 0,
-            payload: RealPayload::Array {
-                dimensions: vec![2, 4],
-                runs,
-            },
+            payload: RealPayload::array(vec![2, 4], runs).expect("complete numeric array"),
             offset,
         }
     }
@@ -1453,16 +1451,17 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             integer(
                 curve,
                 "crv_pnt_dir",
-                IntegerPayload::Array {
-                    dimensions: vec![2],
-                    runs: vec![
+                IntegerPayload::array(
+                    vec![2],
+                    vec![
                         IntegerRun { count: 1, value: 1 },
                         IntegerRun {
                             count: 1,
                             value: -1,
                         },
                     ],
-                },
+                )
+                .expect("complete numeric array"),
                 300 + id as usize,
             ),
             integer(

@@ -234,9 +234,9 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
     );
     assert_eq!(
         persistence.real_values[2].payload,
-        RealPayload::Array {
-            dimensions: vec![2, 2],
-            runs: vec![
+        RealPayload::array(
+            vec![2, 2],
+            vec![
                 RealRun {
                     count: 1,
                     value: Real(1.0f64.to_bits()),
@@ -249,19 +249,21 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
                     count: 1,
                     value: Real(1.0f64.to_bits()),
                 },
-            ],
-        }
+            ]
+        )
+        .expect("complete numeric array")
     );
     assert_eq!(persistence.real_values[2].payload.element_count(), 4);
     assert_eq!(
         persistence.real_values[3].payload,
-        RealPayload::Array {
-            dimensions: vec![1],
-            runs: vec![RealRun {
+        RealPayload::array(
+            vec![1],
+            vec![RealRun {
                 count: 1,
                 value: Real(2.0f64.to_bits()),
-            }],
-        }
+            }]
+        )
+        .expect("complete numeric array")
     );
 }
 
@@ -291,27 +293,29 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
     );
     assert_eq!(
         persistence.integer_values[1].payload,
-        IntegerPayload::Array {
-            dimensions: vec![4],
-            runs: vec![
+        IntegerPayload::array(
+            vec![4],
+            vec![
                 IntegerRun { count: 1, value: 1 },
                 IntegerRun {
                     count: 2,
                     value: -1,
                 },
                 IntegerRun { count: 1, value: 0 },
-            ],
-        }
+            ]
+        )
+        .expect("complete numeric array")
     );
     assert_eq!(
         persistence.integer_values[2].payload,
-        IntegerPayload::Array {
-            dimensions: vec![1],
-            runs: vec![IntegerRun {
+        IntegerPayload::array(
+            vec![1],
+            vec![IntegerRun {
                 count: 1,
                 value: 42,
-            }],
-        }
+            }]
+        )
+        .expect("complete numeric array")
     );
 }
 
@@ -342,16 +346,17 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
     assert_eq!(persistence.unresolved_type_5_value_count, 0);
     assert_eq!(
         persistence.type_5_values[1].payload,
-        UnsignedPayload::Array {
-            dimensions: vec![3],
-            runs: vec![
+        UnsignedPayload::array(
+            vec![3],
+            vec![
                 NumericRun { count: 1, value: 0 },
                 NumericRun {
                     count: 2,
                     value: 144,
                 },
-            ],
-        }
+            ]
+        )
+        .expect("complete numeric array")
     );
     assert_eq!(persistence.type_6_values.len(), 2);
     assert_eq!(persistence.unresolved_type_6_value_count, 0);
@@ -369,13 +374,14 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
     assert_eq!(persistence.unresolved_type_11_value_count, 0);
     assert_eq!(
         persistence.type_11_values[1].payload,
-        UnsignedPayload::Array {
-            dimensions: vec![1],
-            runs: vec![NumericRun {
+        UnsignedPayload::array(
+            vec![1],
+            vec![NumericRun {
                 count: 1,
                 value: 14633,
-            }],
-        }
+            }]
+        )
+        .expect("complete numeric array")
     );
     assert_eq!(persistence.type_11_values[1].parent, Some(root_offset));
 }

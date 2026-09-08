@@ -8,6 +8,7 @@ use std::ops::Range;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
+mod numeric_array;
 pub(crate) mod type_code;
 use type_code::LegacyTypeCode;
 
@@ -102,20 +103,20 @@ pub enum NumericPayload<T> {
         value: T,
     },
     /// A complete multidimensional array, retained as source runs.
-    Array {
-        /// Array extents from outermost to innermost dimension.
-        dimensions: Vec<u32>,
-        /// Ordered source runs whose count sum equals the extent product.
-        runs: Vec<NumericRun<T>>,
-    },
+    Array(numeric_array::NumericArray<T>),
 }
 
 impl<T> NumericPayload<T> {
+    /// Admits source runs whose count sum equals the extent product.
+    pub fn array(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<Self> {
+        numeric_array::NumericArray::try_new(dimensions, runs).map(Self::Array)
+    }
+
     /// Number of logical scalar elements represented by this payload.
     pub fn element_count(&self) -> u64 {
         match self {
             Self::Scalar { .. } => 1,
-            Self::Array { runs, .. } => runs.iter().map(|run| u64::from(run.count)).sum(),
+            Self::Array(array) => array.element_count(),
         }
     }
 }
@@ -696,7 +697,7 @@ impl Persistence {
         matches.next().is_none().then_some(())?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 
@@ -709,7 +710,7 @@ impl Persistence {
         matches.next().is_none().then_some(())?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 
@@ -1227,18 +1228,12 @@ fn numeric_records<T>(
                 } else {
                     Vec::new()
                 };
-                let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
-                    count.checked_mul(u64::from(*dimension))
-                });
-                let actual = runs
-                    .iter()
-                    .try_fold(0u64, |count, run| count.checked_add(u64::from(run.count)));
-                if expected.is_none() || expected != actual {
+                let Some(payload) = NumericPayload::array(dimensions, runs) else {
                     unresolved += next_index - index;
                     index = next_index;
                     continue;
-                }
-                (NumericPayload::Array { dimensions, runs }, next_index)
+                };
+                (payload, next_index)
             } else {
                 let Some(scalar_value) = value
                     .continuation
