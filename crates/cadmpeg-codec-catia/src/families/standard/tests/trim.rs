@@ -512,7 +512,7 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     let groups = standard_fbb_groups(&bytes);
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
-        group.face_count == 1
+        group.face_run.face_count == 1
             && group.topology.face_count() == 1
             && group.topology.edge_rows().len() == 4
     }));
@@ -529,7 +529,7 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
     let layouts = fbb_population_layouts(&bytes);
     assert_eq!(layouts.len(), 2);
     assert!(layouts.iter().all(|layout| {
-        layout.face_count == 1 && layout.edge_count == 4 && layout.vertex_count == 4
+        layout.face_run.face_count == 1 && layout.edge_count == 4 && layout.vertex_count == 4
     }));
 }
 
@@ -546,7 +546,7 @@ fn fbb_population_spine_retains_the_preceding_trim_chain() {
     let [isolated] = isolated_layouts.as_slice() else {
         panic!("isolated spine remains source-closed");
     };
-    assert_eq!(isolated.face_count, layout.face_count);
+    assert_eq!(isolated.face_run.face_count, layout.face_run.face_count);
     assert_eq!(isolated.edge_count, layout.edge_count);
     assert_eq!(isolated.vertex_count, layout.vertex_count);
     assert_eq!(isolated.fbb_edge_table, layout.fbb_edge_table);

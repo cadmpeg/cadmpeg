@@ -391,7 +391,7 @@ pub(crate) fn pair_standard_populations(
         .copied()
         .zip(populations.iter().cloned())
         .map(|(layout, population)| {
-            (layout.face_count == population.records.len()
+            (layout.face_run.face_count == population.records.len()
                 && layout.edge_count == population.supports.len())
             .then_some((layout, population))
         })
