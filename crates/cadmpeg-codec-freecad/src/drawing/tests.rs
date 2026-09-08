@@ -569,8 +569,8 @@ fn drawing_page_roundtrip_preserves_kind_and_payload() {
         kind: crate::native::TechDrawKind::try_new("TechDraw::DrawPage".into(), Vec::new(), None)
             .unwrap(),
         sources: Vec::new(),
-        relationships: Default::default(),
-        parameters: Default::default(),
+        relationships: std::collections::BTreeMap::new(),
+        parameters: std::collections::BTreeMap::new(),
         side_entries: Vec::new(),
     };
     let wire = serde_json::to_value(&record).unwrap();
