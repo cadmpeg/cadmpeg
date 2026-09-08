@@ -1079,7 +1079,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut configuration_ids = HashSet::new();
     let mut entry_names = HashSet::new();
     for configuration in &ctx.native.design_configurations {
-        let valid_name = match configuration.kind {
+        let valid_name = match configuration.kind() {
             records::DesignConfigurationKind::Table => {
                 configuration.entry_name.ends_with(".dsgcfg")
             }
@@ -1092,15 +1092,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = valid_name
             && configuration.id == ids::configuration_entry_id(&configuration.entry_name)
             && unique_id
-            && unique_entry_name
-            && crate::design::configurations::validate_configuration_payload(
-                &configuration.entry_name,
-                configuration.kind,
-                &configuration.payload,
-            )
-            .is_ok()
-            && crate::design::configurations::validate_configuration_variant_order(configuration)
-                .is_ok();
+            && unique_entry_name;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -1116,10 +1108,10 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| configuration.kind == records::DesignConfigurationKind::Table)
+        .filter(|configuration| configuration.kind() == records::DesignConfigurationKind::Table)
         .filter(|configuration| {
             configuration
-                .payload
+                .payload()
                 .get("configurations")
                 .and_then(serde_json::Value::as_object)
                 .is_some_and(|variants| !variants.is_empty())

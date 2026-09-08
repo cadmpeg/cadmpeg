@@ -2436,18 +2436,100 @@ pub const DESIGN_MODULE_FUSION: &str = "Fusion";
 
 /// JSON configuration payload stored in a Fusion design-configuration entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignConfigurationWire")]
 pub struct DesignConfiguration {
     /// Stable identity derived from the ZIP entry name.
     pub id: String,
     /// Complete ZIP entry name used for native regeneration.
     pub entry_name: String,
-    /// Native configuration entry family.
-    pub kind: DesignConfigurationKind,
-    /// Variant names in serialized object-member order.
+    kind: DesignConfigurationKind,
+    variant_order: Vec<String>,
+    payload: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct DesignConfigurationWire {
+    id: String,
+    entry_name: String,
+    kind: DesignConfigurationKind,
     #[serde(default)]
-    pub variant_order: Vec<String>,
-    /// Complete decoded JSON payload, including unrecognized fields.
-    pub payload: serde_json::Value,
+    variant_order: Vec<String>,
+    payload: serde_json::Value,
+}
+
+impl DesignConfiguration {
+    /// Admit an object payload with its configuration family and authored order.
+    pub fn try_new(
+        id: String,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let value = Self {
+            id,
+            entry_name,
+            kind,
+            variant_order,
+            payload,
+        };
+        crate::design::configurations::validate_configuration_payload(
+            &value.entry_name,
+            kind,
+            &value.payload,
+        )?;
+        crate::design::configurations::validate_configuration_variant_order(&value)?;
+        Ok(value)
+    }
+
+    /// Native configuration entry family.
+    pub fn kind(&self) -> DesignConfigurationKind {
+        self.kind
+    }
+
+    /// Variant names in authored order.
+    pub fn variant_order(&self) -> &[String] {
+        &self.variant_order
+    }
+
+    /// Complete object payload including unrecognized fields.
+    pub fn payload(&self) -> &serde_json::Map<String, serde_json::Value> {
+        &self.payload
+    }
+
+    /// Replace the payload and order after admission succeeds.
+    pub fn try_set_payload(
+        &mut self,
+        payload: serde_json::Map<String, serde_json::Value>,
+        variant_order: Vec<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let replacement = Self::try_new(
+            self.id.clone(),
+            self.entry_name.clone(),
+            self.kind,
+            variant_order,
+            payload,
+        )?;
+        *self = replacement;
+        Ok(())
+    }
+}
+
+impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
+    type Error = String;
+    fn try_from(wire: DesignConfigurationWire) -> Result<Self, Self::Error> {
+        let serde_json::Value::Object(payload) = wire.payload else {
+            return Err("payload must be an object".into());
+        };
+        Self::try_new(
+            wire.id,
+            wire.entry_name,
+            wire.kind,
+            wire.variant_order,
+            payload,
+        )
+        .map_err(|error| error.to_string())
+    }
 }
 
 /// Native Fusion design-configuration entry family.
