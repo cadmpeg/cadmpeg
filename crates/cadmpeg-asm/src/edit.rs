@@ -39,6 +39,15 @@ pub struct NurbsSurfaceEdit<'a> {
     pub periodic: Option<[bool; 2]>,
 }
 
+/// The solved NURBS curve cache selected for patching.
+#[derive(Clone, Copy)]
+pub enum CacheTarget {
+    /// The final curve cache.
+    Final,
+    /// The first curve cache.
+    First,
+}
+
 /// Writable values for one solved NURBS curve cache.
 #[derive(Clone, Copy)]
 pub struct NurbsCurveEdit<'a> {
@@ -884,7 +893,17 @@ impl AsmEditSet {
         edit: NurbsCurveEdit<'_>,
         final_cache: bool,
     ) -> Result<(), CodecError> {
-        patch_nurbs_curve_record(bytes, self.ref_width, record, &edit, final_cache)
+        patch_nurbs_curve_record(
+            bytes,
+            self.ref_width,
+            record,
+            &edit,
+            if final_cache {
+                CacheTarget::Final
+            } else {
+                CacheTarget::First
+            },
+        )
     }
 
     /// Apply the fields selected by an inline cache or reference wrapper edit.
@@ -1653,15 +1672,14 @@ fn patch_nurbs_curve_record(
     stream_width: RefWidth,
     record: &sab::Record,
     edit: &NurbsCurveEdit<'_>,
-    final_cache: bool,
+    target: CacheTarget,
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
     let int_width = stream_width;
-    let layout = if final_cache {
-        crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width)
-    } else {
-        crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width)
+    let layout = match target {
+        CacheTarget::Final => crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width),
+        CacheTarget::First => crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width),
     }
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
