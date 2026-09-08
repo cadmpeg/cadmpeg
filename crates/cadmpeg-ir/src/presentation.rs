@@ -68,7 +68,10 @@ pub struct PresentationState {
 
 /// Document-wide persisted GUI state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(from = "PresentationDocumentWire", into = "PresentationDocumentWire")]
+#[serde(
+    try_from = "PresentationDocumentWire",
+    into = "PresentationDocumentWire"
+)]
 pub struct PresentationDocument {
     /// Globally unique presentation identity.
     pub id: PresentationId,
@@ -77,7 +80,7 @@ pub struct PresentationDocument {
     /// Active view name or identity.
     pub active_view: Option<String>,
     /// Ordered document-level GUI states.
-    pub states: Vec<PresentationState>,
+    states: Vec<PresentationState>,
     /// Native GUI document record supplying this state.
     pub native_ref: Option<String>,
 }
@@ -97,6 +100,34 @@ struct PresentationDocumentWire {
 }
 
 impl PresentationDocument {
+    /// Construct document presentation with no persisted states.
+    #[must_use]
+    pub fn new(id: PresentationId) -> Self {
+        Self {
+            id,
+            schema_version: None,
+            active_view: None,
+            states: Vec::new(),
+            native_ref: None,
+        }
+    }
+
+    /// Return the persisted states in source order.
+    #[must_use]
+    pub fn states(&self) -> &[PresentationState] {
+        &self.states
+    }
+
+    /// Replace persisted states after checking that their orders are distinct.
+    pub fn set_states(&mut self, states: Vec<PresentationState>) -> Result<(), String> {
+        let mut orders = std::collections::HashSet::new();
+        if states.iter().any(|state| !orders.insert(state.order)) {
+            return Err("states must have distinct order values".into());
+        }
+        self.states = states;
+        Ok(())
+    }
+
     /// Persisted active camera, when a Camera state is present.
     #[must_use]
     pub fn camera(&self) -> Option<&CameraState> {
@@ -129,15 +160,16 @@ impl From<PresentationDocument> for PresentationDocumentWire {
     }
 }
 
-impl From<PresentationDocumentWire> for PresentationDocument {
-    fn from(wire: PresentationDocumentWire) -> Self {
-        Self {
-            id: wire.id,
-            schema_version: wire.schema_version,
-            active_view: wire.active_view,
-            states: wire.states,
-            native_ref: wire.native_ref,
-        }
+impl TryFrom<PresentationDocumentWire> for PresentationDocument {
+    type Error = String;
+
+    fn try_from(wire: PresentationDocumentWire) -> Result<Self, Self::Error> {
+        let mut document = Self::new(wire.id);
+        document.schema_version = wire.schema_version;
+        document.active_view = wire.active_view;
+        document.native_ref = wire.native_ref;
+        document.set_states(wire.states)?;
+        Ok(document)
     }
 }
 
@@ -362,13 +394,8 @@ mod tests {
             );
             states.push(state);
         }
-        let document = PresentationDocument {
-            id: PresentationId::mint("presentation").unwrap(),
-            schema_version: None,
-            active_view: None,
-            states,
-            native_ref: None,
-        };
+        let mut document = PresentationDocument::new(PresentationId::mint("presentation").unwrap());
+        document.set_states(states).expect("distinct orders");
         let json = serde_json::to_string(&document).unwrap();
         assert_eq!(
             serde_json::from_str::<PresentationDocument>(&json).unwrap(),
@@ -446,5 +473,39 @@ mod tests {
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
         assert!(crate::products::NonEmptyString::new("").is_none());
+    }
+
+    #[test]
+    fn document_state_orders_are_checked_without_reordering_or_partial_updates() {
+        let state = |order| PresentationState {
+            kind: PresentationStateKind::Native("View".into()),
+            order,
+            attributes: BTreeMap::new(),
+            assets: Vec::new(),
+        };
+        let mut document = PresentationDocument::new(
+            PresentationId::mint("presentation").expect("valid identity"),
+        );
+        assert!(document.states().is_empty());
+        let states = vec![state(9), state(2)];
+        document
+            .set_states(states.clone())
+            .expect("distinct orders");
+        assert_eq!(document.states(), states);
+        let wire = serde_json::to_value(&document).expect("serialize");
+        assert_eq!(
+            serde_json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
+            document
+        );
+        assert!(document.set_states(vec![state(2), state(2)]).is_err());
+        assert_eq!(document.states(), states);
+        let mut invalid = wire;
+        invalid["states"] =
+            serde_json::to_value(vec![state(2), state(2)]).expect("serialize states");
+        let error = serde_json::from_value::<PresentationDocument>(invalid)
+            .expect_err("duplicate state order");
+        assert!(error.to_string().contains("states"));
+        document.set_states(Vec::new()).expect("empty states");
+        assert!(document.states().is_empty());
     }
 }

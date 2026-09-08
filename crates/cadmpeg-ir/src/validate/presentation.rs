@@ -21,16 +21,11 @@ pub(super) fn check_presentation(
             .as_ref()
             .is_none_or(|native| all_ids.contains(native));
         let assets_valid = document
-            .states
+            .states()
             .iter()
             .flat_map(|state| &state.assets)
             .all(|asset| all_ids.contains(asset));
-        let orders = document
-            .states
-            .iter()
-            .map(|state| state.order)
-            .collect::<HashSet<_>>();
-        if !native_valid || !assets_valid || orders.len() != document.states.len() {
+        if !native_valid || !assets_valid {
             invalid_state(
                 findings,
                 Some(document.id.as_str().to_owned()),
