@@ -32,7 +32,6 @@ const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 #[derive(Debug)]
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
-    policy: DecodePolicy,
     container_only: bool,
     budget: DecodeBudget,
     spaces: RefCell<Vec<SpaceDescriptor>>,
@@ -132,7 +131,6 @@ impl<'a> DecodeContext<'a> {
         }
         let ctx = DecodeContext {
             arena,
-            policy: *policy,
             container_only,
             budget: DecodeBudget::new(*policy, length),
             spaces: RefCell::new(vec![SpaceDescriptor {
@@ -145,7 +143,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Returns the decode policy in force.
     pub fn policy(&self) -> &DecodePolicy {
-        &self.policy
+        &self.budget.policy
     }
 
     /// Returns whether the caller requested container-only decoding.
@@ -161,7 +159,8 @@ impl<'a> DecodeContext<'a> {
         let proportional = DECOMPRESSED_PER_EXPAND_BASE.saturating_add(
             DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.budget.input_bytes()),
         );
-        self.policy
+        self.budget
+            .policy
             .limits
             .max_decompressed_bytes_per_expand
             .min(proportional)
@@ -405,7 +404,7 @@ impl<'a> DecodeContext<'a> {
                 self.budget.refuse(
                     ResourceDimension::RetainedBytes,
                     ResourceFailure::BudgetExceeded,
-                    self.policy.limits.max_retained_bytes,
+                    self.budget.policy.limits.max_retained_bytes,
                     total as u64,
                     view.window().len() as u64,
                     "concat_views",
@@ -418,7 +417,7 @@ impl<'a> DecodeContext<'a> {
             self.budget.refuse(
                 ResourceDimension::MaterializedBytes,
                 ResourceFailure::AllocationFailed,
-                self.policy.limits.max_materialized_bytes,
+                self.budget.policy.limits.max_materialized_bytes,
                 0,
                 total as u64,
                 "concat_views",
