@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native assembly joint payloads and wire admission.
 
+use super::frame::FiniteFrame;
 use super::LinkTarget;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -48,7 +49,7 @@ pub enum JointBody {
         /// Grounded object reference.
         reference: Option<LinkTarget>,
         /// Connector-local coordinate frame.
-        placement: [[f64; 4]; 4],
+        placement: FiniteFrame,
     },
     /// Two-connector joint.
     Pair {
@@ -65,9 +66,9 @@ pub struct JointConnectorRecord {
     /// Connector reference with subelement paths.
     pub reference: Option<LinkTarget>,
     /// Connector-local coordinate frame.
-    pub placement: [[f64; 4]; 4],
+    pub placement: FiniteFrame,
     /// Connector attachment-offset frame.
-    pub offset: [[f64; 4]; 4],
+    pub offset: FiniteFrame,
 }
 
 impl JointRecord {
@@ -93,9 +94,12 @@ impl JointRecord {
     /// Connector-local coordinate frames in connector order.
     pub fn placements(&self) -> Vec<[[f64; 4]; 4]> {
         match &self.body {
-            JointBody::Grounded { placement, .. } => vec![*placement],
+            JointBody::Grounded { placement, .. } => vec![placement.rows()],
             JointBody::Pair { connectors, .. } => {
-                vec![connectors[0].placement, connectors[1].placement]
+                vec![
+                    connectors[0].placement.rows(),
+                    connectors[1].placement.rows(),
+                ]
             }
         }
     }
@@ -105,7 +109,7 @@ impl JointRecord {
         match &self.body {
             JointBody::Grounded { .. } => Vec::new(),
             JointBody::Pair { connectors, .. } => {
-                vec![connectors[0].offset, connectors[1].offset]
+                vec![connectors[0].offset.rows(), connectors[1].offset.rows()]
             }
         }
     }
@@ -185,7 +189,9 @@ impl TryFrom<JointRecordWire> for JointRecord {
             }
             JointBody::Grounded {
                 reference,
-                placement,
+                placement: placement
+                    .try_into()
+                    .map_err(|error| format!("placements: {error}"))?,
             }
         } else {
             let [first_placement, second_placement] = <[_; 2]>::try_from(wire.placements)
@@ -203,13 +209,21 @@ impl TryFrom<JointRecordWire> for JointRecord {
                 connectors: [
                     JointConnectorRecord {
                         reference: first_reference,
-                        placement: first_placement,
-                        offset: first_offset,
+                        placement: first_placement
+                            .try_into()
+                            .map_err(|error| format!("placements: {error}"))?,
+                        offset: first_offset
+                            .try_into()
+                            .map_err(|error| format!("offsets: {error}"))?,
                     },
                     JointConnectorRecord {
                         reference: second_reference,
-                        placement: second_placement,
-                        offset: second_offset,
+                        placement: second_placement
+                            .try_into()
+                            .map_err(|error| format!("placements: {error}"))?,
+                        offset: second_offset
+                            .try_into()
+                            .map_err(|error| format!("offsets: {error}"))?,
                     },
                 ],
             }
@@ -226,6 +240,43 @@ impl TryFrom<JointRecordWire> for JointRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wire_admission_rejects_nonfinite_connector_frames() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for kind in ["grounded", "Fixed"] {
+                for offset in [false, true] {
+                    if kind == "grounded" && offset {
+                        continue;
+                    }
+                    let mut wire = JointRecordWire {
+                        id: "joint".into(),
+                        object: "object".into(),
+                        kind: kind.into(),
+                        references: vec![],
+                        placements: vec![
+                            crate::product::identity();
+                            if kind == "grounded" { 1 } else { 2 }
+                        ],
+                        offsets: if kind == "grounded" {
+                            vec![]
+                        } else {
+                            vec![crate::product::identity(); 2]
+                        },
+                        parameters: BTreeMap::new(),
+                    };
+                    if offset {
+                        wire.offsets[0][0][3] = bad;
+                    } else {
+                        wire.placements[0][0][3] = bad;
+                    }
+                    assert!(JointRecord::try_from(wire)
+                        .unwrap_err()
+                        .contains(if offset { "offsets" } else { "placements" }));
+                }
+            }
+        }
+    }
 
     #[test]
     fn missing_first_reference_keeps_second_wire_position() {
@@ -252,8 +303,8 @@ mod tests {
         }
         let connector = JointConnectorRecord {
             reference: None,
-            placement: crate::product::identity(),
-            offset: crate::product::identity(),
+            placement: crate::product::identity().try_into().unwrap(),
+            offset: crate::product::identity().try_into().unwrap(),
         };
         let record = JointRecord {
             id: "joint".into(),

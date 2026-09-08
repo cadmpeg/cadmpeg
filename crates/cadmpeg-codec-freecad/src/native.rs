@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned FCStd-native records.
 
+pub(crate) mod frame;
 pub(crate) mod joint;
+
+use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::products::NonEmptyString;
@@ -45,6 +48,47 @@ fn encode_id_key(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut matrix = crate::product::identity();
+            matrix[0][3] = bad;
+            for offset in [false, true] {
+                let wire = super::AttachmentRecordWire {
+                    id: "attachment".into(),
+                    object: "object".into(),
+                    supports: vec![],
+                    map_mode: None,
+                    placement: (!offset).then_some(matrix),
+                    offset: offset.then_some(matrix),
+                    effective_frame: matrix,
+                };
+                let error = super::AttachmentRecord::try_from(wire).unwrap_err();
+                assert!(error.contains(if offset { "offset" } else { "placement" }));
+            }
+            for field in [
+                "element_transforms",
+                "element_scales",
+                "local_transform",
+                "scale",
+            ] {
+                let mut wire: super::ProductNodeRecordWire = serde_json::from_value(serde_json::json!({
+                    "id":"link", "object":"object", "kind":"occurrence", "members":[],
+                    "element_transforms":[], "element_scales":[], "linked_subelements":[], "element_visibility":[], "element_objects":[]
+                })).unwrap();
+                match field {
+                    "element_transforms" => wire.element_transforms.push(matrix),
+                    "element_scales" => wire.element_scales.push([bad, 1.0, 1.0]),
+                    "local_transform" => wire.local_transform = Some(matrix),
+                    _ => wire.scale = Some([bad, 1.0, 1.0]),
+                }
+                assert!(super::ProductNodeRecord::try_from(wire)
+                    .unwrap_err()
+                    .contains(field));
+            }
+        }
+    }
 
     #[test]
     fn file_version_preserves_spelling_and_rejects_invalid_wire() {
@@ -281,15 +325,51 @@ pub struct AttachmentRecord {
     /// Persisted attachment-map mode.
     pub map_mode: Option<String>,
     /// Persisted resolved object placement.
-    pub placement: Option<[[f64; 4]; 4]>,
+    placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
-    pub offset: Option<[[f64; 4]; 4]>,
+    offset: Option<FiniteFrame>,
 }
 
 impl AttachmentRecord {
+    pub(crate) fn try_new(
+        id: String,
+        object: String,
+        supports: Vec<LinkTarget>,
+        map_mode: Option<String>,
+        placement: Option<[[f64; 4]; 4]>,
+        offset: Option<[[f64; 4]; 4]>,
+    ) -> Result<Self, String> {
+        let record = Self {
+            id,
+            object,
+            supports,
+            map_mode,
+            placement: placement
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("placement: {error}"))?,
+            offset: offset
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("offset: {error}"))?,
+        };
+        FiniteFrame::try_from(record.effective_frame())
+            .map_err(|error| format!("effective_frame: {error}"))?;
+        Ok(record)
+    }
+    pub(crate) fn placement(&self) -> Option<FiniteFrame> {
+        self.placement
+    }
+    pub(crate) fn offset(&self) -> Option<FiniteFrame> {
+        self.offset
+    }
+
     /// Effective frame used for neutral geometry.
     pub fn effective_frame(&self) -> [[f64; 4]; 4] {
-        crate::attachment::effective_frame(self.placement, self.offset)
+        crate::attachment::effective_frame(
+            self.placement().map(FiniteFrame::rows),
+            self.offset().map(FiniteFrame::rows),
+        )
     }
 }
 
@@ -312,8 +392,8 @@ impl From<AttachmentRecord> for AttachmentRecordWire {
             object: value.object,
             supports: value.supports,
             map_mode: value.map_mode,
-            placement: value.placement,
-            offset: value.offset,
+            placement: value.placement.map(FiniteFrame::rows),
+            offset: value.offset.map(FiniteFrame::rows),
             effective_frame,
         }
     }
@@ -323,14 +403,14 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     type Error = String;
 
     fn try_from(wire: AttachmentRecordWire) -> Result<Self, Self::Error> {
-        let record = Self {
-            id: wire.id,
-            object: wire.object,
-            supports: wire.supports,
-            map_mode: wire.map_mode,
-            placement: wire.placement,
-            offset: wire.offset,
-        };
+        let record = Self::try_new(
+            wire.id,
+            wire.object,
+            wire.supports,
+            wire.map_mode,
+            wire.placement,
+            wire.offset,
+        )?;
         if wire.effective_frame != record.effective_frame() {
             return Err(
                 "attachment effective_frame disagrees with placement and offset".to_owned(),
@@ -707,7 +787,7 @@ pub struct ContainerNode {
     /// Ordered contained application objects.
     pub members: Vec<String>,
     /// Local placement as a row-major affine matrix.
-    pub local_transform: Option<[[f64; 4]; 4]>,
+    pub local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
     pub placement_property: Option<String>,
 }
@@ -722,7 +802,7 @@ pub struct LinkOccurrence {
     /// External document token when the prototype is not local.
     pub external_document: Option<ExternalDocument>,
     /// Local occurrence placement as a row-major affine matrix.
-    pub local_transform: Option<[[f64; 4]; 4]>,
+    pub local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
     pub placement_property: Option<String>,
     /// Admitted link-array values.
@@ -736,7 +816,7 @@ pub struct LinkOccurrence {
     /// Copy-on-change policy and its payload.
     pub copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
-    pub scale: Option<[f64; 3]>,
+    pub scale: Option<FiniteVec3>,
 }
 
 /// Independently optional array carriers with a common element count.
@@ -755,6 +835,13 @@ impl LinkArray {
         scales: Vec<[f64; 3]>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
+        for transform in &transforms {
+            FiniteFrame::try_from(*transform)
+                .map_err(|error| format!("element_transforms: {error}"))?;
+        }
+        for scale in &scales {
+            FiniteVec3::try_from(*scale).map_err(|error| format!("element_scales: {error}"))?;
+        }
         let lengths = [
             transforms.len() as u64,
             scales.len() as u64,
@@ -839,8 +926,8 @@ impl ProductNodeRecord {
             | ProductNode::Part(node)
             | ProductNode::LinkGroup {
                 container: node, ..
-            } => node.local_transform,
-            ProductNode::Occurrence(node) => node.local_transform,
+            } => node.local_transform.map(FiniteFrame::rows),
+            ProductNode::Occurrence(node) => node.local_transform.map(FiniteFrame::rows),
         }
     }
 
@@ -938,7 +1025,9 @@ impl ProductNodeRecord {
 
     /// Base scale vector applied to every occurrence element.
     pub fn scale(&self) -> Option<[f64; 3]> {
-        self.occurrence().and_then(|node| node.scale)
+        self.occurrence()
+            .and_then(|node| node.scale)
+            .map(FiniteVec3::values)
     }
 
     /// Explicit per-element application objects in array order.
@@ -1050,7 +1139,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
             "group" | "part" | "link_group" => {
                 let container = ContainerNode {
                     members: wire.members,
-                    local_transform: wire.local_transform,
+                    local_transform: wire
+                        .local_transform
+                        .map(FiniteFrame::try_from)
+                        .transpose()
+                        .map_err(|error| format!("local_transform: {error}"))?,
                     placement_property: wire.placement_property,
                 };
                 match wire.kind.as_str() {
@@ -1069,7 +1162,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     wire.external_document,
                     wire.external_document_attribute.as_deref(),
                 )?,
-                local_transform: wire.local_transform,
+                local_transform: wire
+                    .local_transform
+                    .map(FiniteFrame::try_from)
+                    .transpose()
+                    .map_err(|error| format!("local_transform: {error}"))?,
                 placement_property: wire.placement_property,
                 array: LinkArray::try_new(
                     wire.element_count,
@@ -1086,7 +1183,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     wire.copy_on_change_group,
                     wire.copy_on_change_touched,
                 )?,
-                scale: wire.scale,
+                scale: wire
+                    .scale
+                    .map(FiniteVec3::try_from)
+                    .transpose()
+                    .map_err(|error| format!("scale: {error}"))?,
             }),
             _ => return Err("unknown product node kind".to_owned()),
         };
