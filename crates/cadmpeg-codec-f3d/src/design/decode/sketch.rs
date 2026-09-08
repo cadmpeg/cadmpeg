@@ -1297,42 +1297,22 @@ pub(crate) fn decode_pattern_definition(
                 evaluated_count,
             });
         }
-        RelationClassMembers::Rectangular { clause_ordinal, .. } => {
+        RelationClassMembers::Rectangular { clauses, .. } => {
             if parsed.state != 0x2000_0000 {
                 return None;
             }
-            // Each direction clause writes its evaluated count directly before its
-            // count-parameter reference, so the count is five bytes before that
-            // reference's target. The clauses follow the class members that precede
-            // them. The rectangular class parser records their exact position only
-            // when all four parameter references are present.
-            let clause_ordinal = (*clause_ordinal)?;
-            if parsed.auxiliary_references.len() < clause_ordinal + 4 {
-                return None;
-            }
+            let [first_count, first_distance, second_count, second_distance] = (*clauses)?;
             let mut directions = Vec::with_capacity(2);
-            let clauses = [
-                (
-                    parsed.auxiliary_references[clause_ordinal]
-                        .offset
-                        .checked_sub(5)?,
-                    clause_ordinal,
-                    clause_ordinal + 1,
-                ),
-                (
-                    parsed.auxiliary_references[clause_ordinal + 2]
-                        .offset
-                        .checked_sub(5)?,
-                    clause_ordinal + 2,
-                    clause_ordinal + 3,
-                ),
-            ];
-            for (count_at, count_ordinal, distance_ordinal) in clauses {
+            for (count, distance) in [
+                (first_count, first_distance),
+                (second_count, second_distance),
+            ] {
+                let count_at = count.offset.checked_sub(5)?;
                 let evaluated_count = View::u32_le_at(payload, count_at)?;
                 if !(1..=100_000).contains(&evaluated_count) {
                     return None;
                 }
-                let direction_at = reference_end(count_ordinal)? + 6;
+                let direction_at = count.offset + 4 + 6;
                 let direction = [
                     f64_at(direction_at)?,
                     f64_at(direction_at + 8)?,
@@ -1344,10 +1324,10 @@ pub(crate) fn decode_pattern_definition(
                 }
                 directions.push(SketchPatternDirection {
                     evaluated_count,
-                    count_parameter: parsed.auxiliary_references[count_ordinal].value,
+                    count_parameter: count.value,
                     direction,
                     evaluated_distance: f64_at(direction_at + 24)?,
-                    distance_parameter: parsed.auxiliary_references[distance_ordinal].value,
+                    distance_parameter: distance.value,
                 });
             }
             return Some(SketchPatternDefinition::Rectangular {
@@ -3628,17 +3608,18 @@ fn take_auxiliary_relation_reference(
     payload: &[u8],
     cursor: &mut usize,
     auxiliary_references: &mut Vec<crate::records::Located<u32, usize>>,
-) -> Option<bool> {
+) -> Option<Option<crate::records::Located<u32, usize>>> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
     let Some(target) = reference.target() else {
-        return Some(false);
+        return Some(None);
     };
-    auxiliary_references.push(crate::records::Located {
+    let located = crate::records::Located {
         value: u32::try_from(target).ok()?,
         offset: at + 1,
-    });
-    Some(true)
+    };
+    auxiliary_references.push(located);
+    Some(Some(located))
 }
 
 /// Skip the two tables both pattern classes write after their own leading
@@ -3672,7 +3653,7 @@ enum RelationClassMembers {
     CircularPattern,
     Rectangular {
         reference_count: u32,
-        clause_ordinal: Option<usize>,
+        clauses: Option<[crate::records::Located<u32, usize>; 4]>,
     },
     TextFrame,
     TextPath {
@@ -3739,22 +3720,23 @@ fn parse_relation_class_members(
                 take!()?;
             }
             skip_pattern_tables(payload, cursor)?;
-            let clause_ordinal = auxiliary_references.len();
-            let mut complete = true;
-            for _ in 0..2 {
-                // The evaluated instance count precedes the count-parameter
-                // reference; the unit direction and source distance follow it,
-                // and the distance parameter closes the clause.
+            let mut clauses = [None; 4];
+            for pair in clauses.chunks_exact_mut(2) {
                 *cursor += 4;
-                complete &= take!()?;
+                pair[0] = take!()?;
                 *cursor += 32;
-                complete &= take!()?;
+                pair[1] = take!()?;
             }
+            let clauses = match clauses {
+                [Some(a), Some(b), Some(c), Some(d)] => Some([a, b, c, d]),
+                _ => None,
+            };
             RelationClassMembers::Rectangular {
                 reference_count,
-                clause_ordinal: complete.then_some(clause_ordinal),
+                clauses,
             }
         }
+
         SketchRelationClass::TextPath { leading_flag } => {
             if leading_flag {
                 if payload.get(*cursor)? != &1 {
