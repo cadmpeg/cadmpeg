@@ -4,6 +4,8 @@ use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
+mod native_admission;
+
 use super::*;
 use crate::loss::InventorLossCode;
 use crate::test_support::{
