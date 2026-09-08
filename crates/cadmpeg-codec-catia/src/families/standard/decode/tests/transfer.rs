@@ -572,8 +572,8 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let pcurve = context.sides[0].pcurve.as_ref().expect("cylinder pcurve");
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides()[0].pcurve.as_ref().expect("cylinder pcurve");
     let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
     let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
@@ -624,8 +624,8 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let pcurve = context.sides[0].pcurve.as_ref().expect("cone pcurve");
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides()[0].pcurve.as_ref().expect("cone pcurve");
     let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
     let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
@@ -659,11 +659,11 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
         else {
             panic!("two resolved support sides form an intersection");
         };
-        let surface_id = context.sides[1]
+        let surface_id = context.sides()[1]
             .surface
             .as_ref()
             .expect("resolved NURBS support");
-        let pcurve = context.sides[1].pcurve.as_ref().expect("NURBS pcurve");
+        let pcurve = context.sides()[1].pcurve.as_ref().expect("NURBS pcurve");
         let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
         let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
         assert_eq!([start.u, start.v], [0.0, 0.0]);

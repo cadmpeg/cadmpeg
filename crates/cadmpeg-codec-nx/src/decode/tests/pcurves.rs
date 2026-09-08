@@ -1515,8 +1515,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let procedural = ProceduralCurve::try_new(
         ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
+            context: IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
@@ -1526,9 +1526,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                         pcurve: None,
                     },
                 ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
+                [0.0, 1.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
         Some(2.0),

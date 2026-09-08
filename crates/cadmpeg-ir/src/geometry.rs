@@ -8524,17 +8524,120 @@ pub struct LawCurveVersionForm {
     pub parameter_range: [Option<f64>; 2],
 }
 
-/// Shared support surfaces, UV curves, interval, and discontinuity arrays of a
-/// native intcurve subtype.
+/// Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "IntcurveSupportContextWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct IntcurveSupportContext {
-    /// Two ordered `(surface, pcurve)` support sides.
-    pub sides: [IntcurveSupportSide; 2],
-    /// Native parameter interval for the solved curve.
-    pub parameter_range: [f64; 2],
-    /// Three ordered native discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
+    sides: [IntcurveSupportSide; 2],
+    parameter_range: [f64; 2],
+    discontinuities: [Vec<f64>; 3],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct IntcurveSupportContextWire {
+    sides: [IntcurveSupportSide; 2],
+    parameter_range: [f64; 2],
+    discontinuities: [Vec<f64>; 3],
+}
+
+impl TryFrom<IntcurveSupportContextWire> for IntcurveSupportContext {
+    type Error = &'static str;
+
+    fn try_from(wire: IntcurveSupportContextWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.sides, wire.parameter_range, wire.discontinuities)
+    }
+}
+
+impl IntcurveSupportContext {
+    /// Construct a support context with a finite ordered interval and finite discontinuities.
+    pub fn try_new(
+        sides: [IntcurveSupportSide; 2],
+        parameter_range: [f64; 2],
+        discontinuities: [Vec<f64>; 3],
+    ) -> Result<Self, &'static str> {
+        if !parameter_range.iter().all(|value| value.is_finite())
+            || parameter_range[0] > parameter_range[1]
+        {
+            return Err("support context parameter_range must be finite and ordered");
+        }
+        if parameter_range[0] == parameter_range[1]
+            && sides.iter().any(|side| {
+                side.pcurve
+                    .as_ref()
+                    .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+            })
+        {
+            return Err(
+                "support context parameter_range must be nonzero for an explicit pcurve mapping",
+            );
+        }
+        if !discontinuities
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err("support context discontinuities must be finite");
+        }
+        Ok(Self {
+            sides,
+            parameter_range,
+            discontinuities,
+        })
+    }
+
+    /// Edit the context transactionally and retain its previous value on rejection.
+    pub fn edit<R>(
+        &mut self,
+        edit: impl FnOnce(&mut [IntcurveSupportSide; 2], &mut [f64; 2], &mut [Vec<f64>; 3]) -> R,
+    ) -> Result<R, &'static str> {
+        let mut candidate = self.clone();
+        let result = edit(
+            &mut candidate.sides,
+            &mut candidate.parameter_range,
+            &mut candidate.discontinuities,
+        );
+        *self = Self::try_new(
+            candidate.sides,
+            candidate.parameter_range,
+            candidate.discontinuities,
+        )?;
+        Ok(result)
+    }
+
+    /// Set a support surface without changing its pcurve mapping.
+    pub fn set_surface(&mut self, side: usize, surface: Option<SurfaceId>) {
+        self.sides[side].surface = surface;
+    }
+
+    /// Set a support pcurve with the solved-curve parameterization.
+    pub fn set_unmapped_pcurve(&mut self, side: usize, geometry: Option<PcurveGeometry>) {
+        self.sides[side].pcurve = geometry.map(SupportPcurve::from);
+    }
+
+    /// Copy a pcurve mapping between support sides of this context.
+    pub fn copy_pcurve(&mut self, source: usize, target: usize) {
+        self.sides[target].pcurve = self.sides[source].pcurve.clone();
+    }
+
+    /// Return the ordered support sides.
+    #[must_use]
+    pub const fn sides(&self) -> &[IntcurveSupportSide; 2] {
+        &self.sides
+    }
+
+    /// Return the solved-curve interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> [f64; 2] {
+        self.parameter_range
+    }
+
+    /// Return the ordered discontinuity arrays.
+    #[must_use]
+    pub const fn discontinuities(&self) -> &[Vec<f64>; 3] {
+        &self.discontinuities
+    }
 }
 
 /// Complete neutral parameterization of one topology-bounded intersection.
@@ -8621,10 +8724,11 @@ pub enum SpringLayout {
 
 impl SpringLayout {
     /// Return the support context, deriving it for the context-first layout.
-    #[must_use]
-    pub fn support_context(&self) -> std::borrow::Cow<'_, IntcurveSupportContext> {
+    pub fn support_context(
+        &self,
+    ) -> Result<std::borrow::Cow<'_, IntcurveSupportContext>, &'static str> {
         match self {
-            Self::CacheFirst { context, .. } => std::borrow::Cow::Borrowed(context),
+            Self::CacheFirst { context, .. } => Ok(std::borrow::Cow::Borrowed(context)),
             Self::ContextFirst {
                 supports,
                 first_pcurve,
@@ -8632,8 +8736,8 @@ impl SpringLayout {
                 parameter_range,
                 discontinuities,
                 ..
-            } => std::borrow::Cow::Owned(IntcurveSupportContext {
-                sides: [
+            } => Ok(std::borrow::Cow::Owned(IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: match &supports[0] {
                             SpringSupport::Surface(surface) => Some(surface.clone()),
@@ -8656,9 +8760,9 @@ impl SpringLayout {
                             .map(|pcurve| SupportPcurve::new(pcurve, None)),
                     },
                 ],
-                parameter_range: *parameter_range,
-                discontinuities: discontinuities.clone(),
-            }),
+                *parameter_range,
+                discontinuities.clone(),
+            )?)),
         }
     }
 
@@ -8704,7 +8808,10 @@ mod spring_layout_wire {
                 discontinuity_flag,
                 ..
             } => SpringLayoutWire {
-                context: value.support_context().into_owned(),
+                context: value
+                    .support_context()
+                    .map_err(serde::ser::Error::custom)?
+                    .into_owned(),
                 surface_parameter_ranges: std::array::from_fn(|side| match &supports[side] {
                     SpringSupport::Surface(_) => None,
                     SpringSupport::Ranges(ranges) => Some(*ranges),

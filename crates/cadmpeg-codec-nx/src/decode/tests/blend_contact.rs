@@ -995,8 +995,8 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         ProceduralCurve::new(
             spine_procedural,
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(support_offset),
                             pcurve: Some(contact_pcurve.clone().into()),
@@ -1006,9 +1006,10 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                             pcurve: Some(contact_pcurve.into()),
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
         ),
@@ -1239,8 +1240,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         ProceduralCurveId::mint("test:model:entity#synthetic:spine-construction")
             .expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
+            context: IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: Some(first_spine_side),
                         pcurve: Some(
@@ -1268,9 +1269,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                         ),
                     },
                 ],
-                parameter_range: [0.0, 10.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
+                [0.0, 10.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
         Some(0.75),
@@ -1383,16 +1385,20 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
-            context.sides[0].pcurve = Some(
-                PcurveGeometry::Offset(
-                    cadmpeg_ir::geometry::OffsetPcurve::try_new(
-                        0.1,
-                        Box::new(context.sides[0].pcurve.take().unwrap().geometry),
-                    )
-                    .unwrap(),
-                )
-                .into(),
-            );
+            context
+                .edit(|context_sides, _, _| {
+                    (*context_sides)[0].pcurve = Some(
+                        PcurveGeometry::Offset(
+                            cadmpeg_ir::geometry::OffsetPcurve::try_new(
+                                0.1,
+                                Box::new((*context_sides)[0].pcurve.take().unwrap().geometry),
+                            )
+                            .unwrap(),
+                        )
+                        .into(),
+                    );
+                })
+                .unwrap()
         });
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
@@ -1472,8 +1478,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")
                 .expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(first.clone()),
                             pcurve: Some(
@@ -1492,9 +1498,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
         ),
@@ -1516,7 +1523,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { nurbs } = &context.sides[1].pcurve.as_ref().unwrap().geometry
+    let PcurveGeometry::Nurbs { nurbs } = &context.sides()[1].pcurve.as_ref().unwrap().geometry
     else {
         unreachable!()
     };

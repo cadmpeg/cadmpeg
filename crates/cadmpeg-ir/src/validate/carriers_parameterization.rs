@@ -620,7 +620,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -639,7 +639,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 );
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -649,14 +649,14 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
-                for side in context.sides.iter().chain(std::iter::once(third)) {
+                for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
-                for side in &family.context().sides {
+                for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -668,7 +668,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ..
             } => {
                 surfaces.insert(cast_surface.as_str());
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -676,7 +676,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
                 curves.insert(base.as_str());
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -691,7 +691,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
                 crate::geometry::SpringLayout::CacheFirst { context, .. } => {
-                    for side in &context.sides {
+                    for side in context.sides() {
                         if let Some(surface) = &side.surface {
                             surfaces.insert(surface.as_str());
                         }
@@ -704,7 +704,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
                     curves.insert(curve.as_str());
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -714,7 +714,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 context, source, ..
             } => {
                 curves.insert(source.as_str());
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -747,7 +747,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.insert(source.as_str());
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }

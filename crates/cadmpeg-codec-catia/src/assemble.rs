@@ -129,7 +129,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
             let resolved = match procedural.definition() {
                 ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => true,
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    context.sides.iter().all(|side| {
+                    context.sides().iter().all(|side| {
                         side.surface
                             .as_ref()
                             .is_some_and(|surface| resolved_surfaces.contains(surface))
@@ -138,7 +138,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 ProceduralCurveDefinition::SurfaceCurve { family } => {
                     let (has_side, all_resolved) = family
                         .context()
-                        .sides
+                        .sides()
                         .iter()
                         .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
                         .fold((false, true), |(_, all_resolved), (surface, _)| {

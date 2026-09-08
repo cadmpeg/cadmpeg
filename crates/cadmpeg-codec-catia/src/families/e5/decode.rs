@@ -1082,7 +1082,7 @@ pub(crate) fn transfer_e5_topology(
             )
         })
         .collect();
-    emit_e5_curves_and_edges(
+    if emit_e5_curves_and_edges(
         ir,
         annotations,
         topology,
@@ -1091,7 +1091,11 @@ pub(crate) fn transfer_e5_topology(
         &edge_curve_plan,
         &intersection_plan,
         &surface_curve_plan,
-    );
+    )
+    .is_none()
+    {
+        return false;
+    };
     emit_e5_pcurves(ir, annotations, &pcurve_plan);
     emit_e5_bodies(ir, annotations, &bodies);
     if !emit_e5_faces_loops_coedges(
@@ -1369,17 +1373,18 @@ fn plan_e5_boundary(
         edge_curve_plan.insert(edge_ref, (left.curve.clone(), left.curve_range));
         intersection_plan.insert(
             edge_ref,
-            IntcurveSupportContext {
-                sides: [left, right].map(|side| IntcurveSupportSide {
+            IntcurveSupportContext::try_new(
+                [left, right].map(|side| IntcurveSupportSide {
                     surface: Some(side.surface.clone()),
                     pcurve: Some(SupportPcurve::new(
                         side.pcurve.clone(),
                         DirectedParameterRange::new(side.pcurve_range).ok(),
                     )),
                 }),
-                parameter_range: left.curve_range,
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
+                left.curve_range,
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .ok()?,
         );
     }
     for (&edge_ref, sides) in &occurrence_intersection_sides {
@@ -1439,11 +1444,12 @@ fn prune_e5_unused_surfaces(
         .iter()
         .filter_map(|face| surface_for_ref.get(&face.surface))
         .map(|(id, _)| id.clone())
-        .chain(
-            intersection_plan
-                .values()
-                .flat_map(|context| context.sides.iter().filter_map(|side| side.surface.clone())),
-        )
+        .chain(intersection_plan.values().flat_map(|context| {
+            context
+                .sides()
+                .iter()
+                .filter_map(|side| side.surface.clone())
+        }))
         .chain(
             surface_curve_plan
                 .values()
@@ -1507,7 +1513,7 @@ fn emit_e5_curves_and_edges(
     edge_curve_plan: &BTreeMap<u32, (CurveGeometry, [f64; 2])>,
     intersection_plan: &BTreeMap<u32, IntcurveSupportContext>,
     surface_curve_plan: &BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
-) {
+) -> Option<()> {
     let edge_curve_ids: HashMap<u32, CurveId> = edge_curve_plan
         .keys()
         .map(|&record_id| {
@@ -1580,8 +1586,8 @@ fn emit_e5_curves_and_edges(
                 id,
                 ProceduralCurveDefinition::SurfaceCurve {
                     family: SurfaceCurveFamily::Parametric {
-                        context: IntcurveSupportContext {
-                            sides: [
+                        context: IntcurveSupportContext::try_new(
+                            [
                                 IntcurveSupportSide {
                                     surface: Some(surface.clone()),
                                     pcurve: Some(SupportPcurve::new(pcurve.clone(), None)),
@@ -1591,9 +1597,10 @@ fn emit_e5_curves_and_edges(
                                     pcurve: None,
                                 },
                             ],
-                            parameter_range: *range,
-                            discontinuities: std::array::from_fn(|_| Vec::new()),
-                        },
+                            *range,
+                            std::array::from_fn(|_| Vec::new()),
+                        )
+                        .ok()?,
                         tail: None,
                     },
                 },
@@ -1627,6 +1634,7 @@ fn emit_e5_curves_and_edges(
             tolerance: None,
         });
     }
+    Some(())
 }
 
 /// Emits the surface pcurve layer.
@@ -2386,14 +2394,17 @@ pub(crate) fn e5_occurrence_intersection_context(
     if (left.2[0] - right.2[0]).abs() > tolerance || (left.2[1] - right.2[1]).abs() > tolerance {
         return None;
     }
-    Some(IntcurveSupportContext {
-        sides: [left, right].map(|side| IntcurveSupportSide {
-            surface: Some(side.0.clone()),
-            pcurve: Some(SupportPcurve::new(side.1.clone(), None)),
-        }),
-        parameter_range: left.2,
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    })
+    Some(
+        IntcurveSupportContext::try_new(
+            [left, right].map(|side| IntcurveSupportSide {
+                surface: Some(side.0.clone()),
+                pcurve: Some(SupportPcurve::new(side.1.clone(), None)),
+            }),
+            left.2,
+            std::array::from_fn(|_| Vec::new()),
+        )
+        .ok()?,
+    )
 }
 
 fn e5_support_occurrence_intersection_context(
@@ -2414,17 +2425,20 @@ fn e5_support_occurrence_intersection_context(
     {
         return None;
     }
-    Some(IntcurveSupportContext {
-        sides: [left, right].map(|side| IntcurveSupportSide {
-            surface: Some(side.surface.clone()),
-            pcurve: Some(SupportPcurve::new(
-                side.pcurve.clone(),
-                DirectedParameterRange::new(side.pcurve_range).ok(),
-            )),
-        }),
-        parameter_range: solved_range,
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    })
+    Some(
+        IntcurveSupportContext::try_new(
+            [left, right].map(|side| IntcurveSupportSide {
+                surface: Some(side.surface.clone()),
+                pcurve: Some(SupportPcurve::new(
+                    side.pcurve.clone(),
+                    DirectedParameterRange::new(side.pcurve_range).ok(),
+                )),
+            }),
+            solved_range,
+            std::array::from_fn(|_| Vec::new()),
+        )
+        .ok()?,
+    )
 }
 
 fn e5_occurrence_intersection_cache(
@@ -4579,9 +4593,9 @@ mod route_tests {
             ),
         ];
         let context = e5_occurrence_intersection_context(&sides).expect("intersection context");
-        assert_eq!(context.parameter_range, [-2.0, 3.0]);
+        assert_eq!(context.parameter_range(), [-2.0, 3.0]);
         assert_eq!(
-            context.sides[0]
+            context.sides()[0]
                 .surface
                 .as_ref()
                 .expect("left surface")
@@ -4589,7 +4603,7 @@ mod route_tests {
             "catia:test:surface#left"
         );
         assert_eq!(
-            context.sides[1]
+            context.sides()[1]
                 .surface
                 .as_ref()
                 .expect("right surface")
@@ -4645,27 +4659,27 @@ mod route_tests {
         let context =
             e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
                 .expect("support intersection context");
-        assert_eq!(context.parameter_range, [10.0, 20.0]);
+        assert_eq!(context.parameter_range(), [10.0, 20.0]);
         assert_eq!(
-            context.sides[0]
+            context.sides()[0]
                 .pcurve_parameter_range()
                 .expect("left local range"),
             [100.0, 200.0]
         );
         assert_eq!(
-            context.sides[1]
+            context.sides()[1]
                 .pcurve_parameter_range()
                 .expect("right local range"),
             [-5.0, 5.0]
         );
         assert_eq!(
-            context.sides[0]
+            context.sides()[0]
                 .pcurve_parameter([10.0, 20.0], 15.0)
                 .expect("left mapped parameter"),
             150.0
         );
         assert_eq!(
-            context.sides[1]
+            context.sides()[1]
                 .pcurve_parameter([10.0, 20.0], 15.0)
                 .expect("right mapped parameter"),
             0.0

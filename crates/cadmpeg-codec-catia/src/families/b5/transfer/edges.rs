@@ -136,11 +136,12 @@ pub(super) fn b5_edge_support_definition(
             mapped_range,
         ));
     }
-    let context = IntcurveSupportContext {
+    let context = IntcurveSupportContext::try_new(
         sides,
         parameter_range,
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    };
+        std::array::from_fn(|_| Vec::new()),
+    )
+    .ok()?;
     if supports.len() == 2 && supports[0].0 != supports[1].0 {
         Some((
             "intersection",

@@ -470,7 +470,7 @@ pub(super) fn emit_surfaces(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &mut TransferPlan,
-) -> HashMap<u32, SurfaceId> {
+) -> Option<HashMap<u32, SurfaceId>> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let surface_ids = surface_plan
         .keys()
@@ -530,7 +530,7 @@ pub(super) fn emit_surfaces(
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
-                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
+                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion)?;
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = CurveId::mint(format!("catia:b5:profile#{object_id}"))
@@ -642,7 +642,7 @@ pub(super) fn emit_surfaces(
             ),
         );
     }
-    surface_ids
+    Some(surface_ids)
 }
 
 fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
@@ -661,7 +661,7 @@ fn emit_extrusion_procedure(
     surface_id: SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
-) {
+) -> Option<()> {
     let directrix_id = CurveId::mint(format!(
         "catia:b5:extrusion-directrix#{}",
         extrusion.directrix_object_id
@@ -708,11 +708,12 @@ fn emit_extrusion_procedure(
             if let Ok(procedure) = ProceduralCurve::try_new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
+                    context: IntcurveSupportContext::try_new(
                         sides,
-                        parameter_range: extrusion.directrix_parameter_range,
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
-                    },
+                        extrusion.directrix_parameter_range,
+                        std::array::from_fn(|_| Vec::new()),
+                    )
+                    .ok()?,
                     discontinuity_flag: false,
                 },
                 Some(cache_fit_tolerance),
@@ -826,6 +827,7 @@ fn emit_extrusion_procedure(
             Some(parameter_record_bounds(extrusion.parameter_bounds)),
         ),
     );
+    Some(())
 }
 
 #[cfg(test)]
@@ -917,7 +919,8 @@ mod tests {
             surface_id,
             30,
             extrusion,
-        );
+        )
+        .unwrap();
 
         assert!(matches!(
             &ir.model.curves[0].geometry,
@@ -930,12 +933,12 @@ mod tests {
         else {
             panic!("expected intersection directrix");
         };
-        assert_eq!(context.parameter_range, [0.0, 1.0]);
-        assert_eq!(context.sides[0].surface, Some(support_ids[&10].clone()));
-        assert_eq!(context.sides[0].pcurve_parameter_range(), None);
-        assert_eq!(context.sides[1].surface, Some(support_ids[&20].clone()));
+        assert_eq!(context.parameter_range(), [0.0, 1.0]);
+        assert_eq!(context.sides()[0].surface, Some(support_ids[&10].clone()));
+        assert_eq!(context.sides()[0].pcurve_parameter_range(), None);
+        assert_eq!(context.sides()[1].surface, Some(support_ids[&20].clone()));
         assert_eq!(
-            context.sides[1].pcurve_parameter_range(),
+            context.sides()[1].pcurve_parameter_range(),
             Some([0.25, 0.75])
         );
         assert_eq!(

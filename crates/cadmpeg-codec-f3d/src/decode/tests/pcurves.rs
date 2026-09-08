@@ -47,7 +47,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         panic!("expected surface-offset construction")
     };
     assert_eq!(*base_u_range, [-1.0, 2.0]);
-    assert_eq!(context.parameter_range, [0.0, 1.0]);
+    assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert!(*discontinuity_flag);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
     assert_eq!(*base_range, [-0.5, 1.5]);
@@ -75,12 +75,16 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        context.parameter_range = [-1.5, 2.5];
-        *discontinuity_flag = false;
-        *base_u_range = [-2.0, 5.0];
-        *base_v_range = [-6.0, 7.0];
-        *base_range = [-0.75, 1.75];
-        (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.5, 2.5];
+                *discontinuity_flag = false;
+                *base_u_range = [-2.0, 5.0];
+                *base_v_range = [-6.0, 7.0];
+                *base_range = [-0.75, 1.75];
+                (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+            })
+            .unwrap()
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -100,7 +104,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
             shift: -0.25,
             scale: 0.8,
             ..
-        } if context.parameter_range == [-1.5, 2.5]
+        } if context.parameter_range() == [-1.5, 2.5]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -153,7 +157,8 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     assert_eq!(*direction, -3);
     assert!(layout
         .support_context()
-        .sides
+        .unwrap()
+        .sides()
         .iter()
         .all(|side| side.surface.is_some() && side.pcurve.is_some()));
 
@@ -304,7 +309,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             panic!("expected resolved deformable source")
         };
         assert_eq!(cache_first.revision, 23100);
-        assert_eq!(context.parameter_range, [-1.0, 2.0]);
+        assert_eq!(context.parameter_range(), [-1.0, 2.0]);
         assert_eq!(*source_parameter_range, [Some(0.0), Some(1.0)]);
         assert!(result
             .ir()

@@ -4658,8 +4658,8 @@ pub(crate) fn native_procedural_curve(
                         CodecError::Malformed("deformable source curve is missing".into())
                     })?;
                 let source_range = [
-                    source_parameter_range[0].unwrap_or(context.parameter_range[0]),
-                    source_parameter_range[1].unwrap_or(context.parameter_range[1]),
+                    source_parameter_range[0].unwrap_or(context.parameter_range()[0]),
+                    source_parameter_range[1].unwrap_or(context.parameter_range()[1]),
                 ];
                 let source_curve = native_interval_curve(&source.geometry, source_range)?;
                 native_nurbs_curve(bytes, &source_curve)?;
@@ -4760,7 +4760,7 @@ pub(crate) fn native_procedural_curve(
             .iter()
             .find(|curve| curve.id == *source)
             .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
-        let source = native_interval_curve(&source.geometry, context.parameter_range)?;
+        let source = native_interval_curve(&source.geometry, context.parameter_range())?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "proj_int_cur")?;
@@ -5672,7 +5672,7 @@ fn native_intcurve_support_context(
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
 ) -> Result<(), CodecError> {
     if context
-        .sides
+        .sides()
         .iter()
         .any(|side| side.pcurve_parameter_range().is_some())
     {
@@ -5681,7 +5681,7 @@ fn native_intcurve_support_context(
                 .into(),
         ));
     }
-    for side in &context.sides {
+    for side in context.sides() {
         if let Some(surface_id) = &side.surface {
             let surface = target
                 .model
@@ -5698,7 +5698,7 @@ fn native_intcurve_support_context(
             native_ident(bytes, "null_surface")?;
         }
     }
-    for side in &context.sides {
+    for side in context.sides() {
         if let Some(pcurve) = &side.pcurve {
             let native = if let Some(surface_id) = &side.surface {
                 let surface = target
@@ -5720,10 +5720,10 @@ fn native_intcurve_support_context(
             native_ident(bytes, "nullbs")?;
         }
     }
-    for value in context.parameter_range {
+    for value in context.parameter_range() {
         native_f64(bytes, value);
     }
-    for discontinuities in &context.discontinuities {
+    for discontinuities in context.discontinuities() {
         native_i64(
             bytes,
             i64::try_from(discontinuities.len()).map_err(|_| {
@@ -5747,7 +5747,7 @@ fn native_law_version_context(
     parameter_range: &[Option<f64>; 2],
 ) -> Result<(), CodecError> {
     if context
-        .sides
+        .sides()
         .iter()
         .any(|side| side.pcurve_parameter_range().is_some())
     {
@@ -5756,7 +5756,7 @@ fn native_law_version_context(
                 .into(),
         ));
     }
-    for side in &context.sides {
+    for side in context.sides() {
         if let Some(surface_id) = &side.surface {
             let surface = target
                 .model
@@ -5773,7 +5773,7 @@ fn native_law_version_context(
             native_ident(bytes, "null_surface")?;
         }
     }
-    for side in &context.sides {
+    for side in context.sides() {
         if let Some(pcurve) = &side.pcurve {
             let native = if let Some(surface_id) = &side.surface {
                 let surface = target
@@ -5798,7 +5798,7 @@ fn native_law_version_context(
     for bound in parameter_range {
         native_optional_f64(bytes, *bound);
     }
-    for discontinuities in &context.discontinuities {
+    for discontinuities in context.discontinuities() {
         native_i64(
             bytes,
             i64::try_from(discontinuities.len()).map_err(|_| {
@@ -6131,7 +6131,7 @@ fn native_cache_first_curve_context(
             native_enum(bytes, parameterization.closed_form);
         }
     }
-    for (side, bounds) in context.sides.iter().zip(&form.support_bounds) {
+    for (side, bounds) in context.sides().iter().zip(&form.support_bounds) {
         if let Some(surface_id) = &side.surface {
             let surface = target
                 .model
@@ -6165,7 +6165,7 @@ fn native_cache_first_curve_context(
             }
         }
     }
-    for side in &context.sides {
+    for side in context.sides() {
         if let Some(pcurve) = &side.pcurve {
             let native = if let Some(surface_id) = &side.surface {
                 let surface = target
@@ -6190,7 +6190,7 @@ fn native_cache_first_curve_context(
     for value in form.solved_range {
         native_optional_f64(bytes, value);
     }
-    for discontinuities in &context.discontinuities {
+    for discontinuities in context.discontinuities() {
         native_i64(
             bytes,
             i64::try_from(discontinuities.len()).map_err(|_| {

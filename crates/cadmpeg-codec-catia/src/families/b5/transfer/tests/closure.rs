@@ -639,14 +639,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         one_sided,
         ProceduralCurveDefinition::SurfaceCurve { family }
-            if family.context().parameter_range == [2.0, 4.0]
-                && family.context().sides[0].surface == Some(surfaces[&10].clone())
-                && family.context().sides[0]
+            if family.context().parameter_range() == [2.0, 4.0]
+                && family.context().sides()[0].surface == Some(surfaces[&10].clone())
+                && family.context().sides()[0]
                     .pcurve
                     .as_ref()
                     .map(|pcurve| &pcurve.geometry)
                     == Some(&pcurve_20)
-                && family.context().sides[1].surface.is_none()
+                && family.context().sides()[1].surface.is_none()
     ));
 
     let (_, _, intersection) = b5_edge_support_definition(
@@ -659,15 +659,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         intersection,
         ProceduralCurveDefinition::Intersection { context, .. }
-            if context.parameter_range == [2.0, 4.0]
-                && context.sides[1].surface == Some(surfaces[&11].clone())
-                && context.sides[1]
+            if context.parameter_range() == [2.0, 4.0]
+                && context.sides()[1].surface == Some(surfaces[&11].clone())
+                && context.sides()[1]
                     .pcurve
                     .as_ref()
                     .map(|pcurve| &pcurve.geometry)
                     == Some(&pcurve_21)
-            && context
-                .sides
+            && context.sides()
                 .iter()
                 .all(|side| side.pcurve_parameter_range().is_none())
     ));
@@ -681,9 +680,9 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
-            if context.parameter_range == [0.0, 1.0]
-            && context.sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
-            && context.sides[1].pcurve_parameter_range() == Some([5.0, 2.0])
+            if context.parameter_range() == [0.0, 1.0]
+            && context.sides()[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            && context.sides()[1].pcurve_parameter_range() == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(10, 20, [2.0, 4.0])],
@@ -695,8 +694,8 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
-            if family.context().parameter_range == [0.0, 8.0]
-            && family.context().sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            if family.context().parameter_range() == [0.0, 8.0]
+            && family.context().sides()[0].pcurve_parameter_range() == Some([2.0, 4.0])
     ));
 }
 

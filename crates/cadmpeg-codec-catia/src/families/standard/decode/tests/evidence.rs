@@ -835,8 +835,8 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         ir.model.procedural_curve_owner(&procedural.id),
         Some(&curve)
     );
-    assert_eq!(context.parameter_range, [2.0, 5.0]);
-    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+    assert_eq!(context.parameter_range(), [2.0, 5.0]);
+    assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
 }
 
 #[test]

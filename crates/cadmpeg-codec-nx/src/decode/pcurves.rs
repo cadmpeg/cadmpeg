@@ -226,7 +226,7 @@ impl IntersectionIncidenceIndex {
                         return;
                     };
                     let missing = context
-                        .sides
+                        .sides()
                         .iter()
                         .enumerate()
                         .filter_map(|(index, side)| side.surface.is_none().then_some(index))
@@ -238,7 +238,7 @@ impl IntersectionIncidenceIndex {
                         .iter()
                         .filter(|surface| {
                             !context
-                                .sides
+                                .sides()
                                 .iter()
                                 .any(|side| side.surface.as_ref() == Some(surface))
                         })
@@ -246,7 +246,7 @@ impl IntersectionIncidenceIndex {
                     let [surface] = candidates.as_slice() else {
                         return;
                     };
-                    context.sides[missing[0]].surface = Some((*surface).clone());
+                    context.set_surface(missing[0], Some((*surface).clone()));
                 });
             }
         }
@@ -265,7 +265,8 @@ impl IntersectionIncidenceIndex {
                     let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                         return;
                     };
-                    for side in &mut context.sides {
+                    for index in 0..context.sides().len() {
+                        let side = &context.sides()[index];
                         if side.pcurve.is_some() {
                             continue;
                         }
@@ -290,7 +291,7 @@ impl IntersectionIncidenceIndex {
                         else {
                             continue;
                         };
-                        side.pcurve = Some(geometry.into());
+                        context.set_unmapped_pcurve(index, Some(geometry));
                     }
                 });
             }
@@ -1091,7 +1092,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             else {
                 return None;
             };
-            let missing = context.sides.each_ref().map(|side| {
+            let missing = context.sides().each_ref().map(|side| {
                 pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
             });
             if transfer_budget_exhausted(transfer_budget) {
@@ -1103,8 +1104,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 _ => return None,
             };
             let source = 1 - target;
-            let source_surface = context.sides[source].surface.as_ref()?;
-            let target_surface = context.sides[target].surface.as_ref()?;
+            let source_surface = context.sides()[source].surface.as_ref()?;
+            let target_surface = context.sides()[target].surface.as_ref()?;
             let priority =
                 opposite_chart_transfer_priority(&model_index, source_surface, target_surface);
             Some((
@@ -1143,7 +1144,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 if transfer_budget_exhausted(transfer_budget) {
                     return None;
                 }
-                let missing = context.sides.each_ref().map(|side| {
+                let missing = context.sides().each_ref().map(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
                 });
                 let target = match missing {
@@ -1152,9 +1153,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     _ => return None,
                 };
                 let source = 1 - target;
-                let source_surface = context.sides[source].surface.as_ref()?;
-                let source_pcurve = context.sides[source].pcurve.as_ref()?;
-                let target_surface = context.sides[target].surface.as_ref()?;
+                let source_surface = context.sides()[source].surface.as_ref()?;
+                let source_pcurve = context.sides()[source].pcurve.as_ref()?;
+                let target_surface = context.sides()[target].surface.as_ref()?;
                 let tolerance = procedural
                     .cache_fit_tolerance()
                     .or_else(|| edge_tolerances.get(owner).copied())?;
@@ -1176,7 +1177,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     source_surface,
                     &source_pcurve.geometry,
                     target_surface,
-                    context.parameter_range,
+                    context.parameter_range(),
                     tolerance,
                     blend_contact,
                     transfer_budget,
@@ -1204,12 +1205,12 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 return false;
             };
             if pcurve_requires_completion(
-                context.sides[side]
+                context.sides()[side]
                     .pcurve
                     .as_ref()
                     .map(|pcurve| &pcurve.geometry),
             ) {
-                context.sides[side].pcurve = Some(pcurve.into());
+                context.set_unmapped_pcurve(side, Some(pcurve));
                 true
             } else {
                 false
@@ -1335,7 +1336,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             let edge = ir.model.edges.get(*edge_index)?;
             let (supports, endpoints, range, tolerance, tolerant) = match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    if !context.sides.iter().all(|side| {
+                    if !context.sides().iter().all(|side| {
                         pcurve_requires_completion(
                             side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
                         )
@@ -1344,14 +1345,14 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     }
                     (
                         [
-                            context.sides[0].surface.as_ref()?,
-                            context.sides[1].surface.as_ref()?,
+                            context.sides()[0].surface.as_ref()?,
+                            context.sides()[1].surface.as_ref()?,
                         ],
                         [
                             *vertex_points.get(&edge.start)?,
                             *vertex_points.get(&edge.end)?,
                         ],
-                        context.parameter_range,
+                        context.parameter_range(),
                         edge.tolerance
                             .filter(|value| value.is_finite() && *value >= 0.0)?,
                         false,
@@ -1489,12 +1490,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         let completed = procedural.edit_definition(|definition| match definition {
             ProceduralCurveDefinition::Intersection { context, .. }
-                if context.sides.iter().all(|side| {
+                if context.sides().iter().all(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
                 }) =>
             {
-                for (side, pcurve) in context.sides.iter_mut().zip(pcurves) {
-                    side.pcurve = Some(pcurve.into());
+                for (side, pcurve) in pcurves.into_iter().enumerate() {
+                    context.set_unmapped_pcurve(side, Some(pcurve));
                 }
                 true
             }
@@ -3707,8 +3708,8 @@ mod tests {
                 ProceduralCurve::new(
                     procedural_id,
                     ProceduralCurveDefinition::Intersection {
-                        context: IntcurveSupportContext {
-                            sides: [
+                        context: IntcurveSupportContext::try_new(
+                            [
                                 IntcurveSupportSide {
                                     surface: Some(known_surface),
                                     pcurve: None,
@@ -3718,9 +3719,10 @@ mod tests {
                                     pcurve: None,
                                 },
                             ],
-                            parameter_range: [0.0, 1.0],
-                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                        },
+                            [0.0, 1.0],
+                            [Vec::new(), Vec::new(), Vec::new()],
+                        )
+                        .unwrap(),
                         discontinuity_flag: false,
                     },
                 ),
@@ -3798,8 +3800,8 @@ mod tests {
         else {
             panic!("test construction is not an intersection");
         };
-        assert!(context.sides[1].surface.is_none());
-        assert!(context.sides[1].pcurve.is_none());
+        assert!(context.sides()[1].surface.is_none());
+        assert!(context.sides()[1].pcurve.is_none());
 
         index.complete_from_model(&mut ir);
         let procedural = &ir.model.procedural_curves[0];
@@ -3807,9 +3809,9 @@ mod tests {
         else {
             panic!("test construction is not an intersection");
         };
-        assert_eq!(context.sides[1].surface, Some(completed_surface));
+        assert_eq!(context.sides()[1].surface, Some(completed_surface));
         assert_eq!(
-            context.sides[1].pcurve,
+            context.sides()[1].pcurve,
             Some(
                 PcurveGeometry::Line(
                     cadmpeg_ir::geometry::LinePcurve::try_new(

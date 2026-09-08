@@ -317,7 +317,7 @@ fn bind_consolidated_revolution_faces_and_seams(
                 return None;
             };
             let [Some(first), Some(second)] =
-                std::array::from_fn(|side| context.sides[side].surface.as_ref())
+                std::array::from_fn(|side| context.sides()[side].surface.as_ref())
             else {
                 return None;
             };
@@ -525,14 +525,15 @@ mod consolidated_revolution_binding_tests {
                     )
                     .expect("identity grammar"),
                     ProceduralCurveDefinition::Intersection {
-                        context: IntcurveSupportContext {
-                            sides: std::array::from_fn(|side| IntcurveSupportSide {
+                        context: IntcurveSupportContext::try_new(
+                            std::array::from_fn(|side| IntcurveSupportSide {
                                 surface: Some(surface_ids[side].clone()),
                                 pcurve: None,
                             }),
-                            parameter_range: [0.0, 1.0],
-                            discontinuities: std::array::from_fn(|_| Vec::new()),
-                        },
+                            [0.0, 1.0],
+                            std::array::from_fn(|_| Vec::new()),
+                        )
+                        .unwrap(),
                         discontinuity_flag: false,
                     },
                 ),
@@ -861,9 +862,9 @@ pub(crate) fn emit_standard_extrusion_definition(
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     extrusion_definitions: &mut HashMap<u32, ProceduralSurfaceDefinition>,
     extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
-) -> ProceduralSurfaceDefinition {
+) -> Option<ProceduralSurfaceDefinition> {
     if let Some(definition) = extrusion_definitions.get(&extrusion.surface_object_id) {
-        return definition.clone();
+        return Some(definition.clone());
     }
     let surface_object_id = extrusion.surface_object_id;
     let directrix_id = CurveId::mint(format!(
@@ -919,11 +920,12 @@ pub(crate) fn emit_standard_extrusion_definition(
             if let Ok(procedure) = ProceduralCurve::try_new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
+                    context: IntcurveSupportContext::try_new(
                         sides,
-                        parameter_range: extrusion.directrix_parameter_range,
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
-                    },
+                        extrusion.directrix_parameter_range,
+                        std::array::from_fn(|_| Vec::new()),
+                    )
+                    .ok()?,
                     discontinuity_flag: false,
                 },
                 Some(cache_fit_tolerance),
@@ -1033,7 +1035,7 @@ pub(crate) fn emit_standard_extrusion_definition(
         revision_form: None,
     };
     extrusion_definitions.insert(surface_object_id, definition.clone());
-    definition
+    Some(definition)
 }
 
 fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
@@ -1867,7 +1869,7 @@ fn try_decode_standard_population(
                             &mut procedural_supports,
                             &mut extrusion_definitions,
                             *extrusion,
-                        );
+                        )?;
                         let construction = ProceduralSurfaceId::mint(format!(
                             "catia:standard:procedural-support-definition#{support_object_id}"
                         ))
@@ -1931,7 +1933,7 @@ fn try_decode_standard_population(
                     &mut procedural_supports,
                     &mut extrusion_definitions,
                     *extrusion,
-                );
+                )?;
                 (
                     "object_stream_b5_03_2c",
                     carrier,
@@ -2136,7 +2138,7 @@ fn try_decode_standard_population(
         &scan.data,
         &consolidated_records,
         &scan.surface_alias_tags,
-    );
+    )?;
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
@@ -8194,10 +8196,13 @@ pub(crate) fn build_standard_edge_curve(
                     ProceduralCurve::new(
                         procedural_id,
                         ProceduralCurveDefinition::Intersection {
-                            context: IntcurveSupportContext {
+                            context: match IntcurveSupportContext::try_new(
                                 sides,
-                                parameter_range: ordered_range(curve_parameter_range),
-                                discontinuities: std::array::from_fn(|_| Vec::new()),
+                                ordered_range(curve_parameter_range),
+                                std::array::from_fn(|_| Vec::new()),
+                            ) {
+                                Ok(context) => context,
+                                Err(_) => return (None, None),
                             },
                             discontinuity_flag: false,
                         },

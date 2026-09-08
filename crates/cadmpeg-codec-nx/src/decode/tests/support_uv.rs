@@ -62,19 +62,23 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
-                let Some(support) = context.sides[0].pcurve.as_mut() else {
-                    panic!("NURBS support lane");
-                };
-                let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
-                    panic!("NURBS support lane");
-                };
-                nurbs
-                    .edit_control_points(|points| {
-                        for point in points {
-                            point.u += 100.0;
-                        }
+                context
+                    .edit(|context_sides, _, _| {
+                        let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
+                            panic!("NURBS support lane");
+                        };
+                        let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                            panic!("NURBS support lane");
+                        };
+                        nurbs
+                            .edit_control_points(|points| {
+                                for point in points {
+                                    point.u += 100.0;
+                                }
+                            })
+                            .unwrap();
                     })
-                    .unwrap();
+                    .unwrap()
             });
         }
     }
@@ -126,7 +130,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         else {
             panic!("typed intersection");
         };
-        context.sides[0].pcurve.is_some()
+        context.sides()[0].pcurve.is_some()
     };
     assert!(pcurve_present(&validated_id));
     assert!(!pcurve_present(&unvalidated_id));
@@ -144,16 +148,16 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         panic!("typed intersection");
     };
     let side = context
-        .sides
+        .sides()
         .iter()
         .enumerate()
         .find(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
         .map(|(side, side_data)| (side, side_data.surface.clone().unwrap()))
         .expect("charted support lane");
     let points = vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
-    let parameters = context.parameter_range.to_vec();
-    let pcurve = context.sides[side.0].pcurve.clone().unwrap();
-    let parameter_range = context.parameter_range;
+    let parameters = context.parameter_range().to_vec();
+    let pcurve = context.sides()[side.0].pcurve.clone().unwrap();
+    let parameter_range = context.parameter_range();
     let pending = vec![(
         procedural.id.clone(),
         crate::intersection::chart_samples::ChartSamples::from_test_values(
@@ -215,7 +219,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             panic!("typed intersection");
         };
         let (_, side) = context
-            .sides
+            .sides()
             .iter()
             .enumerate()
             .find(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
@@ -230,7 +234,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
                 .clone(),
             side.surface.clone().unwrap(),
             side.pcurve.clone().unwrap(),
-            context.parameter_range,
+            context.parameter_range(),
         )
     };
     let points = {
@@ -380,8 +384,8 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         ProceduralCurve::new(
             procedural_id.clone(),
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(offset.clone()),
                             pcurve: None,
@@ -391,9 +395,10 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
         ),
@@ -446,7 +451,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         else {
             panic!("intersection");
         };
-        context.sides[0].pcurve.is_some()
+        context.sides()[0].pcurve.is_some()
     };
     assert!(pcurve_present(&seeded));
     assert!(!pcurve_present(&unseeded));

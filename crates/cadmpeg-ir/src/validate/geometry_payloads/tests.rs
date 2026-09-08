@@ -1,49 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::support_context_is_finite;
 use crate::examples::unit_cube;
-use crate::geometry::{
-    DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, SupportPcurve, SurfaceGeometry,
-};
+use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
 use crate::ids::ProceduralSurfaceId;
-use crate::math::{Point2, Point3, Vector3};
+use crate::math::{Point3, Vector3};
 use crate::report::Check;
 use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
 use crate::validate::validate_neutral;
-
-#[test]
-fn explicit_support_mapping_requires_a_nonzero_solved_interval() {
-    let mut context = IntcurveSupportContext {
-        sides: [
-            IntcurveSupportSide {
-                surface: None,
-                pcurve: Some(SupportPcurve::new(
-                    PcurveGeometry::Line(
-                        crate::geometry::LinePcurve::try_new(
-                            Point2::new(0.0, 0.0),
-                            Point2::new(1.0, 0.0),
-                        )
-                        .unwrap(),
-                    ),
-                    Some(DirectedParameterRange::new([5.0, 2.0]).unwrap()),
-                )),
-            },
-            IntcurveSupportSide {
-                surface: None,
-                pcurve: None,
-            },
-        ],
-        parameter_range: [0.0, 1.0],
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    };
-    assert!(support_context_is_finite(&context));
-    context.parameter_range = [1.0, 1.0];
-    assert!(!support_context_is_finite(&context));
-    context.sides[0].pcurve.as_mut().unwrap().parameter_range = None;
-    assert!(support_context_is_finite(&context));
-}
 
 #[test]
 fn tessellation_counts_must_be_consistent() {

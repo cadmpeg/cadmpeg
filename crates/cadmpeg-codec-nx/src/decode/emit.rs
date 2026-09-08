@@ -62,7 +62,7 @@ pub(super) fn emit_topology(
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
-) -> EndpointWitnesses {
+) -> Result<EndpointWitnesses, CodecError> {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
     let valid_face_xmts: BTreeSet<u32> = body_shape_shells
@@ -321,8 +321,8 @@ pub(super) fn emit_topology(
                         construction,
                         ProceduralCurveDefinition::SurfaceCurve {
                             family: SurfaceCurveFamily::Parametric {
-                                context: IntcurveSupportContext {
-                                    sides: [
+                                context: IntcurveSupportContext::try_new(
+                                    [
                                         IntcurveSupportSide {
                                             surface: Some(surface),
                                             pcurve: Some(pcurve.into()),
@@ -333,8 +333,9 @@ pub(super) fn emit_topology(
                                         },
                                     ],
                                     parameter_range,
-                                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                                },
+                                    [Vec::new(), Vec::new(), Vec::new()],
+                                )
+                                .map_err(CodecError::malformed)?,
                                 tail: None,
                             },
                         },
@@ -539,12 +540,12 @@ pub(super) fn emit_topology(
                 return None;
             };
             let owner = ir.model.procedural_curve_owner(&procedural.id)?.clone();
-            Some(context.sides.iter().filter_map(move |side| {
+            Some(context.sides().iter().filter_map(move |side| {
                 Some((
                     (owner.clone(), side.surface.clone()?),
                     (
                         side.pcurve.clone()?.geometry,
-                        context.parameter_range,
+                        context.parameter_range(),
                         procedural.cache_fit_tolerance(),
                     ),
                 ))
@@ -810,7 +811,7 @@ pub(super) fn emit_topology(
     ir.model.vertices.retain(|vertex| {
         !vertex.id.as_str().starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
-    endpoint_witnesses
+    Ok(endpoint_witnesses)
 }
 
 #[allow(clippy::too_many_arguments)]

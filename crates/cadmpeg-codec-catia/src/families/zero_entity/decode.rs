@@ -736,8 +736,8 @@ pub(crate) fn try_decode_zero_entity(
                     (
                         ProceduralCurveDefinition::SurfaceCurve {
                             family: SurfaceCurveFamily::Parametric {
-                                context: IntcurveSupportContext {
-                                    sides: [
+                                context: IntcurveSupportContext::try_new(
+                                    [
                                         IntcurveSupportSide {
                                             surface: Some(surface.clone()),
                                             pcurve: Some(pcurve.into()),
@@ -748,8 +748,9 @@ pub(crate) fn try_decode_zero_entity(
                                         },
                                     ],
                                     parameter_range,
-                                    discontinuities: std::array::from_fn(|_| Vec::new()),
-                                },
+                                    std::array::from_fn(|_| Vec::new()),
+                                )
+                                .ok()?,
                                 tail: None,
                             },
                         },

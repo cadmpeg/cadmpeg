@@ -752,11 +752,12 @@ pub(crate) fn try_decode_geometry(
                         .map(|uv| (uv, parameters.as_slice())),
                 );
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides: [first, second],
-                        parameter_range: charted.samples.parameter_range(),
-                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                    },
+                    context: IntcurveSupportContext::try_new(
+                        [first, second],
+                        charted.samples.parameter_range(),
+                        [Vec::new(), Vec::new(), Vec::new()],
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     discontinuity_flag: false,
                 }
             } else if let Some((supports, endpoints, tolerance)) = uncharted {
@@ -950,7 +951,7 @@ pub(crate) fn try_decode_geometry(
             &transfer_budget,
             &adaptive_geometry_budget,
             &completion_geometry_budget,
-        );
+        )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
         // blend-geometry certificates for support validation and attachment.
@@ -1217,13 +1218,17 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             }
             match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    used_surfaces
-                        .extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+                    used_surfaces.extend(
+                        context
+                            .sides()
+                            .iter()
+                            .filter_map(|side| side.surface.clone()),
+                    );
                 }
                 ProceduralCurveDefinition::SurfaceCurve { family } => used_surfaces.extend(
                     family
                         .context()
-                        .sides
+                        .sides()
                         .iter()
                         .filter_map(|side| side.surface.clone()),
                 ),
@@ -1660,12 +1665,17 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
             }
             match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+                    surfaces.extend(
+                        context
+                            .sides()
+                            .iter()
+                            .filter_map(|side| side.surface.clone()),
+                    );
                 }
                 ProceduralCurveDefinition::SurfaceCurve { family } => surfaces.extend(
                     family
                         .context()
-                        .sides
+                        .sides()
                         .iter()
                         .filter_map(|side| side.surface.clone()),
                 ),

@@ -953,3 +953,67 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     wire["chordal_deflection"] = serde_json::json!(-1.0);
     assert!(serde_json::from_value::<PolygonalSurface>(wire).is_err());
 }
+
+#[test]
+fn support_context_admission_preserves_mapping_and_numeric_invariants() {
+    use super::{
+        DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, LinePcurve,
+        PcurveGeometry, SupportPcurve,
+    };
+    let sides = [
+        IntcurveSupportSide {
+            surface: None,
+            pcurve: Some(SupportPcurve::new(
+                PcurveGeometry::Line(
+                    LinePcurve::try_new(
+                        crate::math::Point2::new(0.0, 0.0),
+                        crate::math::Point2::new(1.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
+                Some(DirectedParameterRange::new([5.0, 2.0]).unwrap()),
+            )),
+        },
+        IntcurveSupportSide {
+            surface: None,
+            pcurve: None,
+        },
+    ];
+    let empty = || std::array::from_fn(|_| Vec::new());
+    let mut context = IntcurveSupportContext::try_new(sides.clone(), [0.0, 1.0], empty()).unwrap();
+    let original = context.clone();
+    assert!(IntcurveSupportContext::try_new(sides.clone(), [1.0, 1.0], empty()).is_err());
+    assert!(IntcurveSupportContext::try_new(sides.clone(), [1.0, 0.0], empty()).is_err());
+    assert!(IntcurveSupportContext::try_new(sides.clone(), [0.0, f64::INFINITY], empty()).is_err());
+    assert!(
+        IntcurveSupportContext::try_new(sides, [0.0, 1.0], [vec![f64::NAN], vec![], vec![]])
+            .is_err()
+    );
+    assert!(context.edit(|_, range, _| *range = [1.0, 1.0]).is_err());
+    assert_eq!(context, original);
+    assert!(context
+        .edit(|_, _, discontinuities| discontinuities[1].push(f64::INFINITY))
+        .is_err());
+    assert_eq!(context, original);
+    let mut wire = serde_json::to_value(&context).unwrap();
+    assert_eq!(
+        serde_json::from_value::<IntcurveSupportContext>(wire.clone()).unwrap(),
+        context
+    );
+    wire["parameter_range"] = serde_json::json!([1.0, 1.0]);
+    assert!(serde_json::from_value::<IntcurveSupportContext>(wire).is_err());
+    context
+        .edit(|sides, range, _| {
+            sides[0].pcurve.as_mut().unwrap().parameter_range = None;
+            *range = [1.0, 1.0];
+        })
+        .unwrap();
+    let unchanged = context.clone();
+    assert!(context
+        .edit(|sides, _, _| {
+            sides[0].pcurve.as_mut().unwrap().parameter_range =
+                Some(DirectedParameterRange::new([5.0, 2.0]).unwrap());
+        })
+        .is_err());
+    assert_eq!(context, unchanged);
+}

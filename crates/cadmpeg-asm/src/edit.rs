@@ -1057,17 +1057,17 @@ fn patch_two_sided_offset_definition(
                     .discontinuities
                     .iter()
                     .map(Vec::len)
-                    .eq(context.discontinuities.iter().map(Vec::len))
+                    .eq(context.discontinuities().iter().map(Vec::len))
             })
             .ok_or_else(|| CodecError::Malformed("two-sided offset layout is malformed".into()))?;
     for (at, value) in layout
         .parameter_range
         .into_iter()
-        .zip(context.parameter_range)
+        .zip(context.parameter_range())
     {
         AsmEditSet::patch_f64_payload(bytes, record.offset + at, value)?;
     }
-    for (locations, values) in layout.discontinuities.iter().zip(&context.discontinuities) {
+    for (locations, values) in layout.discontinuities.iter().zip(context.discontinuities()) {
         for (at, value) in locations.iter().zip(values) {
             AsmEditSet::patch_f64_payload(bytes, record.offset + *at, *value)?;
         }
@@ -1116,9 +1116,9 @@ fn patch_surface_offset_definition(
         ));
     }
     if context
-        .parameter_range
+        .parameter_range()
         .into_iter()
-        .chain(context.discontinuities.iter().flatten().copied())
+        .chain(context.discontinuities().iter().flatten().copied())
         .any(|value| !value.is_finite())
     {
         return Err(CodecError::Malformed(
@@ -1132,7 +1132,7 @@ fn patch_surface_offset_definition(
         .discontinuities
         .iter()
         .map(Vec::len)
-        .ne(context.discontinuities.iter().map(Vec::len))
+        .ne(context.discontinuities().iter().map(Vec::len))
     {
         return Err(CodecError::Malformed(
             "surface-offset context is incomplete".into(),
@@ -1151,9 +1151,9 @@ fn patch_surface_offset_definition(
             .chain([layout.distance, layout.shift, layout.scale])
             .zip(
                 context
-                    .parameter_range
+                    .parameter_range()
                     .into_iter()
-                    .chain(context.discontinuities.iter().flatten().copied())
+                    .chain(context.discontinuities().iter().flatten().copied())
                     .chain(base_u_range.iter().copied())
                     .chain(base_v_range.iter().copied())
                     .chain(base_range.iter().copied().chain([
@@ -1181,7 +1181,7 @@ fn patch_spring_definition(
             "spring patch received another definition".into(),
         ));
     };
-    let context = layout.support_context();
+    let context = layout.support_context().map_err(CodecError::malformed)?;
     let discontinuity_flag = match layout {
         cadmpeg_ir::geometry::SpringLayout::ContextFirst {
             discontinuity_flag, ..
@@ -1189,9 +1189,9 @@ fn patch_spring_definition(
         cadmpeg_ir::geometry::SpringLayout::CacheFirst { .. } => false,
     };
     if context
-        .parameter_range
+        .parameter_range()
         .into_iter()
-        .chain(context.discontinuities.iter().flatten().copied())
+        .chain(context.discontinuities().iter().flatten().copied())
         .any(|value| !value.is_finite())
     {
         return Err(CodecError::Malformed(
@@ -1206,7 +1206,7 @@ fn patch_spring_definition(
         .discontinuities
         .iter()
         .map(Vec::len)
-        .ne(context.discontinuities.iter().map(Vec::len))
+        .ne(context.discontinuities().iter().map(Vec::len))
     {
         return Err(CodecError::Malformed("spring context is incomplete".into()));
     }
@@ -1219,9 +1219,9 @@ fn patch_spring_definition(
             .chain(layout.discontinuities.into_iter().flatten())
             .zip(
                 context
-                    .parameter_range
+                    .parameter_range()
                     .into_iter()
-                    .chain(context.discontinuities.iter().flatten().copied()),
+                    .chain(context.discontinuities().iter().flatten().copied()),
             ),
     );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
@@ -1252,9 +1252,9 @@ fn patch_projection_definition(
         ));
     };
     if context
-        .parameter_range
+        .parameter_range()
         .into_iter()
-        .chain(context.discontinuities.iter().flatten().copied())
+        .chain(context.discontinuities().iter().flatten().copied())
         .any(|value| !value.is_finite())
     {
         return Err(CodecError::Malformed(
@@ -1268,7 +1268,7 @@ fn patch_projection_definition(
         .discontinuities
         .iter()
         .map(Vec::len)
-        .ne(context.discontinuities.iter().map(Vec::len))
+        .ne(context.discontinuities().iter().map(Vec::len))
     {
         return Err(CodecError::Malformed(
             "projection context is incomplete".into(),
@@ -1323,9 +1323,9 @@ fn patch_projection_definition(
             .chain(layout.discontinuities.into_iter().flatten())
             .zip(
                 context
-                    .parameter_range
+                    .parameter_range()
                     .into_iter()
-                    .chain(context.discontinuities.iter().flatten().copied()),
+                    .chain(context.discontinuities().iter().flatten().copied()),
             ),
     );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
@@ -1348,9 +1348,9 @@ fn patch_intersection_definition(
         ));
     };
     if context
-        .parameter_range
+        .parameter_range()
         .into_iter()
-        .chain(context.discontinuities.iter().flatten().copied())
+        .chain(context.discontinuities().iter().flatten().copied())
         .any(|value| !value.is_finite())
     {
         return Err(CodecError::Malformed(
@@ -1364,7 +1364,7 @@ fn patch_intersection_definition(
         .discontinuities
         .iter()
         .map(Vec::len)
-        .ne(context.discontinuities.iter().map(Vec::len))
+        .ne(context.discontinuities().iter().map(Vec::len))
     {
         return Err(CodecError::Malformed(
             "intersection context is incomplete".into(),
@@ -1379,9 +1379,9 @@ fn patch_intersection_definition(
             .chain(layout.discontinuities.into_iter().flatten())
             .zip(
                 context
-                    .parameter_range
+                    .parameter_range()
                     .into_iter()
-                    .chain(context.discontinuities.iter().flatten().copied()),
+                    .chain(context.discontinuities().iter().flatten().copied()),
             ),
     );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
@@ -1405,9 +1405,9 @@ fn patch_three_surface_intersection_definition(
         ));
     };
     if context
-        .parameter_range
+        .parameter_range()
         .into_iter()
-        .chain(context.discontinuities.iter().flatten().copied())
+        .chain(context.discontinuities().iter().flatten().copied())
         .any(|value| !value.is_finite())
     {
         return Err(CodecError::Malformed(
@@ -1422,7 +1422,7 @@ fn patch_three_surface_intersection_definition(
         .discontinuities
         .iter()
         .map(Vec::len)
-        .ne(context.discontinuities.iter().map(Vec::len))
+        .ne(context.discontinuities().iter().map(Vec::len))
     {
         return Err(CodecError::Malformed(
             "three-surface intersection context is incomplete".into(),
@@ -1437,9 +1437,9 @@ fn patch_three_surface_intersection_definition(
             .chain(layout.discontinuities.into_iter().flatten())
             .zip(
                 context
-                    .parameter_range
+                    .parameter_range()
                     .into_iter()
-                    .chain(context.discontinuities.iter().flatten().copied()),
+                    .chain(context.discontinuities().iter().flatten().copied()),
             ),
     );
     AsmEditSet::patch_tagged_integer_at(
@@ -1465,9 +1465,9 @@ fn patch_surface_curve_definition(
     };
     let context = family.context();
     if context
-        .parameter_range
+        .parameter_range()
         .into_iter()
-        .chain(context.discontinuities.iter().flatten().copied())
+        .chain(context.discontinuities().iter().flatten().copied())
         .any(|value| !value.is_finite())
     {
         return Err(CodecError::Malformed(
@@ -1485,7 +1485,7 @@ fn patch_surface_curve_definition(
         .discontinuities
         .iter()
         .map(Vec::len)
-        .ne(context.discontinuities.iter().map(Vec::len))
+        .ne(context.discontinuities().iter().map(Vec::len))
     {
         return Err(CodecError::Malformed(
             "surface-curve context is incomplete".into(),
@@ -1500,9 +1500,9 @@ fn patch_surface_curve_definition(
             .chain(layout.discontinuities.into_iter().flatten())
             .zip(
                 context
-                    .parameter_range
+                    .parameter_range()
                     .into_iter()
-                    .chain(context.discontinuities.iter().flatten().copied()),
+                    .chain(context.discontinuities().iter().flatten().copied()),
             ),
     );
     Ok(())
