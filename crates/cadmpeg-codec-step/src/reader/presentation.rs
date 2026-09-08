@@ -365,12 +365,12 @@ pub(super) fn decode(
             ..
         } = color;
         let appearance_id = appearance_ids
-            .entry((color_id, color.a.to_bits()))
+            .entry((color_id, color.a().to_bits()))
             .or_insert_with(|| {
-                let key = if color.a == 1.0 {
+                let key = if color.a() == 1.0 {
                     color_id.to_string()
                 } else {
-                    format!("{color_id}-alpha-{}", color.a.to_bits())
+                    format!("{color_id}-alpha-{}", color.a().to_bits())
                 };
                 let id = AppearanceId::mint(ids::presentation("appearance", key))
                     .expect("identity grammar");
@@ -506,12 +506,12 @@ pub(super) fn decode(
         let mut colors = Vec::<Color>::new();
         for (_, color) in &candidates {
             let Some(existing) = colors.iter_mut().find(|existing| {
-                existing.r == color.r && existing.g == color.g && existing.b == color.b
+                existing.r() == color.r() && existing.g() == color.g() && existing.b() == color.b()
             }) else {
                 colors.push(*color);
                 continue;
             };
-            if color.a < existing.a {
+            if color.a() < existing.a() {
                 *existing = *color;
             }
         }
@@ -1074,13 +1074,13 @@ fn combine_color_resolutions(
                         ambiguous = true;
                         continue;
                     };
-                    let same_rgb = current.color.r == candidate.color.r
-                        && current.color.g == candidate.color.g
-                        && current.color.b == candidate.color.b;
+                    let same_rgb = current.color.r() == candidate.color.r()
+                        && current.color.g() == candidate.color.g()
+                        && current.color.b() == candidate.color.b();
                     if !same_rgb {
                         ambiguous = true;
-                    } else if candidate.color.a < current.color.a
-                        || (candidate.color.a == current.color.a && candidate.id < current.id)
+                    } else if candidate.color.a() < current.color.a()
+                        || (candidate.color.a() == current.color.a() && candidate.id < current.id)
                     {
                         *current = candidate;
                     }
@@ -1200,12 +1200,7 @@ fn find_color(
                 Some(ColorResolution::Candidate(ColorCandidate {
                     rank: side_rank,
                     id,
-                    color: Color {
-                        r: r as f32,
-                        g: g as f32,
-                        b: b as f32,
-                        a: 1.0,
-                    },
+                    color: Color::new(r as f32, g as f32, b as f32, 1.0)?,
                     name: name_value.and_then(|value| {
                         decode_text(
                             exchange,
@@ -1270,7 +1265,11 @@ fn find_color(
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                candidate.color.a = (1.0 - transparency) as f32;
+                if let Some(color) = candidate.color.with_alpha((1.0 - transparency) as f32) {
+                    candidate.color = color;
+                } else {
+                    result = None;
+                }
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}
@@ -1523,7 +1522,7 @@ fn predefined(name: &str) -> Option<Color> {
         "cyan" => (0.0, 1.0, 1.0),
         _ => return None,
     };
-    Some(Color { r, g, b, a: 1.0 })
+    Color::new(r, g, b, 1.0)
 }
 fn references(value: &Value) -> Vec<u64> {
     match value {

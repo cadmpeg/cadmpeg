@@ -478,12 +478,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(
         body.color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
     assert_eq!(body.visible, Some(true));
     let face = result
@@ -495,12 +490,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .unwrap();
     assert_eq!(
         face.color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.2,
-            g: 0.4,
-            b: 0.6,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"))
     );
     assert!(result
         .ir()

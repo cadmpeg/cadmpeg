@@ -153,17 +153,6 @@ fn check_source(
             "source association object_id must not be empty",
         );
     }
-    if source.color.is_some_and(|color| {
-        [color.r, color.g, color.b, color.a]
-            .iter()
-            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
-    }) {
-        bounds_err(
-            findings,
-            owner,
-            "source association color is not finite or outside [0, 1]",
-        );
-    }
 }
 
 pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>) {

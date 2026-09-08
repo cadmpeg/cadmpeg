@@ -147,12 +147,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .value = "Prism-002".into();
     native.body_native_keys[0].asm_body_key = Some(84);
     edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
-    edited.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
-        r: 0.8,
-        g: 0.6,
-        b: 0.4,
-        a: 1.0,
-    });
+    edited.model.appearances[0].base_color =
+        Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"));
     edited.model.appearances[0]
         .properties
         .insert("reflectivity_at_0deg".into(), 0.7);
@@ -290,12 +286,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     );
     assert_eq!(
         round_trip.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.8,
-            g: 0.6,
-            b: 0.4,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"))
     );
     assert_eq!(
         round_trip.ir().model.appearances[0]

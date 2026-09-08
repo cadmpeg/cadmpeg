@@ -957,7 +957,7 @@ fn planar_sheet_brep_payload(
             "planar sheet body placement is not writable".into(),
         ));
     }
-    check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
+    check_object_attributes(body.id.as_str(), body.name.as_deref())?;
     let region = &model.regions[0];
     let shell = &model.shells[0];
     let face = &model.faces[0];
@@ -1425,7 +1425,7 @@ fn multi_face_brep_payload(
             "multi-face planar sheet body placement is not writable".into(),
         ));
     }
-    check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
+    check_object_attributes(body.id.as_str(), body.name.as_deref())?;
     let region = &model.regions[0];
     let shell = &model.shells[0];
     if region.id != body.regions[0]
@@ -2918,7 +2918,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 body.id.as_str()
             )));
         }
-        check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
+        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
         let region = model
             .regions
             .iter()
@@ -3540,7 +3540,7 @@ fn attributed_object_record(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
 ) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, name, color)?;
+    check_object_attributes(identity, name)?;
     Ok(framed_object_record(
         object_type,
         class_uuid,
@@ -3551,7 +3551,7 @@ fn attributed_object_record(
 }
 
 fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, None, None)?;
+    check_object_attributes(identity, None)?;
     Ok(framed_object_record(
         0x20,
         MESH_CLASS,
@@ -3568,7 +3568,7 @@ fn brep_object_record(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
 ) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, name, color)?;
+    check_object_attributes(identity, name)?;
     Ok(framed_object_record(
         0x10,
         BREP_CLASS,
@@ -3605,23 +3605,10 @@ fn framed_object_record(
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
 }
 
-fn check_object_attributes(
-    identity: &str,
-    name: Option<&str>,
-    color: Option<cadmpeg_ir::topology::Color>,
-) -> Result<(), CodecError> {
+fn check_object_attributes(identity: &str, name: Option<&str>) -> Result<(), CodecError> {
     if identity.is_empty() || name.is_some_and(|value| value.contains('\0')) {
         return Err(CodecError::malformed(format_args!(
             "object {identity} has an invalid identity or name"
-        )));
-    }
-    if color.is_some_and(|value| {
-        [value.r, value.g, value.b, value.a]
-            .into_iter()
-            .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(&channel))
-    }) {
-        return Err(CodecError::malformed(format_args!(
-            "object {identity} has an invalid color"
         )));
     }
     Ok(())
@@ -3644,10 +3631,10 @@ fn object_attributes_payload(
     if let Some(color) = color {
         payload.push(6);
         payload.extend([
-            unit_color_channel(color.r),
-            unit_color_channel(color.g),
-            unit_color_channel(color.b),
-            unit_color_channel(1.0 - color.a),
+            unit_color_channel(color.r()),
+            unit_color_channel(color.g()),
+            unit_color_channel(color.b()),
+            unit_color_channel(1.0 - color.a()),
         ]);
     }
     if let Some(visible) = visible {

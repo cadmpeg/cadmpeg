@@ -589,10 +589,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     );
     assert_eq!(
         (
-            decoded.color.r,
-            decoded.color.g,
-            decoded.color.b,
-            decoded.color.a,
+            decoded.color.r(),
+            decoded.color.g(),
+            decoded.color.b(),
+            decoded.color.a(),
         ),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );

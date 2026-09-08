@@ -52,18 +52,8 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
     use cadmpeg_ir::topology::Color;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let body_color = Color {
-        r: 0.1,
-        g: 0.2,
-        b: 0.3,
-        a: 1.0,
-    };
-    let face_color = Color {
-        r: 0.65,
-        g: 0.45,
-        b: 0.25,
-        a: 1.0,
-    };
+    let body_color = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
+    let face_color = Color::new(0.65, 0.45, 0.25, 1.0).expect("valid color");
     source_less.model.bodies[0].color = Some(body_color);
     source_less.model.faces[2].color = Some(face_color);
 
@@ -89,12 +79,8 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 #[test]
 fn generated_source_less_rejects_translucent_direct_color() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    source_less.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 0.1,
-        g: 0.2,
-        b: 0.3,
-        a: 0.5,
-    });
+    source_less.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.1, 0.2, 0.3, 0.5).expect("valid color"));
 
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -112,18 +98,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     use cadmpeg_ir::topology::Color;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    source_less.model.bodies[0].color = Some(Color {
-        r: 0.2,
-        g: 0.4,
-        b: 0.6,
-        a: 1.0,
-    });
-    source_less.model.faces[0].color = Some(Color {
-        r: 0.7,
-        g: 0.3,
-        b: 0.1,
-        a: 1.0,
-    });
+    source_less.model.bodies[0].color = Some(Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"));
+    source_less.model.faces[0].color = Some(Color::new(0.7, 0.3, 0.1, 1.0).expect("valid color"));
     let body_id = source_less.model.bodies[0].id.clone();
     let face_id = source_less.model.faces[0].id.clone();
     let edge_id = source_less.model.edges[0].id.clone();

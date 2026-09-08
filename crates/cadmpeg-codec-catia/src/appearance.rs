@@ -232,12 +232,7 @@ fn insert_appearance(ir: &mut CadIr, rgba: [u8; 4]) -> AppearanceId {
             physical_token: None,
             schema: Some("CATIA V5 display color".into()),
             category: None,
-            base_color: Some(Color {
-                r: f32::from(rgba[0]) / 255.0,
-                g: f32::from(rgba[1]) / 255.0,
-                b: f32::from(rgba[2]) / 255.0,
-                a: f32::from(rgba[3]) / 255.0,
-            }),
+            base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
             properties: BTreeMap::new(),
             textures: Vec::new(),
         });
@@ -578,7 +573,7 @@ mod tests {
         assert_eq!(ids.len(), 6);
         assert!(ir.model.appearances[0]
             .base_color
-            .is_some_and(|color| color.a == 0.6));
+            .is_some_and(|color| color.a() == 0.6));
 
         let mut ir = model(6);
         let result = transfer(

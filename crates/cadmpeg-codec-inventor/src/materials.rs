@@ -116,12 +116,15 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     values
         .iter()
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        .then_some(Color {
-            r: values[0] as f32,
-            g: values[1] as f32,
-            b: values[2] as f32,
-            a: values[3] as f32,
+        .then(|| {
+            Color::new(
+                values[0] as f32,
+                values[1] as f32,
+                values[2] as f32,
+                values[3] as f32,
+            )
         })
+        .flatten()
 }
 
 #[derive(Clone, PartialEq)]
@@ -316,7 +319,7 @@ mod tests {
             catalog.appearances[0]
                 .base_color
                 .expect("valid catalog color")
-                .b,
+                .b(),
             1.0
         );
         assert!(catalog.appearances[0].textures.is_empty());

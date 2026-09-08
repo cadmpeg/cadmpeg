@@ -5314,12 +5314,7 @@ fn source_association(
 }
 
 fn color(value: [u8; 4]) -> Color {
-    Color {
-        r: f32::from(value[0]) / 255.0,
-        g: f32::from(value[1]) / 255.0,
-        b: f32::from(value[2]) / 255.0,
-        a: 1.0 - f32::from(value[3]) / 255.0,
-    }
+    Color::from_rgba8(value[0], value[1], value[2], value[3]).invert_alpha()
 }
 
 fn body(

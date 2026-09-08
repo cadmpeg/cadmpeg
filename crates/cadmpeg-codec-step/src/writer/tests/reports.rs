@@ -671,21 +671,17 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     for (id, color) in [
         (
             red.clone(),
-            cadmpeg_ir::topology::Color {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"),
         ),
         (
             blue.clone(),
-            cadmpeg_ir::topology::Color {
-                r: if same_color { 1.0 } else { 0.0 },
-                g: 0.0,
-                b: if same_color { 0.0 } else { 1.0 },
-                a: 1.0,
-            },
+            cadmpeg_ir::topology::Color::new(
+                if same_color { 1.0 } else { 0.0 },
+                0.0,
+                if same_color { 0.0 } else { 1.0 },
+                1.0,
+            )
+            .expect("valid color"),
         ),
     ] {
         ir.model.appearances.push(Appearance {
@@ -1072,12 +1068,9 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.4,
-            g: 0.5,
-            b: 0.6,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.4, 0.5, 0.6, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     });

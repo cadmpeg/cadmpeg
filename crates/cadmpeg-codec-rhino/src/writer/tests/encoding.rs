@@ -42,12 +42,7 @@ fn object_attribute_items_are_written_in_ascending_order() {
     let payload = object_attributes_payload(
         "body",
         None,
-        Some(Color {
-            r: 1.0,
-            g: 0.5,
-            b: 0.0,
-            a: 1.0,
-        }),
+        Some(Color::new(1.0, 0.5, 0.0, 1.0).expect("valid color")),
         Some(false),
     );
     assert_eq!(&payload[21..], &[6, 255, 128, 0, 0, 11, 0, 13, 1, 0]);

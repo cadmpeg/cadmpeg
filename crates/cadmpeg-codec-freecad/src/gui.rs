@@ -356,7 +356,9 @@ fn transfer_schema_one(
                 id: body_id.clone(),
                 visible: Assignment::Set(visibility),
                 color: Assignment::Set(
-                    packed_color.map(|packed| decode_color(packed, transparency)),
+                    packed_color
+                        .map(|packed| decode_color(packed, transparency))
+                        .transpose()?,
                 ),
             });
         }
@@ -493,7 +495,7 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: Some(decode_color(packed_color, transparency)),
+            base_color: Some(decode_color(packed_color, transparency)?),
             textures: Vec::new(),
             properties: material_properties,
         });
@@ -801,7 +803,12 @@ fn transfer_edge_appearance(
         physical_token: None,
         schema: Some("FCStd ViewProvider line style".into()),
         category: None,
-        base_color: Some(decode_color(packed_color, None)),
+        base_color: Some(Color::from_rgba8(
+            (packed_color >> 24) as u8,
+            (packed_color >> 16) as u8,
+            (packed_color >> 8) as u8,
+            packed_color as u8,
+        )),
         textures: Vec::new(),
         properties: width
             .filter(|width| width.is_finite() && *width >= 0.0)
@@ -857,7 +864,12 @@ fn transfer_vertex_appearance(
         physical_token: None,
         schema: Some("FCStd ViewProvider point style".into()),
         category: None,
-        base_color: Some(decode_color(packed_color, None)),
+        base_color: Some(Color::from_rgba8(
+            (packed_color >> 24) as u8,
+            (packed_color >> 16) as u8,
+            (packed_color >> 8) as u8,
+            packed_color as u8,
+        )),
         textures: Vec::new(),
         properties: size
             .filter(|size| size.is_finite() && *size >= 0.0)
@@ -3523,7 +3535,7 @@ fn transfer_shape_appearances(
                 &provider.name,
                 index,
                 material,
-            ));
+            )?);
             if materials.len() == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
                     plan.body_updates.push(BodyUpdate {
@@ -3532,7 +3544,7 @@ fn transfer_shape_appearances(
                         color: Assignment::Set(Some(decode_color(
                             material.diffuse,
                             Some(material.transparency),
-                        ))),
+                        )?)),
                     });
                     plan.bindings.push(AppearanceBinding {
                         id: format!(
@@ -3663,8 +3675,8 @@ fn material_appearance(
     provider_name: &str,
     index: usize,
     material: &GuiMaterial,
-) -> Appearance {
-    Appearance {
+) -> Result<Appearance, CodecError> {
+    Ok(Appearance {
         id,
         name: Some(format!("{provider_name} face {} material", index + 1)),
         asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
@@ -3673,7 +3685,7 @@ fn material_appearance(
         physical_token: None,
         schema: Some("FCStd ShapeAppearance".into()),
         category: None,
-        base_color: Some(decode_color(material.diffuse, Some(material.transparency))),
+        base_color: Some(decode_color(material.diffuse, Some(material.transparency))?),
         textures: Vec::new(),
         properties: [
             ("ambient_packed".into(), f64::from(material.ambient)),
@@ -3683,7 +3695,7 @@ fn material_appearance(
             ("transparency".into(), f64::from(material.transparency)),
         ]
         .into(),
-    }
+    })
 }
 
 fn bind_material_faces(
@@ -3851,7 +3863,12 @@ fn transfer_topology_colors(
                     physical_token: None,
                     schema: Some(kind.schema().into()),
                     category: None,
-                    base_color: Some(decode_color(packed, None)),
+                    base_color: Some(Color::from_rgba8(
+                        (packed >> 24) as u8,
+                        (packed >> 16) as u8,
+                        (packed >> 8) as u8,
+                        packed as u8,
+                    )),
                     textures: Vec::new(),
                     properties: BTreeMap::new(),
                 });
@@ -3888,13 +3905,14 @@ fn transfer_topology_colors(
     Ok(())
 }
 
-fn decode_color(value: u32, transparency: Option<f32>) -> Color {
-    Color {
-        r: ((value >> 24) & 0xff) as f32 / 255.0,
-        g: ((value >> 16) & 0xff) as f32 / 255.0,
-        b: ((value >> 8) & 0xff) as f32 / 255.0,
-        a: transparency.map_or((value & 0xff) as f32 / 255.0, |value| 1.0 - value),
-    }
+fn decode_color(value: u32, transparency: Option<f32>) -> Result<Color, CodecError> {
+    Color::new(
+        ((value >> 24) & 0xff) as f32 / 255.0,
+        ((value >> 16) & 0xff) as f32 / 255.0,
+        ((value >> 8) & 0xff) as f32 / 255.0,
+        transparency.map_or((value & 0xff) as f32 / 255.0, |value| 1.0 - value),
+    )
+    .ok_or_else(|| CodecError::Malformed("GUI color components must be in [0, 1]".into()))
 }
 
 fn convert_packed_alpha(value: u32, required: bool) -> u32 {
@@ -3919,14 +3937,14 @@ mod color_tests {
 
     #[test]
     fn packed_alpha_is_used_without_a_transparency_property() {
-        let color = decode_color(0x1122_3340, None);
-        assert!((color.a - 64.0 / 255.0).abs() < f32::EPSILON);
+        let color = decode_color(0x1122_3340, None).expect("valid color");
+        assert!((color.a() - 64.0 / 255.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn transparency_property_overrides_packed_alpha() {
-        let color = decode_color(0x1122_3300, Some(0.25));
-        assert!((color.a - 0.75).abs() < f32::EPSILON);
+        let color = decode_color(0x1122_3300, Some(0.25)).expect("valid color");
+        assert!((color.a() - 0.75).abs() < f32::EPSILON);
     }
 
     #[test]

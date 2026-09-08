@@ -559,12 +559,9 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         regions: vec![region_id.clone()],
         transform: None,
         name: Some("survey points".into()),
-        color: Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 128.0 / 255.0,
-            a: 1.0,
-        }),
+        color: Some(
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 128.0 / 255.0, 1.0).expect("valid color"),
+        ),
         visible: Some(false),
     });
     ir.model.regions.push(cadmpeg_ir::topology::Region {
