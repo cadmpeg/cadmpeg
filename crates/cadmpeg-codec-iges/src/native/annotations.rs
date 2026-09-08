@@ -327,7 +327,7 @@ impl Subject<'_> {
             .map(|sequence| format!("iges:entity:directory#{sequence}"))
     }
 
-    fn curve_link(&self, index: usize) -> Option<String> {
+    fn curve_link(&self, index: usize, global_table: GlobalTable) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
             .and_then(|sequence| {
@@ -339,7 +339,7 @@ impl Subject<'_> {
                     |target| {
                         parameterized_curve_type(target)
                             && target.status.is_physically_dependent()
-                            && target.status.use_flag() == Some(UseFlag::Annotation)
+                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
                     },
                 )
             })
@@ -372,7 +372,7 @@ impl Subject<'_> {
             })
     }
 
-    fn enclosure_link(&self, index: usize) -> Option<String> {
+    fn enclosure_link(&self, index: usize, global_table: GlobalTable) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
             .and_then(|sequence| {
@@ -386,14 +386,14 @@ impl Subject<'_> {
                             (target.entity_type, target.form),
                             (100 | 102, 0) | (106, 63)
                         ) && target.status.is_physically_dependent()
-                            && target.status.use_flag() == Some(UseFlag::Annotation)
+                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
                     },
                 )
             })
             .map(|sequence| format!("iges:entity:directory#{sequence}"))
     }
 
-    fn geometry_link(&self, index: usize) -> Option<String> {
+    fn geometry_link(&self, index: usize, global_table: GlobalTable) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
             .and_then(|sequence| {
@@ -404,7 +404,7 @@ impl Subject<'_> {
                     ReferenceExpectation::Named(ExpectationLabel::SubordinateAnnotationGeometry),
                     |target| {
                         target.status.is_physically_dependent()
-                            && target.status.use_flag() == Some(UseFlag::Annotation)
+                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
                     },
                 )
             })
@@ -575,7 +575,11 @@ fn general_label(
     }
 }
 
-fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+fn general_symbol(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    global_table: GlobalTable,
+) -> NativeAnnotation {
     let record = subject.record;
     let end = subject.primary_end;
     let declared_geometry_count = record.and_then(|record| record.integer(2));
@@ -608,7 +612,7 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
         note: subject.note_link(1),
         declared_geometry_count,
         geometry: (0..geometry_count)
-            .map(|offset| subject.geometry_link(3 + offset))
+            .map(|offset| subject.geometry_link(3 + offset, global_table))
             .collect(),
         declared_leader_count,
         leaders: (0..leader_count)
@@ -686,7 +690,9 @@ pub(super) fn build(
                 AnnotationKind::GeneralLabel => {
                     general_label(&subject, transformation, overdeclared_counts)
                 }
-                AnnotationKind::GeneralSymbol => general_symbol(&subject, transformation),
+                AnnotationKind::GeneralSymbol => {
+                    general_symbol(&subject, transformation, global_table)
+                }
                 AnnotationKind::SectionedArea => {
                     sectioned_area(&subject, transformation, overdeclared_counts)
                 }
@@ -707,7 +713,10 @@ pub(super) fn build(
                     id: subject.id(),
                     source_entity: subject.source_entity(),
                     note: subject.note_link(1),
-                    curves: [subject.curve_link(2), subject.curve_link(3)],
+                    curves: [
+                        subject.curve_link(2, global_table),
+                        subject.curve_link(3, global_table),
+                    ],
                     leaders: [subject.leader_link(4), subject.leader_link(5)],
                     witnesses: [subject.witness_link(6), subject.witness_link(7)],
                     transformation,
@@ -748,7 +757,7 @@ pub(super) fn build(
                     source_entity: subject.source_entity(),
                     note: subject.note_link(1),
                     leader: subject.leader_link(2),
-                    enclosure: subject.enclosure_link(3),
+                    enclosure: subject.enclosure_link(3, global_table),
                     transformation,
                 },
                 AnnotationKind::RadiusDimension => NativeAnnotation::RadiusDimension {

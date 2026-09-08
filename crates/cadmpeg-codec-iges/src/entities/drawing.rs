@@ -60,10 +60,10 @@ fn drawing_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) ->
         && entry.status.subordinate() == Some(Subordinate::Independent)
         && match global_table {
             GlobalTable::V4_0 | GlobalTable::Legacy => {
-                entry.status.use_flag() != Some(UseFlag::Geometry)
+                entry.status.use_flag(global_table) != Some(UseFlag::Geometry)
             }
             GlobalTable::V5_0 | GlobalTable::V5Later => {
-                entry.status.use_flag() == Some(UseFlag::Annotation)
+                entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
                     && entry.structure == 0
                     && entry.line_font == 0
                     && entry.line_weight == 0
@@ -77,10 +77,10 @@ fn view_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
         && matches!(entry.form, 0 | 1)
         && match global_table {
             GlobalTable::V4_0 | GlobalTable::Legacy => {
-                entry.status.use_flag() != Some(UseFlag::Geometry)
+                entry.status.use_flag(global_table) != Some(UseFlag::Geometry)
             }
             GlobalTable::V5_0 | GlobalTable::V5Later => {
-                entry.status.use_flag() == Some(UseFlag::Annotation)
+                entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
             }
         }
 }
@@ -93,14 +93,14 @@ fn views_visible_directory_valid(entry: &DirectoryEntry, global_table: GlobalTab
         }
         && entry.status.subordinate() == Some(Subordinate::Independent)
         && (!matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
-            || entry.status.use_flag() == Some(UseFlag::Annotation))
+            || entry.status.use_flag(global_table) == Some(UseFlag::Annotation))
 }
 
 fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 108
         && match global_table {
             GlobalTable::V4_0 => matches!(
-                entry.status.use_flag(),
+                entry.status.use_flag(global_table),
                 Some(
                     UseFlag::Geometry
                         | UseFlag::Annotation
@@ -108,7 +108,7 @@ fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
                         | UseFlag::Parametric
                 )
             ),
-            _ => entry.status.use_flag() == Some(UseFlag::Annotation),
+            _ => entry.status.use_flag(global_table) == Some(UseFlag::Annotation),
         }
 }
 
@@ -281,7 +281,8 @@ pub(super) fn project(
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
                     .is_some_and(|annotation| {
-                        annotation.status.use_flag() == Some(UseFlag::Annotation)
+                        annotation.status.use_flag(global.global_table())
+                            == Some(UseFlag::Annotation)
                             && annotation.status.is_physically_dependent()
                     })
             })

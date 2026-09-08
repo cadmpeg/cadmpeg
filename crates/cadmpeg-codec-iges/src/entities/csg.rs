@@ -480,7 +480,7 @@ pub(super) fn project(
         let point = (2..=4)
             .map(|index| record.number(index).filter(|value| value.is_finite()))
             .collect::<Option<Vec<_>>>();
-        if point.is_none() || entry.status.use_flag() != Some(UseFlag::Other) {
+        if point.is_none() || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
             losses.push(entity_loss(
                 entry,
                 "selected-component point or entity-use flag is invalid",

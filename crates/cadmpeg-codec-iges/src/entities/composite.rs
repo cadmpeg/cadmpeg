@@ -1477,7 +1477,7 @@ fn project_with_type_130_policy(
         }
         let Some(use_flag) = entry
             .status
-            .use_flag()
+            .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
             losses.push(entity_loss(
