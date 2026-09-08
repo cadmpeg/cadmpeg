@@ -836,7 +836,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
             },
             edge_count,
             vertex_count,
-            fbb_edge_table: true,
+            edge_table_form: crate::families::standard::fbb::EdgeTableForm::FbbOnly,
         }
     };
     let layouts = vec![layout(2, 3, 4, 10), layout(2, 3, 4, 20)];

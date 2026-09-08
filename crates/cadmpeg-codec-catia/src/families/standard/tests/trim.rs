@@ -554,7 +554,7 @@ fn fbb_population_spine_retains_the_preceding_trim_chain() {
     assert_eq!(isolated.face_run.face_count, layout.face_run.face_count);
     assert_eq!(isolated.edge_count, layout.edge_count);
     assert_eq!(isolated.vertex_count, layout.vertex_count);
-    assert_eq!(isolated.fbb_edge_table, layout.fbb_edge_table);
+    assert_eq!(isolated.edge_table_form, layout.edge_table_form);
 }
 
 #[test]

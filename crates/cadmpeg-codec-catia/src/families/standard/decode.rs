@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
@@ -1150,7 +1151,7 @@ struct StandardPopulationSelection {
     spine: Vec<u8>,
     records: Vec<crate::families::standard::records::StandardSurfaceRecord>,
     supports: Vec<crate::families::standard::records::StandardCurveSupport>,
-    fbb_edge_table: bool,
+    edge_table_form: EdgeTableForm,
     vertex_roster_compatible: bool,
 }
 
@@ -1170,7 +1171,7 @@ fn standard_population_selections(
                 spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
                 records: population.records,
                 supports: population.supports,
-                fbb_edge_table: layout.fbb_edge_table,
+                edge_table_form: layout.edge_table_form,
                 vertex_roster_compatible:
                     crate::families::standard::records::standard_vertex_roster(
                         &scan.data,
@@ -1459,9 +1460,13 @@ fn try_decode_standard_population(
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
-    let fbb_only = selection.map_or(scan.variant == Variant::FbbOnly, |selection| {
-        selection.fbb_edge_table
-    });
+    let edge_table_form = selection.map_or_else(
+        || match scan.variant {
+            Variant::FbbOnly => EdgeTableForm::FbbOnly,
+            _ => EdgeTableForm::Standard,
+        },
+        |selection| selection.edge_table_form,
+    );
     if !work_budget.charge() {
         return None;
     }
@@ -1469,10 +1474,9 @@ fn try_decode_standard_population(
         &scan.data,
         container::consolidated_record_sources(scan),
     );
-    let points = (if fbb_only {
-        fbb::fbb_only_vertex_points(standard_spine)
-    } else {
-        fbb::standard_vertex_points(standard_spine)
+    let points = (match edge_table_form {
+        EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
+        EdgeTableForm::Standard => fbb::standard_vertex_points(standard_spine),
     })
     .unwrap_or_default()
     .into_iter()
@@ -1520,7 +1524,7 @@ fn try_decode_standard_population(
         .collect::<HashSet<_>>();
     let standard_edge_count = selection.map_or_else(
         || {
-            (if fbb_only {
+            (if edge_table_form == EdgeTableForm::FbbOnly {
                 fbb::fbb_only_edge_count(standard_spine)
             } else {
                 fbb::standard_edge_count(standard_spine)
@@ -2066,7 +2070,7 @@ fn try_decode_standard_population(
         &records,
         &face_bounds,
         standard_spine,
-        fbb_only,
+        edge_table_form,
         brep,
         selection.map(|selection| selection.supports.as_slice()),
         &scan.data,
@@ -3633,7 +3637,7 @@ fn attach_standard_topology(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     spine: &[u8],
-    fbb_only: bool,
+    edge_table_form: EdgeTableForm,
     brep: &[u8],
     support_override: Option<&[crate::families::standard::records::StandardCurveSupport]>,
     source: &[u8],
@@ -3646,7 +3650,7 @@ fn attach_standard_topology(
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
-    let Some(edge_count) = (if fbb_only {
+    let Some(edge_count) = (if edge_table_form == EdgeTableForm::FbbOnly {
         crate::families::standard::fbb::fbb_only_edge_count(spine)
     } else {
         crate::families::standard::fbb::standard_edge_count(spine)
@@ -4425,10 +4429,10 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let fbb_mesh_ports = fbb_only
+    let fbb_mesh_ports = (edge_table_form == EdgeTableForm::FbbOnly)
         .then(|| missing_edge::standard_mesh_edge_ports(spine))
         .flatten();
-    let mesh_topology = if fbb_only {
+    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
         fbb_mesh_ports
             .as_deref()
             .and_then(|ports| topology::parse_fbb_with_native_vertices(spine, ports))
@@ -4477,7 +4481,8 @@ fn attach_standard_topology(
         })
         .collect();
     let mut mesh_search_exhausted = false;
-    let native_fbb_topology = if fbb_only && !has_open_face_domains {
+    let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
+    {
         native_endpoint_pairs.as_ref().and_then(|pairs| {
             fbb::parse_fbb_endpoints_with_edge_classes(
                 spine,

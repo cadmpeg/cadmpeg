@@ -666,6 +666,13 @@ pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<FbbFaceRun> {
         .collect()
 }
 
+/// Grammar of a population's edge tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EdgeTableForm {
+    Standard,
+    FbbOnly,
+}
+
 /// A source-closed FBB layout whose topology may still require the global
 /// endpoint solver. The edge and vertex counts are structural population
 /// keys; they are not body selection by themselves.
@@ -674,7 +681,7 @@ pub(crate) struct FbbPopulationLayout {
     pub(crate) face_run: FbbFaceRun,
     pub(crate) edge_count: usize,
     pub(crate) vertex_count: usize,
-    pub(crate) fbb_edge_table: bool,
+    pub(crate) edge_table_form: EdgeTableForm,
 }
 
 fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
@@ -696,14 +703,13 @@ pub(crate) fn population_spine<'a>(
     bytes: &'a [u8],
     layout: &FbbPopulationLayout,
 ) -> Option<&'a [u8]> {
-    let (_, vertex_header, handle_width) = parse_standard_edge_tables_with_width(
-        bytes,
-        layout.face_run.after_faces(),
-    )
-    .or_else(|| {
-        parse_fbb_edge_tables(bytes, layout.face_run.after_faces())
-            .map(|(_, _, vertex_header, handle_width)| (Vec::new(), vertex_header, handle_width))
-    })?;
+    let (_, vertex_header, handle_width) = match layout.edge_table_form {
+        EdgeTableForm::Standard => {
+            parse_standard_edge_tables_with_width(bytes, layout.face_run.after_faces())
+        }
+        EdgeTableForm::FbbOnly => parse_fbb_edge_tables(bytes, layout.face_run.after_faces())
+            .map(|(_, _, vertex_header, handle_width)| (Vec::new(), vertex_header, handle_width)),
+    }?;
     let trim_start = parse_trim_chain_start(
         bytes,
         layout.face_run.face_start,
@@ -727,15 +733,15 @@ pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
                 face_count: range.len() / fbb_row::LEN,
             };
             let after_faces = face_run.after_faces();
-            let (edge_rows, vertex_header, handle_width, fbb_edge_table) =
+            let (edge_rows, vertex_header, handle_width, edge_table_form) =
                 parse_standard_edge_tables_with_width(bytes, after_faces)
                     .map(|(rows, vertex_header, handle_width)| {
-                        (rows, vertex_header, handle_width, false)
+                        (rows, vertex_header, handle_width, EdgeTableForm::Standard)
                     })
                     .or_else(|| {
                         parse_fbb_edge_tables(bytes, after_faces).map(
                             |(rows, _, vertex_header, handle_width)| {
-                                (rows, vertex_header, handle_width, true)
+                                (rows, vertex_header, handle_width, EdgeTableForm::FbbOnly)
                             },
                         )
                     })?;
@@ -750,7 +756,7 @@ pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
                 face_run,
                 edge_count: edge_rows.len(),
                 vertex_count,
-                fbb_edge_table,
+                edge_table_form,
             })
         })
         .collect()
