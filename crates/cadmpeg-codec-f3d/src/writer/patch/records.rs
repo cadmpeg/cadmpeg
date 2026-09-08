@@ -90,7 +90,7 @@ pub(crate) fn patch_lost_edge_references(
 pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
     for entity in edits {
         let encoded_id = entity
-            .entity_id
+            .entity_id()
             .encode_utf16()
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
@@ -103,11 +103,7 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
         {
             patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
         }
-        for guid in entity
-            .channel_group()
-            .into_iter()
-            .flat_map(|group| group.channels.values())
-        {
+        for guid in entity.channel_group().channels().values() {
             let encoded = guid
                 .value
                 .as_str()

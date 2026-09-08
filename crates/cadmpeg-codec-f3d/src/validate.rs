@@ -861,47 +861,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         let unique_index =
             stream.is_some_and(|stream| record_indices.insert((stream, entity.record_index)));
-        let valid_class_tail = entity.channel_group().is_none_or(|group| {
-            group.class_tail.as_ref().is_none_or(|tail| {
-                group.record_index_offset < tail.offset()
-                    && group
-                        .entity_id_offset
-                        .is_none_or(|offset| offset < tail.offset())
-                    && group.channels.values().all(|guid| {
-                        guid.offset
-                            .checked_add(72)
-                            .is_some_and(|end| end <= tail.offset())
-                    })
-            })
-        });
-        let valid_group = match entity.channel_group() {
-            Some(group) => {
-                valid_class_tail
-                    && !group.channels.is_empty()
-                    && group.channels.len() <= 8
-                    && group
-                        .entity_id_offset
-                        .is_some_and(|key| group.record_index_offset < key)
-                    && group
-                        .channels
-                        .keys()
-                        .all(|name| !name.is_empty() && name.len() <= 128 && name.is_ascii())
-                    && group.entity_id_offset.is_some_and(|entity_offset| {
-                        group.channels.values().all(|guid| {
-                            let guid_offset = guid.offset;
-                            group.record_index_offset < guid_offset
-                                && guid_offset
-                                    .checked_add(72)
-                                    .is_some_and(|guid_end| guid_end <= entity_offset)
-                        })
-                    })
-            }
-            None => false,
-        };
-        let valid = stream.is_some()
-            && unique_index
-            && crate::act::is_entity_key(&entity.entity_id)
-            && valid_group;
+        let valid = stream.is_some() && unique_index;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

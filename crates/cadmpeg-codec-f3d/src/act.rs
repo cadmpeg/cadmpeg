@@ -12,8 +12,8 @@ use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
-    ActChannelGroup, ActClassTail, ActEntity, ActEntityMembership, ActGuid, ActRegistryChannel,
-    ActRootComponent, ActTableReference, ActTableRow, Located,
+    ActChannelGroup, ActClassTail, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
+    ActTableReference, ActTableRow, Located,
 };
 
 pub struct DecodedAct {
@@ -422,71 +422,58 @@ fn merge_entities(
     table: Vec<TableEntry>,
     groups: Vec<ChannelGroup>,
 ) -> Result<Vec<ActEntity>, CodecError> {
-    let mut by_index: BTreeMap<u32, ActEntity> = BTreeMap::new();
+    let mut table_by_index = BTreeMap::new();
     for item in table {
         let record_index = item.record_index;
-        let entity = ActEntity {
-            id: crate::ids::native_scoped_id(stream, "act-entity", record_index),
-            record_index,
-            entity_id: item.entity_id,
-            membership: ActEntityMembership::TableOnly(item.row),
-        };
-        if by_index.insert(record_index, entity).is_some() {
+        if table_by_index.insert(record_index, item).is_some() {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D ACTTable change-group reference {record_index}: {stream}"
             )));
         }
     }
+    let mut by_index = BTreeMap::new();
     for group in groups {
-        if let Some(entity) = by_index.get_mut(&group.record_index) {
+        let record_index = group.record_index;
+        if by_index.contains_key(&record_index) {
+            return Err(CodecError::malformed(format_args!(
+                "duplicate F3D ACT change group {stream}:{record_index}"
+            )));
+        }
+        let (entity_id, row) = if let Some(item) = table_by_index.remove(&record_index) {
             if group
                 .entity_id
                 .as_ref()
-                .is_some_and(|group_id| entity.entity_id != group_id.value)
+                .is_some_and(|group_id| item.entity_id != group_id.value)
             {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D ACTTable entity key conflicts with its change group: {stream}:{}",
-                    group.record_index
-                )));
+                return Err(CodecError::malformed(format_args!("F3D ACTTable entity key conflicts with its change group: {stream}:{record_index}")));
             }
-            let attached = ActChannelGroup {
-                record_index_offset: group.record_index_offset as u64,
-                entity_id_offset: group.entity_id.as_ref().map(|id| id.offset as u64),
-                class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
-                channels: group.channels,
-                class_tail: group.class_tail,
-            };
-            if !entity.attach_channel_group(attached) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate F3D ACT change group {stream}:{}",
-                    group.record_index
-                )));
-            }
-        } else if let Some(entity_id) = group.entity_id {
-            by_index.insert(
-                group.record_index,
-                ActEntity {
-                    id: crate::ids::native_scoped_id(stream, "act-entity", group.record_index),
-                    record_index: group.record_index,
-                    entity_id: entity_id.value,
-                    membership: ActEntityMembership::GroupOnly(ActChannelGroup {
-                        record_index_offset: group.record_index_offset as u64,
-                        entity_id_offset: Some(entity_id.offset as u64),
-                        class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
-                        channels: group.channels,
-                        class_tail: group.class_tail,
-                    }),
-                },
-            );
-        }
+            (item.entity_id, Some(item.row))
+        } else if let Some(entity_id) = &group.entity_id {
+            (entity_id.value.clone(), None)
+        } else {
+            continue;
+        };
+        let channel_group = ActChannelGroup::try_new(
+            group.record_index_offset as u64,
+            group.entity_id.as_ref().map(|id| id.offset as u64),
+            group.class_tag.try_into().map_err(CodecError::malformed)?,
+            group.channels,
+            group.class_tail,
+        )
+        .map_err(CodecError::malformed)?;
+        let entity = ActEntity::try_new(
+            crate::ids::native_scoped_id(stream, "act-entity", record_index),
+            record_index,
+            entity_id,
+            row,
+            channel_group,
+        )
+        .map_err(CodecError::malformed)?;
+        by_index.insert(record_index, entity);
     }
-    if let Some(entity) = by_index
-        .values()
-        .find(|entity| entity.channel_group().is_none())
-    {
+    if let Some(record_index) = table_by_index.keys().next() {
         return Err(CodecError::malformed(format_args!(
-            "F3D ACTTable reference has no change group: {stream}:{}",
-            entity.record_index
+            "F3D ACTTable reference has no change group: {stream}:{record_index}"
         )));
     }
     Ok(by_index.into_values().collect())
@@ -762,7 +749,7 @@ mod tests {
         table_keyed_group.entity_id = None;
         let entities = merge_entities(stream, vec![table_entry("0_985")], vec![table_keyed_group])
             .expect("the table can supply an omitted group key");
-        assert_eq!(entities[0].entity_id, "0_985");
+        assert_eq!(entities[0].entity_id(), "0_985");
         assert!(entities[0].channel_entity_id_offset().is_none());
     }
 
