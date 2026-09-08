@@ -1181,7 +1181,10 @@ fn project_fillet(
             Some(FilletGroup {
                 edges: EdgeSelection::Native(edge_collection.id()),
                 radius: RadiusSpec::Constant {
-                    radius: length_reference(&source.identity.segment_token, radius.index, index)?,
+                    radius: cadmpeg_ir::features::PositiveLength::new(
+                        length_reference(&source.identity.segment_token, radius.index, index)?
+                            .get(),
+                    )?,
                 },
                 tangency_weight: None,
             })
@@ -1246,7 +1249,9 @@ fn project_chamfer(
                 groups: vec![ChamferGroup {
                     edges: EdgeSelection::Native(edges.id()),
                     spec: ChamferSpec::Distance {
-                        distance: length_parameter(source, 2, index)?,
+                        distance: cadmpeg_ir::features::PositiveLength::new(
+                            length_parameter(source, 2, index)?.get(),
+                        )?,
                     },
                 }],
                 flip_direction: boolean(source, 5, index)?,

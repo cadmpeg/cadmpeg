@@ -518,7 +518,7 @@ fn decode_types_named_mirror_with_unresolved_operands() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::UnresolvedMirror,
+            pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_MIRROR,
         }
     );
     assert_eq!(

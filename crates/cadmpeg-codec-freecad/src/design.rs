@@ -15,11 +15,11 @@ use cadmpeg_ir::features::{
     HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleConstruction, HoleKind,
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length,
     LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter,
-    PatternSeed, PatternStage, PatternStageCombination, PrimitiveSolid, PrimitiveSolidKind,
-    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction,
-    RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-    SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
-    ThreadHand,
+    PatternSeed, PatternStage, PatternStageCombination, PatternTransform, PrimitiveSolid,
+    PrimitiveSolidKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionFuseOrder,
+    RevolveConstruction, RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors,
+    ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
+    SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -4037,7 +4037,7 @@ fn fillet_definition(
         groups: vec![cadmpeg_ir::features::FilletGroup {
             edges,
             radius: RadiusSpec::Constant {
-                radius: Length::new(radius)?,
+                radius: cadmpeg_ir::features::PositiveLength::new(radius)?,
             },
             tangency_weight: None,
         }],
@@ -4067,12 +4067,12 @@ fn chamfer_definition(
         }
         if first == second {
             ChamferSpec::Distance {
-                distance: Length::new(first)?,
+                distance: cadmpeg_ir::features::PositiveLength::new(first)?,
             }
         } else {
             ChamferSpec::TwoDistances {
-                first: Length::new(first)?,
-                second: Length::new(second)?,
+                first: cadmpeg_ir::features::PositiveLength::new(first)?,
+                second: cadmpeg_ir::features::PositiveLength::new(second)?,
             }
         }
     } else {
@@ -4367,15 +4367,15 @@ fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
         .filter(|value| value.is_finite() && *value > 0.0);
     match (mode, first) {
         (0, Some(distance)) => Some(ChamferSpec::Distance {
-            distance: Length::new(distance)?,
+            distance: cadmpeg_ir::features::PositiveLength::new(distance)?,
         }),
         (1, Some(first)) => property(properties, "Size2")
             .and_then(scalar_value)
             .filter(|value| value.is_finite() && *value > 0.0)
             .and_then(|second| {
                 Some(ChamferSpec::TwoDistances {
-                    first: Length::new(first)?,
-                    second: Length::new(second)?,
+                    first: cadmpeg_ir::features::PositiveLength::new(first)?,
+                    second: cadmpeg_ir::features::PositiveLength::new(second)?,
                 })
             }),
         (2, Some(distance)) => property(properties, "Angle")
@@ -4383,8 +4383,8 @@ fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
             .filter(|angle| angle.is_finite() && *angle > 0.0 && *angle < 180.0)
             .and_then(|angle| {
                 Some(ChamferSpec::DistanceAngle {
-                    distance: Length::new(distance)?,
-                    angle: cadmpeg_ir::features::Angle::new(angle.to_radians())?,
+                    distance: cadmpeg_ir::features::PositiveLength::new(distance)?,
+                    angle: cadmpeg_ir::features::InteriorAngle::new(angle.to_radians())?,
                 })
             }),
         _ => None,
@@ -5454,7 +5454,7 @@ fn pattern_definition(
                 )?;
                 let combination = if index == 0 {
                     PatternStageCombination::Initialize
-                } else if matches!(pattern, PatternKind::Scale { .. }) {
+                } else if matches!(pattern.definition(), PatternTransform::Scale { .. }) {
                     PatternStageCombination::AlignedSlices
                 } else {
                     PatternStageCombination::CartesianProduct
@@ -5465,7 +5465,7 @@ fn pattern_definition(
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        PatternKind::Composite { stages }
+        PatternKind::new(PatternTransform::Composite { stages }).ok()?
     } else {
         pattern_kind(kind, properties, objects, properties_by_owner, entries)?
     };
@@ -5535,16 +5535,18 @@ fn pattern_kind(
             if let Some((plane_origin, plane_normal)) =
                 plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
             {
-                PatternKind::Mirror {
+                PatternKind::new(PatternTransform::Mirror {
                     plane_origin,
                     plane_normal,
-                }
+                })
+                .ok()?
             } else {
-                PatternKind::MirrorReference {
+                PatternKind::new(PatternTransform::MirrorReference {
                     plane: cadmpeg_ir::features::FaceSelection::Native(
                         property(properties, "MirrorPlane")?.id.clone(),
                     ),
-                }
+                })
+                .ok()?
             },
         );
     }
@@ -5564,11 +5566,12 @@ fn pattern_kind(
     if kind.ends_with("Scaled") {
         let final_factor = scalar_named(properties, "Factor")?;
         return (final_factor.is_finite() && final_factor > 0.0 && count >= 2).then_some(
-            PatternKind::Scale {
+            PatternKind::new(PatternTransform::Scale {
                 center: PatternScaleCenter::FirstSeedCentroid,
                 final_factor,
                 count,
-            },
+            })
+            .ok()?,
         );
     }
 
@@ -5597,7 +5600,7 @@ fn pattern_kind(
                 properties_by_owner,
                 entries,
             )?;
-            PatternKind::Composite {
+            PatternKind::new(PatternTransform::Composite {
                 stages: vec![
                     PatternStage {
                         pattern: Box::new(first),
@@ -5608,7 +5611,8 @@ fn pattern_kind(
                         combination: PatternStageCombination::CartesianProduct,
                     },
                 ],
-            }
+            })
+            .ok()?
         } else {
             first
         }
@@ -5620,23 +5624,25 @@ fn pattern_kind(
         }
         let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
         if let Some(step) = uniform_step(&angles) {
-            PatternKind::Circular {
+            PatternKind::new(PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
                 angle: cadmpeg_ir::features::Angle::new(
                     (step * f64::from(count - 1)).to_radians(),
                 )?,
                 count,
-            }
+            })
+            .ok()?
         } else {
-            PatternKind::CircularAngles {
+            PatternKind::new(PatternTransform::CircularAngles {
                 axis_origin,
                 axis_dir,
                 angles: angles
                     .into_iter()
                     .map(|angle| cadmpeg_ir::features::Angle::new(angle.to_radians()))
                     .collect::<Option<Vec<_>>>()?,
-            }
+            })
+            .ok()?
         }
     } else {
         return None;
@@ -5663,20 +5669,26 @@ fn linear_pattern_axis(
     }
     let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset", entries)?;
     if let Some(spacing) = uniform_step(&offsets) {
-        Some(PatternKind::Linear {
-            direction,
-            spacing: Length::new(spacing)?,
-            count,
-            second: None,
-        })
+        Some(
+            PatternKind::new(PatternTransform::Linear {
+                direction,
+                spacing: Length::new(spacing)?,
+                count,
+                second: None,
+            })
+            .ok()?,
+        )
     } else {
-        Some(PatternKind::LinearOffsets {
-            direction,
-            offsets: offsets
-                .into_iter()
-                .map(Length::new)
-                .collect::<Option<Vec<_>>>()?,
-        })
+        Some(
+            PatternKind::new(PatternTransform::LinearOffsets {
+                direction,
+                offsets: offsets
+                    .into_iter()
+                    .map(Length::new)
+                    .collect::<Option<Vec<_>>>()?,
+            })
+            .ok()?,
+        )
     }
 }
 

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Operand and selection completeness predicates.
 
-use super::{
-    finite_feature_point, positive_feature_length, unit_feature_direction, valid_feature_direction,
-};
+use super::{positive_feature_length, unit_feature_direction};
 use cadmpeg_ir::features::{
-    AngularTermination, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
-    ExtrudeStart, FaceSelection, FeatureId, HoleKind, Length, LinearTermination, LoftPointSection,
-    LoftSection, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolveConstruction, RevolveExtent,
+    AngularTermination, BodySelection, BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart,
+    FaceSelection, FeatureId, HoleKind, Length, LinearTermination, LoftPointSection, LoftSection,
+    PathRef, PatternKind, PatternTransform, ProfileRef, RevolveConstruction, RevolveExtent,
     RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
 };
 use cadmpeg_ir::ids::BodyId;
@@ -98,25 +96,6 @@ pub(crate) fn hole_specification_is_incomplete(
         | cadmpeg_ir::features::HoleSpecification::Threaded { standard, .. }) = specification;
         standard.trim().is_empty()
     })
-}
-
-pub(crate) fn chamfer_spec_is_incomplete(spec: &ChamferSpec) -> bool {
-    match spec {
-        ChamferSpec::Unresolved
-        | ChamferSpec::UnresolvedDistance
-        | ChamferSpec::UnresolvedTwoDistances
-        | ChamferSpec::UnresolvedDistanceAngle => true,
-        ChamferSpec::Distance { distance } => !positive_feature_length(*distance),
-        ChamferSpec::TwoDistances { first, second } => {
-            !positive_feature_length(*first) || !positive_feature_length(*second)
-        }
-        ChamferSpec::DistanceAngle { distance, angle } => {
-            !positive_feature_length(*distance)
-                || !angle.get().is_finite()
-                || angle.get() <= 0.0
-                || angle.get() >= std::f64::consts::PI
-        }
-    }
 }
 
 pub(crate) fn extrude_extent_is_incomplete(
@@ -307,101 +286,33 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
 }
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
-    match pattern {
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => true,
-        PatternKind::Linear {
-            direction,
-            spacing,
-            count,
-            second,
-        } => {
-            direction.is_none_or(|direction| !valid_feature_direction(direction))
-                || !positive_feature_length(*spacing)
-                || *count < 2
-                || second.as_ref().is_some_and(|second| {
-                    !valid_feature_direction(second.direction)
-                        || !positive_feature_length(second.spacing)
-                        || second.count == 0
-                })
+    match pattern.definition() {
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite => true,
+        PatternTransform::Linear {
+            direction, count, ..
+        } => direction.is_none() || *count < 2,
+        PatternTransform::LinearOffsets { direction, offsets } => {
+            direction.is_none() || offsets.len() < 2
         }
-        PatternKind::LinearOffsets { direction, offsets } => {
-            direction.is_none_or(|direction| !valid_feature_direction(direction))
-                || offsets.len() < 2
-                || !valid_increasing_locations(offsets.iter().map(|offset| offset.get()))
+        PatternTransform::Circular { count, .. } => *count < 2,
+        PatternTransform::CircularAngles { angles, .. } => angles.len() < 2,
+        PatternTransform::Mirror { .. } => false,
+        PatternTransform::MirrorReference { .. } => true,
+        PatternTransform::CurveDriven { path, count, .. } => {
+            path.as_ref().is_none_or(path_ref_is_incomplete) || *count < 2
         }
-        PatternKind::Circular {
-            axis_origin,
-            axis_dir,
-            count,
-            angle,
-        } => {
-            !finite_feature_point(*axis_origin)
-                || !valid_feature_direction(*axis_dir)
-                || !angle.get().is_finite()
-                || angle.get() <= 0.0
-                || *count < 2
-        }
-        PatternKind::CircularAngles {
-            axis_origin,
-            axis_dir,
-            angles,
-        } => {
-            !finite_feature_point(*axis_origin)
-                || !valid_feature_direction(*axis_dir)
-                || angles.len() < 2
-                || !valid_increasing_locations(angles.iter().map(|angle| angle.get()))
-        }
-        PatternKind::Mirror {
-            plane_origin,
-            plane_normal,
-        } => !finite_feature_point(*plane_origin) || !valid_feature_direction(*plane_normal),
-        PatternKind::MirrorReference { .. } => true,
-        PatternKind::CurveDriven {
-            path,
-            spacing,
-            count,
-        } => {
-            path.as_ref().is_none_or(path_ref_is_incomplete)
-                || !positive_feature_length(*spacing)
-                || *count < 2
-        }
-        PatternKind::Scale {
-            center,
-            final_factor,
-            count,
-        } => {
+        PatternTransform::Scale { center, .. } => {
             matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
-                || matches!(
-                    center,
-                    cadmpeg_ir::features::PatternScaleCenter::Point(point)
-                        if !finite_feature_point(*point)
-                )
-                || !final_factor.is_finite()
-                || *final_factor <= 0.0
-                || *count < 2
         }
-        PatternKind::Composite { stages } => {
-            stages.is_empty()
-                || stages.iter().enumerate().any(|(index, stage)| {
-                    stage.combination
-                        != if index == 0 {
-                            cadmpeg_ir::features::PatternStageCombination::Initialize
-                        } else if matches!(*stage.pattern, PatternKind::Scale { .. }) {
-                            cadmpeg_ir::features::PatternStageCombination::AlignedSlices
-                        } else {
-                            cadmpeg_ir::features::PatternStageCombination::CartesianProduct
-                        }
-                        || matches!(*stage.pattern, PatternKind::Composite { .. })
-                        || pattern_is_incomplete(&stage.pattern)
-                })
-                || pattern_composition_is_incomplete(stages)
-        }
+        PatternTransform::Composite { stages } => stages
+            .iter()
+            .any(|stage| pattern_is_incomplete(&stage.pattern)),
     }
 }
 
@@ -426,90 +337,16 @@ pub(crate) fn pattern_feature_is_incomplete(
         || pattern_is_incomplete(pattern)
 }
 
-pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
-    match radius {
-        RadiusSpec::Unresolved
-        | RadiusSpec::UnresolvedConstant
-        | RadiusSpec::UnresolvedChordal
-        | RadiusSpec::UnresolvedAsymmetric
-        | RadiusSpec::UnresolvedVariable => true,
-        RadiusSpec::Constant { radius } => !positive_feature_length(*radius),
-        RadiusSpec::Chordal { chord_length } => !positive_feature_length(*chord_length),
-        RadiusSpec::Asymmetric {
-            offset_one,
-            offset_two,
-        } => !positive_feature_length(*offset_one) || !positive_feature_length(*offset_two),
-        RadiusSpec::Variable { points } => {
-            points.len() < 2
-                || points.iter().any(|point| {
-                    !point.parameter.is_finite()
-                        || !(0.0..=1.0).contains(&point.parameter)
-                        || !point.radius.get().is_finite()
-                        || point.radius.get() < 0.0
-                })
-                || !points.iter().any(|point| point.radius.get() > 0.0)
-                || points
-                    .windows(2)
-                    .any(|pair| pair[0].parameter >= pair[1].parameter)
-        }
-    }
-}
-
-pub(crate) fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
-    let mut locations = locations;
-    let Some(first) = locations.next() else {
-        return false;
-    };
-    first == 0.0
-        && locations
-            .try_fold(first, |previous, location| {
-                (location.is_finite() && location > previous).then_some(location)
-            })
-            .is_some()
-}
-
-pub(crate) fn pattern_composition_is_incomplete(
-    stages: &[cadmpeg_ir::features::PatternStage],
-) -> bool {
-    let mut occurrences = None;
-    stages.iter().enumerate().any(|(index, stage)| {
-        let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
-            return false;
-        };
-        if stage_count == 0 {
-            return true;
-        }
-        if index == 0 {
-            occurrences = Some(stage_count);
-            return false;
-        }
-        match stage.combination {
-            cadmpeg_ir::features::PatternStageCombination::CartesianProduct => {
-                if let Some(count) = occurrences {
-                    occurrences = count.checked_mul(stage_count);
-                    occurrences.is_none()
-                } else {
-                    false
-                }
-            }
-            cadmpeg_ir::features::PatternStageCombination::AlignedSlices => {
-                occurrences.is_some_and(|count| count % stage_count != 0)
-            }
-            cadmpeg_ir::features::PatternStageCombination::Initialize => true,
-        }
-    })
-}
-
 pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
-    match pattern {
-        PatternKind::Linear { count, .. }
-        | PatternKind::Circular { count, .. }
-        | PatternKind::CurveDriven { count, .. }
-        | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
-        PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
-        PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
-        PatternKind::Composite { stages } => {
+    match pattern.definition() {
+        PatternTransform::Linear { count, .. }
+        | PatternTransform::Circular { count, .. }
+        | PatternTransform::CurveDriven { count, .. }
+        | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
+        PatternTransform::LinearOffsets { offsets, .. } => Some(offsets.len()),
+        PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
+        PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
+        PatternTransform::Composite { stages } => {
             stages
                 .iter()
                 .try_fold(None::<usize>, |occurrences, stage| {
@@ -528,13 +365,13 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
                     }
                 })?
         }
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => None,
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite => None,
     }
 }
 

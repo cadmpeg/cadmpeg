@@ -6,185 +6,19 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::features::{
-    BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceSelection,
-    FeatureSourceContent, HoleKind, Length, PatternKind, PatternSeed, PatternStageCombination,
-    RadiusSpec, SplitFaceTool, UnresolvedFamily,
+    BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, FeatureSourceContent,
+    HoleKind, Length, PatternKind, PatternSeed, PatternTransform, SplitFaceTool, UnresolvedFamily,
 };
-
-fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
-    match pattern {
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => true,
-        PatternKind::Linear {
-            direction,
-            spacing,
-            count,
-            second,
-        } => {
-            direction.is_none_or(valid_feature_direction)
-                && positive_feature_length(*spacing)
-                && *count > 0
-                && second.as_ref().is_none_or(|second| {
-                    valid_feature_direction(second.direction)
-                        && positive_feature_length(second.spacing)
-                        && second.count > 0
-                })
-        }
-        PatternKind::LinearOffsets { direction, offsets } => {
-            direction.is_none_or(valid_feature_direction)
-                && valid_increasing_locations(offsets.iter().map(|offset| offset.get()))
-        }
-        PatternKind::Circular {
-            axis_origin,
-            axis_dir,
-            angle,
-            count,
-        } => {
-            axis_origin.x.is_finite()
-                && axis_origin.y.is_finite()
-                && axis_origin.z.is_finite()
-                && valid_feature_direction(*axis_dir)
-                && angle.get() > 0.0
-                && *count > 0
-        }
-        PatternKind::CircularAngles {
-            axis_origin,
-            axis_dir,
-            angles,
-        } => {
-            axis_origin.x.is_finite()
-                && axis_origin.y.is_finite()
-                && axis_origin.z.is_finite()
-                && valid_feature_direction(*axis_dir)
-                && valid_increasing_locations(angles.iter().map(|angle| angle.get()))
-        }
-        PatternKind::CurveDriven { spacing, count, .. } => {
-            positive_feature_length(*spacing) && *count > 0
-        }
-        PatternKind::Mirror {
-            plane_origin,
-            plane_normal,
-        } => {
-            plane_origin.x.is_finite()
-                && plane_origin.y.is_finite()
-                && plane_origin.z.is_finite()
-                && valid_feature_direction(*plane_normal)
-        }
-        PatternKind::MirrorReference { plane } => match plane {
-            FaceSelection::Native(reference) => !reference.is_empty(),
-            _ => true,
-        },
-        PatternKind::Scale {
-            center,
-            final_factor,
-            count,
-        } => {
-            let center_valid = match center {
-                crate::features::PatternScaleCenter::Point(point) => {
-                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-                }
-                crate::features::PatternScaleCenter::FirstSeedCentroid
-                | crate::features::PatternScaleCenter::Native(_) => true,
-            };
-            center_valid && final_factor.is_finite() && *final_factor > 0.0 && *count >= 2
-        }
-        PatternKind::Composite { stages } => {
-            let structure_valid = !nested
-                && !stages.is_empty()
-                && stages.iter().enumerate().all(|(index, stage)| {
-                    stage.combination
-                        == if index == 0 {
-                            PatternStageCombination::Initialize
-                        } else if matches!(*stage.pattern, PatternKind::Scale { .. }) {
-                            PatternStageCombination::AlignedSlices
-                        } else {
-                            PatternStageCombination::CartesianProduct
-                        }
-                        && pattern_is_valid(&stage.pattern, true)
-                        && !matches!(*stage.pattern, PatternKind::Composite { .. })
-                });
-            structure_valid && composite_composition_is_valid(stages)
-        }
-    }
-}
-
-fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> bool {
-    let mut occurrences = None;
-    stages.iter().enumerate().all(|(index, stage)| {
-        let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
-            return true;
-        };
-        if stage_count == 0 {
-            return false;
-        }
-        if index == 0 {
-            occurrences = Some(stage_count);
-            return true;
-        }
-        match stage.combination {
-            PatternStageCombination::CartesianProduct => {
-                if let Some(count) = occurrences {
-                    occurrences = count.checked_mul(stage_count);
-                    occurrences.is_some()
-                } else {
-                    true
-                }
-            }
-            PatternStageCombination::AlignedSlices => {
-                occurrences.is_none_or(|count| count % stage_count == 0)
-            }
-            PatternStageCombination::Initialize => false,
-        }
-    })
-}
-
-fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
-    match pattern {
-        PatternKind::Linear { count, .. }
-        | PatternKind::Circular { count, .. }
-        | PatternKind::CurveDriven { count, .. }
-        | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
-        PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
-        PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite
-        | PatternKind::Composite { .. } => None,
-    }
-}
-
-fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
-    let mut locations = locations;
-    let Some(first) = locations.next() else {
-        return false;
-    };
-    first == 0.0
-        && locations
-            .try_fold(first, |previous, location| {
-                (location.is_finite() && location > previous).then_some(location)
-            })
-            .is_some()
-}
 
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,
     paths: &mut Vec<&'a crate::features::PathRef>,
 ) {
-    match pattern {
-        PatternKind::CurveDriven {
+    match pattern.definition() {
+        PatternTransform::CurveDriven {
             path: Some(path), ..
         } => paths.push(path),
-        PatternKind::Composite { stages } => {
+        PatternTransform::Composite { stages } => {
             for stage in stages {
                 collect_pattern_paths(&stage.pattern, paths);
             }
@@ -2629,15 +2463,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::FaceBlend {
                 first_faces,
                 second_faces,
-                radius,
+                ..
             } => {
                 face_selections.push(first_faces);
                 face_selections.push(second_faces);
                 if face_selections_overlap(first_faces, second_faces) {
                     feature_geometry_error(findings, feature, "face blend supports overlap");
-                }
-                if !radius_spec_is_valid(radius) {
-                    feature_geometry_error(findings, feature, "face blend radius is invalid");
                 }
             }
             FeatureDefinition::FullRoundFillet { groups } => {
@@ -2904,64 +2735,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::Rib { .. } => {}
             FeatureDefinition::Fillet { groups } => {
-                let valid = !groups.is_empty()
-                    && groups.iter().all(|group| {
-                        edge_selections.push(&group.edges);
-                        match &group.radius {
-                            RadiusSpec::Unresolved
-                            | RadiusSpec::UnresolvedConstant
-                            | RadiusSpec::UnresolvedChordal
-                            | RadiusSpec::UnresolvedAsymmetric
-                            | RadiusSpec::UnresolvedVariable => true,
-                            RadiusSpec::Constant { radius } => positive_feature_length(*radius),
-                            RadiusSpec::Chordal { chord_length } => {
-                                positive_feature_length(*chord_length)
-                            }
-                            RadiusSpec::Asymmetric {
-                                offset_one,
-                                offset_two,
-                            } => {
-                                positive_feature_length(*offset_one)
-                                    && positive_feature_length(*offset_two)
-                            }
-                            RadiusSpec::Variable { points } => {
-                                points.len() >= 2
-                                    && points.iter().all(|point| {
-                                        point.parameter.is_finite()
-                                            && (0.0..=1.0).contains(&point.parameter)
-                                            && point.radius.get() >= 0.0
-                                    })
-                                    && points.iter().any(|point| point.radius.get() > 0.0)
-                                    && points
-                                        .windows(2)
-                                        .all(|pair| pair[0].parameter < pair[1].parameter)
-                            }
-                        }
-                    });
+                edge_selections.extend(groups.iter().map(|group| &group.edges));
+                let valid = !groups.is_empty();
                 if !valid {
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
                 }
             }
             FeatureDefinition::Chamfer { groups, .. } => {
-                let valid = !groups.is_empty()
-                    && groups.iter().all(|group| {
-                        edge_selections.push(&group.edges);
-                        match group.spec {
-                            ChamferSpec::Unresolved
-                            | ChamferSpec::UnresolvedDistance
-                            | ChamferSpec::UnresolvedTwoDistances
-                            | ChamferSpec::UnresolvedDistanceAngle => true,
-                            ChamferSpec::Distance { distance } => positive_feature_length(distance),
-                            ChamferSpec::TwoDistances { first, second } => {
-                                positive_feature_length(first) && positive_feature_length(second)
-                            }
-                            ChamferSpec::DistanceAngle { distance, angle } => {
-                                positive_feature_length(distance)
-                                    && angle.get() > 0.0
-                                    && angle.get() < std::f64::consts::PI
-                            }
-                        }
-                    });
+                edge_selections.extend(groups.iter().map(|group| &group.edges));
+                let valid = !groups.is_empty();
                 if !valid {
                     feature_geometry_error(findings, feature, "chamfer dimensions are invalid");
                 }
@@ -3306,10 +3088,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             }
                         }
                     }
-                }
-                let valid = pattern_is_valid(pattern, false);
-                if !valid {
-                    feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
             FeatureDefinition::Sketch { sketch, .. } => {
@@ -4407,38 +4185,6 @@ fn check_historical_members<'a, I, F>(
 
 fn positive_feature_length(value: Length) -> bool {
     value.get() > 0.0
-}
-
-fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
-    match radius {
-        RadiusSpec::Unresolved
-        | RadiusSpec::UnresolvedConstant
-        | RadiusSpec::UnresolvedChordal
-        | RadiusSpec::UnresolvedAsymmetric
-        | RadiusSpec::UnresolvedVariable => true,
-        RadiusSpec::Constant { radius } => positive_feature_length(*radius),
-        RadiusSpec::Chordal { chord_length } => positive_feature_length(*chord_length),
-        RadiusSpec::Asymmetric {
-            offset_one,
-            offset_two,
-        } => positive_feature_length(*offset_one) && positive_feature_length(*offset_two),
-        RadiusSpec::Variable { points } => {
-            points.len() >= 2
-                && points.iter().all(|point| {
-                    point.parameter.is_finite()
-                        && (0.0..=1.0).contains(&point.parameter)
-                        && point.radius.get() >= 0.0
-                })
-                && points.iter().any(|point| point.radius.get() > 0.0)
-                && points
-                    .windows(2)
-                    .all(|pair| pair[0].parameter < pair[1].parameter)
-        }
-    }
-}
-
-fn valid_feature_direction(value: Vector3) -> bool {
-    value.norm().is_finite() && value.norm() > 0.0
 }
 
 fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {

@@ -47,7 +47,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 fn typed_reference_walk_treats_historical_members_as_state_local() {
     use crate::features::{
         EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FilletGroup,
-        Length, RadiusSpec,
+        RadiusSpec,
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
@@ -85,7 +85,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                     native: "edge:local".into(),
                 },
                 radius: RadiusSpec::Constant {
-                    radius: Length::new(1.0).unwrap(),
+                    radius: crate::features::PositiveLength::new(1.0).unwrap(),
                 },
                 tangency_weight: None,
             }],

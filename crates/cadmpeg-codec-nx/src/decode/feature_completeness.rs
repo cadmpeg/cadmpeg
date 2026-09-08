@@ -12,13 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod operands;
 use operands::{
-    body_selection_is_incomplete, body_selections_overlap, chamfer_spec_is_incomplete,
-    edge_selection_is_incomplete, extrude_extent_is_incomplete, extrude_start_is_incomplete,
-    face_selection_is_incomplete, face_selections_overlap, hole_feature_is_incomplete,
-    hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
-    profile_dependency_is_incomplete, profile_ref_is_incomplete, radius_spec_is_incomplete,
-    resolved_body_selection_len, revolve_feature_is_incomplete, rib_feature_is_incomplete,
-    sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    body_selection_is_incomplete, body_selections_overlap, edge_selection_is_incomplete,
+    extrude_extent_is_incomplete, extrude_start_is_incomplete, face_selection_is_incomplete,
+    face_selections_overlap, hole_feature_is_incomplete, hole_specification_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete, profile_dependency_is_incomplete,
+    profile_ref_is_incomplete, resolved_body_selection_len, revolve_feature_is_incomplete,
+    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
     termination_dependency_is_incomplete,
 };
 
@@ -453,9 +452,9 @@ pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     groups.is_empty()
-        || groups.iter().any(|group| {
-            edge_selection_is_incomplete(&group.edges) || chamfer_spec_is_incomplete(&group.spec)
-        })
+        || groups
+            .iter()
+            .any(|group| edge_selection_is_incomplete(&group.edges) || group.spec.is_unresolved())
 }
 
 pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
@@ -463,9 +462,9 @@ pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     groups.is_empty()
-        || groups.iter().any(|group| {
-            edge_selection_is_incomplete(&group.edges) || radius_spec_is_incomplete(&group.radius)
-        })
+        || groups
+            .iter()
+            .any(|group| edge_selection_is_incomplete(&group.edges) || group.radius.is_unresolved())
 }
 
 pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
@@ -480,7 +479,7 @@ pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
     face_selection_is_incomplete(first_faces)
         || face_selection_is_incomplete(second_faces)
         || face_selections_overlap(first_faces, second_faces)
-        || radius_spec_is_incomplete(radius)
+        || radius.is_unresolved()
 }
 
 pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {

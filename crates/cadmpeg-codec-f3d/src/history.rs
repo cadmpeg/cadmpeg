@@ -936,10 +936,11 @@ pub(crate) fn bind_feature_body_selections(
     let pattern_body_slots = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Pattern {
-                seeds,
-                pattern: cadmpeg_ir::features::PatternKind::Circular { count, .. },
-            } = &feature.definition
+            let FeatureDefinition::Pattern { seeds, pattern } = &feature.definition else {
+                return None;
+            };
+            let cadmpeg_ir::features::PatternTransform::Circular { count, .. } =
+                pattern.definition()
             else {
                 return None;
             };

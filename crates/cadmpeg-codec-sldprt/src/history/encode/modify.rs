@@ -117,20 +117,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             feature.id
                         )));
                     }
-                    if points.len() < 2
-                        || points.iter().any(|point| {
-                            !point.parameter.is_finite() || !(0.0..=1.0).contains(&point.parameter)
-                        })
-                        || points
-                            .windows(2)
-                            .any(|pair| pair[0].parameter >= pair[1].parameter)
-                    {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has an invalid variable-radius law",
-                            feature.id
-                        )));
-                    }
-                    for (index, point) in points.iter().enumerate() {
+                    for (index, point) in points.as_slice().iter().enumerate() {
                         parameters.insert(format!("Position{index}"), point.parameter.to_string());
                         parameters.insert(
                             format!("Radius{index}"),

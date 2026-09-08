@@ -18,7 +18,7 @@ use crate::design::face_resolve::{
     resolved_extrude_profile_face_group, resolved_face_group, resolved_historical_face_group,
     resolved_historical_face_operand,
     resolved_historical_split_face_target_group_with_updated_faces,
-    resolved_loft_edge_profile_group, resolved_profile_face_group, valid_chamfer_spec,
+    resolved_loft_edge_profile_group, resolved_profile_face_group,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -931,21 +931,21 @@ pub fn project_parameter_design_with_edge_identities(
                     project_circular_pattern(scope, construction_groups, face_operands)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
-                            pattern: PatternKind::UnresolvedCircular,
+                            pattern: PatternKind::UNRESOLVED_CIRCULAR,
                         })
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
                     project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
-                            pattern: PatternKind::UnresolvedLinear,
+                            pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
                 }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
-                            pattern: PatternKind::UnresolvedMirror,
+                            pattern: PatternKind::UNRESOLVED_MIRROR,
                         })
                 }
                 Some(DesignFeatureFamily::OffsetFaces) => {
@@ -2148,18 +2148,7 @@ fn project_fillet_arm(
             })
             .collect::<Vec<_>>();
         let incomplete_assignment = if assignments.is_empty() {
-            let radii = parameters
-                .iter()
-                .filter(|(_, parameter)| parameter.source_kind() == "Radius")
-                .map(|(_, parameter)| *parameter)
-                .collect::<Vec<_>>();
-            radii.len() != 1
-                || radii.iter().any(|parameter| {
-                    design_length(parameter).is_none_or(|value| value.get() <= 0.0)
-                })
-                || parameters
-                    .iter()
-                    .any(|(_, parameter)| parameter.source_kind() != "Radius")
+            !matches!(parameters, [(_, parameter)] if parameter.source_kind() == "Radius")
         } else {
             assigned_parameter_records.len() != parameters.len()
                 || parameters.iter().any(|(_, parameter)| {
@@ -2173,24 +2162,19 @@ fn project_fillet_arm(
                         != 1
                 })
                 || parameters.iter().any(|(_, parameter)| {
-                    if matches!(
-                        parameter.source_kind(),
-                        "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2"
-                    ) {
-                        design_length(parameter).is_none_or(|value| value.get() <= 0.0)
-                    } else {
-                        !parameter.evaluated_value.is_finite()
-                    }
+                    parameter.source_kind() == "TangencyWeight"
+                        && !parameter.evaluated_value.is_finite()
                 })
         };
+        let native_definition = || FeatureDefinition::Native {
+            kind: scope.kind_name().into(),
+            parameters: parameters
+                .iter()
+                .map(|(_, parameter)| (parameter.name.clone(), parameter.expression.clone()))
+                .collect(),
+        };
         if incomplete_assignment {
-            FeatureDefinition::Native {
-                kind: scope.kind_name().into(),
-                parameters: parameters
-                    .iter()
-                    .map(|(_, parameter)| (parameter.name.clone(), parameter.expression.clone()))
-                    .collect(),
-            }
+            native_definition()
         } else {
             let groups = assignments
                 .into_iter()
@@ -2204,8 +2188,7 @@ fn project_fillet_arm(
                                 .find(|(_, parameter)| {
                                     parameter.record_index == radius_parameter_record_index
                                 })
-                                .and_then(|(_, parameter)| design_length(parameter))
-                                .expect("complete Fillet assignment has a positive radius");
+                                .and_then(|(_, parameter)| design_positive_length(parameter))?;
                             (RadiusSpec::Constant { radius }, Some(radius.get()))
                         }
                         DesignFilletRadiusLaw::Chordal {
@@ -2216,8 +2199,7 @@ fn project_fillet_arm(
                                 .find(|(_, parameter)| {
                                     parameter.record_index == chord_length_parameter_record_index
                                 })
-                                .and_then(|(_, parameter)| design_length(parameter))
-                                .expect("complete chordal Fillet has a positive chord length");
+                                .and_then(|(_, parameter)| design_positive_length(parameter))?;
                             (RadiusSpec::Chordal { chord_length }, None)
                         }
                         DesignFilletRadiusLaw::Asymmetric {
@@ -2228,13 +2210,10 @@ fn project_fillet_arm(
                                 parameters
                                     .iter()
                                     .find(|(_, parameter)| parameter.record_index == record_index)
-                                    .and_then(|(_, parameter)| design_length(parameter))
-                                    .filter(|offset| offset.get() > 0.0)
+                                    .and_then(|(_, parameter)| design_positive_length(parameter))
                             };
-                            let offset_one = offset(offset_one_parameter_record_index)
-                                .expect("complete asymmetric Fillet has a positive first offset");
-                            let offset_two = offset(offset_two_parameter_record_index)
-                                .expect("complete asymmetric Fillet has a positive second offset");
+                            let offset_one = offset(offset_one_parameter_record_index)?;
+                            let offset_two = offset(offset_two_parameter_record_index)?;
                             (
                                 RadiusSpec::Asymmetric {
                                     offset_one,
@@ -2243,9 +2222,7 @@ fn project_fillet_arm(
                                 None,
                             )
                         }
-                        DesignFilletRadiusLaw::Variable { .. } => {
-                            unreachable!("variable Fillet projected before constants")
-                        }
+                        DesignFilletRadiusLaw::Variable { .. } => return None,
                     };
                     let tangency_weight = assignment
                         .tangency_weight_parameter_record_index
@@ -2280,30 +2257,31 @@ fn project_fillet_arm(
                                 )
                             },
                         );
-                    FilletGroup {
+                    Some(FilletGroup {
                         edges,
                         radius,
                         tangency_weight,
-                    }
+                    })
                 })
-                .collect::<Vec<_>>();
-            FeatureDefinition::Fillet {
-                groups: if groups.is_empty() {
-                    vec![FilletGroup {
-                        edges: EdgeSelection::Native(scope.id.clone()),
-                        radius: RadiusSpec::Constant {
-                            radius: parameters
-                                .iter()
-                                .filter(|(_, parameter)| parameter.source_kind() == "Radius")
-                                .find_map(|(_, parameter)| design_length(parameter))
-                                .expect("complete ungrouped Fillet has one positive radius"),
-                        },
-                        tangency_weight: None,
-                    }]
-                } else {
-                    groups
-                },
+                .collect::<Option<Vec<_>>>();
+            let Some(mut groups) = groups else {
+                return native_definition();
+            };
+            if groups.is_empty() {
+                let Some(radius) = parameters
+                    .iter()
+                    .filter(|(_, parameter)| parameter.source_kind() == "Radius")
+                    .find_map(|(_, parameter)| design_positive_length(parameter))
+                else {
+                    return native_definition();
+                };
+                groups.push(FilletGroup {
+                    edges: EdgeSelection::Native(scope.id.clone()),
+                    radius: RadiusSpec::Constant { radius },
+                    tangency_weight: None,
+                });
             }
+            FeatureDefinition::Fillet { groups }
         }
     }
 }
@@ -5243,7 +5221,7 @@ fn project_variable_fillet(
 pub(crate) fn variable_fillet_law(
     parameters: &[(u32, &DesignParameter)],
 ) -> Option<(
-    Vec<cadmpeg_ir::features::VariableRadius>,
+    cadmpeg_ir::features::VariableRadii,
     Option<cadmpeg_ir::features::FiniteReal>,
 )> {
     use cadmpeg_ir::features::VariableRadius;
@@ -5257,9 +5235,6 @@ pub(crate) fn variable_fillet_law(
     };
     let start = design_length(unique_parameter("StartRadius")?)?;
     let end = design_length(unique_parameter("EndRadius")?)?;
-    if start.get() < 0.0 || end.get() < 0.0 {
-        return None;
-    }
     let tangency_weight = {
         let mut matches = parameters.iter().filter_map(|(_, parameter)| {
             (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
@@ -5305,23 +5280,16 @@ pub(crate) fn variable_fillet_law(
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
         let radius = design_length(radius)?;
         let parameter = parameter.evaluated_value;
-        if radius.get() < 0.0 || !parameter.is_finite() || !(0.0..1.0).contains(&parameter) {
-            return None;
-        }
         points.push(VariableRadius { parameter, radius });
     }
     points.push(VariableRadius {
         parameter: 1.0,
         radius: end,
     });
-    if !points
-        .windows(2)
-        .all(|pair| pair[0].parameter < pair[1].parameter)
-        || !points.iter().any(|point| point.radius.get() > 0.0)
-    {
-        return None;
-    }
-    Some((points, tangency_weight))
+    Some((
+        cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+        tangency_weight,
+    ))
 }
 
 fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> Vec<u32> {
@@ -5447,8 +5415,10 @@ fn project_chamfer(
                     .iter()
                     .zip(&angles)
                     .map(|(distance, angle)| {
-                        design_length(distance)
-                            .zip(design_angle(angle))
+                        design_positive_length(distance)
+                            .zip(design_angle(angle).and_then(|value| {
+                                cadmpeg_ir::features::InteriorAngle::new(value.get())
+                            }))
                             .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
                     })
                     .collect::<Vec<_>>()
@@ -5461,7 +5431,8 @@ fn project_chamfer(
                 left_distances
                     .iter()
                     .map(|distance| {
-                        design_length(distance).map(|distance| ChamferSpec::Distance { distance })
+                        design_positive_length(distance)
+                            .map(|distance| ChamferSpec::Distance { distance })
                     })
                     .collect::<Vec<_>>()
             })
@@ -5475,8 +5446,8 @@ fn project_chamfer(
                         .iter()
                         .zip(&right_distances)
                         .map(|(first, second)| {
-                            design_length(first)
-                                .zip(design_length(second))
+                            design_positive_length(first)
+                                .zip(design_positive_length(second))
                                 .map(|(first, second)| ChamferSpec::TwoDistances { first, second })
                         })
                         .collect::<Vec<_>>()
@@ -5494,8 +5465,8 @@ fn project_chamfer(
                     .iter()
                     .zip(&second_distances)
                     .map(|(first, second)| {
-                        design_length(first)
-                            .zip(design_length(second))
+                        design_positive_length(first)
+                            .zip(design_positive_length(second))
                             .map(|(first, second)| ChamferSpec::TwoDistances { first, second })
                     })
                     .collect::<Vec<_>>()
@@ -5510,8 +5481,10 @@ fn project_chamfer(
                 .iter()
                 .zip(&angles)
                 .map(|(distance, angle)| {
-                    design_length(distance)
-                        .zip(design_angle(angle))
+                    design_positive_length(distance)
+                        .zip(design_angle(angle).and_then(|value| {
+                            cadmpeg_ir::features::InteriorAngle::new(value.get())
+                        }))
                         .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
                 })
                 .collect::<Vec<_>>()
@@ -5525,7 +5498,8 @@ fn project_chamfer(
             distances
                 .iter()
                 .map(|distance| {
-                    design_length(distance).map(|distance| ChamferSpec::Distance { distance })
+                    design_positive_length(distance)
+                        .map(|distance| ChamferSpec::Distance { distance })
                 })
                 .collect::<Vec<_>>()
         });
@@ -5534,9 +5508,6 @@ fn project_chamfer(
         None
     };
     let candidates = candidates?.into_iter().collect::<Option<Vec<_>>>()?;
-    if !candidates.iter().all(valid_chamfer_spec) {
-        return None;
-    }
 
     let groups = candidates
         .into_iter()
@@ -5576,7 +5547,7 @@ fn project_fixed_chamfer(
     edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition};
 
     let fixed = scope.fixed_chamfer_parameters()?;
     let stream = native_stream(&scope.id)?;
@@ -5593,13 +5564,13 @@ fn project_fixed_chamfer(
     let spec = match fixed {
         crate::records::feature::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
-                distance: Length::new(distance.value * 10.0)?,
+                distance: cadmpeg_ir::features::PositiveLength::new(distance.value * 10.0)?,
             }
         }
         crate::records::feature::DesignFixedChamferParameters::TwoDistances { first, second } => {
             ChamferSpec::TwoDistances {
-                first: Length::new(first.value * 10.0)?,
-                second: Length::new(second.value * 10.0)?,
+                first: cadmpeg_ir::features::PositiveLength::new(first.value * 10.0)?,
+                second: cadmpeg_ir::features::PositiveLength::new(second.value * 10.0)?,
             }
         }
     };
@@ -6405,7 +6376,9 @@ pub(crate) fn project_circular_pattern(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, PatternKind, PatternSeed};
+    use cadmpeg_ir::features::{
+        Angle, FeatureDefinition, PatternKind, PatternSeed, PatternTransform,
+    };
 
     let construction = scope.circular_pattern_construction()?;
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
@@ -6442,12 +6415,13 @@ pub(crate) fn project_circular_pattern(
     };
     Some(FeatureDefinition::Pattern {
         seeds: vec![seed],
-        pattern: PatternKind::Circular {
+        pattern: PatternKind::new(PatternTransform::Circular {
             axis_origin,
             axis_dir,
             angle: Angle::new(construction.angle)?,
             count: construction.count,
-        },
+        })
+        .ok()?,
     })
 }
 
@@ -6476,7 +6450,9 @@ fn project_rectangular_pattern_scalars(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind, PatternSeed};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, PatternKind, PatternSeed, PatternTransform,
+    };
 
     let construction = scope.rectangular_pattern_construction()?;
     let active = [
@@ -6560,12 +6536,13 @@ fn project_rectangular_pattern_scalars(
     let seeds = component_seed.or(group_seed).into_iter().collect();
     Some(FeatureDefinition::Pattern {
         seeds,
-        pattern: PatternKind::Linear {
+        pattern: PatternKind::new(PatternTransform::Linear {
             direction,
             spacing: Length::new(extent.abs() * 10.0 / f64::from(count.saturating_sub(1)))?,
             count: *count,
             second: None,
-        },
+        })
+        .ok()?,
     })
 }
 
@@ -6575,7 +6552,7 @@ pub(crate) fn project_mirror(
     face_operands: &[DesignFaceOperand],
     scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternKind, PatternSeed};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind, PatternSeed, PatternTransform};
 
     let construction = scope.mirror_construction()?;
     let stream = native_stream(&scope.id)?;
@@ -6667,14 +6644,15 @@ pub(crate) fn project_mirror(
     let origin_scale = if scale_origin { 10.0 } else { 1.0 };
     Some(FeatureDefinition::Pattern {
         seeds: vec![seed],
-        pattern: PatternKind::Mirror {
+        pattern: PatternKind::new(PatternTransform::Mirror {
             plane_origin: Point3::new(
                 plane_origin.x * origin_scale,
                 plane_origin.y * origin_scale,
                 plane_origin.z * origin_scale,
             ),
             plane_normal,
-        },
+        })
+        .ok()?,
     })
 }
 

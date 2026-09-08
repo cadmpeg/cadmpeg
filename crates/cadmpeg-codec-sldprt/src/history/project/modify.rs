@@ -31,7 +31,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             }
         })
-        .and_then(Length::new)
+        .and_then(cadmpeg_ir::features::PositiveLength::new)
     {
         RadiusSpec::Constant { radius }
     } else {
@@ -69,6 +69,12 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                         .all(|(expected, (actual, _))| expected == *actual))
                 .then_some(points)
             })
+            .and_then(|points| {
+                cadmpeg_ir::features::VariableRadii::new(
+                    points.into_iter().map(|(_, point)| point).collect(),
+                )
+                .ok()
+            })
             .map_or_else(
                 || {
                     if feature
@@ -87,9 +93,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                         RadiusSpec::Unresolved
                     }
                 },
-                |points| RadiusSpec::Variable {
-                    points: points.into_iter().map(|(_, point)| point).collect(),
-                },
+                |points| RadiusSpec::Variable { points },
             )
     };
     FeatureDefinition::Fillet {
@@ -534,7 +538,7 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
                     .get(positional)
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .and_then(Length::new)
+            .and_then(cadmpeg_ir::features::PositiveLength::new)
     };
     let positional_angle = feature
         .parameters
@@ -550,13 +554,19 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         .collect::<Vec<_>>();
     let ordered_spec = || match ordered_dimensions.as_slice() {
         [distance] => Some(ChamferSpec::Distance {
-            distance: Length::new(parse_positive_dimension_length_mm(distance)?)?,
+            distance: cadmpeg_ir::features::PositiveLength::new(
+                parse_positive_dimension_length_mm(distance)?,
+            )?,
         }),
         [first, second] => {
-            let first_length = parse_positive_dimension_length_mm(first).and_then(Length::new);
-            let second_length = parse_positive_dimension_length_mm(second).and_then(Length::new);
-            let first_angle = parse_bounded_angle_rad(first).and_then(Angle::new);
-            let second_angle = parse_bounded_angle_rad(second).and_then(Angle::new);
+            let first_length = parse_positive_dimension_length_mm(first)
+                .and_then(cadmpeg_ir::features::PositiveLength::new);
+            let second_length = parse_positive_dimension_length_mm(second)
+                .and_then(cadmpeg_ir::features::PositiveLength::new);
+            let first_angle =
+                parse_bounded_angle_rad(first).and_then(cadmpeg_ir::features::InteriorAngle::new);
+            let second_angle =
+                parse_bounded_angle_rad(second).and_then(cadmpeg_ir::features::InteriorAngle::new);
             match (first_length, second_length, first_angle, second_angle) {
                 (Some(distance), None, None, Some(angle))
                 | (None, Some(distance), Some(angle), None) => {
@@ -575,7 +585,9 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
                 ChamferSpec::DistanceAngle {
                     distance: length("Distance", "D1")?,
-                    angle: Angle::new(parse_bounded_angle_rad(value)?)?,
+                    angle: cadmpeg_ir::features::InteriorAngle::new(parse_bounded_angle_rad(
+                        value,
+                    )?)?,
                 }
             } else if let (Some(first), Some(second)) =
                 (length("Distance1", "D1"), length("Distance2", "D2"))

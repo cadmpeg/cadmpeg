@@ -177,30 +177,26 @@ fn incomplete_pattern(
     pattern: &cadmpeg_ir::features::PatternKind,
     incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
 ) -> bool {
-    use cadmpeg_ir::features::{PatternKind, PatternScaleCenter};
+    use cadmpeg_ir::features::{PatternScaleCenter, PatternTransform};
 
-    match pattern {
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => true,
-        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
-            direction.is_none()
-        }
-        PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
-        PatternKind::MirrorReference { .. } => true,
-        PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
-        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
-        PatternKind::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
-        PatternKind::Composite { stages } => {
-            stages.is_empty()
-                || stages
-                    .iter()
-                    .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path))
-        }
+    match pattern.definition() {
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite => true,
+        PatternTransform::Linear { direction, .. }
+        | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
+        PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,
+        PatternTransform::MirrorReference { .. } => true,
+        PatternTransform::CircularAngles { .. } => false,
+        PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
+        PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
+        PatternTransform::Composite { stages } => stages
+            .iter()
+            .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path)),
     }
 }
 
@@ -319,7 +315,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
-        PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
+        PathRef, ProfileRef, RevolveExtent, SplitFaceTool,
     };
     use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
@@ -1338,7 +1334,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || groups.iter().any(|group| {
                         incomplete_edge_selection(&group.edges)
                             || group.radius.is_unresolved()
-                            || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
                     })
             }
             FeatureDefinition::FullRoundFillet { groups } => {
@@ -1378,7 +1373,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 incomplete_face_selection(first_faces)
                     || incomplete_face_selection(second_faces)
                     || radius.is_unresolved()
-                    || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
             }
             FeatureDefinition::Shell {
                 bodies,
@@ -4025,13 +4019,17 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Pattern {
-                seeds,
-                pattern: pattern @ cadmpeg_ir::features::PatternKind::Mirror { .. },
-            } = &feature.definition
+            let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, pattern } =
+                &feature.definition
             else {
                 return None;
             };
+            if !matches!(
+                pattern.definition(),
+                cadmpeg_ir::features::PatternTransform::Mirror { .. }
+            ) {
+                return None;
+            }
             Some((feature.id.clone(), seeds.clone(), pattern.clone()))
         })
         .collect::<Vec<_>>();

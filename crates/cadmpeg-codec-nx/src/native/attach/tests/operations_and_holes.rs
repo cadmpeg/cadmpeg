@@ -881,7 +881,7 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
         BodySelection, BodyTrimSide, BooleanKind, BooleanOp, ChamferSpec, EdgeSelection,
-        FaceSelection, FeatureDefinition, HoleKind, PatternKind, RibDraft,
+        FaceSelection, FeatureDefinition, HoleKind, PatternTransform, RibDraft,
     };
 
     for (kind, op) in [
@@ -1078,13 +1078,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         "IDENTICAL INSTANCE OUTPUT",
         "Instance Feature",
     ] {
-        assert!(matches!(
-            super::non_boolean_feature_definition(kind, &[], None, None, None),
-            FeatureDefinition::Pattern {
-                seeds,
-        pattern: PatternKind::Unresolved,
-            } if seeds.is_empty()
-        ));
+        assert!(
+            matches!(&(super::non_boolean_feature_definition(kind, &[], None, None, None)),
+                FeatureDefinition::Pattern {
+                    seeds,
+            pattern: admitted_pattern,
+                } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved if seeds.is_empty())
+            )
+        );
     }
 }
 

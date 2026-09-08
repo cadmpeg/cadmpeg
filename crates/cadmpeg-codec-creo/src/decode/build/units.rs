@@ -1032,18 +1032,21 @@ fn scale_radius_spec(
         RadiusSpec::Constant { radius }
         | RadiusSpec::Chordal {
             chord_length: radius,
-        } => scale_length(radius, scale)?,
+        } => scale_positive_length(radius, scale)?,
         RadiusSpec::Asymmetric {
             offset_one,
             offset_two,
         } => {
-            scale_length(offset_one, scale)?;
-            scale_length(offset_two, scale)?;
+            scale_positive_length(offset_one, scale)?;
+            scale_positive_length(offset_two, scale)?;
         }
         RadiusSpec::Variable { points } => {
-            for point in points {
+            let mut scaled = points.as_slice().to_vec();
+            for point in &mut scaled {
                 scale_length(&mut point.radius, scale)?;
             }
+            *points = cadmpeg_ir::features::VariableRadii::new(scaled)
+                .map_err(|message| CodecError::Malformed(message.into()))?;
         }
         RadiusSpec::Unresolved
         | RadiusSpec::UnresolvedConstant
@@ -1062,11 +1065,11 @@ fn scale_chamfer_spec(
 
     match spec {
         ChamferSpec::Distance { distance } | ChamferSpec::DistanceAngle { distance, .. } => {
-            scale_length(distance, scale)?;
+            scale_positive_length(distance, scale)?;
         }
         ChamferSpec::TwoDistances { first, second } => {
-            scale_length(first, scale)?;
-            scale_length(second, scale)?;
+            scale_positive_length(first, scale)?;
+            scale_positive_length(second, scale)?;
         }
         ChamferSpec::Unresolved
         | ChamferSpec::UnresolvedDistance
@@ -1233,10 +1236,11 @@ fn scale_pattern_kind(
     pattern: &mut cadmpeg_ir::features::PatternKind,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::PatternKind;
+    use cadmpeg_ir::features::PatternTransform;
 
-    match pattern {
-        PatternKind::Linear {
+    let mut transform = pattern.definition().clone();
+    match &mut transform {
+        PatternTransform::Linear {
             spacing, second, ..
         } => {
             scale_length(spacing, scale)?;
@@ -1244,34 +1248,36 @@ fn scale_pattern_kind(
                 scale_length(&mut second.spacing, scale)?;
             }
         }
-        PatternKind::LinearOffsets { offsets, .. } => {
+        PatternTransform::LinearOffsets { offsets, .. } => {
             for offset in offsets {
                 scale_length(offset, scale)?;
             }
         }
-        PatternKind::CurveDriven { spacing, .. } => scale_length(spacing, scale)?,
-        PatternKind::Circular { axis_origin, .. } => scale_point3(axis_origin, scale),
-        PatternKind::CircularAngles { axis_origin, .. } => scale_point3(axis_origin, scale),
-        PatternKind::Mirror { plane_origin, .. } => scale_point3(plane_origin, scale),
-        PatternKind::Composite { stages } => {
+        PatternTransform::CurveDriven { spacing, .. } => scale_length(spacing, scale)?,
+        PatternTransform::Circular { axis_origin, .. } => scale_point3(axis_origin, scale),
+        PatternTransform::CircularAngles { axis_origin, .. } => scale_point3(axis_origin, scale),
+        PatternTransform::Mirror { plane_origin, .. } => scale_point3(plane_origin, scale),
+        PatternTransform::Composite { stages } => {
             for stage in stages {
                 scale_pattern_kind(&mut stage.pattern, scale)?;
             }
         }
-        PatternKind::Scale { center, .. } => {
+        PatternTransform::Scale { center, .. } => {
             if let cadmpeg_ir::features::PatternScaleCenter::Point(point) = center {
                 scale_point3(point, scale);
             }
         }
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite
-        | PatternKind::MirrorReference { .. } => {}
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite
+        | PatternTransform::MirrorReference { .. } => {}
     };
+    *pattern = cadmpeg_ir::features::PatternKind::new(transform)
+        .map_err(|message| CodecError::Malformed(message.into()))?;
     Ok(())
 }
 
@@ -1869,7 +1875,7 @@ mod tests {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
         FeatureDefinition, FuzzyTolerance, LinearTermination, PatternKind, PatternScaleCenter,
-        ProfileRef,
+        PatternTransform, ProfileRef,
     };
 
     #[test]
@@ -2025,17 +2031,18 @@ mod tests {
 
     #[test]
     fn scales_explicit_pattern_scale_center() {
-        let mut pattern = PatternKind::Scale {
+        let mut pattern = PatternKind::new(PatternTransform::Scale {
             center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
             final_factor: 2.0,
             count: 3,
-        };
+        })
+        .unwrap();
         scale_pattern_kind(&mut pattern, 25.4).unwrap();
-        let PatternKind::Scale {
+        let PatternTransform::Scale {
             center,
             final_factor,
             count,
-        } = pattern
+        } = pattern.definition().clone()
         else {
             panic!("test pattern changed family");
         };

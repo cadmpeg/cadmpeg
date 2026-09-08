@@ -5,7 +5,7 @@ use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, Length, LinearTermination, PathRef, PatternKind, ProfileRef,
+    FeatureDefinition, Length, LinearTermination, PathRef, ProfileRef,
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -377,13 +377,11 @@ pub fn bind_topology_selections(
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }
-            FeatureDefinition::Pattern {
-                pattern:
-                    PatternKind::CurveDriven {
-                        path: Some(path), ..
-                    },
-                ..
-            } => resolve_path_ref(path, &edge_ids, &curve_ids),
+            FeatureDefinition::Pattern { pattern, .. } => {
+                if let Some(Some(path)) = pattern.curve_path_mut() {
+                    resolve_path_ref(path, &edge_ids, &curve_ids);
+                }
+            }
             FeatureDefinition::Scale { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }

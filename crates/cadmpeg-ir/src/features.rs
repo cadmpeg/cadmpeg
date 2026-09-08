@@ -7328,24 +7328,24 @@ pub enum RadiusSpec {
     /// Same radius along the whole edge chain.
     Constant {
         /// The fillet radius.
-        radius: Length,
+        radius: PositiveLength,
     },
     /// Constant transverse chord length across the fillet surface.
     Chordal {
         /// Distance between the fillet's two support boundaries.
-        chord_length: Length,
+        chord_length: PositiveLength,
     },
     /// Distinct offsets from the selected edge along its two support faces.
     Asymmetric {
         /// Offset on the first support-face side.
-        offset_one: Length,
+        offset_one: PositiveLength,
         /// Offset on the second support-face side.
-        offset_two: Length,
+        offset_two: PositiveLength,
     },
     /// Radius varying along the edge chain per explicit control points.
     Variable {
         /// Radius samples along the edge chain, in chain-parameter order.
-        points: Vec<VariableRadius>,
+        points: VariableRadii,
     },
 }
 
@@ -7372,17 +7372,17 @@ enum RadiusSpecWire {
         form: Option<RadiusFormWire>,
     },
     Constant {
-        radius: Length,
+        radius: PositiveLength,
     },
     Chordal {
-        chord_length: Length,
+        chord_length: PositiveLength,
     },
     Asymmetric {
-        offset_one: Length,
-        offset_two: Length,
+        offset_one: PositiveLength,
+        offset_two: PositiveLength,
     },
     Variable {
-        points: Vec<VariableRadius>,
+        points: VariableRadii,
     },
 }
 
@@ -7533,6 +7533,51 @@ pub struct ChamferGroup {
     pub spec: ChamferSpec,
 }
 
+/// An ordered variable-radius law with at least two samples and a positive radius.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vec<VariableRadius>", into = "Vec<VariableRadius>")]
+pub struct VariableRadii(Vec<VariableRadius>);
+
+impl VariableRadii {
+    /// Admits finite ordered parameters in [0, 1] and nonnegative radii with one positive radius.
+    pub fn new(points: Vec<VariableRadius>) -> Result<Self, &'static str> {
+        if points.len() < 2
+            || !points.iter().all(|point| {
+                point.parameter.is_finite()
+                    && (0.0..=1.0).contains(&point.parameter)
+                    && point.radius.get() >= 0.0
+            })
+            || !points.iter().any(|point| point.radius.get() > 0.0)
+            || !points
+                .windows(2)
+                .all(|pair| pair[0].parameter < pair[1].parameter)
+        {
+            return Err("variable radius points require at least two ordered parameters in [0, 1] and nonnegative radii with one positive radius");
+        }
+        Ok(Self(points))
+    }
+
+    /// Returns the admitted radius samples in parameter order.
+    pub fn as_slice(&self) -> &[VariableRadius] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<VariableRadius>> for VariableRadii {
+    type Error = &'static str;
+
+    fn try_from(points: Vec<VariableRadius>) -> Result<Self, Self::Error> {
+        Self::new(points)
+    }
+}
+
+impl From<VariableRadii> for Vec<VariableRadius> {
+    fn from(points: VariableRadii) -> Self {
+        points.0
+    }
+}
+
 /// Radius at a normalized position along a filleted edge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7557,21 +7602,21 @@ pub enum ChamferSpec {
     /// Equal setback distance on both faces meeting the edge.
     Distance {
         /// Setback distance from the edge.
-        distance: Length,
+        distance: PositiveLength,
     },
     /// Independent setback distances on each face meeting the edge.
     TwoDistances {
         /// Setback distance on the first face.
-        first: Length,
+        first: PositiveLength,
         /// Setback distance on the second face.
-        second: Length,
+        second: PositiveLength,
     },
     /// A setback distance on one face plus an angle from it to the other.
     DistanceAngle {
         /// Setback distance on the reference face.
-        distance: Length,
+        distance: PositiveLength,
         /// Chamfer angle measured from the reference face.
-        angle: Angle,
+        angle: InteriorAngle,
     },
 }
 
@@ -7597,15 +7642,15 @@ enum ChamferSpecWire {
         form: Option<ChamferFormWire>,
     },
     Distance {
-        distance: Length,
+        distance: PositiveLength,
     },
     TwoDistances {
-        first: Length,
-        second: Length,
+        first: PositiveLength,
+        second: PositiveLength,
     },
     DistanceAngle {
-        distance: Length,
-        angle: Angle,
+        distance: PositiveLength,
+        angle: InteriorAngle,
     },
 }
 
@@ -8480,9 +8525,218 @@ pub enum FlexForm {
     Stretching,
 }
 
+/// An admitted pattern with valid geometry, repetition counts, and stage composition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternKind(PatternTransform);
+
+impl PatternKind {
+    /// An unresolved pattern with no identified form.
+    pub const UNRESOLVED: Self = Self(PatternTransform::Unresolved);
+
+    /// An unresolved linear pattern.
+    pub const UNRESOLVED_LINEAR: Self = Self(PatternTransform::UnresolvedLinear);
+
+    /// An unresolved circular pattern.
+    pub const UNRESOLVED_CIRCULAR: Self = Self(PatternTransform::UnresolvedCircular);
+
+    /// An unresolved curve-driven pattern.
+    pub const UNRESOLVED_CURVE_DRIVEN: Self = Self(PatternTransform::UnresolvedCurveDriven);
+
+    /// An unresolved mirror pattern.
+    pub const UNRESOLVED_MIRROR: Self = Self(PatternTransform::UnresolvedMirror);
+
+    /// An unresolved scale pattern.
+    pub const UNRESOLVED_SCALE: Self = Self(PatternTransform::UnresolvedScale);
+
+    /// An unresolved composite pattern.
+    pub const UNRESOLVED_COMPOSITE: Self = Self(PatternTransform::UnresolvedComposite);
+
+    /// Admits pattern geometry, repetition counts, and ordered stage composition.
+    pub fn new(transform: PatternTransform) -> Result<Self, &'static str> {
+        let require =
+            |condition: bool, message: &'static str| condition.then_some(()).ok_or(message);
+        match &transform {
+            PatternTransform::Unresolved
+            | PatternTransform::UnresolvedLinear
+            | PatternTransform::UnresolvedCircular
+            | PatternTransform::UnresolvedCurveDriven
+            | PatternTransform::UnresolvedMirror
+            | PatternTransform::UnresolvedScale
+            | PatternTransform::UnresolvedComposite => {}
+            PatternTransform::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            } => {
+                require(
+                    direction.is_none_or(|direction| FeatureDirection3::new(direction).is_some()),
+                    "pattern direction must have a finite nonzero norm",
+                )?;
+                require(spacing.get() > 0.0, "pattern spacing must be positive")?;
+                require(*count > 0, "pattern count must be positive")?;
+                if let Some(second) = second {
+                    require(
+                        FeatureDirection3::new(second.direction).is_some(),
+                        "pattern second.direction must have a finite nonzero norm",
+                    )?;
+                    require(
+                        second.spacing.get() > 0.0,
+                        "pattern second.spacing must be positive",
+                    )?;
+                    require(second.count > 0, "pattern second.count must be positive")?;
+                }
+            }
+            PatternTransform::LinearOffsets { direction, offsets } => {
+                require(
+                    direction.is_none_or(|direction| FeatureDirection3::new(direction).is_some()),
+                    "pattern direction must have a finite nonzero norm",
+                )?;
+                require(
+                    valid_increasing_locations(offsets.iter().map(|offset| offset.get())),
+                    "pattern offsets must start at zero and strictly increase",
+                )?;
+            }
+            PatternTransform::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            } => {
+                require(
+                    FinitePoint3::new(*axis_origin).is_some(),
+                    "pattern axis_origin must be finite",
+                )?;
+                require(
+                    FeatureDirection3::new(*axis_dir).is_some(),
+                    "pattern axis_dir must have a finite nonzero norm",
+                )?;
+                require(angle.get() > 0.0, "pattern angle must be positive")?;
+                require(*count > 0, "pattern count must be positive")?;
+            }
+            PatternTransform::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            } => {
+                require(
+                    FinitePoint3::new(*axis_origin).is_some(),
+                    "pattern axis_origin must be finite",
+                )?;
+                require(
+                    FeatureDirection3::new(*axis_dir).is_some(),
+                    "pattern axis_dir must have a finite nonzero norm",
+                )?;
+                require(
+                    valid_increasing_locations(angles.iter().map(|angle| angle.get())),
+                    "pattern angles must start at zero and strictly increase",
+                )?;
+            }
+            PatternTransform::CurveDriven { spacing, count, .. } => {
+                require(spacing.get() > 0.0, "pattern spacing must be positive")?;
+                require(*count > 0, "pattern count must be positive")?;
+            }
+            PatternTransform::Mirror {
+                plane_origin,
+                plane_normal,
+            } => {
+                require(
+                    FinitePoint3::new(*plane_origin).is_some(),
+                    "pattern plane_origin must be finite",
+                )?;
+                require(
+                    FeatureDirection3::new(*plane_normal).is_some(),
+                    "pattern plane_normal must have a finite nonzero norm",
+                )?;
+            }
+            PatternTransform::MirrorReference {
+                plane: FaceSelection::Native(reference),
+            } => {
+                require(
+                    !reference.is_empty(),
+                    "pattern plane native reference must be nonempty",
+                )?;
+            }
+            PatternTransform::MirrorReference { .. } => {}
+            PatternTransform::Scale {
+                center,
+                final_factor,
+                count,
+            } => {
+                if let PatternScaleCenter::Point(point) = center {
+                    require(
+                        FinitePoint3::new(*point).is_some(),
+                        "pattern center point must be finite",
+                    )?;
+                }
+                require(
+                    final_factor.is_finite() && *final_factor > 0.0,
+                    "pattern final_factor must be positive and finite",
+                )?;
+                require(*count >= 2, "scale pattern count must be at least two")?;
+            }
+            PatternTransform::Composite { stages } => {
+                require(!stages.is_empty(), "pattern stages must be nonempty")?;
+                for (index, stage) in stages.iter().enumerate() {
+                    let combination = if index == 0 {
+                        PatternStageCombination::Initialize
+                    } else if matches!(stage.pattern.definition(), PatternTransform::Scale { .. }) {
+                        PatternStageCombination::AlignedSlices
+                    } else {
+                        PatternStageCombination::CartesianProduct
+                    };
+                    require(
+                        stage.combination == combination,
+                        "pattern stage combination must match its position and transform",
+                    )?;
+                    require(
+                        !matches!(
+                            stage.pattern.definition(),
+                            PatternTransform::Composite { .. }
+                        ),
+                        "pattern stages must not contain a composite pattern",
+                    )?;
+                }
+                require(
+                    composite_composition_is_valid(stages),
+                    "pattern stage counts must not overflow and must divide aligned slices",
+                )?;
+            }
+        }
+        Ok(Self(transform))
+    }
+
+    /// Returns the admitted transform definition.
+    pub fn definition(&self) -> &PatternTransform {
+        &self.0
+    }
+
+    /// Returns the curve path slot without exposing repetition geometry.
+    pub fn curve_path_mut(&mut self) -> Option<&mut Option<PathRef>> {
+        match &mut self.0 {
+            PatternTransform::CurveDriven { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+
+    /// Returns whether the pattern form lacks its required operands.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(
+            self.0,
+            PatternTransform::Unresolved
+                | PatternTransform::UnresolvedLinear
+                | PatternTransform::UnresolvedCircular
+                | PatternTransform::UnresolvedCurveDriven
+                | PatternTransform::UnresolvedMirror
+                | PatternTransform::UnresolvedScale
+                | PatternTransform::UnresolvedComposite
+        )
+    }
+}
+
 /// Spatial transform used to repeat or reflect seed features.
 #[derive(Debug, Clone, PartialEq)]
-pub enum PatternKind {
+pub enum PatternTransform {
     /// Pattern construction whose form is not identified.
     Unresolved,
     /// A linear pattern is identified without its required operands.
@@ -8572,22 +8826,6 @@ pub enum PatternKind {
     },
 }
 
-impl PatternKind {
-    /// Returns whether the pattern form lacks its required operands.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved
-                | Self::UnresolvedLinear
-                | Self::UnresolvedCircular
-                | Self::UnresolvedCurveDriven
-                | Self::UnresolvedMirror
-                | Self::UnresolvedScale
-                | Self::UnresolvedComposite
-        )
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -8657,27 +8895,27 @@ enum PatternFormWire {
 
 impl From<PatternKind> for PatternKindWire {
     fn from(value: PatternKind) -> Self {
-        match value {
-            PatternKind::Unresolved => Self::Unresolved { form: None },
-            PatternKind::UnresolvedLinear => Self::Unresolved {
+        match value.0 {
+            PatternTransform::Unresolved => Self::Unresolved { form: None },
+            PatternTransform::UnresolvedLinear => Self::Unresolved {
                 form: Some(PatternFormWire::Linear),
             },
-            PatternKind::UnresolvedCircular => Self::Unresolved {
+            PatternTransform::UnresolvedCircular => Self::Unresolved {
                 form: Some(PatternFormWire::Circular),
             },
-            PatternKind::UnresolvedCurveDriven => Self::Unresolved {
+            PatternTransform::UnresolvedCurveDriven => Self::Unresolved {
                 form: Some(PatternFormWire::CurveDriven),
             },
-            PatternKind::UnresolvedMirror => Self::Unresolved {
+            PatternTransform::UnresolvedMirror => Self::Unresolved {
                 form: Some(PatternFormWire::Mirror),
             },
-            PatternKind::UnresolvedScale => Self::Unresolved {
+            PatternTransform::UnresolvedScale => Self::Unresolved {
                 form: Some(PatternFormWire::Scale),
             },
-            PatternKind::UnresolvedComposite => Self::Unresolved {
+            PatternTransform::UnresolvedComposite => Self::Unresolved {
                 form: Some(PatternFormWire::Composite),
             },
-            PatternKind::Linear {
+            PatternTransform::Linear {
                 direction,
                 spacing,
                 count,
@@ -8688,10 +8926,10 @@ impl From<PatternKind> for PatternKindWire {
                 count,
                 second,
             },
-            PatternKind::LinearOffsets { direction, offsets } => {
+            PatternTransform::LinearOffsets { direction, offsets } => {
                 Self::LinearOffsets { direction, offsets }
             }
-            PatternKind::Circular {
+            PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
                 angle,
@@ -8702,7 +8940,7 @@ impl From<PatternKind> for PatternKindWire {
                 angle,
                 count,
             },
-            PatternKind::CircularAngles {
+            PatternTransform::CircularAngles {
                 axis_origin,
                 axis_dir,
                 angles,
@@ -8711,7 +8949,7 @@ impl From<PatternKind> for PatternKindWire {
                 axis_dir,
                 angles,
             },
-            PatternKind::CurveDriven {
+            PatternTransform::CurveDriven {
                 path,
                 spacing,
                 count,
@@ -8720,15 +8958,15 @@ impl From<PatternKind> for PatternKindWire {
                 spacing,
                 count,
             },
-            PatternKind::Mirror {
+            PatternTransform::Mirror {
                 plane_origin,
                 plane_normal,
             } => Self::Mirror {
                 plane_origin,
                 plane_normal,
             },
-            PatternKind::MirrorReference { plane } => Self::MirrorReference { plane },
-            PatternKind::Scale {
+            PatternTransform::MirrorReference { plane } => Self::MirrorReference { plane },
+            PatternTransform::Scale {
                 center,
                 final_factor,
                 count,
@@ -8737,53 +8975,55 @@ impl From<PatternKind> for PatternKindWire {
                 final_factor,
                 count,
             },
-            PatternKind::Composite { stages } => Self::Composite { stages },
+            PatternTransform::Composite { stages } => Self::Composite { stages },
         }
     }
 }
 
-impl From<PatternKindWire> for PatternKind {
-    fn from(value: PatternKindWire) -> Self {
-        match value {
-            PatternKindWire::Unresolved { form: None } => Self::Unresolved,
+impl TryFrom<PatternKindWire> for PatternKind {
+    type Error = &'static str;
+
+    fn try_from(value: PatternKindWire) -> Result<Self, Self::Error> {
+        Self::new(match value {
+            PatternKindWire::Unresolved { form: None } => PatternTransform::Unresolved,
             PatternKindWire::Unresolved {
                 form: Some(PatternFormWire::Linear),
-            } => Self::UnresolvedLinear,
+            } => PatternTransform::UnresolvedLinear,
             PatternKindWire::Unresolved {
                 form: Some(PatternFormWire::Circular),
-            } => Self::UnresolvedCircular,
+            } => PatternTransform::UnresolvedCircular,
             PatternKindWire::Unresolved {
                 form: Some(PatternFormWire::CurveDriven),
-            } => Self::UnresolvedCurveDriven,
+            } => PatternTransform::UnresolvedCurveDriven,
             PatternKindWire::Unresolved {
                 form: Some(PatternFormWire::Mirror),
-            } => Self::UnresolvedMirror,
+            } => PatternTransform::UnresolvedMirror,
             PatternKindWire::Unresolved {
                 form: Some(PatternFormWire::Scale),
-            } => Self::UnresolvedScale,
+            } => PatternTransform::UnresolvedScale,
             PatternKindWire::Unresolved {
                 form: Some(PatternFormWire::Composite),
-            } => Self::UnresolvedComposite,
+            } => PatternTransform::UnresolvedComposite,
             PatternKindWire::Linear {
                 direction,
                 spacing,
                 count,
                 second,
-            } => Self::Linear {
+            } => PatternTransform::Linear {
                 direction,
                 spacing,
                 count,
                 second,
             },
             PatternKindWire::LinearOffsets { direction, offsets } => {
-                Self::LinearOffsets { direction, offsets }
+                PatternTransform::LinearOffsets { direction, offsets }
             }
             PatternKindWire::Circular {
                 axis_origin,
                 axis_dir,
                 angle,
                 count,
-            } => Self::Circular {
+            } => PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
                 angle,
@@ -8793,7 +9033,7 @@ impl From<PatternKindWire> for PatternKind {
                 axis_origin,
                 axis_dir,
                 angles,
-            } => Self::CircularAngles {
+            } => PatternTransform::CircularAngles {
                 axis_origin,
                 axis_dir,
                 angles,
@@ -8802,7 +9042,7 @@ impl From<PatternKindWire> for PatternKind {
                 path,
                 spacing,
                 count,
-            } => Self::CurveDriven {
+            } => PatternTransform::CurveDriven {
                 path,
                 spacing,
                 count,
@@ -8810,22 +9050,24 @@ impl From<PatternKindWire> for PatternKind {
             PatternKindWire::Mirror {
                 plane_origin,
                 plane_normal,
-            } => Self::Mirror {
+            } => PatternTransform::Mirror {
                 plane_origin,
                 plane_normal,
             },
-            PatternKindWire::MirrorReference { plane } => Self::MirrorReference { plane },
+            PatternKindWire::MirrorReference { plane } => {
+                PatternTransform::MirrorReference { plane }
+            }
             PatternKindWire::Scale {
                 center,
                 final_factor,
                 count,
-            } => Self::Scale {
+            } => PatternTransform::Scale {
                 center,
                 final_factor,
                 count,
             },
-            PatternKindWire::Composite { stages } => Self::Composite { stages },
-        }
+            PatternKindWire::Composite { stages } => PatternTransform::Composite { stages },
+        })
     }
 }
 
@@ -8843,7 +9085,9 @@ impl<'de> Deserialize<'de> for PatternKind {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(PatternKindWire::deserialize(deserializer)?.into())
+        PatternKindWire::deserialize(deserializer)?
+            .try_into()
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -8856,6 +9100,66 @@ impl JsonSchema for PatternKind {
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         PatternKindWire::json_schema(generator)
     }
+}
+
+fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> bool {
+    let mut occurrences = None;
+    stages.iter().enumerate().all(|(index, stage)| {
+        let Some(stage_count) = pattern_occurrence_count(stage.pattern.definition()) else {
+            return true;
+        };
+        if index == 0 {
+            occurrences = Some(stage_count);
+            return true;
+        }
+        match stage.combination {
+            PatternStageCombination::CartesianProduct => {
+                if let Some(count) = occurrences {
+                    occurrences = count.checked_mul(stage_count);
+                    occurrences.is_some()
+                } else {
+                    true
+                }
+            }
+            PatternStageCombination::AlignedSlices => {
+                occurrences.is_none_or(|count| count % stage_count == 0)
+            }
+            PatternStageCombination::Initialize => false,
+        }
+    })
+}
+
+fn pattern_occurrence_count(pattern: &PatternTransform) -> Option<usize> {
+    match pattern {
+        PatternTransform::Linear { count, .. }
+        | PatternTransform::Circular { count, .. }
+        | PatternTransform::CurveDriven { count, .. }
+        | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
+        PatternTransform::LinearOffsets { offsets, .. } => Some(offsets.len()),
+        PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
+        PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite
+        | PatternTransform::Composite { .. } => None,
+    }
+}
+
+fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
+    let mut locations = locations;
+    let Some(first) = locations.next() else {
+        return false;
+    };
+    first == 0.0
+        && locations
+            .try_fold(first, |previous, location| {
+                (location.is_finite() && location > previous).then_some(location)
+            })
+            .is_some()
 }
 
 /// Fixed locus for a progressive pattern scale.

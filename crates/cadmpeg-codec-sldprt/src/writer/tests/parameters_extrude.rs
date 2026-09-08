@@ -1312,7 +1312,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
             panic!("typed fillet feature");
         };
         groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
-            radius: cadmpeg_ir::features::Length::new(3.5).unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(3.5).unwrap(),
         };
         groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
     }
@@ -1351,7 +1351,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 #[test]
 fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
     use cadmpeg_ir::features::{
-        Angle, ChamferSpec, EdgeSelection, FeatureDefinition, Length, ParameterValue, RadiusSpec,
+        ChamferSpec, EdgeSelection, FeatureDefinition, Length, ParameterValue, RadiusSpec,
     };
 
     let keywords = format!(
@@ -1412,15 +1412,15 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             panic!("typed positional fillet");
         };
         groups[0].radius = RadiusSpec::Constant {
-            radius: Length::new(2.5).unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(2.5).unwrap(),
         };
         let FeatureDefinition::Chamfer { groups, .. } = &mut ir_edit.model.features[1].definition
         else {
             panic!("typed positional chamfer");
         };
         groups[0].spec = ChamferSpec::DistanceAngle {
-            distance: Length::new(0.6).unwrap(),
-            angle: Angle::new(30.0_f64.to_radians()).unwrap(),
+            distance: cadmpeg_ir::features::PositiveLength::new(0.6).unwrap(),
+            angle: cadmpeg_ir::features::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
         };
     }
 
@@ -1491,7 +1491,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
-        }] if points == &vec![
+        }] if points.as_slice() == &vec![
             VariableRadius { parameter: 0.0, radius: Length::new(2.0).unwrap() },
             VariableRadius { parameter: 0.5, radius: Length::new(4.0).unwrap() },
             VariableRadius { parameter: 1.0, radius: Length::new(3.0).unwrap() },
@@ -1505,8 +1505,10 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         let RadiusSpec::Variable { points } = &mut groups[0].radius else {
             panic!("variable fillet radius")
         };
-        points[1].parameter = 0.4;
-        points[1].radius = Length::new(5.0).unwrap();
+        let mut samples = points.as_slice().to_vec();
+        samples[1].parameter = 0.4;
+        samples[1].radius = Length::new(5.0).unwrap();
+        *points = cadmpeg_ir::features::VariableRadii::new(samples).unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1537,7 +1539,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             panic!("variable fillet after regeneration");
         };
         groups[0].radius = RadiusSpec::Constant {
-            radius: Length::new(6.0).unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(6.0).unwrap(),
         };
     }
     let mut encoded = Vec::new();
@@ -1558,7 +1560,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
 
 #[test]
 fn semantic_writer_round_trips_all_typed_chamfer_forms() {
-    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FeatureDefinition};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1616,15 +1618,15 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 
     let replacements = [
         ChamferSpec::Distance {
-            distance: Length::new(2.5).unwrap(),
+            distance: cadmpeg_ir::features::PositiveLength::new(2.5).unwrap(),
         },
         ChamferSpec::TwoDistances {
-            first: Length::new(3.5).unwrap(),
-            second: Length::new(7.0).unwrap(),
+            first: cadmpeg_ir::features::PositiveLength::new(3.5).unwrap(),
+            second: cadmpeg_ir::features::PositiveLength::new(7.0).unwrap(),
         },
         ChamferSpec::DistanceAngle {
-            distance: Length::new(4.5).unwrap(),
-            angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_6).unwrap(),
+            distance: cadmpeg_ir::features::PositiveLength::new(4.5).unwrap(),
+            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
         },
     ];
     for (index, (feature, replacement)) in decoded

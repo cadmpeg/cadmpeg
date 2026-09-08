@@ -6,8 +6,8 @@ use super::super::*;
 use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection,
     FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, Length, ParameterId, PathRef, PatternKind, RadiusSpec, RuledSurfaceMode,
-    SurfaceContinuity, UnresolvedFamily,
+    FeatureTreeNodeRole, Length, ParameterId, PathRef, PatternKind, PatternTransform, RadiusSpec,
+    RuledSurfaceMode, SurfaceContinuity, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -267,7 +267,7 @@ fn design_completeness_audits_typed_construction_families() {
         FeatureDefinition::FaceBlend {
             first_faces: face.clone(),
             second_faces: face.clone(),
-            radius: RadiusSpec::Variable { points: Vec::new() },
+            radius: RadiusSpec::UnresolvedVariable,
         },
         FeatureDefinition::BoundaryFill {
             tools: BodySelection::Bodies(vec![body]),
@@ -454,48 +454,56 @@ fn design_completeness_recurses_through_pattern_operands() {
     for (ordinal, pattern) in [
         (
             0,
-            PatternKind::LinearOffsets {
+            PatternKind::new(PatternTransform::LinearOffsets {
                 direction: None,
                 offsets: vec![Length::ZERO, Length::new(10.0).unwrap()],
-            },
+            })
+            .unwrap(),
         ),
         (
             1,
-            PatternKind::CurveDriven {
+            PatternKind::new(PatternTransform::CurveDriven {
                 path: Some(PathRef::Native("path".into())),
                 spacing: Length::new(10.0).unwrap(),
                 count: 2,
-            },
+            })
+            .unwrap(),
         ),
         (
             2,
-            PatternKind::Scale {
+            PatternKind::new(PatternTransform::Scale {
                 center: cadmpeg_ir::features::PatternScaleCenter::Native("center".into()),
                 final_factor: 2.0,
                 count: 2,
-            },
+            })
+            .unwrap(),
         ),
         (
             3,
-            PatternKind::Composite {
+            PatternKind::new(PatternTransform::Composite {
                 stages: vec![cadmpeg_ir::features::PatternStage {
-                    pattern: Box::new(PatternKind::CurveDriven {
-                        path: None,
-                        spacing: Length::new(10.0).unwrap(),
-                        count: 2,
-                    }),
+                    pattern: Box::new(
+                        PatternKind::new(PatternTransform::CurveDriven {
+                            path: None,
+                            spacing: Length::new(10.0).unwrap(),
+                            count: 2,
+                        })
+                        .unwrap(),
+                    ),
                     combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
                 }],
-            },
+            })
+            .unwrap(),
         ),
         (
             4,
-            PatternKind::Circular {
+            PatternKind::new(PatternTransform::Circular {
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
                 axis_dir: Vector3::new(0.0, 0.0, 1.0),
                 angle: Angle::new(std::f64::consts::TAU).unwrap(),
                 count: 4,
-            },
+            })
+            .unwrap(),
         ),
     ] {
         ir.model.features.push(Feature {
@@ -750,7 +758,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                 groups: vec![cadmpeg_ir::features::FilletGroup {
                     edges: EdgeSelection::Edges(Vec::new()),
                     radius: RadiusSpec::Constant {
-                        radius: Length::new(1.0).unwrap(),
+                        radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
                     },
                     tangency_weight: None,
                 }],
@@ -829,7 +837,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                     edges: EdgeSelection::Edges(vec![
                         EdgeId::mint("test:model:entity#edge").expect("identity grammar")
                     ]),
-                    radius: RadiusSpec::Variable { points: Vec::new() },
+                    radius: RadiusSpec::UnresolvedVariable,
                     tangency_weight: None,
                 }],
             },

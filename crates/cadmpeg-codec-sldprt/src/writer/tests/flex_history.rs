@@ -917,7 +917,8 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
         Angle, BodySelection, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind, RadiusSpec,
+        FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind,
+        PatternTransform, RadiusSpec,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
@@ -955,7 +956,7 @@ fn encoder_writes_source_less_native_features() {
                     native: "edge-a,edge-b".into(),
                 },
                 radius: RadiusSpec::Constant {
-                    radius: Length::new(3.0).unwrap(),
+                    radius: cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
                 },
                 tangency_weight: None,
             }],
@@ -964,8 +965,8 @@ fn encoder_writes_source_less_native_features() {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: EdgeSelection::Native("edge-c".into()),
                 spec: ChamferSpec::TwoDistances {
-                    first: Length::new(1.0).unwrap(),
-                    second: Length::new(2.0).unwrap(),
+                    first: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    second: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
                 },
             }],
             flip_direction: false,
@@ -1072,7 +1073,7 @@ fn encoder_writes_source_less_native_features() {
         });
     }
     let patterns = [
-        PatternKind::Linear {
+        PatternKind::new(PatternTransform::Linear {
             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
             spacing: Length::new(10.0).unwrap(),
             count: 3,
@@ -1081,17 +1082,20 @@ fn encoder_writes_source_less_native_features() {
                 spacing: Length::new(20.0).unwrap(),
                 count: 4,
             }),
-        },
-        PatternKind::Circular {
+        })
+        .unwrap(),
+        PatternKind::new(PatternTransform::Circular {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_dir: Vector3::new(0.0, 0.0, 1.0),
             angle: Angle::new(std::f64::consts::TAU).unwrap(),
             count: 6,
-        },
-        PatternKind::Mirror {
+        })
+        .unwrap(),
+        PatternKind::new(PatternTransform::Mirror {
             plane_origin: Point3::new(0.0, 0.0, 0.0),
             plane_normal: Vector3::new(1.0, 0.0, 0.0),
-        },
+        })
+        .unwrap(),
     ];
     for (index, pattern) in patterns.into_iter().enumerate() {
         ir.model.features.push(Feature {
@@ -1167,24 +1171,28 @@ fn encoder_writes_source_less_native_features() {
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Fillet { .. })));
-    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        feature.definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
-                second: Some(cadmpeg_ir::features::LinearPatternDirection {
-                    direction: Vector3 {
-                        x: 0.0,
-                        y: 1.0,
-                        z: 0.0
-                    },
-                    spacing: actual_spacing,
-                    count: 4,
-                }),
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(&(feature.definition),
+            FeatureDefinition::Pattern {
+                pattern: admitted_pattern,
                 ..
-            },
-            ..
-        } if actual_spacing.get() == 20.0
-    )));
+            } if matches!(admitted_pattern.definition(), PatternTransform::Linear {
+                    second: Some(cadmpeg_ir::features::LinearPatternDirection {
+                        direction: Vector3 {
+                            x: 0.0,
+                            y: 1.0,
+                            z: 0.0
+                        },
+                        spacing: actual_spacing,
+                        count: 4,
+                    }),
+                    ..
+                } if actual_spacing.get() == 20.0)
+        )));
     assert!(decoded
         .ir()
         .model

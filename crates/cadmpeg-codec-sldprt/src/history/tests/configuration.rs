@@ -675,7 +675,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 fn supplemental_edge_paths_project_into_matching_configuration_state() {
     use cadmpeg_ir::features::{
         ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration, EdgeSelection,
-        Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
+        Feature as NeutralFeature, FeatureDefinition, FeatureId,
     };
 
     let producer_id = FeatureId::mint("producer").expect("identity grammar");
@@ -684,7 +684,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         groups: vec![ChamferGroup {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Distance {
-                distance: Length::new(1.0).unwrap(),
+                distance: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             },
         }],
         flip_direction: false,

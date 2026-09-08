@@ -10,8 +10,8 @@ use crate::decode::feature_completeness::operands::{
     face_selections_overlap, hole_feature_is_incomplete, hole_specification_is_incomplete,
     loft_section_is_incomplete, path_ref_is_incomplete, pattern_feature_is_incomplete,
     pattern_is_incomplete, pattern_occurrence_count, profile_dependency_is_incomplete,
-    profile_ref_is_incomplete, radius_spec_is_incomplete, revolve_feature_is_incomplete,
-    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    profile_ref_is_incomplete, revolve_feature_is_incomplete, rib_feature_is_incomplete,
+    sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
     termination_dependency_is_incomplete, termination_is_incomplete,
 };
 use crate::decode::feature_completeness::{
@@ -400,135 +400,82 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
 #[test]
 fn nx_pattern_completeness_requires_every_regeneration_operand() {
     use cadmpeg_ir::features::{
-        Length, PathRef, PatternKind, PatternStage, PatternStageCombination,
+        Length, PathRef, PatternKind, PatternStage, PatternStageCombination, PatternTransform,
     };
     use cadmpeg_ir::math::Vector3;
 
-    let linear = PatternKind::Linear {
+    let linear = PatternKind::new(PatternTransform::Linear {
         direction: Some(Vector3::new(1.0, 0.0, 0.0)),
         spacing: Length::new(10.0).unwrap(),
         count: 3,
         second: None,
-    };
+    })
+    .unwrap();
     assert!(!pattern_is_incomplete(&linear));
-    assert!(pattern_is_incomplete(&PatternKind::Linear {
-        direction: None,
-        spacing: Length::new(10.0).unwrap(),
-        count: 3,
-        second: None,
-    }));
-    assert!(pattern_is_incomplete(&PatternKind::Linear {
-        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-        spacing: Length::ZERO,
-        count: 3,
-        second: None,
-    }));
-    assert!(pattern_is_incomplete(&PatternKind::Linear {
-        direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-        spacing: Length::new(10.0).unwrap(),
-        count: 3,
-        second: None,
-    }));
-    assert!(pattern_is_incomplete(&PatternKind::Linear {
-        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-        spacing: Length::new(10.0).unwrap(),
-        count: 1,
-        second: None,
-    }));
-    assert!(pattern_is_incomplete(&PatternKind::CurveDriven {
-        path: Some(PathRef::Native("nx:path".into())),
-        spacing: Length::new(10.0).unwrap(),
-        count: 3,
-    }));
-    assert!(pattern_is_incomplete(&PatternKind::Composite {
-        stages: vec![PatternStage {
-            pattern: Box::new(PatternKind::Linear {
-                direction: None,
-                spacing: Length::new(10.0).unwrap(),
-                count: 3,
-                second: None,
-            }),
-            combination: PatternStageCombination::Initialize,
-        }],
-    }));
-    assert!(pattern_is_incomplete(&PatternKind::Composite {
-        stages: vec![
-            PatternStage {
-                pattern: Box::new(linear.clone()),
+    assert!(pattern_is_incomplete(
+        &PatternKind::new(PatternTransform::Linear {
+            direction: None,
+            spacing: Length::new(10.0).unwrap(),
+            count: 3,
+            second: None,
+        })
+        .unwrap()
+    ));
+    assert!(pattern_is_incomplete(
+        &PatternKind::new(PatternTransform::Linear {
+            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+            spacing: Length::new(10.0).unwrap(),
+            count: 1,
+            second: None,
+        })
+        .unwrap()
+    ));
+    assert!(pattern_is_incomplete(
+        &PatternKind::new(PatternTransform::CurveDriven {
+            path: Some(PathRef::Native("nx:path".into())),
+            spacing: Length::new(10.0).unwrap(),
+            count: 3,
+        })
+        .unwrap()
+    ));
+    assert!(pattern_is_incomplete(
+        &PatternKind::new(PatternTransform::Composite {
+            stages: vec![PatternStage {
+                pattern: Box::new(
+                    PatternKind::new(PatternTransform::Linear {
+                        direction: None,
+                        spacing: Length::new(10.0).unwrap(),
+                        count: 3,
+                        second: None,
+                    })
+                    .unwrap()
+                ),
                 combination: PatternStageCombination::Initialize,
-            },
-            PatternStage {
-                pattern: Box::new(PatternKind::Scale {
-                    center: cadmpeg_ir::features::PatternScaleCenter::FirstSeedCentroid,
-                    final_factor: 2.0,
-                    count: 2,
-                }),
-                combination: PatternStageCombination::AlignedSlices,
-            },
-        ],
-    }));
-    let composite = PatternKind::Composite {
+            }],
+        })
+        .unwrap()
+    ));
+    let composite = PatternKind::new(PatternTransform::Composite {
         stages: vec![
             PatternStage {
                 pattern: Box::new(linear),
                 combination: PatternStageCombination::Initialize,
             },
             PatternStage {
-                pattern: Box::new(PatternKind::Mirror {
-                    plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
-                }),
+                pattern: Box::new(
+                    PatternKind::new(PatternTransform::Mirror {
+                        plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                    })
+                    .unwrap(),
+                ),
                 combination: PatternStageCombination::CartesianProduct,
             },
         ],
-    };
+    })
+    .unwrap();
     assert!(!pattern_is_incomplete(&composite));
     assert_eq!(pattern_occurrence_count(&composite), Some(6));
-}
-
-#[test]
-fn nx_variable_radius_completeness_requires_a_law_interval() {
-    use cadmpeg_ir::features::{Length, RadiusSpec, VariableRadius};
-
-    assert!(radius_spec_is_incomplete(&RadiusSpec::Variable {
-        points: Vec::new()
-    }));
-    assert!(radius_spec_is_incomplete(&RadiusSpec::Variable {
-        points: vec![VariableRadius {
-            parameter: 0.0,
-            radius: Length::new(2.0).unwrap(),
-        }],
-    }));
-    assert!(radius_spec_is_incomplete(&RadiusSpec::Variable {
-        points: vec![
-            VariableRadius {
-                parameter: 0.5,
-                radius: Length::new(2.0).unwrap(),
-            },
-            VariableRadius {
-                parameter: 0.5,
-                radius: Length::new(3.0).unwrap(),
-            },
-        ],
-    }));
-    assert!(!radius_spec_is_incomplete(&RadiusSpec::Variable {
-        points: vec![
-            VariableRadius {
-                parameter: 0.0,
-                radius: Length::new(2.0).unwrap(),
-            },
-            VariableRadius {
-                parameter: 1.0,
-                radius: Length::new(3.0).unwrap(),
-            },
-        ],
-    }));
-    assert!(!radius_spec_is_incomplete(&RadiusSpec::Constant {
-        radius: Length::new(2.0).unwrap(),
-    }));
-    assert!(radius_spec_is_incomplete(&RadiusSpec::Constant {
-        radius: Length::ZERO,
-    }));
 }
 
 #[test]
@@ -688,10 +635,12 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     let seed_id =
         cadmpeg_ir::features::FeatureId::mint("test:feature#seed").expect("identity grammar");
     let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
-    let pattern = cadmpeg_ir::features::PatternKind::Mirror {
-        plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-    };
+    let pattern =
+        cadmpeg_ir::features::PatternKind::new(cadmpeg_ir::features::PatternTransform::Mirror {
+            plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        })
+        .unwrap();
 
     assert!(!pattern_feature_is_incomplete(
         std::slice::from_ref(&seed),

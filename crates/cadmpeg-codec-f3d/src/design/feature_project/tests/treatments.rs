@@ -830,7 +830,7 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     ])
     .expect("complete variable Fillet law");
     assert_eq!(
-        points,
+        points.as_slice(),
         [
             cadmpeg_ir::features::VariableRadius {
                 parameter: 0.0,
@@ -875,7 +875,7 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)])
             .expect("variable Fillet law without an explicit weight");
     assert_eq!(
-        points,
+        points.as_slice(),
         [
             cadmpeg_ir::features::VariableRadius {
                 parameter: 0.0,

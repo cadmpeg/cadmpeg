@@ -169,7 +169,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
 
 #[test]
 fn decode_retains_invalid_feature_directions_and_angles_as_native() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternTransform};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -189,12 +189,11 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 7);
-    assert!(matches!(
-        decoded.ir().model.features[1].definition,
+    assert!(matches!(&(decoded.ir().model.features[1].definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::UnresolvedLinear,
+            pattern: admitted_pattern,
             ..
-        }
+        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
     ));
     assert!(matches!(
         decoded.ir().model.features[4].definition,
