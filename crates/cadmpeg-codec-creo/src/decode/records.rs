@@ -423,12 +423,31 @@ pub(super) struct CreoPrimitiveScalarArrayRecord {
 #[derive(Debug, Serialize)]
 pub(super) struct CreoReferenceLineRecord {
     pub(super) id: String,
-    pub(super) family: &'static str,
-    pub(super) entity_id: Option<u32>,
+    #[serde(flatten, serialize_with = "serialize_reference_line_kind")]
+    pub(super) kind: crate::reference::ReferenceLineKind,
     pub(super) start: [f64; 3],
     pub(super) end: [f64; 3],
-    pub(super) original_length: Option<f64>,
     pub(super) offset: usize,
+}
+
+fn serialize_reference_line_kind<S: serde::Serializer>(
+    kind: &crate::reference::ReferenceLineKind,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::reference::ReferenceLineKind;
+    use serde::ser::SerializeMap;
+    let (family, entity_id, original_length) = match kind {
+        ReferenceLineKind::Line => ("line", None, None),
+        ReferenceLineKind::Line3d {
+            entity_id,
+            original_length,
+        } => ("line3d", Some(*entity_id), Some(*original_length)),
+    };
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry("family", &family)?;
+    map.serialize_entry("entity_id", &entity_id)?;
+    map.serialize_entry("original_length", &original_length)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -484,19 +503,9 @@ pub(super) fn reference_line_records(scan: &ContainerScan) -> Vec<CreoReferenceL
                 family(&line.kind),
                 line.offset
             ),
-            family: family(&line.kind),
-            entity_id: match &line.kind {
-                crate::reference::ReferenceLineKind::Line => None,
-                crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => Some(*entity_id),
-            },
+            kind: line.kind.clone(),
             start: line.start,
             end: line.end,
-            original_length: match &line.kind {
-                crate::reference::ReferenceLineKind::Line => None,
-                crate::reference::ReferenceLineKind::Line3d {
-                    original_length, ..
-                } => Some(*original_length),
-            },
             offset: line.offset,
         })
         .collect()
