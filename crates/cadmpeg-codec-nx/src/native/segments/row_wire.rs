@@ -1,21 +1,54 @@
-use serde::{Deserialize, Deserializer, Serializer};
+use super::{SegmentIndexSlot, SegmentStreamLink};
+use crate::parasolid::StreamKind;
+use serde::{Deserialize, Serialize};
 
-pub(super) fn serialize<S: Serializer>(row: &usize, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&format!("nx:segment-index:row#{row}"))
+#[derive(Serialize, Deserialize)]
+pub(super) struct Wire {
+    id: String,
+    row: String,
+    slot: SegmentIndexSlot,
+    stream_ordinal: u32,
+    stream_kind: StreamKind,
+    wrapper_byte_len: u32,
+    source_offset: u64,
 }
 
-pub(super) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<usize, D::Error> {
-    let value = String::deserialize(deserializer)?;
-    let row = value
-        .strip_prefix("nx:segment-index:row#")
-        .and_then(|ordinal| ordinal.parse::<usize>().ok())
-        .ok_or_else(|| serde::de::Error::custom("row must name a segment-index ordinal"))?;
-    if value != format!("nx:segment-index:row#{row}") {
-        return Err(serde::de::Error::custom(
-            "row must use a canonical segment-index ordinal",
-        ));
+impl From<SegmentStreamLink> for Wire {
+    fn from(link: SegmentStreamLink) -> Self {
+        Self {
+            id: link.id,
+            row: format!("nx:segment-index:row#{}", link.row),
+            slot: link.slot,
+            stream_ordinal: link.stream_ordinal,
+            stream_kind: link.stream_kind,
+            wrapper_byte_len: link.wrapper_byte_len,
+            source_offset: link.source_offset,
+        }
     }
-    Ok(row)
+}
+
+impl TryFrom<Wire> for SegmentStreamLink {
+    type Error = &'static str;
+
+    fn try_from(wire: Wire) -> Result<Self, Self::Error> {
+        let row = wire
+            .row
+            .strip_prefix("nx:segment-index:row#")
+            .and_then(|ordinal| ordinal.parse::<usize>().ok())
+            .ok_or("row must name a segment-index ordinal")?;
+        if wire.row != format!("nx:segment-index:row#{row}") {
+            return Err("row must use a canonical segment-index ordinal");
+        }
+        Ok(Self {
+            id: wire.id,
+            row,
+            slot: wire.slot,
+            stream_ordinal: wire.stream_ordinal,
+            stream_kind: wire.stream_kind,
+            wrapper_byte_len: wire.wrapper_byte_len,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 #[cfg(test)]
