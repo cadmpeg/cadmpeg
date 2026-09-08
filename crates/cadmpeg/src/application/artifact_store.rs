@@ -20,6 +20,33 @@ use sha2::{Digest, Sha256};
 
 use super::document::LoadOrigin;
 
+/// File output path and its overwrite policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileDestination {
+    /// Output path.
+    pub path: PathBuf,
+    /// Replace an existing output.
+    pub overwrite: bool,
+}
+
+impl FileDestination {
+    /// Attaches overwrite policy to an optional file output.
+    pub fn optional(path: Option<PathBuf>, overwrite: bool) -> Option<Self> {
+        path.map(|path| Self { path, overwrite })
+    }
+
+    /// Checks the file output against its source and overwrite policy.
+    pub fn check(&self, input: &Path) -> Result<()> {
+        check_output_path(input, &self.path, self.overwrite)
+    }
+
+    /// Writes checked output bytes atomically.
+    pub fn write(&self, input: &Path, bytes: &[u8]) -> Result<()> {
+        self.check(input)?;
+        write_bytes_atomic(&self.path, bytes)
+    }
+}
+
 /// Read the bytes used for native-format detection.
 ///
 /// Most codecs need only the leading prefix. A Compound File Binary
@@ -158,12 +185,6 @@ pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Check the output path, then write bytes atomically.
-pub fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
-    check_output_path(input, output, force)?;
-    write_bytes_atomic(output, bytes)
-}
-
 /// Stage an export plan and hash the emitted bytes.
 pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, String)> {
     let parent = output
@@ -272,6 +293,19 @@ mod tests {
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
+
+    #[test]
+    fn absent_file_destination_discards_overwrite_policy() {
+        assert_eq!(FileDestination::optional(None, false), None);
+        assert_eq!(FileDestination::optional(None, true), None);
+        assert_eq!(
+            FileDestination::optional(Some(PathBuf::from("report.json")), true),
+            Some(FileDestination {
+                path: PathBuf::from("report.json"),
+                overwrite: true,
+            })
+        );
+    }
 
     #[test]
     fn output_preflight_leaves_a_missing_source_for_the_loader() {

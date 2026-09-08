@@ -21,6 +21,7 @@ use cadmpeg_registry::{ForcedInput, InputCatalog};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
+use crate::application::artifact_store::FileDestination;
 use crate::application::transcoder::{DestinationPolicy, LossPolicy};
 
 #[derive(Debug, Parser)]
@@ -339,8 +340,7 @@ fn main() -> ExitCode {
             args.file.path(),
             args.input_args.forced(),
             args.json,
-            args.report.as_deref(),
-            args.force,
+            FileDestination::optional(args.report, args.force).as_ref(),
             args.limits.limits(),
         )
         .map(|()| ExitCode::SUCCESS),
@@ -355,9 +355,8 @@ fn main() -> ExitCode {
         } => commands::dump(
             &inputs,
             file.path(),
-            output.as_deref(),
-            force,
-            report.as_deref(),
+            DestinationPolicy::new(output, force, false),
+            FileDestination::optional(report, force).as_ref(),
             input_args.forced(),
             &decode,
         )
@@ -378,8 +377,7 @@ fn main() -> ExitCode {
             input_args.forced(),
             &decode,
             json,
-            report.as_deref(),
-            force,
+            FileDestination::optional(report, force).as_ref(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Diff {
@@ -403,8 +401,7 @@ fn main() -> ExitCode {
             },
             &decode,
             json,
-            report.as_deref(),
-            force,
+            FileDestination::optional(report, force).as_ref(),
         ),
         Command::Convert {
             file,
@@ -425,8 +422,7 @@ fn main() -> ExitCode {
                 allow_errors,
                 allow_empty,
                 destination: DestinationPolicy::new(output, force, binary_stdout),
-                overwrite_report: force,
-                report,
+                report: FileDestination::optional(report, force),
                 forced_input: input_args.forced(),
             };
             commands::convert(
