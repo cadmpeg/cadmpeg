@@ -199,6 +199,8 @@ pub(crate) struct DefinitionScan {
     pub(crate) ambiguous_ids: HashSet<Uuid>,
     /// Union of member UUIDs from every safely parseable definition prefix.
     pub(crate) member_object_ids: HashSet<Uuid>,
+    /// Typed losses from retained contradictory fields.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Recoverable per-record diagnostics.
     pub(crate) diagnostics: Vec<DefinitionDiagnostic>,
 }
@@ -360,6 +362,15 @@ fn unit_detail<'a>(
         ));
     }
     let custom_name = utf16(&mut payload)?;
+    if unit != 11
+        && (!custom_name.is_empty()
+            || crate::settings::standard_scale(unit)
+                .is_some_and(|scale| scale / 1000.0 != meters_per_unit))
+    {
+        warnings.push(format!(
+            "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
+        ));
+    }
     finish(&mut payload, "unit detail")?;
     Ok(UnitDetail {
         unit,
@@ -1063,6 +1074,13 @@ pub(crate) fn parse_definitions(
                 &mut warnings,
             );
             for warning in warnings {
+                if warning.starts_with("redundant instance unit detail ") {
+                    result
+                        .scan
+                        .losses
+                        .push(crate::loss::RhinoLossCode::RedundantFieldRepaired.note(warning));
+                    continue;
+                }
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     message: warning,
                     source_range: record.range.clone(),
