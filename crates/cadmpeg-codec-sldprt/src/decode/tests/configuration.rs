@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 fn configuration_partitions_require_explicit_source_identity() {
     let mut ir = CadIr::empty();
     let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
-        id: ConfigurationId::mint(id).expect("identity grammar"),
+        id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         active: false,
         source_index,
@@ -177,7 +177,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
     let mut ir = CadIr::empty();
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(id).expect("identity grammar"),
+            id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
             ordinal: ir.model.configurations.len() as u32,
             active: false,
             source_index: Some(5),
@@ -274,7 +274,7 @@ fn incoherent_configuration_bodies_are_reported() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
-        id: ConfigurationId::mint(id).expect("identity grammar"),
+        id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         active: ordinal == 0,
         source_index: Some(ordinal),
