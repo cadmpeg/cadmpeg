@@ -2269,23 +2269,32 @@ mod tests {
         let mut bytes = content(1);
         bytes.extend_from_slice(&0x8421u16.to_le_bytes());
         bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let transform = parse(&bytes, |_, source| parse_transform(source, 22).unwrap());
-        let mut wire = serde_json::to_value(transform).unwrap();
+        let transform = parse(&bytes, |_, source| {
+            parse_transform(source, 22).expect("constant-prefix transform fixture is valid")
+        });
+        let mut wire =
+            serde_json::to_value(transform).expect("constant-prefix transform fixture is valid");
         for (prefix, present) in [
             (serde_json::Value::Null, false),
             (serde_json::json!(515), true),
         ] {
             wire["prefix"] = prefix;
-            let parsed: PmDcTransformPayload = serde_json::from_value(wire.clone()).unwrap();
+            let parsed: PmDcTransformPayload = serde_json::from_value(wire.clone())
+                .expect("constant-prefix transform fixture is valid");
             assert_eq!(parsed.prefix_present, present);
-            assert_eq!(serde_json::to_value(parsed).unwrap(), wire);
+            assert_eq!(
+                serde_json::to_value(parsed).expect("constant-prefix transform fixture is valid"),
+                wire
+            );
         }
         wire["prefix"] = serde_json::json!(516);
         assert!(serde_json::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
-        wire.as_object_mut().unwrap().remove("prefix");
+        wire.as_object_mut()
+            .expect("constant-prefix transform fixture is valid")
+            .remove("prefix");
         assert!(
             !serde_json::from_value::<PmDcTransformPayload>(wire)
-                .unwrap()
+                .expect("constant-prefix transform fixture is valid")
                 .prefix_present
         );
     }
