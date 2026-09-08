@@ -602,21 +602,16 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     radius: *radius,
                 }
             }
-            crate::legacy_geometry::LegacySurfaceGeometry::Spline {
-                points,
-                u_parameters,
-                v_parameters,
-                u_derivatives,
-                v_derivatives,
-                mixed_derivatives,
-            } if row.kind == crate::surface::SurfaceKind::Spline => {
+            crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
+                if row.kind == crate::surface::SurfaceKind::Spline =>
+            {
                 let Some(nurbs) = interpolation_spline_surface(
-                    points,
-                    u_parameters,
-                    v_parameters,
-                    u_derivatives,
-                    v_derivatives,
-                    mixed_derivatives,
+                    spline.points(),
+                    spline.u_parameters(),
+                    spline.v_parameters(),
+                    spline.u_derivatives(),
+                    spline.v_derivatives(),
+                    spline.mixed_derivatives(),
                 ) else {
                     continue;
                 };

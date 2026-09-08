@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
+pub(crate) mod spline;
+
 use std::collections::BTreeMap;
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
@@ -68,20 +70,7 @@ pub(crate) enum LegacySurfaceGeometry {
         radius: f64,
     },
     /// A complete bicubic interpolation surface carrier.
-    Spline {
-        /// Interpolation points in source order.
-        points: Vec<[f64; 3]>,
-        /// Ordered interpolation parameters in the first surface direction.
-        u_parameters: Vec<f64>,
-        /// Ordered interpolation parameters in the second surface direction.
-        v_parameters: Vec<f64>,
-        /// Boundary derivatives in the first surface direction.
-        u_derivatives: Vec<[f64; 3]>,
-        /// Boundary derivatives in the second surface direction.
-        v_derivatives: Vec<[f64; 3]>,
-        /// Mixed derivatives at the four parameter-domain corners.
-        mixed_derivatives: Vec<[f64; 3]>,
-    },
+    Spline(spline::LegacySpline),
 }
 
 /// The legacy namespace that owns one analytic surface carrier.
@@ -493,26 +482,18 @@ fn surface_carrier(
             let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
             let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
             let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
-            let (u_derivatives, v_derivatives, mixed_derivatives) =
-                legacy_spline_boundary_derivatives(
-                    &points,
-                    &u_parameters,
-                    &v_parameters,
-                    &u_tangents,
-                    &v_tangents,
-                    &mixed_derivatives,
-                )?;
+            let spline = spline::LegacySpline::from_grid(
+                points,
+                u_parameters,
+                v_parameters,
+                u_tangents,
+                v_tangents,
+                mixed_derivatives,
+            )?;
             return Some(LegacySurfaceCarrier {
                 namespace,
                 surface_id: row.id,
-                geometry: LegacySurfaceGeometry::Spline {
-                    points,
-                    u_parameters,
-                    v_parameters,
-                    u_derivatives,
-                    v_derivatives,
-                    mixed_derivatives,
-                },
+                geometry: LegacySurfaceGeometry::Spline(spline),
                 offset: primitive.offset,
             });
         }
@@ -752,67 +733,6 @@ fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Optio
         NumericPayload::Scalar { value } => Some(value.value()),
         NumericPayload::Array(_) => None,
     }
-}
-
-/// Convert the full derivative grids in a legacy `splsrf` primitive into the
-/// boundary arrays consumed by the bicubic interpolation solver.
-///
-/// The source arrays use u-major order for every field. The solver instead
-/// receives the lower-u and upper-u rows of `u_tangts`, the lower-v and
-/// upper-v columns of `v_tangts`, and the four mixed derivatives in
-/// `[lower-u/lower-v, upper-u/lower-v, lower-u/upper-v, upper-u/upper-v]`
-/// order. Keeping this conversion at the legacy object-graph boundary avoids
-/// making the named prototype representation depend on the legacy layout.
-type LegacySplineBoundaryDerivatives = (Vec<[f64; 3]>, Vec<[f64; 3]>, Vec<[f64; 3]>);
-
-fn legacy_spline_boundary_derivatives(
-    points: &[[f64; 3]],
-    u_parameters: &[f64],
-    v_parameters: &[f64],
-    u_tangents: &[[f64; 3]],
-    v_tangents: &[[f64; 3]],
-    mixed_derivatives: &[[f64; 3]],
-) -> Option<LegacySplineBoundaryDerivatives> {
-    let u_count = u_parameters.len();
-    let v_count = v_parameters.len();
-    let point_count = u_count.checked_mul(v_count)?;
-    let ordered_finite = |parameters: &[f64]| {
-        parameters.iter().all(|value| value.is_finite())
-            && parameters.windows(2).all(|pair| pair[0] < pair[1])
-    };
-    let vectors_finite =
-        |vectors: &[[f64; 3]]| vectors.iter().flatten().all(|value| value.is_finite());
-    (u_count >= 2
-        && v_count >= 2
-        && ordered_finite(u_parameters)
-        && ordered_finite(v_parameters)
-        && vectors_finite(points)
-        && points.len() == point_count
-        && vectors_finite(u_tangents)
-        && vectors_finite(v_tangents)
-        && vectors_finite(mixed_derivatives)
-        && u_tangents.len() == point_count
-        && v_tangents.len() == point_count
-        && mixed_derivatives.len() == point_count)
-        .then_some(())?;
-
-    let upper_u = (u_count - 1).checked_mul(v_count)?;
-    let upper_v = v_count - 1;
-    let u_derivatives = (0..v_count)
-        .map(|v| u_tangents[v])
-        .chain((0..v_count).map(|v| u_tangents[upper_u + v]))
-        .collect();
-    let v_derivatives = (0..u_count)
-        .map(|u| v_tangents[u * v_count])
-        .chain((0..u_count).map(|u| v_tangents[u * v_count + upper_v]))
-        .collect();
-    let mixed_derivatives = vec![
-        mixed_derivatives[0],
-        mixed_derivatives[upper_v],
-        mixed_derivatives[upper_u],
-        mixed_derivatives[upper_u + upper_v],
-    ];
-    Some((u_derivatives, v_derivatives, mixed_derivatives))
 }
 
 fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
@@ -1222,23 +1142,15 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.carriers.len(), 1);
         assert_eq!(result.carriers[0].surface_id, 42);
-        let LegacySurfaceGeometry::Spline {
-            points,
-            u_parameters,
-            v_parameters,
-            u_derivatives,
-            v_derivatives,
-            mixed_derivatives,
-        } = &result.carriers[0].geometry
-        else {
+        let LegacySurfaceGeometry::Spline(spline) = &result.carriers[0].geometry else {
             panic!("expected spline carrier");
         };
-        assert_eq!(points.len(), 4);
-        assert_eq!(u_parameters, &[0.0, 1.0]);
-        assert_eq!(v_parameters, &[0.0, 1.0]);
-        assert_eq!(u_derivatives.len(), 4);
-        assert_eq!(v_derivatives.len(), 4);
-        assert_eq!(mixed_derivatives.len(), 4);
+        assert_eq!(spline.points().len(), 4);
+        assert_eq!(spline.u_parameters(), &[0.0, 1.0]);
+        assert_eq!(spline.v_parameters(), &[0.0, 1.0]);
+        assert_eq!(spline.u_derivatives().len(), 4);
+        assert_eq!(spline.v_derivatives().len(), 4);
+        assert_eq!(spline.mixed_derivatives().len(), 4);
     }
 
     #[test]
@@ -1265,23 +1177,25 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| vector(f64::from(value)))
             .collect::<Vec<_>>();
 
-        let (u_derivatives, v_derivatives, mixed_derivatives) =
-            super::legacy_spline_boundary_derivatives(
-                &points,
-                &u_parameters,
-                &v_parameters,
-                &u_tangents,
-                &v_tangents,
-                &mixed_derivatives,
-            )
-            .expect("complete full derivative grid");
+        let spline = super::spline::LegacySpline::from_grid(
+            points,
+            u_parameters.to_vec(),
+            v_parameters.to_vec(),
+            u_tangents,
+            v_tangents,
+            mixed_derivatives,
+        )
+        .expect("complete full derivative grid");
+        let u_derivatives = spline.u_derivatives();
+        let v_derivatives = spline.v_derivatives();
+        let mixed_derivatives = spline.mixed_derivatives();
 
         assert_eq!(u_derivatives, [0.0, 1.0, 4.0, 5.0].map(vector));
         assert_eq!(
             v_derivatives,
             [10.0, 12.0, 14.0, 11.0, 13.0, 15.0].map(vector)
         );
-        assert_eq!(mixed_derivatives, [20.0, 21.0, 24.0, 25.0].map(vector));
+        assert_eq!(*mixed_derivatives, [20.0, 21.0, 24.0, 25.0].map(vector));
     }
 
     #[test]
