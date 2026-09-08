@@ -29,45 +29,51 @@ use cadmpeg_ir::sketches::{
 };
 
 fn group() -> DesignConstructionOperandGroup {
-    DesignConstructionOperandGroup {
-        id: "stream:group".into(),
-        scope_record_index: 7,
-        scope_reference_ordinal: 0,
-        record_index: 9,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        members: vec![
-            crate::records::Located {
-                value: 10,
-                offset: 0,
-            },
-            crate::records::Located {
-                value: 11,
-                offset: 0,
-            },
-        ],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "stream:group".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            members: vec![
+                crate::records::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 11,
+                    offset: 11,
+                },
+            ],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::ROLE_0X5,
+            ),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X5,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    }
+    )
+    .unwrap()
 }
 
 fn operand(
@@ -142,7 +148,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id,
+        primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
         geometry: None,
     }
@@ -226,26 +232,27 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         ],
         native_ref: None,
     };
-    let group = DesignExtrudeSelectionGroup {
-        id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
-        scope_record_index: 7,
-        scope_reference_ordinal: 0,
-        record_index: 9,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        member_count_offset: 0,
-        members: vec![crate::records::Located {
-            value: 10,
-            offset: 0,
-        }],
-        opaque_index: 1,
-        opaque_index_offset: 0,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 0,
-        variant: false,
-        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
+    let group = DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::DesignExtrudeSelectionGroupWire {
+            id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: "277".to_owned(),
+            member_count_offset: 32,
+            members: vec![10],
+            member_offsets: vec![37],
+            opaque_index: 1,
+            opaque_index_offset: 47,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 51,
+            variant: false,
+            paired_class_tag: "277".to_owned(),
+            paired_byte_offset: 100,
+        },
+    )
+    .unwrap();
     let mut member = DesignExtrudeSelectionMember {
         id: "f3d:Design/BulkStream.dat:selection-member#10".into(),
         group_record_index: group.record_index,
@@ -305,10 +312,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     );
 
     let mut conflicting_group = group.clone();
-    conflicting_group.members.push(crate::records::Located {
-        value: 11,
-        offset: 0,
-    });
+    conflicting_group.try_set_members(vec![10, 11]).unwrap();
     let mut conflicting_member = member.clone();
     conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
     conflicting_member.group_member_ordinal = 1;
@@ -824,7 +828,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
             SpatialSketchEntity::new(
                 neutral_spatial_sketch_curve_id(
                     &spatial_sketch,
-                    curve.primary_id,
+                    curve.primary_id.get(),
                     curve.secondary_id,
                 ),
                 spatial_sketch.clone(),
@@ -866,7 +870,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                 .map(|curve| {
                     neutral_spatial_sketch_curve_id(
                         &spatial_sketch,
-                        curve.primary_id,
+                        curve.primary_id.get(),
                         curve.secondary_id,
                     )
                 })
@@ -882,7 +886,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let curve_ids = curves
         .iter()
-        .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id))
+        .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id))
         .collect::<Vec<_>>();
     let sketch_entities = [
         SketchEntity::new(
@@ -963,7 +967,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let placement = placement();
     let sketch = neutral_sketch_id(&placement);
     let curve = curve(30, 100, 101);
-    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id);
     let sketch_entities = [SketchEntity::new(
         entity_id.clone(),
         sketch.clone(),
@@ -984,10 +988,18 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let mut group = group();
     group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
-    group.members = vec![10]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    group
+        .try_set_members(
+            vec![10]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,

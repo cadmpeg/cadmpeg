@@ -16,8 +16,8 @@ use super::{
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner,
+    ConstructionRecipe, ConstructionRecipeKind, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner,
 };
 use crate::test_support::*;
 
@@ -89,25 +89,22 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     assert_eq!(parameter.record_index, 887);
     assert_eq!(parameter.owner_record_index(), Some(886));
     assert_eq!(parameter.source_ordinal, 20);
-    assert_eq!(parameter.expression, "0.4375 in");
-    assert_eq!(parameter.expression_offset, 45);
+    assert_eq!(parameter.expression(), "0.4375 in");
+    assert_eq!(parameter.expression_offset(), 45);
     assert_eq!(parameter.source_kind(), "HoleDepth");
     assert_eq!(
-        parameter.unit.as_ref().map(|field| field.value.as_str()),
+        parameter.unit().map(|field| field.value.as_str()),
         Some("in")
     );
-    assert_eq!(
-        parameter.unit.as_ref().and_then(|field| field.offset),
-        Some(94)
-    );
-    assert_eq!(parameter.name, "d20");
-    assert_eq!(parameter.evaluated_value_offset, 108);
+    assert_eq!(parameter.unit().map(|field| field.offset), Some(94));
+    assert_eq!(parameter.name(), "d20");
+    assert_eq!(parameter.evaluated_value_offset(), 108);
 
     let dimension =
         parse_design_parameter(&class_287_parameter_record("Diameter Dimension-2", "d1"))
             .expect("class-287 dimension parameter");
     assert_eq!(dimension.source_kind(), "Diameter Dimension-2");
-    assert_eq!(dimension.name, "d1");
+    assert_eq!(dimension.name(), "d1");
 }
 
 #[test]
@@ -119,7 +116,7 @@ fn class_287_parameter_accepts_the_marked_expression_trailer() {
     ))
     .expect("class-287 parameter with marked expression trailer");
     assert_eq!(parameter.source_kind(), "OffsetX");
-    assert_eq!(parameter.name, "d63");
+    assert_eq!(parameter.name(), "d63");
 
     let malformed =
         class_287_parameter_record_with_expression_trailer("OffsetX", "d63", [0, 0, 0, 2, 0]);
@@ -156,14 +153,14 @@ fn compact_owned_design_parameter_has_no_family_discriminator() {
         parameter.family_discriminator().map(|value| value.offset),
         None
     );
-    assert_eq!(parameter.expression, "82.00 mm");
+    assert_eq!(parameter.expression(), "82.00 mm");
     assert_eq!(parameter.source_kind(), "Diameter");
     assert_eq!(
-        parameter.unit.as_ref().map(|field| field.value.as_str()),
+        parameter.unit().map(|field| field.value.as_str()),
         Some("mm")
     );
-    assert_eq!(parameter.name, "d99");
-    assert_eq!(parameter.evaluated_value, 8.2);
+    assert_eq!(parameter.name(), "d99");
+    assert_eq!(parameter.evaluated_value(), 8.2);
 }
 
 #[test]
@@ -191,11 +188,11 @@ fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
     assert_eq!(parameter.source_ordinal, 5);
     assert_eq!(parameter.source_kind(), "OffsetX");
     assert_eq!(
-        parameter.unit.as_ref().map(|field| field.value.as_str()),
+        parameter.unit().map(|field| field.value.as_str()),
         Some("mm")
     );
-    assert_eq!(parameter.name, "d5");
-    assert_eq!(parameter.evaluated_value, 0.0);
+    assert_eq!(parameter.name(), "d5");
+    assert_eq!(parameter.evaluated_value(), 0.0);
 }
 
 #[test]
@@ -211,11 +208,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     .unwrap();
     assert_eq!(user.kind(), DesignParameterKind::User);
     assert_eq!(user.owner_record_index(), None);
-    assert_eq!(
-        user.unit.as_ref().map(|field| field.value.as_str()),
-        Some("mm")
-    );
-    assert_eq!(user.evaluated_value, 6.0);
+    assert_eq!(user.unit().map(|field| field.value.as_str()), Some("mm"));
+    assert_eq!(user.evaluated_value(), 6.0);
 
     let feature = parse_design_parameter(&parameter_record(
         Some(44),
@@ -228,7 +222,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     .unwrap();
     assert_eq!(feature.kind(), DesignParameterKind::Feature);
     assert_eq!(feature.owner_record_index(), Some(44));
-    assert_eq!(feature.expression, "Width / 2");
+    assert_eq!(feature.expression(), "Width / 2");
 
     let boolean = parse_design_parameter(&parameter_record(
         None,
@@ -239,8 +233,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         1.0,
     ))
     .unwrap();
-    assert_eq!(boolean.unit, None);
-    assert_eq!(boolean.name, "OnOff");
+    assert_eq!(boolean.unit(), None);
+    assert_eq!(boolean.name(), "OnOff");
 
     let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
     tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
@@ -251,9 +245,9 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
             .map(|value| value.value.code()),
         Some(6)
     );
-    assert_eq!(tangency.unit, None);
-    assert_eq!(tangency.name, "d81");
-    assert_eq!(tangency.evaluated_value, 1.0);
+    assert_eq!(tangency.unit(), None);
+    assert_eq!(tangency.name(), "d81");
+    assert_eq!(tangency.evaluated_value(), 1.0);
 
     let mut earlier_tangency =
         parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
@@ -277,8 +271,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         Some(5)
     );
     assert_eq!(scale_factor.owner_record_index(), Some(1331));
-    assert_eq!(scale_factor.unit, None);
-    assert_eq!(scale_factor.evaluated_value, 1.0);
+    assert_eq!(scale_factor.unit(), None);
+    assert_eq!(scale_factor.evaluated_value(), 1.0);
 
     for discriminator in [3u64, 4] {
         let mut earlier_distance = parameter_record(
@@ -341,7 +335,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         .expect("sheet-metal parameter with ten-byte expression trailer");
     assert_eq!(sheet_metal.source_kind(), "FlangeHeight");
     assert_eq!(sheet_metal.owner_record_index(), Some(301));
-    assert_eq!(sheet_metal.evaluated_value, 5.0);
+    assert_eq!(sheet_metal.evaluated_value(), 5.0);
 }
 
 #[test]
@@ -377,9 +371,9 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
         panic!("expected one canonical parameter");
     };
     assert_eq!(parameter.record_index, 71);
-    assert_eq!(parameter.byte_offset, 0);
-    assert_eq!(parameter.expression, "first");
-    assert_eq!(parameter.evaluated_value, 1.0);
+    assert_eq!(parameter.byte_offset(), 0);
+    assert_eq!(parameter.expression(), "first");
+    assert_eq!(parameter.evaluated_value(), 1.0);
 }
 
 fn compact_parameter_owner_frame() -> Vec<u8> {
@@ -901,34 +895,36 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     }
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let parameter = crate::records::DesignParameter {
-        id: crate::ids::native_design_parameter_id(stream, 200),
-        byte_offset: 200,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 45,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new(
-            "Distance".into(),
-            Some(44),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 222,
-            }),
-        )
-        .unwrap(),
-        expression: "6 cm".into(),
-        expression_offset: 240,
-        source_kind_offset: 260,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: crate::ids::native_design_parameter_id(stream, 200),
+            byte_offset: 200,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 45,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Distance".into(),
+                Some(44),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 222,
+                }),
+            )
+            .unwrap(),
+            expression: "6 cm".into(),
+            expression_offset: 240,
+            source_kind_offset: 260,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "cm".into(),
-            offset: Some(280),
-        }),
-        name: "distance".into(),
-        name_offset: 300,
-        evaluated_value: 6.0,
-        evaluated_value_offset: 320,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "cm".into(),
+                offset: Some(280),
+            }),
+            name: "distance".into(),
+            name_offset: 300,
+            evaluated_value: 6.0,
+            evaluated_value_offset: 320,
+        })
+        .unwrap();
     let header = crate::records::DesignRecordHeader {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
@@ -979,31 +975,33 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 #[test]
 fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let stream = "f3d:Design/BulkStream.dat";
-    let parameter = DesignParameter {
-        id: format!("{stream}:design-parameter#20"),
-        byte_offset: 1,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 20,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-1".into(),
-            Some(21),
-            None,
-        )
-        .unwrap(),
-        expression: "distance".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 1,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 20,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-1".into(),
+                Some(21),
+                None,
+            )
+            .unwrap(),
+            expression: "distance".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d1".into(),
-        name_offset: 0,
-        evaluated_value: 2.0,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d1".into(),
+            name_offset: 80,
+            evaluated_value: 2.0,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,

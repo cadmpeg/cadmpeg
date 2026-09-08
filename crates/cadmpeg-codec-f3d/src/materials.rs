@@ -8,6 +8,7 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
+use crate::records::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::BTreeMap;
@@ -30,8 +31,7 @@ use cadmpeg_protein::{
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
 use crate::container::ContainerScan;
 use crate::design::presentation::{
-    visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
-    MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
+    APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
@@ -42,14 +42,6 @@ const NO_ASSET_LIB_ID: &str = "00000000-0000-0000-0000-000000000000";
 /// a library.
 fn library_id(asset_lib_id: &str) -> Option<String> {
     (!asset_lib_id.is_empty() && asset_lib_id != NO_ASSET_LIB_ID).then(|| asset_lib_id.to_owned())
-}
-
-/// Whether two complete serialized visual tokens identify one appearance
-/// record.
-pub(crate) fn visual_tokens_match(left: &str, right: &str) -> bool {
-    visual_token(left)
-        .zip(visual_token(right))
-        .is_some_and(|(left, right)| left.matches(right))
 }
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
@@ -587,9 +579,9 @@ pub fn decode_with_body_bindings<'a>(
                     .visual_preset
                     .as_ref()
                     .map(|field| field.value.clone()),
-                asset_guid: Some(assignment.visual_guid.clone()),
+                asset_guid: Some(assignment.visual_guid.to_string()),
                 library_id: None,
-                visual_guid: Some(assignment.visual_guid.clone()),
+                visual_guid: Some(assignment.visual_guid.to_string()),
                 physical_token: assignment
                     .physical_token
                     .as_ref()
@@ -604,10 +596,10 @@ pub fn decode_with_body_bindings<'a>(
     }
     for appearance in &mut out {
         if let Some(assignment) = assignments.iter().find(|assignment| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| visual_tokens_match(guid, &assignment.visual_guid))
+            appearance.visual_guid.as_deref().is_some_and(|guid| {
+                DesignVisualToken::try_from(guid.to_owned())
+                    .is_ok_and(|token| assignment.visual_guid.matches(&token))
+            })
         }) {
             appearance.physical_token = assignment
                 .physical_token
@@ -1031,7 +1023,7 @@ pub(crate) struct BodyAppearanceOverride {
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
     /// Complete serialized visual token bound by the body record.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
 }
 
 /// Decode per-body appearance overrides from browser body records in every
@@ -1104,7 +1096,7 @@ fn decode_body_appearance_overrides(
     out.dedup_by(|left, right| {
         left.body == right.body
             && left.entity_suffix == right.entity_suffix
-            && visual_tokens_match(&left.visual_guid, &right.visual_guid)
+            && left.visual_guid.matches(&right.visual_guid)
     });
     Ok(out)
 }
@@ -1119,7 +1111,7 @@ pub struct FaceAppearanceAssignment {
     /// The face GUID shared with the BREP face attribute.
     pub face_guid: String,
     /// Complete serialized visual token bound by the face record.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
     /// Face-local neutral color carried by a legacy assignment entry.
     pub color: Option<Color>,
 }
@@ -1192,10 +1184,13 @@ fn legacy_face_appearance_assignments(
         let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
             continue;
         };
-        if visual_at.checked_add(visual_len) != Some(*marker_at) || visual_token(visual).is_none() {
+        if visual_at.checked_add(visual_len) != Some(*marker_at) {
             continue;
         }
 
+        let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
+            continue;
+        };
         let Some(face_at) = visual_at.checked_sub(LP_GUID_BYTES + COLOR_BYTES + CARRIER_BYTES)
         else {
             continue;
@@ -1331,10 +1326,13 @@ fn modern_face_appearance_assignments(
         let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
             continue;
         };
-        if visual_at.checked_add(visual_len) != Some(*marker_at) || visual_token(visual).is_none() {
+        if visual_at.checked_add(visual_len) != Some(*marker_at) {
             continue;
         }
 
+        let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
+            continue;
+        };
         let Some((_, first_library_len)) = lp_utf16_string_at(bytes, *marker_at) else {
             continue;
         };
@@ -1428,7 +1426,7 @@ fn is_lowercase_guid(value: &str) -> bool {
 /// The terminating visual marker is shared with face-presentation records.
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
-pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
+pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, DesignVisualToken)> {
     let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
@@ -1440,9 +1438,9 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
             continue;
         }
         let visual = &strings[index - 1].1;
-        if visual_token(visual).is_none() {
+        let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
             continue;
-        }
+        };
         if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
             out.push((entity_suffix, visual.clone()));
         }
@@ -1543,20 +1541,15 @@ pub(crate) fn appearance_for_assignment<'a>(
 /// names no decoded asset. Absence of a preset supplies no fallback identity.
 pub(crate) fn appearance_for_visual_token<'a>(
     appearances: &'a [Appearance],
-    serialized_token: &str,
+    serialized_token: &DesignVisualToken,
     fallback_name: Option<&str>,
 ) -> Result<Option<&'a Appearance>, CodecError> {
-    if visual_token(serialized_token).is_none() {
-        return Err(CodecError::Malformed(
-            "F3D appearance assignment has a malformed visual token".into(),
-        ));
-    }
     let exact = unique_appearance(
         appearances.iter().filter(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|token| visual_tokens_match(token, serialized_token))
+            appearance.visual_guid.as_deref().is_some_and(|token| {
+                DesignVisualToken::try_from(token.to_owned())
+                    .is_ok_and(|token| serialized_token.matches(&token))
+            })
         }),
         "visual token",
     )?;
@@ -1608,9 +1601,9 @@ fn resolved_body_for_map_pair(
     let mut matches = body_bindings.iter().filter(|binding| {
         crate::ids::native_stream(&binding.id) == Some(owner_stream)
             && binding.asm_body_key == asm_body_key
-            && binding.asm_body_key_offset == asm_body_key_offset
+            && binding.asm_body_key_offset() == asm_body_key_offset
             && binding.entity_suffix == entity_suffix
-            && binding.entity_suffix_offset == entity_suffix_offset
+            && binding.entity_suffix_offset() == entity_suffix_offset
     });
     let Some(binding) = matches.next() else {
         return Ok(None);

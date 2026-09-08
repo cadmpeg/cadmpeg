@@ -177,17 +177,20 @@ pub fn decode_body_bounds(
         let [(values, value_offsets)] = repeated.as_slice() else {
             continue;
         };
-        out.push(DesignBodyBounds {
-            id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
-            entity_suffix: entity.entity_id.suffix(),
-            entity_byte_offset: entity.byte_offset,
-            record_indices,
-            record_byte_offsets: [*first as u64, *second as u64, *third as u64],
-            value_byte_offsets: value_offsets.map(|offset| offset as u64),
-            body_binding_ids: Vec::new(),
-            maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
-            minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
-        });
+        out.push(
+            DesignBodyBounds::try_from(crate::records::DesignBodyBoundsWire {
+                id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
+                entity_suffix: entity.entity_id.suffix(),
+                entity_byte_offset: entity.byte_offset,
+                record_indices,
+                record_byte_offsets: [*first as u64, *second as u64, *third as u64],
+                value_byte_offsets: value_offsets.map(|offset| offset as u64),
+                body_binding_ids: Vec::new(),
+                maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
+                minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
+            })
+            .map_err(CodecError::Malformed)?,
+        );
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -1014,19 +1017,22 @@ pub fn decode_design_body_bindings(
                     })
                     .collect::<Vec<_>>();
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
-                out.push(DesignBodyBinding {
-                    id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
-                    stream: entry.name.clone(),
-                    pair_count,
-                    pair_ordinal: ordinal,
-                    asm_body_key: binding.asm_key,
-                    asm_body_key_offset: binding.asm_key_offset as u64,
-                    entity_suffix: binding.entity_suffix,
-                    entity_suffix_offset: binding.entity_suffix_offset() as u64,
-                    blob_name: record.blob_name.clone(),
-                    blob_name_offset: record.blob_name_offset as u64,
-                    body,
-                });
+                out.push(
+                    DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+                        id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
+                        stream: entry.name.clone(),
+                        pair_count,
+                        pair_ordinal: ordinal,
+                        asm_body_key: binding.asm_key,
+                        asm_body_key_offset: binding.asm_key_offset as u64,
+                        entity_suffix: binding.entity_suffix,
+                        entity_suffix_offset: binding.entity_suffix_offset() as u64,
+                        blob_name: record.blob_name.clone(),
+                        blob_name_offset: record.blob_name_offset as u64,
+                        body,
+                    })
+                    .map_err(CodecError::Malformed)?,
+                );
             }
         }
     }
@@ -1045,10 +1051,10 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
             .iter()
             .filter(|binding| {
                 stream == ids::native_scope(&binding.stream)
-                    && binding.entity_suffix == bounds.entity_suffix
+                    && binding.entity_suffix == bounds.entity_suffix()
             })
             .collect::<Vec<_>>();
-        matches.sort_by_key(|binding| binding.asm_body_key_offset);
+        matches.sort_by_key(|binding| binding.asm_body_key_offset());
         bounds.body_binding_ids = matches
             .into_iter()
             .map(|binding| binding.id.clone())

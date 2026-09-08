@@ -1576,13 +1576,13 @@ fn exact_surface_offset_face_groups(
             continue;
         };
         if group.role() != DesignOperandRole::PROFILE
-            || group.frame.opaque_index != 252
-            || group.members.is_empty()
+            || group.frame.opaque_index.get() != 252
+            || group.members().is_empty()
             || !covered_references.insert(group.record_index)
         {
             return None;
         }
-        for member in group.members.iter().map(|member| &member.value) {
+        for member in group.members().iter().map(|member| &member.value) {
             if *member == *distance_record_index
                 || !scope
                     .reference_members
@@ -4367,33 +4367,28 @@ pub(crate) fn exact_rectangular_pattern_construction(
     };
     let u_count_value = exact_count(u_count.evaluated_value)?;
     let v_count_value = exact_count(v_count.evaluated_value)?;
-    if u_count_value == 1 && v_count_value == 1
-        || (u_count_value > 1 && u_extent.evaluated_value == 0.0)
-        || (v_count_value > 1 && v_extent.evaluated_value == 0.0)
-        || (u_count_value == 1 && u_extent.evaluated_value != 0.0)
-        || (v_count_value == 1 && v_extent.evaluated_value != 0.0)
-    {
-        return None;
-    }
-    let mut construction = DesignRectangularPatternConstruction {
-        u_count: u_count_value,
-        v_count: v_count_value,
-        u_extent: u_extent.evaluated_value,
-        v_extent: v_extent.evaluated_value,
-        owner_record_indices: [
-            u_count.record_index,
-            v_count.record_index,
-            u_extent.record_index,
-            v_extent.record_index,
-        ],
-        value_offsets: [
-            u_count.evaluated_value_offset,
-            v_count.evaluated_value_offset,
-            u_extent.evaluated_value_offset,
-            v_extent.evaluated_value_offset,
-        ],
-        instances: None,
-    };
+    let mut construction = DesignRectangularPatternConstruction::try_from(
+        crate::records::feature::DesignRectangularPatternConstructionWire {
+            u_count: u_count_value,
+            v_count: v_count_value,
+            u_extent: u_extent.evaluated_value,
+            v_extent: v_extent.evaluated_value,
+            owner_record_indices: [
+                u_count.record_index,
+                v_count.record_index,
+                u_extent.record_index,
+                v_extent.record_index,
+            ],
+            value_offsets: [
+                u_count.evaluated_value_offset,
+                v_count.evaluated_value_offset,
+                u_extent.evaluated_value_offset,
+                v_extent.evaluated_value_offset,
+            ],
+            instances: None,
+        },
+    )
+    .ok()?;
     construction.instances =
         exact_rectangular_pattern_instances(bytes, records, scope, &construction);
     Some(construction)
@@ -4406,8 +4401,8 @@ fn exact_rectangular_pattern_instances(
     construction: &DesignRectangularPatternConstruction,
 ) -> Option<DesignRectangularPatternInstances> {
     let active = [
-        (construction.u_count, construction.u_extent),
-        (construction.v_count, construction.v_extent),
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
     ]
     .into_iter()
     .filter(|(count, _)| *count > 1)
@@ -5176,7 +5171,7 @@ pub fn bind_mirror_constructions(
         let [crate::records::Located {
             value: plane_member,
             ..
-        }] = plane_group.members.as_slice()
+        }] = plane_group.members()
         else {
             continue;
         };
@@ -5237,7 +5232,7 @@ pub fn bind_mirror_constructions(
             } else {
                 continue;
             };
-        let seed_feature = match seed_group.members.as_slice() {
+        let seed_feature = match seed_group.members() {
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))

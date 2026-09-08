@@ -2,6 +2,7 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
 
+use cadmpeg_ir::NonEmptyString;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -408,6 +409,25 @@ pub(crate) fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
     sense == SKETCH_LINK_SENSE_UNCONSTRAINED || sense == -1
 }
 
+/// A stored sketch-link sense excluding the unconstrained sentinels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i64", into = "i64")]
+pub struct SketchLinkSense(i64);
+impl TryFrom<i64> for SketchLinkSense {
+    type Error = &'static str;
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if sketch_link_sense_is_unconstrained(value) {
+            return Err("sense must omit the unconstrained sentinel");
+        }
+        Ok(Self(value))
+    }
+}
+impl From<SketchLinkSense> for i64 {
+    fn from(value: SketchLinkSense) -> Self {
+        value.0
+    }
+}
+
 /// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchCurveLink {
@@ -424,7 +444,7 @@ pub struct SketchCurveLink {
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.
     /// Absent when the source record leaves the sense unconstrained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sense: Option<i64>,
+    pub sense: Option<SketchLinkSense>,
     /// Source role tag distinguishing how the sketch curve participates in the link
     /// (e.g. profile edge vs. construction reference).
     pub role: i64,
@@ -767,7 +787,7 @@ impl DesignParameterSource {
         }
     }
 
-    pub(crate) fn translate_discriminator_offset(&mut self, offset: u64) {
+    fn translate_discriminator_offset(&mut self, offset: u64) {
         let discriminator = match self {
             Self::User {
                 family_discriminator,
@@ -787,7 +807,7 @@ pub struct DesignParameter {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
@@ -796,27 +816,203 @@ pub struct DesignParameter {
     pub source_ordinal: u32,
     /// Indexed owner: user parameters have none; feature and dimension
     /// parameters name their owning record.
-    pub source: DesignParameterSource,
+    source: DesignParameterSource,
     /// Literal or symbolic source expression.
-    pub expression: String,
+    expression: NonEmptyString,
     /// Byte offset of the expression's UTF-16LE code units.
-    pub expression_offset: u64,
+    expression_offset: u64,
     /// Byte offset of the source-family UTF-16LE code units.
-    pub source_kind_offset: u64,
+    source_kind_offset: u64,
     /// Declared unit token; absent for dimensionless and Boolean parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<RecordedValue<String>>,
+    unit: Option<Located<NonEmptyString>>,
     /// Source parameter name or dimension identifier.
-    pub name: String,
+    name: NonEmptyString,
     /// Byte offset of the name's UTF-16LE code units.
-    pub name_offset: u64,
+    name_offset: u64,
     /// Evaluated scalar in the record's native unit convention.
-    pub evaluated_value: f64,
+    evaluated_value: f64,
     /// Byte offset of `evaluated_value`.
+    evaluated_value_offset: u64,
+}
+
+/// Unchecked Design parameter input.
+pub(crate) struct DesignParameterDraft {
+    pub id: String,
+    pub byte_offset: u64,
+    pub class_tag: DesignClassTag,
+    pub record_index: u32,
+    pub source_ordinal: u32,
+    pub source: DesignParameterSource,
+    pub expression: String,
+    pub expression_offset: u64,
+    pub source_kind_offset: u64,
+    pub unit: Option<RecordedValue<String>>,
+    pub name: String,
+    pub name_offset: u64,
+    pub evaluated_value: f64,
     pub evaluated_value_offset: u64,
 }
 
+impl TryFrom<DesignParameterDraft> for DesignParameter {
+    type Error = String;
+    fn try_from(draft: DesignParameterDraft) -> Result<Self, Self::Error> {
+        if !draft.evaluated_value.is_finite() {
+            return Err("evaluated_value must be finite".into());
+        }
+        let expression =
+            NonEmptyString::new(draft.expression).ok_or("expression must not be empty")?;
+        let name = NonEmptyString::new(draft.name).ok_or("name must not be empty")?;
+        let unit = draft
+            .unit
+            .map(|unit| {
+                Ok::<_, String>(Located {
+                    value: NonEmptyString::new(unit.value).ok_or("unit must not be empty")?,
+                    offset: unit.offset.ok_or("unit_offset is required with unit")?,
+                })
+            })
+            .transpose()?;
+        check_parameter_discriminator_offset(
+            &draft.source,
+            draft.byte_offset,
+            draft.expression_offset,
+        )?;
+        if !(draft.byte_offset < draft.expression_offset
+            && draft.expression_offset < draft.source_kind_offset
+            && unit
+                .as_ref()
+                .map_or(draft.source_kind_offset < draft.name_offset, |unit| {
+                    draft.source_kind_offset < unit.offset && unit.offset < draft.name_offset
+                })
+            && draft.name_offset < draft.evaluated_value_offset)
+        {
+            return Err("byte_offset, expression_offset, source_kind_offset, unit_offset, name_offset, and evaluated_value_offset must be strictly ordered".into());
+        }
+        Ok(Self {
+            id: draft.id,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            source_ordinal: draft.source_ordinal,
+            source: draft.source,
+            expression,
+            expression_offset: draft.expression_offset,
+            source_kind_offset: draft.source_kind_offset,
+            unit,
+            name,
+            name_offset: draft.name_offset,
+            evaluated_value: draft.evaluated_value,
+            evaluated_value_offset: draft.evaluated_value_offset,
+        })
+    }
+}
+
+fn check_parameter_discriminator_offset(
+    source: &DesignParameterSource,
+    byte_offset: u64,
+    expression_offset: u64,
+) -> Result<(), String> {
+    let family_discriminator = match source {
+        DesignParameterSource::User {
+            family_discriminator,
+        } => Some(*family_discriminator),
+        DesignParameterSource::Owned(source) => source.family_discriminator,
+    };
+    if family_discriminator.is_some_and(|field| {
+        byte_offset.checked_add(22) != Some(field.offset) || field.offset >= expression_offset
+    }) {
+        return Err("family_discriminator_offset must follow byte_offset by 22 bytes and precede expression_offset".into());
+    }
+    Ok(())
+}
+
 impl DesignParameter {
+    /// Source family and ownership.
+    pub(crate) fn source(&self) -> &DesignParameterSource {
+        &self.source
+    }
+
+    #[cfg(test)]
+    /// Checked replacement of a present unit token.
+    pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {
+        let value = NonEmptyString::new(value).ok_or("unit must not be empty")?;
+        let unit = self.unit.as_mut().ok_or("unit is absent")?;
+        unit.value = value;
+        Ok(())
+    }
+
+    /// Indexed record header offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    /// Expression code-unit offset.
+    pub fn expression_offset(&self) -> u64 {
+        self.expression_offset
+    }
+    /// Source-family code-unit offset.
+    pub fn source_kind_offset(&self) -> u64 {
+        self.source_kind_offset
+    }
+    /// Name code-unit offset.
+    pub fn name_offset(&self) -> u64 {
+        self.name_offset
+    }
+    /// Evaluated scalar offset.
+    pub fn evaluated_value_offset(&self) -> u64 {
+        self.evaluated_value_offset
+    }
+    /// Finite evaluated scalar.
+    pub fn evaluated_value(&self) -> f64 {
+        self.evaluated_value
+    }
+    /// Nonempty parameter name.
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+    /// Nonempty source expression.
+    pub fn expression(&self) -> &str {
+        self.expression.as_str()
+    }
+    /// Located nonempty unit token, when present.
+    pub fn unit(&self) -> Option<&Located<NonEmptyString>> {
+        self.unit.as_ref()
+    }
+
+    /// Checked translation of all parameter locations.
+    pub(crate) fn try_translate_offsets(&mut self, delta: u64) -> Result<(), String> {
+        let evaluated_value_offset = self
+            .evaluated_value_offset
+            .checked_add(delta)
+            .ok_or("evaluated_value_offset translation overflows")?;
+        self.byte_offset += delta;
+        self.source.translate_discriminator_offset(delta);
+        self.expression_offset += delta;
+        self.source_kind_offset += delta;
+        if let Some(unit) = &mut self.unit {
+            unit.offset += delta;
+        }
+        self.name_offset += delta;
+        self.evaluated_value_offset = evaluated_value_offset;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    /// Checked replacement of the evaluated scalar.
+    pub(crate) fn try_set_evaluated_value(&mut self, value: f64) -> Result<(), String> {
+        if !value.is_finite() {
+            return Err("evaluated_value must be finite".into());
+        }
+        self.evaluated_value = value;
+        Ok(())
+    }
+    #[cfg(test)]
+    /// Checked replacement of source family and ownership.
+    pub(crate) fn try_set_source(&mut self, source: DesignParameterSource) -> Result<(), String> {
+        check_parameter_discriminator_offset(&source, self.byte_offset, self.expression_offset)?;
+        self.source = source;
+        Ok(())
+    }
+
     pub(crate) fn family_discriminator(&self) -> Option<Located<DesignParameterDiscriminator>> {
         match &self.source {
             DesignParameterSource::User {
@@ -908,7 +1104,7 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             wire.owner_record_index,
             family_discriminator,
         )?;
-        Ok(Self {
+        Self::try_from(DesignParameterDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
@@ -929,6 +1125,12 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
 
 impl From<DesignParameter> for DesignParameterSerde {
     fn from(parameter: DesignParameter) -> Self {
+        let byte_offset = parameter.byte_offset();
+        let expression_offset = parameter.expression_offset();
+        let source_kind_offset = parameter.source_kind_offset();
+        let name_offset = parameter.name_offset();
+        let evaluated_value_offset = parameter.evaluated_value_offset();
+        let evaluated_value = parameter.evaluated_value();
         let kind = parameter.kind();
         let owner_record_index = parameter.owner_record_index();
         let family_discriminator = parameter.family_discriminator();
@@ -938,24 +1140,24 @@ impl From<DesignParameter> for DesignParameterSerde {
         };
         Self {
             id: parameter.id,
-            byte_offset: parameter.byte_offset,
+            byte_offset,
             class_tag: parameter.class_tag.into(),
             record_index: parameter.record_index,
             family_discriminator: family_discriminator.map(|value| value.value.code()),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: parameter.source_ordinal,
             owner_record_index,
-            expression: parameter.expression,
-            expression_offset: parameter.expression_offset,
+            expression: parameter.expression.to_string(),
+            expression_offset,
             source_kind,
-            source_kind_offset: parameter.source_kind_offset,
+            source_kind_offset,
             kind,
-            unit_offset: parameter.unit.as_ref().and_then(|field| field.offset),
-            unit: parameter.unit.map(|field| field.value),
-            name: parameter.name,
-            name_offset: parameter.name_offset,
-            evaluated_value: parameter.evaluated_value,
-            evaluated_value_offset: parameter.evaluated_value_offset,
+            unit_offset: parameter.unit.as_ref().map(|field| field.offset),
+            unit: parameter.unit.map(|field| field.value.to_string()),
+            name: parameter.name.to_string(),
+            name_offset,
+            evaluated_value,
+            evaluated_value_offset,
         }
     }
 }
@@ -2303,6 +2505,41 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
     }
 }
 
+/// A complete serialized visual-appearance identity.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignVisualToken(String);
+
+impl TryFrom<String> for DesignVisualToken {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        crate::design::presentation::visual_token(&value)
+            .ok_or("visual_guid must be a complete visual token")?;
+        Ok(Self(value))
+    }
+}
+impl From<DesignVisualToken> for String {
+    fn from(value: DesignVisualToken) -> Self {
+        value.0
+    }
+}
+impl std::ops::Deref for DesignVisualToken {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+impl std::fmt::Display for DesignVisualToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl DesignVisualToken {
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&other.0)
+    }
+}
+
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -2323,7 +2560,7 @@ pub struct DesignMaterialAssignment {
     /// Byte offset of the UTF-16 entity-id code units.
     pub entity_id_offset: u64,
     /// Complete serialized visual token.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
     pub visual_guid_offset: u64,
     /// Physical-material token, when present.
@@ -2350,7 +2587,7 @@ struct DesignMaterialAssignmentWire {
     /// Byte offset of the UTF-16 entity-id code units.
     pub entity_id_offset: u64,
     /// Complete serialized visual token.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
     pub visual_guid_offset: u64,
     /// Physical-material token, when present.
@@ -6356,6 +6593,30 @@ pub enum SketchConstraintKind {
     TextPath,
 }
 
+/// A sketch pattern instance count in 1..=100000.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct SketchPatternCount(u32);
+impl TryFrom<u32> for SketchPatternCount {
+    type Error = &'static str;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if !(1..=100_000).contains(&value) {
+            return Err("evaluated_count must be in 1..=100000");
+        }
+        Ok(Self(value))
+    }
+}
+impl From<SketchPatternCount> for u32 {
+    fn from(value: SketchPatternCount) -> Self {
+        value.0
+    }
+}
+impl SketchPatternCount {
+    pub(crate) fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Class-specific auxiliary payload of a pattern or text sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -6369,7 +6630,7 @@ pub enum SketchPatternDefinition {
         /// Evaluated total pattern angle in radians.
         evaluated_angle: f64,
         /// Evaluated instance count.
-        evaluated_count: u32,
+        evaluated_count: SketchPatternCount,
     },
     /// A rectangular-pattern relation's two direction clauses.
     Rectangular {
@@ -6395,7 +6656,7 @@ pub enum SketchPatternDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchPatternDirection {
     /// Evaluated instance count along this direction.
-    pub evaluated_count: u32,
+    pub evaluated_count: SketchPatternCount,
     /// Record index of the count parameter value record.
     pub count_parameter: u32,
     /// Unit direction vector in sketch coordinates.
@@ -6774,67 +7035,53 @@ impl SketchPointClosure10Inline {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SketchPointRecordForm {
     /// Class version 0: one flag, two coordinates, and no persistent identity.
-    Version0 {
-        flag: bool,
-        /// Incident curves of the paired companion, in source order.
-        companion: Option<Vec<u32>>,
-    },
+    Version0 { flag: bool },
     /// Class version 8: seven flags and an eight-zero closure lane.
     Version8 {
-        /// Incident curves of the paired companion, in source order.
-        companion: Option<Vec<u32>>,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         /// Third sketch coordinate in millimetres.
         depth: f64,
     },
     /// Class version 10 with same-segment references and seven flags.
     Version10 {
-        /// Incident curves of the paired companion, in source order.
-        companion: Option<Vec<u32>>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         closure: SketchPointClosure10,
     },
     /// Class version 10 with inline target-type GUIDs on its references.
     Version10InlineTyped {
-        /// Incident curves of the paired companion, in source order.
-        companion: Option<Vec<u32>>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         closure: SketchPointClosure10Inline,
     },
     /// Class version 11 with same-segment references and eight flags.
     Version11 {
-        /// Paired reverse curve-incidence companion.
-        companion: Option<SketchPointCompanion>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         /// Optional origin bitfield preceding the persistent identity.
         entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
     },
     /// Class version 11 with inline target-type GUIDs on its references and eight flags.
     Version11InlineTyped {
-        /// Paired reverse curve-incidence companion.
-        companion: Option<SketchPointCompanion>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         /// Optional origin bitfield preceding the persistent identity.
         entity_genesis: Option<u64>,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
     },
@@ -6847,37 +7094,15 @@ impl SketchPointRecordForm {
         closure: SketchPointClosure,
         entity_genesis: Option<u64>,
         depth: f64,
-        companion: Option<SketchPointCompanion>,
     ) -> Self {
         Self::Version11 {
-            companion,
             depth,
             entity_genesis,
             padded_paired_reference: false,
-            persistent_id,
+            persistent_id: std::num::NonZeroU64::new(persistent_id).unwrap(),
             flags: [false; 8],
             closure,
         }
-    }
-
-    pub(crate) fn set_companion(&mut self, value: SketchPointCompanion) -> Result<(), String> {
-        match self {
-            Self::Version0 { companion, .. }
-            | Self::Version8 { companion, .. }
-            | Self::Version10 { companion, .. }
-            | Self::Version10InlineTyped { companion, .. } => {
-                if value.prefix_present_zero {
-                    return Err(
-                        "sketch point companion.prefix_present_zero requires version 11".into(),
-                    );
-                }
-                *companion = Some(value.incident_curves);
-            }
-            Self::Version11 { companion, .. } | Self::Version11InlineTyped { companion, .. } => {
-                *companion = Some(value);
-            }
-        }
-        Ok(())
     }
 
     pub(crate) fn depth(&self) -> f64 {
@@ -6914,7 +7139,7 @@ impl SketchPointRecordForm {
             | Self::Version10 { persistent_id, .. }
             | Self::Version10InlineTyped { persistent_id, .. }
             | Self::Version11 { persistent_id, .. }
-            | Self::Version11InlineTyped { persistent_id, .. } => Some(persistent_id),
+            | Self::Version11InlineTyped { persistent_id, .. } => Some(persistent_id.get()),
         }
     }
 
@@ -6966,6 +7191,19 @@ pub struct SketchPointCompanion {
     pub incident_curves: Vec<u32>,
 }
 
+impl SketchPointCompanion {
+    fn validate_for(&self, form: &SketchPointRecordForm) -> Result<(), String> {
+        if self.prefix_present_zero && form.class_version() != 11 {
+            return Err("sketch point companion.prefix_present_zero requires version 11".into());
+        }
+        let unique: std::collections::HashSet<_> = self.incident_curves.iter().collect();
+        if unique.len() != self.incident_curves.len() {
+            return Err("sketch point companion.incident_curves must be distinct".into());
+        }
+        Ok(())
+    }
+}
+
 /// Borrowed companion payload with the prefix derived for older point forms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SketchPointCompanionRef<'a> {
@@ -7006,32 +7244,102 @@ pub struct SketchPoint {
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
+    record_form: SketchPointRecordForm,
+    companion: SketchPointCompanion,
+    /// Record index of the paired reverse curve-incidence companion.
+    pub paired_reference: u32,
+    /// First two sketch coordinates in millimetres.
+    coordinates: Point2,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SketchPointDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Index of this point record within the `BulkStream` tree.
+    pub record_index: u32,
+    /// Resolved owning-sketch reference from a direct backlink, typed relation,
+    /// or sketch-container member run.
+    pub owner_reference: Option<u32>,
+    /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the first coordinate relative to the record start.
+    pub coordinate_offset: u32,
+    /// Serialized point-record member sequence, identity, flags, and closure.
     pub record_form: SketchPointRecordForm,
+    pub companion: SketchPointCompanion,
     /// Record index of the paired reverse curve-incidence companion.
     pub paired_reference: u32,
     /// First two sketch coordinates in millimetres.
     pub coordinates: Point2,
 }
+impl TryFrom<SketchPointDraft> for SketchPoint {
+    type Error = String;
+    fn try_from(draft: SketchPointDraft) -> Result<Self, Self::Error> {
+        if !draft.coordinates.u.is_finite() || !draft.coordinates.v.is_finite() {
+            return Err("sketch point coordinates must be finite".into());
+        }
+        if !draft.record_form.depth().is_finite() {
+            return Err("sketch point depth must be finite".into());
+        }
+        draft.companion.validate_for(&draft.record_form)?;
+        Ok(Self {
+            id: draft.id,
+            record_index: draft.record_index,
+            owner_reference: draft.owner_reference,
+            class_tag: draft.class_tag,
+            byte_offset: draft.byte_offset,
+            coordinate_offset: draft.coordinate_offset,
+            record_form: draft.record_form,
+            companion: draft.companion,
+            paired_reference: draft.paired_reference,
+            coordinates: draft.coordinates,
+        })
+    }
+}
 
 impl SketchPoint {
-    pub(crate) fn companion(&self) -> Option<SketchPointCompanionRef<'_>> {
-        match &self.record_form {
-            SketchPointRecordForm::Version0 { companion, .. }
-            | SketchPointRecordForm::Version8 { companion, .. }
-            | SketchPointRecordForm::Version10 { companion, .. }
-            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => companion
-                .as_deref()
-                .map(|incident_curves| SketchPointCompanionRef {
-                    prefix_present_zero: false,
-                    incident_curves,
-                }),
-            SketchPointRecordForm::Version11 { companion, .. }
-            | SketchPointRecordForm::Version11InlineTyped { companion, .. } => {
-                companion.as_ref().map(|companion| SketchPointCompanionRef {
-                    prefix_present_zero: companion.prefix_present_zero,
-                    incident_curves: &companion.incident_curves,
-                })
-            }
+    pub(crate) fn coordinates(&self) -> Point2 {
+        self.coordinates
+    }
+    pub(crate) fn record_form(&self) -> &SketchPointRecordForm {
+        &self.record_form
+    }
+    pub(crate) fn try_set_coordinates(&mut self, coordinates: Point2) -> Result<(), String> {
+        if !coordinates.u.is_finite() || !coordinates.v.is_finite() {
+            return Err("sketch point coordinates must be finite".into());
+        }
+        self.coordinates = coordinates;
+        Ok(())
+    }
+    #[cfg(test)]
+    pub(crate) fn try_set_record_form(
+        &mut self,
+        record_form: SketchPointRecordForm,
+    ) -> Result<(), String> {
+        if !record_form.depth().is_finite() {
+            return Err("sketch point depth must be finite".into());
+        }
+        self.companion.validate_for(&record_form)?;
+        self.record_form = record_form;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn try_set_companion(
+        &mut self,
+        companion: SketchPointCompanion,
+    ) -> Result<(), String> {
+        companion.validate_for(&self.record_form)?;
+        self.companion = companion;
+        Ok(())
+    }
+    pub(crate) fn companion(&self) -> SketchPointCompanionRef<'_> {
+        SketchPointCompanionRef {
+            prefix_present_zero: self.companion.prefix_present_zero,
+            incident_curves: &self.companion.incident_curves,
         }
     }
 
@@ -7139,24 +7447,25 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         }
         let flags = wire.flags.map(|flag| flag == 1);
         let closure = wire.closure.map(SketchPointClosure::try_from).transpose()?;
-        let mut record_form = match (wire.record_form, wire.persistent_id, closure) {
-            (SketchPointRecordFormSerde::Version0, None, None) => SketchPointRecordForm::Version0 {
-                companion: None,
-                flag: flags[0],
-            },
+        let persistent_id = wire
+            .persistent_id
+            .map(|value| std::num::NonZeroU64::new(value).ok_or("persistent_id must be nonzero"))
+            .transpose()?;
+        let record_form = match (wire.record_form, persistent_id, closure) {
+            (SketchPointRecordFormSerde::Version0, None, None) => {
+                SketchPointRecordForm::Version0 { flag: flags[0] }
+            }
             (
                 SketchPointRecordFormSerde::Version8,
                 Some(persistent_id),
                 Some(SketchPointClosure::Selector0State0),
             ) => SketchPointRecordForm::Version8 {
-                companion: None,
                 depth: wire.depth,
                 persistent_id,
                 flags: seven_flags(flags)?,
             },
             (SketchPointRecordFormSerde::Version10, Some(persistent_id), Some(closure)) => {
                 SketchPointRecordForm::Version10 {
-                    companion: None,
                     depth: wire.depth,
                     persistent_id,
                     flags: seven_flags(flags)?,
@@ -7171,7 +7480,6 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version10InlineTyped {
-                companion: None,
                 depth: wire.depth,
                 trailing_reference,
                 persistent_id,
@@ -7188,7 +7496,6 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11 {
-                companion: None,
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 padded_paired_reference,
@@ -7201,7 +7508,6 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11InlineTyped {
-                companion: None,
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 trailing_reference,
@@ -7220,20 +7526,19 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         {
             return Err("sketch point flags beyond the form width must be zero".into());
         }
-        if let Some(companion) = wire.companion {
-            let inline_typed =
-                companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
-            if inline_typed != record_form.uses_inline_typed_references() {
-                return Err(
-                    "sketch point companion.reference_encoding disagrees with record_form".into(),
-                );
-            }
-            record_form.set_companion(SketchPointCompanion {
-                prefix_present_zero: companion.prefix_present_zero,
-                incident_curves: companion.incident_curves,
-            })?;
+        let companion = wire.companion.ok_or("sketch point companion is required")?;
+        let inline_typed =
+            companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
+        if inline_typed != record_form.uses_inline_typed_references() {
+            return Err(
+                "sketch point companion.reference_encoding disagrees with record_form".into(),
+            );
         }
-        Ok(Self {
+        let companion = SketchPointCompanion {
+            prefix_present_zero: companion.prefix_present_zero,
+            incident_curves: companion.incident_curves,
+        };
+        Self::try_from(SketchPointDraft {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
@@ -7241,6 +7546,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             byte_offset: wire.byte_offset,
             coordinate_offset: wire.coordinate_offset,
             record_form,
+            companion,
             paired_reference: wire.paired_reference,
             coordinates: wire.coordinates,
         })
@@ -7248,31 +7554,11 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
 }
 
 impl From<SketchPoint> for SketchPointSerde {
-    fn from(mut point: SketchPoint) -> Self {
+    fn from(point: SketchPoint) -> Self {
         let reference_encoding = if point.record_form.uses_inline_typed_references() {
             SketchPointCompanionReferenceEncoding::InlineTyped
         } else {
             SketchPointCompanionReferenceEncoding::SameSegment
-        };
-        let companion = match &mut point.record_form {
-            SketchPointRecordForm::Version0 { companion, .. }
-            | SketchPointRecordForm::Version8 { companion, .. }
-            | SketchPointRecordForm::Version10 { companion, .. }
-            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => companion
-                .take()
-                .map(|incident_curves| SketchPointCompanionWire {
-                    prefix_present_zero: false,
-                    reference_encoding,
-                    incident_curves,
-                }),
-            SketchPointRecordForm::Version11 { companion, .. }
-            | SketchPointRecordForm::Version11InlineTyped { companion, .. } => {
-                companion.take().map(|companion| SketchPointCompanionWire {
-                    prefix_present_zero: companion.prefix_present_zero,
-                    reference_encoding,
-                    incident_curves: companion.incident_curves,
-                })
-            }
         };
         let depth = point.depth();
         let entity_genesis = point.entity_genesis();
@@ -7296,6 +7582,11 @@ impl From<SketchPoint> for SketchPointSerde {
                 trailing_reference, ..
             } => SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
         };
+        let companion = Some(SketchPointCompanionWire {
+            prefix_present_zero: point.companion.prefix_present_zero,
+            reference_encoding,
+            incident_curves: point.companion.incident_curves,
+        });
         Self {
             id: point.id,
             record_index: point.record_index,
@@ -7336,7 +7627,7 @@ pub struct SketchCurveIdentity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
-    pub primary_id: u64,
+    pub primary_id: std::num::NonZeroU64,
     /// Secondary persistent identifier of the source sketch curve (e.g. its
     /// complementary endpoint or paired-curve identity).
     pub secondary_id: u64,
@@ -7364,7 +7655,7 @@ pub struct SketchSurface {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for the sketch surface.
-    pub persistent_id: u64,
+    pub persistent_id: std::num::NonZeroU64,
     /// Degree in the first surface parameter.
     pub u_degree: u32,
     /// Degree in the second surface parameter.
@@ -7689,7 +7980,25 @@ pub struct DesignBodyMember {
 
 /// Triplicated axis-aligned body bounds cached in the Design stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignBodyBoundsWire", into = "DesignBodyBoundsWire")]
 pub struct DesignBodyBounds {
+    /// Globally unique deterministic identifier for this native record set.
+    pub id: String,
+    /// Numeric suffix of the owning Design body entity.
+    entity_suffix: u32,
+    /// Byte offset of the owning Design entity header.
+    pub entity_byte_offset: u64,
+    /// Indexed-header byte offsets parallel to `record_indices`.
+    record_byte_offsets: [u64; 3],
+    /// First f64 byte of each repeated sextuple.
+    value_byte_offsets: [u64; 3],
+    /// Design BREP body-map pairs carrying this entity suffix, in stream order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_binding_ids: Vec<String>,
+    corners: DesignMeshSceneBounds,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DesignBodyBoundsWire {
     /// Globally unique deterministic identifier for this native record set.
     pub id: String,
     /// Numeric suffix of the owning Design body entity.
@@ -7710,10 +8019,108 @@ pub struct DesignBodyBounds {
     /// Minimum model-space corner in millimetres.
     pub minimum: Point3,
 }
+impl TryFrom<DesignBodyBoundsWire> for DesignBodyBounds {
+    type Error = String;
+    fn try_from(wire: DesignBodyBoundsWire) -> Result<Self, Self::Error> {
+        let entity_suffix = u32::try_from(wire.entity_suffix)
+            .map_err(|_| "entity_suffix exceeds indexed record range")?;
+        let last = entity_suffix
+            .checked_add(3)
+            .ok_or("entity_suffix leaves no room for three cache records")?;
+        if wire.record_indices != [last - 2, last - 1, last] {
+            return Err("record_indices must follow entity_suffix consecutively".into());
+        }
+        if !wire
+            .record_byte_offsets
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        {
+            return Err("record_byte_offsets must be strictly increasing".into());
+        }
+        if !wire
+            .value_byte_offsets
+            .iter()
+            .zip(wire.record_byte_offsets)
+            .all(|(value, record)| *value > record)
+        {
+            return Err("value_byte_offsets must follow record_byte_offsets".into());
+        }
+        let maximum = [wire.maximum.x, wire.maximum.y, wire.maximum.z];
+        let minimum = [wire.minimum.x, wire.minimum.y, wire.minimum.z];
+        let corners = DesignMeshSceneBounds::new(maximum, minimum)?;
+        if maximum == minimum {
+            return Err("maximum and minimum must not define a degenerate box".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            entity_suffix,
+            entity_byte_offset: wire.entity_byte_offset,
+            record_byte_offsets: wire.record_byte_offsets,
+            value_byte_offsets: wire.value_byte_offsets,
+            body_binding_ids: wire.body_binding_ids,
+            corners,
+        })
+    }
+}
+impl DesignBodyBounds {
+    pub(crate) fn entity_suffix(&self) -> u64 {
+        u64::from(self.entity_suffix)
+    }
+    fn record_indices(&self) -> [u32; 3] {
+        [
+            self.entity_suffix + 1,
+            self.entity_suffix + 2,
+            self.entity_suffix + 3,
+        ]
+    }
+}
+impl From<DesignBodyBounds> for DesignBodyBoundsWire {
+    fn from(value: DesignBodyBounds) -> Self {
+        let [x, y, z] = value.corners.maximum();
+        let maximum = Point3::new(x, y, z);
+        let [x, y, z] = value.corners.minimum();
+        Self {
+            entity_suffix: value.entity_suffix(),
+            record_indices: value.record_indices(),
+            id: value.id,
+            entity_byte_offset: value.entity_byte_offset,
+            record_byte_offsets: value.record_byte_offsets,
+            value_byte_offsets: value.value_byte_offsets,
+            body_binding_ids: value.body_binding_ids,
+            maximum,
+            minimum: Point3::new(x, y, z),
+        }
+    }
+}
 
 /// One ordered pair in a Design `BulkStream` BREP body-map record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignBodyBindingWire", into = "DesignBodyBindingWire")]
 pub struct DesignBodyBinding {
+    /// Globally unique deterministic identifier for this native map entry.
+    pub id: String,
+    /// Design `BulkStream` ZIP entry containing the map.
+    pub stream: String,
+    /// Number of pairs in the enclosing body map.
+    pair_count: std::num::NonZeroU32,
+    /// Zero-based position in the enclosing body map.
+    pair_ordinal: u32,
+    /// BREP body selector stored by this pair.
+    pub asm_body_key: u64,
+    /// Byte offset of `asm_body_key` within `stream`.
+    asm_body_key_offset: u64,
+    /// Numeric Design entity suffix stored by this pair.
+    pub entity_suffix: u64,
+    /// Basename of the BREP blob whose body namespace contains the key.
+    blob_name: String,
+    /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
+    blob_name_offset: u64,
+    /// Solved body in the BREP blob named by this pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<BodyId>,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DesignBodyBindingWire {
     /// Globally unique deterministic identifier for this native map entry.
     pub id: String,
     /// Design `BulkStream` ZIP entry containing the map.
@@ -7737,6 +8144,80 @@ pub struct DesignBodyBinding {
     /// Solved body in the BREP blob named by this pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<BodyId>,
+}
+impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
+    type Error = String;
+    fn try_from(wire: DesignBodyBindingWire) -> Result<Self, Self::Error> {
+        let pair_count =
+            std::num::NonZeroU32::new(wire.pair_count).ok_or("pair_count must be nonzero")?;
+        if wire.pair_ordinal >= pair_count.get() {
+            return Err("pair_ordinal must be less than pair_count".into());
+        }
+        let entity_suffix_offset = wire
+            .asm_body_key_offset
+            .checked_add(8)
+            .ok_or("asm_body_key_offset overflows entity_suffix_offset")?;
+        if wire.entity_suffix_offset != entity_suffix_offset {
+            return Err(
+                "entity_suffix_offset must follow asm_body_key_offset by eight bytes".into(),
+            );
+        }
+        if !wire.blob_name.starts_with("BREP.") {
+            return Err("blob_name must start with BREP.".into());
+        }
+        if wire.blob_name_offset <= entity_suffix_offset {
+            return Err("blob_name_offset must follow entity_suffix_offset".into());
+        }
+        Ok(Self {
+            pair_count,
+            id: wire.id,
+            stream: wire.stream,
+            pair_ordinal: wire.pair_ordinal,
+            asm_body_key: wire.asm_body_key,
+            asm_body_key_offset: wire.asm_body_key_offset,
+            entity_suffix: wire.entity_suffix,
+            blob_name: wire.blob_name,
+            blob_name_offset: wire.blob_name_offset,
+            body: wire.body,
+        })
+    }
+}
+impl DesignBodyBinding {
+    pub(crate) fn pair_count(&self) -> u32 {
+        self.pair_count.get()
+    }
+    pub(crate) fn pair_ordinal(&self) -> u32 {
+        self.pair_ordinal
+    }
+    pub(crate) fn asm_body_key_offset(&self) -> u64 {
+        self.asm_body_key_offset
+    }
+    pub(crate) fn entity_suffix_offset(&self) -> u64 {
+        self.asm_body_key_offset + 8
+    }
+    pub(crate) fn blob_name(&self) -> &str {
+        &self.blob_name
+    }
+    pub(crate) fn blob_name_offset(&self) -> u64 {
+        self.blob_name_offset
+    }
+}
+impl From<DesignBodyBinding> for DesignBodyBindingWire {
+    fn from(value: DesignBodyBinding) -> Self {
+        Self {
+            pair_count: value.pair_count(),
+            entity_suffix_offset: value.entity_suffix_offset(),
+            id: value.id,
+            stream: value.stream,
+            pair_ordinal: value.pair_ordinal,
+            asm_body_key: value.asm_body_key,
+            asm_body_key_offset: value.asm_body_key_offset,
+            entity_suffix: value.entity_suffix,
+            blob_name: value.blob_name,
+            blob_name_offset: value.blob_name_offset,
+            body: value.body,
+        }
+    }
 }
 
 /// Design browser-node visibility joined to one solved ASM body.
