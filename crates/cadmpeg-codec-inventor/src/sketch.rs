@@ -323,8 +323,8 @@ pub(crate) enum PmDcSketchEntityKind {
         position: [f64; 2],
         endpoint_of: PmDcReferenceList,
         center_of: PmDcReferenceList,
-        state: Option<u32>,
-        associations: Option<PmDcReferenceList>,
+        #[serde(flatten, with = "point_tail")]
+        tail: Option<(u32, PmDcReferenceList)>,
     },
     Line {
         points: PmDcReferenceList,
@@ -348,6 +348,45 @@ pub(crate) enum PmDcSketchEntityKind {
         minor_radius: f64,
         state: u8,
     },
+}
+
+mod point_tail {
+    use super::PmDcReferenceList;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        state: Option<u32>,
+        associations: Option<PmDcReferenceList>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        tail: &Option<(u32, PmDcReferenceList)>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let (state, associations) = match tail {
+            Some((state, associations)) => (Some(*state), Some(associations.clone())),
+            None => (None, None),
+        };
+        Wire {
+            state,
+            associations,
+        }
+        .serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<(u32, PmDcReferenceList)>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.state, wire.associations) {
+            (Some(state), Some(associations)) => Ok(Some((state, associations))),
+            (None, None) => Ok(None),
+            _ => Err(serde::de::Error::custom(
+                "point state and associations must be present together",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -562,20 +601,19 @@ fn parse_point(
     let position = point2(cursor, "sketch point")?;
     let endpoint_of = reference_list(ctx, cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(ctx, cursor, 2, "point center-of list")?;
-    let (state, associations) = if cursor.remaining() == 0 {
-        (None, None)
+    let tail = if cursor.remaining() == 0 {
+        None
     } else {
-        (
-            Some(cursor.u32("point state")?),
-            Some(reference_list(ctx, cursor, 2, "point association list")?),
-        )
+        Some((
+            cursor.u32("point state")?,
+            reference_list(ctx, cursor, 2, "point association list")?,
+        ))
     };
     Ok(PmDcSketchEntityKind::Point {
         position,
         endpoint_of,
         center_of,
-        state,
-        associations,
+        tail,
     })
 }
 
@@ -2190,5 +2228,23 @@ mod tests {
         assert_eq!(incomplete.unresolved_constraints, 1);
         assert!(incomplete.sketches.is_empty());
         assert!(incomplete.entities.is_empty());
+    }
+    #[test]
+    fn point_tail_wire_requires_both_fields() {
+        let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+        let mut wire = serde_json::json!({
+            "form": "point", "position": [0.0, 0.0],
+            "endpoint_of": list.clone(), "center_of": list.clone(),
+            "state": null, "associations": null
+        });
+        let point: PmDcSketchEntityKind = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(point).unwrap(), wire);
+        wire["state"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
+        wire["associations"] = list;
+        let point: PmDcSketchEntityKind = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(point).unwrap(), wire);
+        wire["state"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
     }
 }
