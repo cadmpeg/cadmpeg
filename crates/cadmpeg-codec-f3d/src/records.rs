@@ -6410,6 +6410,30 @@ pub enum SketchConstraintKind {
     TextPath,
 }
 
+/// A sketch pattern instance count in 1..=100000.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct SketchPatternCount(u32);
+impl TryFrom<u32> for SketchPatternCount {
+    type Error = &'static str;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if !(1..=100_000).contains(&value) {
+            return Err("evaluated_count must be in 1..=100000");
+        }
+        Ok(Self(value))
+    }
+}
+impl From<SketchPatternCount> for u32 {
+    fn from(value: SketchPatternCount) -> Self {
+        value.0
+    }
+}
+impl SketchPatternCount {
+    pub(crate) fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Class-specific auxiliary payload of a pattern or text sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -6423,7 +6447,7 @@ pub enum SketchPatternDefinition {
         /// Evaluated total pattern angle in radians.
         evaluated_angle: f64,
         /// Evaluated instance count.
-        evaluated_count: u32,
+        evaluated_count: SketchPatternCount,
     },
     /// A rectangular-pattern relation's two direction clauses.
     Rectangular {
@@ -6449,7 +6473,7 @@ pub enum SketchPatternDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchPatternDirection {
     /// Evaluated instance count along this direction.
-    pub evaluated_count: u32,
+    pub evaluated_count: SketchPatternCount,
     /// Record index of the count parameter value record.
     pub count_parameter: u32,
     /// Unit direction vector in sketch coordinates.

@@ -297,7 +297,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
             angle_parameter: 336,
             count_parameter: 333,
             evaluated_angle: std::f64::consts::TAU,
-            evaluated_count: 3,
+            evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
         })
     );
 }
@@ -374,14 +374,14 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
         Some(SketchPatternDefinition::Rectangular {
             directions: [
                 SketchPatternDirection {
-                    evaluated_count: 3,
+                    evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
                     count_parameter: 464,
                     direction: [1.0, 0.0, 0.0],
                     evaluated_distance: 3.0,
                     distance_parameter: 470,
                 },
                 SketchPatternDirection {
-                    evaluated_count: 1,
+                    evaluated_count: crate::records::SketchPatternCount::try_from(1).unwrap(),
                     count_parameter: 467,
                     direction: [0.0, 1.0, 0.0],
                     evaluated_distance: 0.5,
@@ -430,8 +430,8 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     else {
         panic!("expected a rectangular pattern definition");
     };
-    assert_eq!(directions[0].evaluated_count, 4);
-    assert_eq!(directions[1].evaluated_count, 2);
+    assert_eq!(directions[0].evaluated_count.get(), 4);
+    assert_eq!(directions[1].evaluated_count.get(), 2);
 }
 
 #[test]

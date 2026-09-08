@@ -1078,7 +1078,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
                 angle_parameter: 2,
                 count_parameter: 3,
                 evaluated_angle: 1.5,
-                evaluated_count: 2,
+                evaluated_count: crate::records::SketchPatternCount::try_from(2).unwrap(),
             }),
         ),
         (
@@ -1087,7 +1087,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
                 directions: std::array::from_fn(|_| crate::records::SketchPatternDirection {
                     count_parameter: 2,
                     distance_parameter: 3,
-                    evaluated_count: 2,
+                    evaluated_count: crate::records::SketchPatternCount::try_from(2).unwrap(),
                     direction: [1.0, 0.0, 0.0],
                     evaluated_distance: 1.5,
                 }),
@@ -1763,5 +1763,22 @@ fn sketch_link_sidecar_preserves_all_non_sentinel_senses() {
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
         let record: super::SketchCurveLink = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+}
+
+#[test]
+fn sketch_pattern_count_enforces_both_bounds() {
+    for value in [0, 100_001, u32::MAX] {
+        assert!(super::SketchPatternCount::try_from(value).is_err());
+        let error = serde_json::from_value::<super::SketchPatternCount>(value.into()).unwrap_err();
+        assert!(error.to_string().contains("evaluated_count"));
+    }
+    for value in [1, 100_000] {
+        let count = super::SketchPatternCount::try_from(value).unwrap();
+        assert_eq!(count.get(), value);
+        assert_eq!(
+            serde_json::to_value(count).unwrap(),
+            serde_json::json!(value)
+        );
     }
 }

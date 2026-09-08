@@ -1308,10 +1308,11 @@ pub(crate) fn decode_pattern_definition(
             }
             let angle_at = reference_end(1)? + 6;
             let evaluated_angle = f64_at(angle_at)?;
-            let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
-            if !(1..=100_000).contains(&evaluated_count) {
-                return None;
-            }
+            let evaluated_count = crate::records::SketchPatternCount::try_from(View::u32_le_at(
+                payload,
+                angle_at + 8,
+            )?)
+            .ok()?;
             return Some(SketchPatternDefinition::Circular {
                 angle_parameter: parsed.auxiliary_references[0].value,
                 count_parameter: parsed.auxiliary_references[1].value,
@@ -1350,10 +1351,10 @@ pub(crate) fn decode_pattern_definition(
                 ),
             ];
             for (count_at, count_ordinal, distance_ordinal) in clauses {
-                let evaluated_count = View::u32_le_at(payload, count_at)?;
-                if !(1..=100_000).contains(&evaluated_count) {
-                    return None;
-                }
+                let evaluated_count = crate::records::SketchPatternCount::try_from(
+                    View::u32_le_at(payload, count_at)?,
+                )
+                .ok()?;
                 let direction_at = reference_end(count_ordinal)? + 6;
                 let direction = [
                     f64_at(direction_at)?,
