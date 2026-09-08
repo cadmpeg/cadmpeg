@@ -371,6 +371,7 @@ fn section_incidence_curve_family_evidence_without_type35(
     )
 }
 
+#[derive(Clone, Copy)]
 enum SolverRoles {
     Strict,
     Extended,
