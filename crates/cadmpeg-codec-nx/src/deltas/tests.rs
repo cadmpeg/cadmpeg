@@ -1847,17 +1847,17 @@ fn merged_result_preserves_tombstone_accounting() {
 mod reference_and_tombstone_packets;
 
 #[test]
-fn census_counts_overlapping_tombstone_and_terminal_trailer_once() {
+fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
     let stream = [0, 29, 0, 11, 0, 1, 0, 1];
     let census = crate::deltas::walk(&stream);
     assert_eq!(census.tombstones.len(), 1);
     assert_eq!(census.terminal_null_references.unwrap().offset(), 4);
-    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.bytes_decoded(), 6 + 4);
     assert_eq!(census.covered_spans(), vec![(0, stream.len())]);
 }
 
 #[test]
-fn census_counts_record_owned_trailer_and_numeric_tail_bytes_once() {
+fn census_accumulator_differs_from_coverage_on_overlapping_events() {
     let stream = deltas_intersection_curve_stream();
     let census = crate::deltas::walk(&stream);
     let record = census
@@ -1869,7 +1869,8 @@ fn census_counts_record_owned_trailer_and_numeric_tail_bytes_once() {
     assert_eq!(record.end, 175);
     assert_eq!((trailer.offset(), trailer.end()), (167, 175));
     assert_eq!(census.covered_spans(), vec![(67, 175)]);
-    assert_eq!(census.bytes_decoded(), 78 + 30);
+    assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
+    assert_ne!(census.bytes_decoded(), 175 - 67);
 
     for stream in [
         two_support_ext11_charted_intersection_curve_stream(false),
@@ -1887,6 +1888,7 @@ fn census_counts_record_owned_trailer_and_numeric_tail_bytes_once() {
         assert_eq!(record.end, 444);
         assert_eq!((tail.offset(), tail.end()), (371, 435));
         assert_eq!(census.covered_spans(), vec![(67, 444)]);
-        assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73);
+        assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73 + 64);
+        assert_ne!(census.bytes_decoded(), 444 - 67);
     }
 }

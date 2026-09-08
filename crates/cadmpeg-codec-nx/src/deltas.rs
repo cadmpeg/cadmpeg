@@ -260,13 +260,6 @@ impl Census {
         self.events
     }
 
-    fn primary_byte_len(&self, start: usize, end: usize) -> usize {
-        let limit = self
-            .terminal_null_references
-            .map_or(end, tails::TerminalNullReferences::offset);
-        end.min(limit) - start.min(limit)
-    }
-
     /// Complete-record counts keyed by Parasolid family name.
     pub fn full_counts(&self) -> BTreeMap<&'static str, usize> {
         let mut counts = BTreeMap::new();
@@ -569,14 +562,14 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         intersection_schema_anchor_seen |=
             crate::topology::intersection_data_schema_header_at(stream, offset);
         if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
-            census.bytes_decoded += census.primary_byte_len(preamble.offset, preamble.end);
+            census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
             value_boundary = true;
             census.events.schema_reference_preambles.push(preamble);
             continue;
         }
         if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
-            census.bytes_decoded += census.primary_byte_len(declaration.offset, declaration.end);
+            census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
             census.events.inline_schema_declarations.push(declaration);
@@ -585,7 +578,7 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         if let Some(map) =
             reference_type_map(stream, offset, ReferenceTypeMapLimit::TargetTerminated)
         {
-            census.bytes_decoded += census.primary_byte_len(map.offset, map.end);
+            census.bytes_decoded += map.end - map.offset;
             offset = map.end;
             value_boundary = true;
             census.events.reference_type_maps.push(map);
@@ -607,7 +600,7 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         .or_else(|| consume_type_101(stream, offset))
         .or_else(|| consume_intersection_data(stream, offset, intersection_schema_anchor_seen));
         if let Some(record) = complete_record {
-            census.bytes_decoded += census.primary_byte_len(offset, record.end);
+            census.bytes_decoded += record.end - offset;
             offset = record.end;
             value_boundary = true;
             census.events.records.push(record);
@@ -623,8 +616,7 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         };
         if kind == 12 {
             if let Some(revision) = body_revision_prefix(stream, offset) {
-                census.bytes_decoded +=
-                    census.primary_byte_len(revision.offset, revision.prefix_end);
+                census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
                 value_boundary = true;
                 census.events.body_revisions.push(revision);
@@ -658,7 +650,7 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
                     .flatten()
             });
         if let Some(record) = decoded {
-            census.bytes_decoded += census.primary_byte_len(record.offset, record.end);
+            census.bytes_decoded += record.end - record.offset;
             offset = record.end;
             value_boundary = true;
             census.events.records.push(record);
@@ -674,7 +666,7 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
                     xmt,
                     offset,
                 });
-                census.bytes_decoded += census.primary_byte_len(offset, offset + 6);
+                census.bytes_decoded += 6;
                 offset += 6;
                 value_boundary = true;
                 continue;
@@ -683,22 +675,20 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         offset += 1;
         value_boundary = false;
     }
-    let tails = term_use_numeric_tails(stream, &census);
-    let gaps = uncovered_spans(stream.len(), &census, true).collect::<Vec<_>>();
-    for tail in &tails {
-        census.bytes_decoded += gaps
-            .iter()
-            .map(|&(start, end)| end.min(tail.end()).saturating_sub(start.max(tail.offset())))
-            .sum::<usize>();
-    }
-    census.events.term_use_numeric_tails = tails;
-    populate_gap_events(stream, &mut census);
+    census.events.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
+    census.bytes_decoded += census
+        .term_use_numeric_tails
+        .iter()
+        .map(|tail| tail.values().byte_len())
+        .sum::<usize>();
+    census.bytes_decoded += populate_gap_events(stream, &mut census);
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
 }
 
-fn populate_gap_events(stream: &[u8], census: &mut Census) {
+fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
+    let mut admitted_bytes = 0;
     loop {
         let covered_before = merged_event_spans(census, true)
             .into_iter()
@@ -743,7 +733,7 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
             .map(|(start, end)| end - start)
             .sum::<usize>();
         let added_bytes = covered_after - covered_before;
-        census.bytes_decoded += added_bytes;
+        admitted_bytes += added_bytes;
         if added_bytes == 0 {
             break;
         }
@@ -781,6 +771,7 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
         .events
         .type_150_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
+    admitted_bytes
 }
 
 fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
