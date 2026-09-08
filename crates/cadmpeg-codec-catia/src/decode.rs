@@ -1781,18 +1781,17 @@ fn finish_decode(
             )
         })
         .count();
-    let native_operation_feature_ids = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature
-                .source_tag
-                .as_deref()
-                .is_some_and(design_feature::is_admitted_native_operation_class)
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<HashSet<_>>();
+    let native_operation_feature_ids =
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| {
+                feature.source_tag.as_deref().is_some_and(|name| {
+                    design_feature::NativeOperationClass::try_from(name).is_ok()
+                })
+            })
+            .map(|feature| feature.id.clone())
+            .collect::<HashSet<_>>();
     let transferred_native_operation_parameter_count = ir
         .model
         .parameters
