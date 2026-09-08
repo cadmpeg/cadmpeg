@@ -356,17 +356,11 @@ fn swept_surface_chart_ignores_pcurve_population() {
             .iter()
             .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#22")
             .expect("swept-surface pcurve");
-        assert!(match &pcurve.geometry {
-            PcurveGeometry::Line(line_pcurve)
-                if {
-                    let (_, direction) = line_pcurve.parts();
-                    direction.u == expected_pcurve_u && direction.v == 0.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(&pcurve.geometry, PcurveGeometry::Line(line_pcurve)
+        if {
+            let (_, direction) = line_pcurve.parts();
+            direction.u == expected_pcurve_u && direction.v == 0.0
+        }));
     };
 
     check(include_bytes!("data/pc03_chart_valid.p21"), 10.0);
@@ -435,17 +429,11 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ellipse carrier");
     assert!(
-        match *ellipse.geometry.solved_cache().unwrap_or(&ellipse.geometry) {
-            CurveGeometry::Ellipse(ellipse_curve)
-                if {
-                    let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
-                    *major_radius == 6.0 && *minor_radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(*ellipse.geometry.solved_cache().unwrap_or(&ellipse.geometry), CurveGeometry::Ellipse(ellipse_curve)
+        if {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            *major_radius == 6.0 && *minor_radius == 2.0
+        })
     );
 }
 
@@ -507,23 +495,16 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#9")
         .expect("reversed ellipse");
-    assert!(match *reversed
-        .geometry
-        .solved_cache()
-        .unwrap_or(&reversed.geometry)
-    {
-        CurveGeometry::Ellipse(ellipse_curve)
-            if {
-                let (_, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
-                *major_direction == Vector3::new(0.0, 1.0, 0.0)
-                    && *major_radius == 6.0
-                    && *minor_radius == 2.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(*reversed
+    .geometry
+    .solved_cache()
+    .unwrap_or(&reversed.geometry), CurveGeometry::Ellipse(ellipse_curve)
+        if {
+            let (_, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            *major_direction == Vector3::new(0.0, 1.0, 0.0)
+                && *major_radius == 6.0
+                && *minor_radius == 2.0
+        }));
 
     let ordered = decoded
         .ir()
@@ -533,19 +514,13 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ordered ellipse");
     assert!(
-        match *ordered.geometry.solved_cache().unwrap_or(&ordered.geometry) {
-            CurveGeometry::Ellipse(ellipse_curve)
-                if {
-                    let (_, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
-                    *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 6.0
-                        && *minor_radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(*ordered.geometry.solved_cache().unwrap_or(&ordered.geometry), CurveGeometry::Ellipse(ellipse_curve)
+        if {
+            let (_, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            *major_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *major_radius == 6.0
+                && *minor_radius == 2.0
+        })
     );
 
     for (curve_id, expected_range) in [
@@ -654,17 +629,11 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
     );
 
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-            cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface)
+        matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface)
                 if {
                     let (_, _, _, _, _, half_angle) = cone_surface.parts();
                     *half_angle == 0.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+                })
     }));
     assert!(result.report().losses.iter().all(|loss| !loss
         .message
@@ -696,23 +665,23 @@ fn complex_geometry_instances_decode_named_partials() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#16"
-            && match *curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                CurveGeometry::Line(_) => true,
-                _ => false,
-            }
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Line(_)
+            )
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                SurfaceGeometry::Plane(_) => true,
-                _ => false,
-            }
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Plane(_)
+            )
     }));
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
-    assert!(match &decoded.ir().model.pcurves[0].geometry {
-        cadmpeg_ir::geometry::PcurveGeometry::Line(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        &decoded.ir().model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line(_)
+    ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -737,10 +706,10 @@ fn complex_points_and_directions_decode_named_partials() {
     assert_eq!(decoded.ir().model.vertices.len(), 3);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                SurfaceGeometry::Plane(_) => true,
-                _ => false,
-            }
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Plane(_)
+            )
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

@@ -557,12 +557,9 @@ mod consolidated_revolution_binding_tests {
             .surfaces
             .iter()
             .all(|surface| surface.geometry == geometry));
-        assert!(match ir.model.curves[0].geometry.solved_cache() {
-            Some(CurveGeometry::Circle(circle_curve)) if { *circle_curve.parts().3 == 3.0 } => {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(ir.model.curves[0].geometry.solved_cache(), Some(CurveGeometry::Circle(circle_curve)) if { *circle_curve.parts().3 == 3.0 })
+        );
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 0.5]));
     }
 }
@@ -708,17 +705,13 @@ mod consolidated_analytic_refinement_tests {
         );
         assert_eq!(refined, [(0, 0), (1, 0)].into());
         for surface in surfaces {
-            assert!(match surface {
-                Some(SurfaceGeometry::Torus(torus_surface))
-                    if {
-                        let (center, _, _, _, _) = torus_surface.parts();
-                        center.x == exact_x
-                    } =>
-                {
-                    true
-                }
-                _ => false,
-            });
+            assert!(
+                matches!(surface, Some(SurfaceGeometry::Torus(torus_surface))
+                if {
+                    let (center, _, _, _, _) = torus_surface.parts();
+                    center.x == exact_x
+                })
+            );
         }
     }
 
@@ -745,17 +738,13 @@ mod consolidated_analytic_refinement_tests {
             ),
             [(0, 0)].into()
         );
-        assert!(match unique[0] {
-            Some(SurfaceGeometry::Sphere(sphere_surface))
-                if {
-                    let (center, _, _, _) = sphere_surface.parts();
-                    center.x == exact_x
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(unique[0], Some(SurfaceGeometry::Sphere(sphere_surface))
+            if {
+                let (center, _, _, _) = sphere_surface.parts();
+                center.x == exact_x
+            })
+        );
 
         bytes.extend_from_slice(&bytes.clone());
         let mut ambiguous = vec![Some(coarse)];
@@ -802,23 +791,16 @@ mod consolidated_analytic_refinement_tests {
             .len(),
             2
         );
-        assert!(match surfaces[0] {
-            Some(SurfaceGeometry::Cylinder(cylinder_surface))
-                if {
-                    let (_, _, ref_direction, _) = cylinder_surface.parts();
-                    *ref_direction == Vector3::new(0.0, 1.0, 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
-        assert!(match surfaces[1] {
-            Some(SurfaceGeometry::Cone(cone_surface)) if { *cone_surface.parts().5 == 0.25 } => {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(surfaces[0], Some(SurfaceGeometry::Cylinder(cylinder_surface))
+            if {
+                let (_, _, ref_direction, _) = cylinder_surface.parts();
+                *ref_direction == Vector3::new(0.0, 1.0, 0.0)
+            })
+        );
+        assert!(
+            matches!(surfaces[1], Some(SurfaceGeometry::Cone(cone_surface)) if { *cone_surface.parts().5 == 0.25 })
+        );
     }
 }
 

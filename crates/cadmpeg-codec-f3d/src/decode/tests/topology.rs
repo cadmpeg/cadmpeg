@@ -944,18 +944,12 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(2.0),
     ]);
     assert!(
-        match decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0 {
-            SurfaceGeometry::Cone(cone_surface)
-                if {
-                    (*cone_surface.parts().3 == 20.0)
-                        && (*cone_surface.parts().4 == 0.4)
-                        && (*cone_surface.parts().5 == 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0, SurfaceGeometry::Cone(cone_surface)
+        if {
+            (*cone_surface.parts().3 == 20.0)
+                && (*cone_surface.parts().4 == 0.4)
+                && (*cone_surface.parts().5 == 0.0)
+        })
     );
 
     // cone with nonzero sine keeps the acute half-angle atan2(|sine|, |cosine|).

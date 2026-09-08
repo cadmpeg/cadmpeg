@@ -1631,17 +1631,12 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     let radius = 2_000_000.0_f64;
     large[54..62].copy_from_slice(&radius.to_le_bytes());
     large[70..78].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
-    assert!(match crate::families::b2::records::b2_cylinders(&large)[0]
+    assert!(
+        matches!(crate::families::b2::records::b2_cylinders(&large)[0]
         .surface_geometry()
-        .unwrap()
-    {
-        SurfaceGeometry::Cylinder(cylinder_surface)
-            if { *cylinder_surface.parts().3 == 2_000_000.0 } =>
-        {
-            true
-        }
-        _ => false,
-    });
+        .unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
+            if { *cylinder_surface.parts().3 == 2_000_000.0 })
+    );
 
     let tiny = 1e-200_f64;
     let mut tiny_full = b2_cylinder_stream();
@@ -1684,10 +1679,10 @@ fn consolidated_cylinder_parser_reads_width2_frame() {
         cylinders[0].layout,
         crate::families::b2::records::B2CylinderLayout::Full5a { .. }
     ));
-    assert!(match cylinders[0].surface_geometry().unwrap() {
-        SurfaceGeometry::Cylinder(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        cylinders[0].surface_geometry().unwrap(),
+        SurfaceGeometry::Cylinder(_)
+    ));
 }
 
 #[test]
@@ -1714,17 +1709,13 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
         cylinders[0].layout,
         crate::families::b2::records::B2CylinderLayout::Full52
     ));
-    assert!(match cylinders[0].surface_geometry().unwrap() {
-        SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (_, axis, _, _) = cylinder_surface.parts();
-                [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, axis, _, _) = cylinder_surface.parts();
+            [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
+        })
+    );
 
     let mut malformed = b2_implicit_axis_cylinder_stream();
     malformed[70..78].copy_from_slice(&f64::NAN.to_le_bytes());
@@ -1741,18 +1732,14 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
             stored_vector: [0.0, 1.0],
         }
     ));
-    assert!(match cylinders[0].surface_geometry().unwrap() {
-        SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (_, axis, ref_direction, _) = cylinder_surface.parts();
-                [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
-                    && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, axis, ref_direction, _) = cylinder_surface.parts();
+            [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
+                && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
+        })
+    );
     assert_eq!(
         cylinders[0].range_origin().map(f64::to_bits),
         Some(((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits())

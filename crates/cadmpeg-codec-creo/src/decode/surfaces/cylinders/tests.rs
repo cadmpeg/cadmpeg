@@ -313,19 +313,13 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
         2
     );
     assert!(ir.model.surfaces.iter().all(|surface| {
-        match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface)
-                if {
-                    let (origin, axis, _, radius) = cylinder_surface.parts();
-                    *radius == 0.3125
-                        && *origin == [0.0, 1.625, -1.0].into()
-                        && *axis == [0.0, 0.0, 1.0].into()
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, _, radius) = cylinder_surface.parts();
+            *radius == 0.3125
+                && *origin == [0.0, 1.625, -1.0].into()
+                && *axis == [0.0, 0.0, 1.0].into()
+        })
     }));
 }
 

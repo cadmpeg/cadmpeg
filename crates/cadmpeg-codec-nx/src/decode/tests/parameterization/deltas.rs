@@ -3,6 +3,8 @@
 use super::*;
 use crate::framing::node_kind::NodeKind;
 
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
@@ -186,19 +188,15 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(match result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane(plane_surface)
-            if {
-                let (origin, normal, u_axis) = plane_surface.parts();
-                *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                    && *normal == Vector3::new(0.0, 1.0, 0.0)
-                    && *u_axis == Vector3::new(1.0, 0.0, 0.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *normal == Vector3::new(0.0, 1.0, 0.0)
+                && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+        })
+    );
     assert_eq!(
         result.ir().model.faces[0].surface,
         result.ir().model.surfaces[0].id
@@ -330,25 +328,16 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| match curve.geometry {
-            CurveGeometry::Circle(circle_curve)
-                if {
-                    let (center, axis, ref_direction, radius) = circle_curve.parts();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 25.0
+        })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -360,27 +349,18 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| match curve.geometry {
-            CurveGeometry::Ellipse(ellipse_curve)
-                if {
-                    let (center, axis, major_direction, major_radius, minor_radius) =
-                        ellipse_curve.parts();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 30.0
-                        && *minor_radius == 12.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
+        if {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                ellipse_curve.parts();
+            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *major_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *major_radius == 30.0
+                && *minor_radius == 12.0
+        })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -392,25 +372,16 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface)
-                if {
-                    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 25.0
+        })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -422,28 +393,19 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Cone(cone_surface)
-                if {
-                    let (origin, axis, ref_direction, radius, ratio, half_angle) =
-                        cone_surface.parts();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
-                        && *ratio == 1.0
-                        && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+        if {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) =
+                cone_surface.parts();
+            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 25.0
+                && *ratio == 1.0
+                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+        })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -455,25 +417,16 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Sphere(sphere_surface)
-                if {
-                    let (center, axis, ref_direction, radius) = sphere_surface.parts();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Sphere(sphere_surface)
+        if {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 25.0
+        })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -485,27 +438,18 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Torus(torus_surface)
-                if {
-                    let (center, axis, ref_direction, major_radius, minor_radius) =
-                        torus_surface.parts();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 40.0
-                        && *minor_radius == 15.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Torus(torus_surface)
+        if {
+            let (center, axis, ref_direction, major_radius, minor_radius) =
+                torus_surface.parts();
+            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *major_radius == 40.0
+                && *minor_radius == 15.0
+        })
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

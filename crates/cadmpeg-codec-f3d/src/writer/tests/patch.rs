@@ -124,18 +124,12 @@ fn generated_straight_record_patches_by_token_boundaries() {
     )
     .expect("patched generated straight record");
     assert!(
-        match cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]) {
-            Some(CurveGeometry::Line(line_curve))
-                if {
-                    let (origin, direction) = line_curve.parts();
-                    *origin == Point3::new(40.0, 50.0, 60.0)
-                        && *direction == Vector3::new(0.0, 1.0, 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Line(line_curve))
+        if {
+            let (origin, direction) = line_curve.parts();
+            *origin == Point3::new(40.0, 50.0, 60.0)
+                && *direction == Vector3::new(0.0, 1.0, 0.0)
+        })
     );
 }
 
@@ -515,22 +509,16 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
     )
     .expect("patched ellipse record");
     assert!(
-        match cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]) {
-            Some(CurveGeometry::Ellipse(ellipse_curve))
-                if {
-                    let (center, axis, major_direction, major_radius, minor_radius) =
-                        ellipse_curve.parts();
-                    *center == Point3::new(10.0, 20.0, 30.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 40.0
-                        && *minor_radius == 10.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Ellipse(ellipse_curve))
+        if {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                ellipse_curve.parts();
+            *center == Point3::new(10.0, 20.0, 30.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *major_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *major_radius == 40.0
+                && *minor_radius == 10.0
+        })
     );
 }
 

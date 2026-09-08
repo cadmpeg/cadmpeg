@@ -264,17 +264,11 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
                 panic!("expected sub-surface")
             };
             assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
-            assert!(match support {
-                SurfaceGeometry::Plane(plane_surface)
-                    if {
-                        let (origin, _, _) = plane_surface.parts();
-                        *origin == Point3::new(1.0, -2.0, 3.0)
-                    } =>
-                {
-                    true
-                }
-                _ => false,
-            });
+            assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                *origin == Point3::new(1.0, -2.0, 3.0)
+            }));
             assert_eq!(decoded.cache_fit_tolerance, None);
         }
     }

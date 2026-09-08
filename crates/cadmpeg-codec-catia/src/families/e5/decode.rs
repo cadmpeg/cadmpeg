@@ -3101,17 +3101,11 @@ mod route_tests {
             uv_scale,
         )
         .expect("reflected plane boundary");
-        assert!(match curve {
-            CurveGeometry::Line(line_curve)
-                if {
-                    let (_, direction) = line_curve.parts();
-                    *direction == Vector3::new(-1.0, 0.0, 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(curve, CurveGeometry::Line(line_curve)
+        if {
+            let (_, direction) = line_curve.parts();
+            *direction == Vector3::new(-1.0, 0.0, 0.0)
+        }));
     }
 
     #[test]
@@ -3732,17 +3726,11 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("cylinder boundary circle");
-        assert!(match curve {
-            CurveGeometry::Circle(circle_curve)
-                if {
-                    let (center, _, _, radius) = circle_curve.parts();
-                    *center == Point3::new(0.0, 0.0, 3.0) && *radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 3.0) && *radius == 2.0
+        }));
         assert!(
             (range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs()
                 < EPS_E5_DECODE_EXACT_GEOMETRY
@@ -3783,12 +3771,9 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("near-isoparametric cylinder boundary circle");
-        assert!(match curve {
-            CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 } => {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })
+        );
     }
 
     #[test]
@@ -3829,12 +3814,9 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("cylinder boundary circle");
-        assert!(match curve {
-            CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 } => {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })
+        );
 
         let plane = SurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -3867,10 +3849,7 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("finite nonzero plane line");
-        assert!(match curve {
-            CurveGeometry::Line(_) => true,
-            _ => false,
-        });
+        assert!(matches!(curve, CurveGeometry::Line(_)));
         assert_eq!(range, [0.0, direction]);
     }
 
@@ -3975,17 +3954,11 @@ mod route_tests {
         )
         .expect("subnormal line chord");
         assert_eq!(range, [0.0, tiny]);
-        assert!(match curve {
-            CurveGeometry::Line(line_curve)
-                if {
-                    let (_, direction) = line_curve.parts();
-                    *direction == Vector3::new(1.0, 0.0, 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(curve, CurveGeometry::Line(line_curve)
+        if {
+            let (_, direction) = line_curve.parts();
+            *direction == Vector3::new(1.0, 0.0, 0.0)
+        }));
     }
 
     #[test]
@@ -4018,20 +3991,14 @@ mod route_tests {
         )
         .expect("plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
-        assert!(match curve {
-            CurveGeometry::Circle(circle_curve)
-                if {
-                    let (center, axis, ref_direction, radius) = circle_curve.parts();
-                    *center == Point3::new(5.0, 7.0, 3.0)
-                        && *axis == Vector3::new(0.0, 0.0, 1.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            *center == Point3::new(5.0, 7.0, 3.0)
+                && *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 2.0
+        }));
 
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -4043,20 +4010,14 @@ mod route_tests {
         )
         .expect("reflected plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
-        assert!(match curve {
-            CurveGeometry::Circle(circle_curve)
-                if {
-                    let (center, axis, ref_direction, radius) = circle_curve.parts();
-                    *center == Point3::new(-3.0, -3.0, 3.0)
-                        && *axis == Vector3::new(0.0, 0.0, 1.0)
-                        && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
-                        && *radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            *center == Point3::new(-3.0, -3.0, 3.0)
+                && *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+                && *radius == 2.0
+        }));
     }
 
     #[test]

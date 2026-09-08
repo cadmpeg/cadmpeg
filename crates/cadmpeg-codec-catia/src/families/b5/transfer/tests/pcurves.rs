@@ -239,20 +239,17 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         angular_scale: 2.0,
         chart_origin: 0.0,
     };
-    assert!(match lifted_curve_geometry(&pcurve, &cylinder) {
-        Some(CurveGeometry::Circle(circle_curve)) if { *circle_curve.parts().3 == 2.0 } => {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Circle(circle_curve)) if { *circle_curve.parts().3 == 2.0 })
+    );
     let meridian = B5Pcurve {
         control_points: vec![[1.0, -2.0], [1.0, 4.0]],
         ..pcurve
     };
-    assert!(match lifted_curve_geometry(&meridian, &cylinder) {
-        Some(CurveGeometry::Line(_)) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        lifted_curve_geometry(&meridian, &cylinder),
+        Some(CurveGeometry::Line(_))
+    ));
 }
 
 #[test]
@@ -324,17 +321,13 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         control_points: vec![[0.0, scale], [0.5, scale]],
         ..pcurve.clone()
     };
-    assert!(match lifted_curve_geometry(&cone_pcurve, &cone) {
-        Some(CurveGeometry::Circle(circle_curve))
-            if {
-                let (_, _, _, radius) = circle_curve.parts();
-                *radius == scale * 0.5
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(lifted_curve_geometry(&cone_pcurve, &cone), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == scale * 0.5
+        })
+    );
 
     let torus = B5Surface::Torus {
         center: [0.0; 3],
@@ -354,17 +347,13 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         control_points: vec![[0.0, 0.0], [0.5, 0.0]],
         ..pcurve
     };
-    assert!(match lifted_curve_geometry(&torus_pcurve, &torus) {
-        Some(CurveGeometry::Circle(circle_curve))
-            if {
-                let (_, _, _, radius) = circle_curve.parts();
-                *radius == 2.0 * scale
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(lifted_curve_geometry(&torus_pcurve, &torus), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 2.0 * scale
+        })
+    );
 }
 
 #[test]
@@ -509,32 +498,20 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     let forward =
         oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 9.0]).expect("forward line range");
     assert_eq!(forward.parameter_range, Some([2.0, 6.0]));
-    assert!(match forward.geometry {
-        CurveGeometry::Line(line_curve)
-            if {
-                let (_, direction) = line_curve.parts();
-                *direction == Vector3::new(0.0, 0.0, 1.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(forward.geometry, CurveGeometry::Line(line_curve)
+    if {
+        let (_, direction) = line_curve.parts();
+        *direction == Vector3::new(0.0, 0.0, 1.0)
+    }));
 
     let reversed =
         oriented_line_plan(&line, [1.0, 2.0, 9.0], [1.0, 2.0, 5.0]).expect("reversed line range");
     assert_eq!(reversed.parameter_range, Some([-6.0, -2.0]));
-    assert!(match reversed.geometry {
-        CurveGeometry::Line(line_curve)
-            if {
-                let (_, direction) = line_curve.parts();
-                *direction == Vector3::new(0.0, 0.0, -1.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(reversed.geometry, CurveGeometry::Line(line_curve)
+    if {
+        let (_, direction) = line_curve.parts();
+        *direction == Vector3::new(0.0, 0.0, -1.0)
+    }));
     let tolerant = oriented_line_plan(&line, [1.001, 2.0, 5.0], [1.0, 2.0, 9.0])
         .expect("tolerant line endpoints");
     assert!(tolerant.edge_tolerance.is_some_and(|value| value > 0.001));
@@ -551,17 +528,11 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     );
     let tiny = oriented_line_plan(&tiny_direction, [2.0, 0.0, 0.0], [3.0, 0.0, 0.0])
         .expect("finite nonzero line direction");
-    assert!(match tiny.geometry {
-        CurveGeometry::Line(line_curve)
-            if {
-                let (_, direction) = line_curve.parts();
-                *direction == Vector3::new(1.0, 0.0, 0.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(tiny.geometry, CurveGeometry::Line(line_curve)
+    if {
+        let (_, direction) = line_curve.parts();
+        *direction == Vector3::new(1.0, 0.0, 0.0)
+    }));
 }
 
 #[test]
@@ -658,17 +629,13 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     .expect("reversed circle range");
     let [start, end] = reversed.parameter_range.expect("canonical range");
     assert!(start >= 0.0 && end > start && end - start == 1.0);
-    assert!(match reversed.geometry {
-        CurveGeometry::Circle(circle_curve)
-            if {
-                let (_, axis, _, _) = circle_curve.parts();
-                *axis == Vector3::new(0.0, 0.0, -1.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(reversed.geometry, CurveGeometry::Circle(circle_curve)
+        if {
+            let (_, axis, _, _) = circle_curve.parts();
+            *axis == Vector3::new(0.0, 0.0, -1.0)
+        })
+    );
 
     let turnback = B5Pcurve {
         degree: 2,
@@ -730,17 +697,13 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         cone_point(1.0),
     )
     .expect("normalized signed-radius circle");
-    assert!(match signed.geometry {
-        CurveGeometry::Circle(circle_curve)
-            if {
-                let (_, _, ref_direction, radius) = circle_curve.parts();
-                *radius == 2.0 && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(signed.geometry, CurveGeometry::Circle(circle_curve)
+        if {
+            let (_, _, ref_direction, radius) = circle_curve.parts();
+            *radius == 2.0 && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+        })
+    );
 }
 
 #[test]
@@ -1030,10 +993,10 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         &payload,
     ));
     assert_eq!(ir.model.pcurves.len(), 1);
-    assert!(match ir.model.pcurves[0].geometry {
-        PcurveGeometry::SphericalGreatCircle(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        ir.model.pcurves[0].geometry,
+        PcurveGeometry::SphericalGreatCircle(_)
+    ));
 }
 
 /// One closed spherical component of a synthetic B5 graph. `face`, `loop_`,

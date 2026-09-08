@@ -42,19 +42,13 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 panic!("expected legacy offset surface");
             };
 
-            assert!(match support {
-                SurfaceGeometry::Plane(plane_surface)
-                    if {
-                        let (origin, _, _) = plane_surface.parts();
-                        (origin.x - 5.0).abs() < f64::EPSILON
-                            && (origin.y - 10.0).abs() < f64::EPSILON
-                            && (origin.z - 15.0).abs() < f64::EPSILON
-                    } =>
-                {
-                    true
-                }
-                _ => false,
-            });
+            assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                (origin.x - 5.0).abs() < f64::EPSILON
+                    && (origin.y - 10.0).abs() < f64::EPSILON
+                    && (origin.z - 15.0).abs() < f64::EPSILON
+            }));
             assert!((distance - -2.5).abs() < f64::EPSILON);
             assert_eq!(u_sense, Some(2));
             assert_eq!(v_sense, Some(3));
@@ -357,32 +351,24 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         assert!((components[0].parameter - 0.25).abs() < f64::EPSILON);
         assert!((components[1].parameter - 0.75).abs() < f64::EPSILON);
         assert_eq!(components.len(), 2);
-        assert!(match components[0].component {
-            SurfaceGeometry::Plane(plane_surface)
-                if {
-                    let (origin, _, _) = plane_surface.parts();
-                    (origin.x - 10.0).abs() < f64::EPSILON
-                        && (origin.y - 20.0).abs() < f64::EPSILON
-                        && (origin.z - 30.0).abs() < f64::EPSILON
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
-        assert!(match components[1].component {
-            SurfaceGeometry::Plane(plane_surface)
-                if {
-                    let (origin, _, _) = plane_surface.parts();
-                    (origin.x - 40.0).abs() < f64::EPSILON
-                        && (origin.y - 50.0).abs() < f64::EPSILON
-                        && (origin.z - 60.0).abs() < f64::EPSILON
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(components[0].component, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                (origin.x - 10.0).abs() < f64::EPSILON
+                    && (origin.y - 20.0).abs() < f64::EPSILON
+                    && (origin.z - 30.0).abs() < f64::EPSILON
+            })
+        );
+        assert!(
+            matches!(components[1].component, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                (origin.x - 40.0).abs() < f64::EPSILON
+                    && (origin.y - 50.0).abs() < f64::EPSILON
+                    && (origin.z - 60.0).abs() < f64::EPSILON
+            })
+        );
         assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
     }
 }

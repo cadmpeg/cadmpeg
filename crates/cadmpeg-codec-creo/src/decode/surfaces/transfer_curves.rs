@@ -467,29 +467,22 @@ mod tests {
                 CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar")
             ])
         );
-        assert!(match ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id
-                == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
-            .map(|curve| &curve.geometry)
-        {
-            Some(CurveGeometry::Line(line_curve))
-                if {
-                    let (origin, direction) = line_curve.parts();
-                    origin.x == 0.0
-                        && origin.y == 2.0
-                        && origin.z == 0.0
-                        && direction.x == 1.0
-                        && direction.y == 0.0
-                        && direction.z == 0.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id
+            == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
+        .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+            if {
+                let (origin, direction) = line_curve.parts();
+                origin.x == 0.0
+                    && origin.y == 2.0
+                    && origin.z == 0.0
+                    && direction.x == 1.0
+                    && direction.y == 0.0
+                    && direction.z == 0.0
+            }));
     }
 
     #[test]

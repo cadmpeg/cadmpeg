@@ -1038,23 +1038,14 @@ fn decode_transfers_exact_consolidated_line_profiles() {
             .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
-    assert!(decoded
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| match curve.geometry {
-            cadmpeg_ir::geometry::CurveGeometry::Line(line_curve)
-                if {
-                    let (origin, direction) = line_curve.parts();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(decoded.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Line(line_curve)
+        if {
+            let (origin, direction) = line_curve.parts();
+            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
+        })
+    ));
     assert!(!decoded
         .report()
         .losses

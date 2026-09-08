@@ -192,10 +192,10 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
                 .expect("materialized blend support")
         })
         .collect();
-    assert!(match support_surfaces[0].geometry {
-        SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        support_surfaces[0].geometry,
+        SurfaceGeometry::Plane(_)
+    ));
     assert!(matches!(
         support_surfaces[1].geometry,
         SurfaceGeometry::Unknown { .. }

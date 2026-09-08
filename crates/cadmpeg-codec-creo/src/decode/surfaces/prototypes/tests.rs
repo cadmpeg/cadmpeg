@@ -50,24 +50,20 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .iter()
         .find(|surface| surface.id.as_str().ends_with("#7"))
         .expect("first cone instance");
-    assert!(match surface.geometry {
-        SurfaceGeometry::Cone(cone_surface)
-            if {
-                let (origin, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
-                (*cone_surface.parts().3 == 0.0)
-                    && (*cone_surface.parts().4 == 1.0)
-                    && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
-                        && origin.y.abs() < EPS_CONE_FRAME
-                        && origin.z.abs() < EPS_CONE_FRAME
-                        && *axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
-                        && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+        if {
+            let (origin, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
+            (*cone_surface.parts().3 == 0.0)
+                && (*cone_surface.parts().4 == 1.0)
+                && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
+                    && origin.y.abs() < EPS_CONE_FRAME
+                    && origin.z.abs() < EPS_CONE_FRAME
+                    && *axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+                    && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+                    && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME)
+        })
+    );
 }
 
 #[test]
@@ -329,17 +325,13 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .iter()
         .find(|surface| surface.id.as_str() == "creo:novisgeom:surface#42")
         .expect("non-visible legacy cylinder surface");
-    assert!(match nonvisible_surface.geometry {
-        SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (_, _, _, radius) = cylinder_surface.parts();
-                *radius == 50.8
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(nonvisible_surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, _, _, radius) = cylinder_surface.parts();
+            *radius == 50.8
+        })
+    );
     assert_eq!(
         nonvisible_surface
             .source_object

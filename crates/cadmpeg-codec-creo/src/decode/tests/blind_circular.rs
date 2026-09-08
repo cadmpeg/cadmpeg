@@ -287,19 +287,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             },
         }
     );
-    assert!(match sweep.geometry {
-        SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (origin, axis, _, radius) = cylinder_surface.parts();
-                *origin == Point3::new(-12.5, -4.0, 0.0)
-                    && *axis == Vector3::new(0.0, -1.0, 0.0)
-                    && *radius == 0.75
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(sweep.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, _, radius) = cylinder_surface.parts();
+            *origin == Point3::new(-12.5, -4.0, 0.0)
+                && *axis == Vector3::new(0.0, -1.0, 0.0)
+                && *radius == 0.75
+        })
+    );
 
     for entry in &mut scan.features.entity_tables[0].entries {
         if entry.entity_id == 831 {

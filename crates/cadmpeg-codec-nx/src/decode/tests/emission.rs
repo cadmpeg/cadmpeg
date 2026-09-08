@@ -1893,38 +1893,20 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(planes, 1);
     assert_eq!(cyls.len(), 1);
     assert!((cyls[0] - 4.05).abs() < 1.0e-6);
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Plane(plane_surface)
-                if {
-                    let (_, _, axis) = plane_surface.parts();
-                    *axis == Vector3::new(1.0, 0.0, 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder(cylinder_surface)
-                if {
-                    let (_, _, direction, _) = cylinder_surface.parts();
-                    *direction == Vector3::new(1.0, 0.0, 0.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (_, _, axis) = plane_surface.parts();
+            *axis == Vector3::new(1.0, 0.0, 0.0)
+        })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, _, direction, _) = cylinder_surface.parts();
+            *direction == Vector3::new(1.0, 0.0, 0.0)
+        })
+    ));
 
     // One line decoded, with a unit direction.
     let lines: Vec<_> = result

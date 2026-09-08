@@ -5636,24 +5636,14 @@ pub(crate) mod tests {
         };
         let (distance, basis) = offset_pcurve.parts();
         assert_eq!(*distance, 0.25);
-        assert!(match basis {
-            cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
-                if {
-                    let (_, _, basis) = trimmed_pcurve.parts();
-                    match basis {
-                        cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
-                            if { *circle_pcurve.parts().3 == 3.0 } =>
-                        {
-                            true
-                        }
-                        _ => false,
-                    }
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
+            if {
+                let (_, _, basis) = trimmed_pcurve.parts();
+                matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
+                        if { *circle_pcurve.parts().3 == 3.0 })
+            })
+        );
     }
 
     #[test]
@@ -5735,15 +5725,15 @@ pub(crate) mod tests {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("binary curve carrier");
         assert_eq!(result.ir().model.curves.len(), 1);
-        assert!(match result.ir().model.curves[0].geometry {
-            cadmpeg_ir::geometry::CurveGeometry::Line(_) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            result.ir().model.curves[0].geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Line(_)
+        ));
         assert_eq!(result.ir().model.surfaces.len(), 1);
-        assert!(match result.ir().model.surfaces[0].geometry {
-            cadmpeg_ir::geometry::SurfaceGeometry::Plane(_) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            result.ir().model.surfaces[0].geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Plane(_)
+        ));
         assert_eq!(result.ir().model.tessellations.len(), 1);
         assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
         assert_eq!(result.ir().model.bodies.len(), 1);

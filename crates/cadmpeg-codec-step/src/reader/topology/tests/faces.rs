@@ -146,10 +146,7 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     );
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && match surface.geometry {
-                SurfaceGeometry::Plane(_) => true,
-                _ => false,
-            }
+            && matches!(surface.geometry, SurfaceGeometry::Plane(_))
     }));
 
     let reordered = source.replace(
@@ -172,10 +169,7 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     );
     assert!(reordered.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && match surface.geometry {
-                SurfaceGeometry::Plane(_) => true,
-                _ => false,
-            }
+            && matches!(surface.geometry, SurfaceGeometry::Plane(_))
     }));
     let validation =
         cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone());
@@ -259,10 +253,7 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#28")
         .expect("explicit face plane");
-    assert!(match surface.geometry {
-        SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
+    assert!(matches!(surface.geometry, SurfaceGeometry::Plane(_)));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -537,10 +528,7 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && match surface.geometry {
-                SurfaceGeometry::Cylinder(_) => true,
-                _ => false,
-            }
+            && matches!(surface.geometry, SurfaceGeometry::Cylinder(_))
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

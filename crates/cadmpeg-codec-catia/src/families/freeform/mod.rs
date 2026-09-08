@@ -3763,20 +3763,14 @@ mod tests {
         let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(match carriers.as_slice() {
             [carrier]
-                if match carrier.geometry {
-                    SurfaceGeometry::Sphere(sphere_surface)
-                        if {
-                            let (center, axis, ref_direction, _) = sphere_surface.parts();
-                            (*sphere_surface.parts().3 == 5.0)
-                                && (*center == Point3::new(1.0, 2.0, 3.0)
-                                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-                        } =>
-                    {
-                        true
-                    }
-                    _ => false,
-                } =>
+                if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
+                if {
+                    let (center, axis, ref_direction, _) = sphere_surface.parts();
+                    (*sphere_surface.parts().3 == 5.0)
+                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                            && *axis == Vector3::new(0.0, 0.0, 1.0)
+                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                }) =>
                 true,
             _ => false,
         });
@@ -3789,21 +3783,15 @@ mod tests {
         let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(match carriers.as_slice() {
             [carrier]
-                if match carrier.geometry {
-                    SurfaceGeometry::Torus(torus_surface)
-                        if {
-                            let (center, axis, ref_direction, _, _) = torus_surface.parts();
-                            (*torus_surface.parts().3 == 7.0)
-                                && (*torus_surface.parts().4 == 2.0)
-                                && (*center == Point3::new(1.0, 2.0, 3.0)
-                                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-                        } =>
-                    {
-                        true
-                    }
-                    _ => false,
-                } =>
+                if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
+                if {
+                    let (center, axis, ref_direction, _, _) = torus_surface.parts();
+                    (*torus_surface.parts().3 == 7.0)
+                        && (*torus_surface.parts().4 == 2.0)
+                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                            && *axis == Vector3::new(0.0, 0.0, 1.0)
+                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                }) =>
                 true,
             _ => false,
         });
@@ -3816,20 +3804,14 @@ mod tests {
         let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(match carriers.as_slice() {
             [carrier]
-                if match carrier.geometry {
-                    SurfaceGeometry::Cylinder(cylinder_surface)
-                        if {
-                            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
-                            (*cylinder_surface.parts().3 == 4.0)
-                                && (*origin == Point3::new(0.0, 0.0, 0.0)
-                                    && *axis == Vector3::new(0.0, 1.0, 0.0)
-                                    && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
-                        } =>
-                    {
-                        true
-                    }
-                    _ => false,
-                } =>
+                if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+                    (*cylinder_surface.parts().3 == 4.0)
+                        && (*origin == Point3::new(0.0, 0.0, 0.0)
+                            && *axis == Vector3::new(0.0, 1.0, 0.0)
+                            && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
+                }) =>
                 true,
             _ => false,
         });

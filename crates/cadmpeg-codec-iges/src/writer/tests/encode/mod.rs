@@ -129,17 +129,11 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
-        match *curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-            CurveGeometry::Line(line_curve)
+        matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line(line_curve)
                 if {
                     let (origin, direction) = line_curve.parts();
                     same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+                })
     }));
     let validation =
         cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone());
@@ -434,14 +428,13 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
         .unwrap();
     assert_eq!(round_trip.ir().model.curves.len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 1);
-    assert!(match *round_trip.ir().model.curves[0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&round_trip.ir().model.curves[0].geometry)
-    {
-        CurveGeometry::Line(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        *round_trip.ir().model.curves[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&round_trip.ir().model.curves[0].geometry),
+        CurveGeometry::Line(_)
+    ));
     assert!(round_trip.report().losses.is_empty());
 }
 

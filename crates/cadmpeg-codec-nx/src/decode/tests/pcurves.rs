@@ -38,6 +38,9 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;
+const EPS_BOUNDARY_FIT: f64 = 1.0e-8;
+
 #[test]
 fn active_body_selection_accepts_a_complete_singleton_membership() {
     let first = BodyId::mint("nx:test:body#first").expect("identity grammar");
@@ -240,41 +243,23 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         1.0e-12,
     )
     .expect("torus meridian");
-    assert!(match sphere_pcurve {
-        PcurveGeometry::Line(line_pcurve)
-            if {
-                let (origin, direction) = line_pcurve.parts();
-                (origin.v - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-                    && direction.u == 1.0
-                    && direction.v == 0.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
-    assert!(match torus_pcurve {
-        PcurveGeometry::Line(line_pcurve)
-            if {
-                let (origin, direction) = line_pcurve.parts();
-                origin.u.abs() < 1.0e-12 && direction.u == 0.0 && direction.v == 1.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
-    assert!(match cone_pcurve {
-        PcurveGeometry::Line(line_pcurve)
-            if {
-                let (origin, direction) = line_pcurve.parts();
-                (origin.v - 1.0).abs() < 1.0e-12 && direction.u == 1.0 && direction.v == 0.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
+    if {
+        let (origin, direction) = line_pcurve.parts();
+        (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
+            && direction.u == 1.0
+            && direction.v == 0.0
+    }));
+    assert!(matches!(torus_pcurve, PcurveGeometry::Line(line_pcurve)
+    if {
+        let (origin, direction) = line_pcurve.parts();
+        origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
+    }));
+    assert!(matches!(cone_pcurve, PcurveGeometry::Line(line_pcurve)
+    if {
+        let (origin, direction) = line_pcurve.parts();
+        (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
+    }));
     for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
         for (curve, surface, pcurve) in [
             (&cone_ellipse, &cone, &cone_pcurve),
@@ -479,17 +464,17 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         )
         .unwrap(),
     );
-    assert!(match exact_boundary_pcurve(
-        &ir,
-        &curve,
-        &surface,
-        [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-        [0.0, 1.0],
-        1.0e-8,
-    ) {
-        Some(PcurveGeometry::Line(_)) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        exact_boundary_pcurve(
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            [0.0, 1.0],
+            EPS_BOUNDARY_FIT,
+        ),
+        Some(PcurveGeometry::Line(_))
+    ));
 }
 
 #[test]
@@ -519,24 +504,18 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         source_object: None,
     });
 
-    assert!(match exact_boundary_pcurve(
+    assert!(matches!(exact_boundary_pcurve(
         &ir,
         &curve,
         &surface,
         [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
         [0.0, 1.0],
-        1.0e-8,
-    ) {
-        Some(PcurveGeometry::Line(line_pcurve))
+        EPS_BOUNDARY_FIT,
+    ), Some(PcurveGeometry::Line(line_pcurve))
             if {
                 let (origin, direction) = line_pcurve.parts();
                 origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+            }));
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
@@ -1343,17 +1322,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("reversed serialized branch transferred");
     };
-    assert!(parameterization.pcurves.iter().all(|pcurve| match pcurve {
-        PcurveGeometry::Line(line_pcurve)
-            if {
-                let (origin, direction) = line_pcurve.parts();
-                origin.u == 0.0 && direction.u == 1.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    }));
+    assert!(parameterization.pcurves.iter().all(
+        |pcurve| matches!(pcurve, PcurveGeometry::Line(line_pcurve)
+        if {
+            let (origin, direction) = line_pcurve.parts();
+            origin.u == 0.0 && direction.u == 1.0
+        })
+    ));
     assert_eq!(ir.model.edges[0].start, vertices[0]);
     assert_eq!(ir.model.edges[0].end, vertices[1]);
 
@@ -1428,17 +1403,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         panic!("reversed symmetric conic branches transferred");
     };
     assert_eq!(parameterization.parameter_range(), range);
-    assert!(parameterization.pcurves.iter().all(|pcurve| match pcurve {
-        PcurveGeometry::Ellipse(ellipse_pcurve)
-            if {
-                let (_, _, y_axis, _, _) = ellipse_pcurve.parts();
-                y_axis.v == 1.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    }));
+    assert!(parameterization.pcurves.iter().all(
+        |pcurve| matches!(pcurve, PcurveGeometry::Ellipse(ellipse_pcurve)
+        if {
+            let (_, _, y_axis, _, _) = ellipse_pcurve.parts();
+            y_axis.v == 1.0
+        })
+    ));
 
     ir.model.procedural_curves[0]
         .edit_definition(|definition| {

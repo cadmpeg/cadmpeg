@@ -15,6 +15,8 @@ use crate::test_support::*;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+const EPS_TRANSFER_PLANE_FRAME: f64 = 1.0e-6;
+
 #[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
@@ -148,32 +150,23 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match &surface.geometry {
-            SurfaceGeometry::Plane(plane_surface)
-                if {
-                    let (origin, normal, u_axis) = plane_surface.parts();
-                    (origin.x - 1.0).abs() < 1.0e-6
-                        && (origin.y - 2.0).abs() < 1.0e-6
-                        && (origin.z - 3.0).abs() < 1.0e-6
-                        && normal.x.abs() < 1.0e-6
-                        && normal.y.abs() < 1.0e-6
-                        && (normal.z.abs() - 1.0).abs() < 1.0e-6
-                        && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0)
-                            .abs()
-                            < 1.0e-6
-                        && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs()
-                            < 1.0e-6
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            (origin.x - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && (origin.y - 2.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && (origin.z - 3.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && normal.x.abs() < EPS_TRANSFER_PLANE_FRAME
+                && normal.y.abs() < EPS_TRANSFER_PLANE_FRAME
+                && (normal.z.abs() - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0)
+                    .abs()
+                    < EPS_TRANSFER_PLANE_FRAME
+                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs()
+                    < EPS_TRANSFER_PLANE_FRAME
+        })
+    ));
 
     // Stored face/carrier rows do not establish a B-rep without a complete
     // trim and edge graph. Carriers remain free and vertices receive only the
@@ -517,17 +510,13 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .iter()
         .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
         .expect("refined standard cylinder");
-    assert!(match surface.geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (origin, axis, _, _) = cylinder_surface.parts();
-                origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, _, _) = cylinder_surface.parts();
+            origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        })
+    );
     assert_eq!(
         decoded
             .report()

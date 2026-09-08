@@ -1914,7 +1914,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ]),
         None
     );
-    assert!(match hole_cylinder_from_cap_outlines([
+    assert!(matches!(hole_cylinder_from_cap_outlines([
         (
             902,
             [0.0, 0.0, 0.85],
@@ -1927,19 +1927,13 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             [0.0, 0.0, -1.0],
             [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]],
         ),
-    ]) {
-        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+    ]), Some(SurfaceGeometry::Cylinder(cylinder_surface))
             if {
                 let (origin, axis, _, radius) = cylinder_surface.parts();
                 *origin == Point3::new(0.0, 19.0, 0.85)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
                     && *radius == 1.5
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+            }));
     assert!(hole_cylinder_from_cap_outlines([
         (
             902,
@@ -1955,7 +1949,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ),
     ])
     .is_none());
-    assert!(match circular_sweep_cylinder_from_cap_outlines([
+    assert!(matches!(circular_sweep_cylinder_from_cap_outlines([
         (
             828,
             [0.0, 4.0, 0.0],
@@ -1963,35 +1957,23 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
         ),
         (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
-    ]) {
-        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+    ]), Some(SurfaceGeometry::Cylinder(cylinder_surface))
             if {
                 let (origin, axis, _, radius) = cylinder_surface.parts();
                 *origin == Point3::new(-12.5, 4.0, 0.0)
                     && *axis == Vector3::new(0.0, -1.0, 0.0)
                     && *radius == 0.75
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
-    assert!(match cylinder_from_single_cap_outline((
+            }));
+    assert!(matches!(cylinder_from_single_cap_outline((
         46,
         [0.0, 16.0, 0.0],
         [0.0, 1.0, 0.0],
         Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
-    )) {
-        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+    )), Some(SurfaceGeometry::Cylinder(cylinder_surface))
             if {
                 let (origin, axis, _, radius) = cylinder_surface.parts();
                 *origin == Point3::new(0.0, 16.0, 0.0)
                     && *axis == Vector3::new(0.0, 1.0, 0.0)
                     && *radius == 4.45
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+            }));
 }

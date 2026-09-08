@@ -1317,10 +1317,10 @@ Co 1001000 +2 1 +2 3 *
     else {
         panic!("located face must retain its exact transformed basis");
     };
-    assert!(match basis.as_ref() {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        basis.as_ref(),
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(_)
+    ));
     assert_eq!(transform.rows()[0][0], -2.0);
     assert_eq!(transform.rows()[1][1], 2.0);
     let origin =
