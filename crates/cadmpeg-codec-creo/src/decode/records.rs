@@ -1388,11 +1388,11 @@ pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylin
             datum_id: record.id,
             owner_feature_id: record.feature_id,
             reversed: record.reversed,
-            origin: record.frame.origin,
-            axis: record.frame.axis,
-            ref_direction: record.frame.ref_direction,
-            radius: record.frame.radius,
-            length: record.frame.length,
+            origin: record.frame.origin(),
+            axis: record.frame.axis(),
+            ref_direction: record.frame.ref_direction(),
+            radius: record.frame.radius(),
+            length: record.frame.length(),
             offset: record.offset_in_payload,
             source_section: source_section(scan, record.offset_in_payload),
         })
@@ -2021,29 +2021,29 @@ pub(super) fn surface_parameter_records(
                 }),
                 positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
                     CreoPositionalCylinderFrame {
-                        origin: frame.origin,
-                        axis: frame.axis,
-                        ref_direction: frame.ref_direction,
-                        radius: frame.radius,
-                        length: frame.length,
+                        origin: frame.origin(),
+                        axis: frame.axis(),
+                        ref_direction: frame.ref_direction(),
+                        radius: frame.radius(),
+                        length: frame.length(),
                     }
                 }),
                 split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
                 positional_cone_frame: record.positional_cone_frame().map(|frame| {
                     CreoPositionalConeFrame {
-                        apex: frame.apex,
-                        axis: frame.axis,
-                        ref_direction: frame.ref_direction,
-                        half_angle: frame.half_angle,
+                        apex: frame.apex(),
+                        axis: frame.axis(),
+                        ref_direction: frame.ref_direction(),
+                        half_angle: frame.half_angle(),
                     }
                 }),
                 positional_torus_frame: record.positional_torus_frame().map(|frame| {
                     CreoPositionalTorusFrame {
-                        center: frame.center,
-                        axis: frame.axis,
-                        ref_direction: frame.ref_direction,
-                        major_radius: frame.major_radius,
-                        minor_radius: frame.minor_radius,
+                        center: frame.center(),
+                        axis: frame.axis(),
+                        ref_direction: frame.ref_direction(),
+                        major_radius: frame.major_radius(),
+                        minor_radius: frame.minor_radius(),
                     }
                 }),
                 torus_outline_frame: record.torus_outline_frame().map(|frame| {
