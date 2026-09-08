@@ -6,6 +6,9 @@ const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
 use cadmpeg_core::decode::alloc_filled;
 
+mod face_slots;
+use face_slots::FaceSlots;
+
 /// Decoded polygon in topological-vertex visit order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Polygon {
@@ -24,8 +27,7 @@ struct Vertex {
 
 #[derive(Clone)]
 struct Face {
-    vertices: Vec<Option<usize>>,
-    empty: usize,
+    vertices: FaceSlots,
     attribute_mask: Vec<bool>,
     attributes: Vec<u32>,
 }
@@ -213,16 +215,7 @@ impl Decoder<'_> {
     }
 
     fn set_face_vertex(&mut self, face: usize, slot: usize, vertex: usize) -> Option<()> {
-        let face = self.faces.get_mut(face)?;
-        let target = face.vertices.get_mut(slot)?;
-        if target.is_some_and(|existing| existing != vertex) {
-            return None;
-        }
-        if target.is_none() {
-            face.empty = face.empty.checked_sub(1)?;
-        }
-        *target = Some(vertex);
-        Some(())
+        self.faces.get_mut(face)?.vertices.fill(slot, vertex)
     }
 
     fn add_vertex_to_face(
@@ -300,8 +293,7 @@ impl Decoder<'_> {
             self.removed.try_reserve(1).ok()?;
             self.active.try_reserve(1).ok()?;
             self.faces.push(Face {
-                vertices: alloc_filled(degree, None, "nx JT face vertex slots").ok()?,
-                empty: degree,
+                vertices: FaceSlots::new(degree)?,
                 attribute_mask,
                 attributes,
             });
@@ -401,8 +393,9 @@ impl Decoder<'_> {
             let face = self.active[index];
             if self.removed[face] {
                 self.active.remove(index);
-            } else if best.is_none_or(|current| self.faces[face].empty < self.faces[current].empty)
-            {
+            } else if best.is_none_or(|current| {
+                self.faces[face].vertices.empty() < self.faces[current].vertices.empty()
+            }) {
                 best = Some(face);
             }
         }
@@ -424,7 +417,7 @@ impl Decoder<'_> {
             }
         }
         if !self.symbols.exhausted()
-            || self.faces.iter().any(|face| face.empty != 0)
+            || self.faces.iter().any(|face| face.vertices.empty() != 0)
             || self
                 .vertices
                 .iter()
