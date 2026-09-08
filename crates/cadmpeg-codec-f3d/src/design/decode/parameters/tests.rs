@@ -662,15 +662,15 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
         },
     )
     .expect("legacy 68-byte parameter owner");
-    assert_eq!(parsed.frame_length, 68);
-    assert_eq!(parsed.class_tag.as_str(), "284");
-    assert_eq!(parsed.record_index, 100);
-    assert_eq!(parsed.parameter_record_index, 101);
-    assert_eq!(parsed.companion_record_index, 102);
-    assert_eq!(parsed.scope_record_index, 0);
-    assert_eq!(parsed.local_ordinal, 0);
-    assert_eq!(parsed.owned_ordinal, 290);
-    assert_eq!(parsed.evaluated_value, 0.0);
+    assert_eq!(parsed.frame_length(), 68);
+    assert_eq!(parsed.class_tag().as_str(), "284");
+    assert_eq!(parsed.record_index(), 100);
+    assert_eq!(parsed.parameter_record_index(), 101);
+    assert_eq!(parsed.companion_record_index(), 102);
+    assert_eq!(parsed.scope_record_index(), 0);
+    assert_eq!(parsed.local_ordinal(), 0);
+    assert_eq!(parsed.owned_ordinal(), 290);
+    assert_eq!(parsed.evaluated_value(), 0.0);
 
     for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
         assert!(parse_legacy_parameter_owner_68(
@@ -717,13 +717,13 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         },
     )
     .expect("legacy 88-byte parameter owner");
-    assert_eq!(parsed.frame_length, 88);
-    assert_eq!(parsed.scope_record_index, 77);
-    assert_eq!(parsed.local_ordinal, 0);
-    assert_eq!(parsed.owned_ordinal, 290);
-    assert_eq!(parsed.parameter_record_index, 101);
-    assert_eq!(parsed.companion_record_index, 102);
-    assert_eq!(parsed.evaluated_value, 2.5);
+    assert_eq!(parsed.frame_length(), 88);
+    assert_eq!(parsed.scope_record_index(), 77);
+    assert_eq!(parsed.local_ordinal(), 0);
+    assert_eq!(parsed.owned_ordinal(), 290);
+    assert_eq!(parsed.parameter_record_index(), 101);
+    assert_eq!(parsed.companion_record_index(), 102);
+    assert_eq!(parsed.evaluated_value(), 2.5);
 
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
@@ -945,8 +945,8 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let [owner] = owners.as_slice() else {
         panic!("expected one parameter owner");
     };
-    assert_eq!(owner.frame_length, 104);
-    assert_eq!(owner.evaluated_value_offset, 40);
+    assert_eq!(owner.frame_length(), 104);
+    assert_eq!(owner.evaluated_value_offset(), 40);
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
@@ -1002,7 +1002,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
             evaluated_value_offset: 90,
         })
         .unwrap();
-    let owner = DesignParameterOwner {
+    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
         frame_length: 104,
@@ -1011,12 +1011,13 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         scope_record_index: 10,
         local_ordinal: 0,
         evaluated_value: 2.0,
-        evaluated_value_offset: 0,
+        evaluated_value_offset: 40,
         parameter_record_index: 20,
         owned_ordinal: 0,
-        variant: None,
+        variant: Some(0),
         companion_record_index: 22,
-    };
+    })
+    .unwrap();
     let mut companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 10,
@@ -1079,8 +1080,8 @@ fn parameter_owner_value_offset_is_localized_once() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     let owner = parsed.into_record("Design/BulkStream.dat", 1000).unwrap();
-    assert_eq!(owner.byte_offset, 1000);
-    assert_eq!(owner.evaluated_value_offset, 1040);
+    assert_eq!(owner.byte_offset(), 1000);
+    assert_eq!(owner.evaluated_value_offset(), 1040);
     assert!(parse_parameter_owner(&parameter_owner_frame())
         .unwrap()
         .into_record("Design/BulkStream.dat", u64::MAX)
@@ -1103,6 +1104,6 @@ fn parameter_owner_value_offset_is_localized_once() {
         )
         .unwrap(),
     ] {
-        assert_eq!(owner.evaluated_value_offset, 700);
+        assert_eq!(owner.evaluated_value_offset(), 700);
     }
 }

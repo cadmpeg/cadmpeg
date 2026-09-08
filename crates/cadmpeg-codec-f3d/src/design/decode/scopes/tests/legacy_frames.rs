@@ -439,16 +439,26 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         .expect("taper owner")
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
-    taper_owner.id = "generated:owner#80".into();
-    taper_owner.record_index = 80;
-    taper_owner.scope_record_index = scope_record_index;
-    taper_owner.local_ordinal = 0;
-    taper_owner.parameter_record_index = 81;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(taper_owner.clone());
+        wire.id = "generated:owner#80".into();
+        wire.record_index = 80;
+        wire.scope_record_index = scope_record_index;
+        wire.local_ordinal = 0;
+        wire.parameter_record_index = 81;
+        wire.companion_record_index = 82;
+        taper_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let mut along_owner = taper_owner.clone();
-    along_owner.id = "generated:owner#82".into();
-    along_owner.record_index = 82;
-    along_owner.local_ordinal = 1;
-    along_owner.parameter_record_index = 83;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(along_owner.clone());
+        wire.id = "generated:owner#82".into();
+        wire.record_index = 82;
+        wire.local_ordinal = 1;
+        wire.parameter_record_index = 83;
+        wire.companion_record_index = 84;
+        along_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
 
     let mut scope = DesignParameterScope::empty(
         "generated:scope#12",

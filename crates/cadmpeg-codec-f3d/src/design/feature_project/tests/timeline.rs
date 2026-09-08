@@ -293,21 +293,23 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             .unwrap(),
         )
         .unwrap();
-    let owner = DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#40"),
-        byte_offset: 0,
-        frame_length: 0,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 40,
-        scope_record_index: internal.record_index,
-        local_ordinal: 0,
-        evaluated_value: 0.1,
-        evaluated_value_offset: 0,
-        parameter_record_index: parameter.record_index,
-        owned_ordinal: 0,
-        variant: None,
-        companion_record_index: 42,
-    };
+    let owner =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#40"),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 40,
+            scope_record_index: internal.record_index,
+            local_ordinal: 0,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 40,
+            parameter_record_index: parameter.record_index,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 42,
+        })
+        .unwrap();
     let (features, parameters) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: std::slice::from_ref(&parameter),
@@ -352,7 +354,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     assert!(parameters[0].owner.is_none());
     assert_eq!(
         parameters[0].properties.get("owner_record_index"),
-        Some(&owner.record_index.to_string())
+        Some(&owner.record_index().to_string())
     );
 }
 
@@ -813,20 +815,23 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         parameter.source_ordinal = record_index;
         parameter
     };
-    let owner = |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
-        id: format!("f3d:native:owner#{record_index}"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index,
-        scope_record_index,
-        local_ordinal: parameter_record_index,
-        evaluated_value: 1.0,
-        evaluated_value_offset: 0,
-        parameter_record_index,
-        owned_ordinal: parameter_record_index,
-        variant: Some(0),
-        companion_record_index: record_index + 1,
+    let owner = |record_index, parameter_record_index, scope_record_index| {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("f3d:native:owner#{record_index}"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index,
+            scope_record_index,
+            local_ordinal: parameter_record_index,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index,
+            owned_ordinal: parameter_record_index,
+            variant: Some(0),
+            companion_record_index: record_index + 2,
+        })
+        .unwrap()
     };
     let parameters = [
         parameter(44, 45, "10 mm", "Width"),

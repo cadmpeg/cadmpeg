@@ -1085,7 +1085,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             evaluated_value_offset: 1_140,
         })
         .unwrap();
-    let owner = DesignParameterOwner {
+    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
         byte_offset: 1_000,
         frame_length: 68,
@@ -1099,7 +1099,8 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         owned_ordinal: 0,
         variant: None,
         companion_record_index: 102,
-    };
+    })
+    .unwrap();
     let companion = DesignParameterCompanion {
         id: crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
         byte_offset: 1_200,

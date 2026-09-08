@@ -39,12 +39,16 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             .expect("generated parameter owner is canonical")
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
-        owner.id = format!("f3d:native:owner#{record_index}");
-        owner.record_index = record_index;
-        owner.scope_record_index = scope_record_index;
-        owner.parameter_record_index = parameter_record_index;
-        owner.companion_record_index = parameter_record_index + 1;
-        owner.local_ordinal = local_ordinal;
+        {
+            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+            wire.id = format!("f3d:native:owner#{record_index}");
+            wire.record_index = record_index;
+            wire.scope_record_index = scope_record_index;
+            wire.parameter_record_index = parameter_record_index;
+            wire.companion_record_index = parameter_record_index + 1;
+            wire.local_ordinal = local_ordinal;
+            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        }
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
@@ -1041,11 +1045,16 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             .unwrap()
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
-        owner.id = format!("f3d:native:owner#{record_index}");
-        owner.record_index = record_index;
-        owner.scope_record_index = 12;
-        owner.parameter_record_index = parameter_record_index;
-        owner.local_ordinal = local_ordinal;
+        {
+            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+            wire.id = format!("f3d:native:owner#{record_index}");
+            wire.record_index = record_index;
+            wire.scope_record_index = 12;
+            wire.parameter_record_index = parameter_record_index;
+            wire.companion_record_index = parameter_record_index + 1;
+            wire.local_ordinal = local_ordinal;
+            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        }
         owner
     };
     let parameters = [

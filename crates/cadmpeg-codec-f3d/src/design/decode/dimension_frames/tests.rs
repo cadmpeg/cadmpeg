@@ -611,7 +611,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     .unwrap();
     parameter.id = "f3d:Design/BulkStream.dat:design-parameter#301".into();
     parameter.record_index = 301;
-    let owner = DesignParameterOwner {
+    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
         byte_offset: pair.paired_byte_offset + 59,
         frame_length: 104,
@@ -625,7 +625,8 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         owned_ordinal: 3,
         variant: Some(0),
         companion_record_index: 302,
-    };
+    })
+    .unwrap();
     assert_eq!(
         crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,

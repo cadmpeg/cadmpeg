@@ -3064,21 +3064,21 @@ pub(super) fn bind_hem_operation_from_parameters(
     let parameter_source_kinds = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
                 && scope
                     .reference_members
                     .values()
-                    .any(|value| value == &owner.record_index)
+                    .any(|value| value == &owner.record_index())
         })
         .flat_map(|owner| {
             parameters
                 .iter()
                 .filter(move |parameter| {
                     native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index
+                        && parameter.record_index == owner.parameter_record_index()
                 })
-                .map(move |parameter| (owner.record_index, parameter.source_kind()))
+                .map(move |parameter| (owner.record_index(), parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     let Some(start) = usize::try_from(scope.byte_offset).ok() else {

@@ -1164,7 +1164,192 @@ impl From<DesignParameter> for DesignParameterSerde {
 
 /// Indexed record that owns one Design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignParameterOwnerWire",
+    into = "DesignParameterOwnerWire"
+)]
 pub struct DesignParameterOwner {
+    id: String,
+    byte_offset: u64,
+    frame_length: u64,
+    class_tag: DesignClassTag,
+    scope_record_index: u32,
+    local_ordinal: u32,
+    evaluated_value: f64,
+    evaluated_value_offset: u64,
+    owned_ordinal: u32,
+    variant: Option<u8>,
+    base_index: u32,
+    order: ParameterFrameOrder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParameterFrameOrder {
+    OwnerFirst,
+    ParameterFirst,
+    CompanionFirst,
+}
+
+impl DesignParameterOwner {
+    /// The id value.
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+    /// The byte offset value.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    /// The frame length value.
+    pub fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+    /// The class tag value.
+    pub fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
+    }
+    /// The record index value.
+    pub fn record_index(&self) -> u32 {
+        self.base_index
+            + match self.order {
+                ParameterFrameOrder::OwnerFirst => 0,
+                ParameterFrameOrder::ParameterFirst => 1,
+                ParameterFrameOrder::CompanionFirst => 0,
+            }
+    }
+    /// The scope record index value.
+    pub fn scope_record_index(&self) -> u32 {
+        self.scope_record_index
+    }
+    /// The local ordinal value.
+    pub fn local_ordinal(&self) -> u32 {
+        self.local_ordinal
+    }
+    /// The evaluated value value.
+    pub fn evaluated_value(&self) -> f64 {
+        self.evaluated_value
+    }
+    /// The evaluated value offset value.
+    pub fn evaluated_value_offset(&self) -> u64 {
+        self.evaluated_value_offset
+    }
+    /// The parameter record index value.
+    pub fn parameter_record_index(&self) -> u32 {
+        self.base_index
+            + match self.order {
+                ParameterFrameOrder::OwnerFirst => 1,
+                ParameterFrameOrder::ParameterFirst => 0,
+                ParameterFrameOrder::CompanionFirst => 2,
+            }
+    }
+    /// The owned ordinal value.
+    pub fn owned_ordinal(&self) -> u32 {
+        self.owned_ordinal
+    }
+    /// The companion record index value.
+    pub fn companion_record_index(&self) -> u32 {
+        self.base_index
+            + match self.order {
+                ParameterFrameOrder::OwnerFirst => 2,
+                ParameterFrameOrder::ParameterFirst => 2,
+                ParameterFrameOrder::CompanionFirst => 1,
+            }
+    }
+}
+
+impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
+    type Error = String;
+    fn try_from(wire: DesignParameterOwnerWire) -> Result<Self, Self::Error> {
+        if !wire.evaluated_value.is_finite() {
+            return Err("evaluated_value must be finite".into());
+        }
+        let (base_index, order) = if wire.record_index.checked_add(1)
+            == Some(wire.parameter_record_index)
+            && wire.record_index.checked_add(2) == Some(wire.companion_record_index)
+        {
+            (wire.record_index, ParameterFrameOrder::OwnerFirst)
+        } else if wire.parameter_record_index.checked_add(1) == Some(wire.record_index)
+            && wire.parameter_record_index.checked_add(2) == Some(wire.companion_record_index)
+        {
+            (
+                wire.parameter_record_index,
+                ParameterFrameOrder::ParameterFirst,
+            )
+        } else if wire.record_index.checked_add(1) == Some(wire.companion_record_index)
+            && wire.record_index.checked_add(2) == Some(wire.parameter_record_index)
+        {
+            (wire.record_index, ParameterFrameOrder::CompanionFirst)
+        } else {
+            return Err("record_index, parameter_record_index, and companion_record_index must follow a parameter frame order".into());
+        };
+        let modern = matches!(
+            (
+                wire.frame_length,
+                wire.evaluated_value_offset.checked_sub(wire.byte_offset),
+                wire.variant
+            ),
+            (99 | 103, Some(40), None)
+                | (100, Some(41), None)
+                | (107, Some(44), None)
+                | (101, Some(41), Some(0..=1))
+                | (104, Some(40), Some(0..=1))
+                | (108, Some(44), Some(0..=1))
+        );
+        let legacy = wire.local_ordinal == 0
+            && match wire.frame_length {
+                68 => {
+                    crate::design::decode::parameters::is_legacy_parameter_owner_68_class(
+                        wire.class_tag.as_str(),
+                    ) && wire.scope_record_index == 0
+                }
+                88 => {
+                    crate::design::decode::parameters::is_legacy_parameter_owner_88_class(
+                        wire.class_tag.as_str(),
+                    ) && wire.scope_record_index != 0
+                }
+                _ => false,
+            };
+        if !modern && !legacy {
+            return Err("frame_length, evaluated_value_offset, and variant must describe a parameter owner frame".into());
+        }
+        Ok(Self {
+            base_index,
+            order,
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            frame_length: wire.frame_length,
+            class_tag: wire.class_tag,
+            scope_record_index: wire.scope_record_index,
+            local_ordinal: wire.local_ordinal,
+            evaluated_value: wire.evaluated_value,
+            evaluated_value_offset: wire.evaluated_value_offset,
+            owned_ordinal: wire.owned_ordinal,
+            variant: wire.variant,
+        })
+    }
+}
+impl From<DesignParameterOwner> for DesignParameterOwnerWire {
+    fn from(owner: DesignParameterOwner) -> Self {
+        Self {
+            id: owner.id.clone(),
+            byte_offset: owner.byte_offset,
+            frame_length: owner.frame_length,
+            class_tag: owner.class_tag.clone(),
+            record_index: owner.record_index(),
+            scope_record_index: owner.scope_record_index,
+            local_ordinal: owner.local_ordinal,
+            evaluated_value: owner.evaluated_value,
+            evaluated_value_offset: owner.evaluated_value_offset,
+            parameter_record_index: owner.parameter_record_index(),
+            owned_ordinal: owner.owned_ordinal,
+            variant: owner.variant,
+            companion_record_index: owner.companion_record_index(),
+        }
+    }
+}
+
+/// Unchecked parameter owner fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignParameterOwnerWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.

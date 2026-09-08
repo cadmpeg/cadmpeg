@@ -24,9 +24,9 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.paired_byte_offset = 637;
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
+            byte_offset: (evaluated_value_offset) - 40,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
@@ -36,9 +36,10 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             evaluated_value_offset,
             parameter_record_index: record_index + 1,
             owned_ordinal: local_ordinal,
-            variant: None,
+            variant: Some(0),
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     };
     let rectangular_owners = [
         owner(50, 0, 3.0, 501),
@@ -469,29 +470,34 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         119, 400,
     ]);
     let owners = (0_usize..20)
-        .map(|ordinal| DesignParameterOwner {
-            id: format!(
-                "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
-                100 + ordinal
-            ),
-            byte_offset: 0,
-            frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("284".to_owned()).unwrap(),
-            record_index: 100 + ordinal as u32,
-            scope_record_index,
-            local_ordinal: ordinal as u32,
-            evaluated_value: match ordinal {
-                8 => 0.25,
-                9 => 1.0,
-                10 => 2.0,
-                11 => 3.0,
-                _ => 0.0,
-            },
-            evaluated_value_offset: 2_000 + ordinal as u64,
-            parameter_record_index: 1_000 + ordinal as u32,
-            owned_ordinal: ordinal as u32,
-            variant: None,
-            companion_record_index: 1_100 + ordinal as u32,
+        .map(|ordinal| {
+            crate::records::DesignParameterOwner::try_from(
+                crate::records::DesignParameterOwnerWire {
+                    id: format!(
+                        "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                        100 + ordinal
+                    ),
+                    byte_offset: (2_000 + ordinal as u64) - 40,
+                    frame_length: 103,
+                    class_tag: crate::records::DesignClassTag::try_from("284".to_owned()).unwrap(),
+                    record_index: 100 + ordinal as u32,
+                    scope_record_index,
+                    local_ordinal: ordinal as u32,
+                    evaluated_value: match ordinal {
+                        8 => 0.25,
+                        9 => 1.0,
+                        10 => 2.0,
+                        11 => 3.0,
+                        _ => 0.0,
+                    },
+                    evaluated_value_offset: 2_000 + ordinal as u64,
+                    parameter_record_index: 100 + ordinal as u32 + 1,
+                    owned_ordinal: ordinal as u32,
+                    variant: None,
+                    companion_record_index: 100 + ordinal as u32 + 2,
+                },
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
     let bytes = legacy_class_383_258_fixture(
@@ -596,29 +602,34 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             .collect(),
     );
     let owners = (0..28)
-        .map(|ordinal| DesignParameterOwner {
-            id: format!(
-                "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
-                1_000 + ordinal
-            ),
-            byte_offset: 0,
-            frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
-            record_index: 1_000 + ordinal,
-            scope_record_index,
-            local_ordinal: ordinal,
-            evaluated_value: match ordinal {
-                4 => 0.25,
-                5 => 1.0,
-                6 => 2.0,
-                7 => 3.0,
-                _ => 0.0,
-            },
-            evaluated_value_offset: 2_000 + u64::from(ordinal),
-            parameter_record_index: 3_000 + ordinal,
-            owned_ordinal: ordinal,
-            variant: None,
-            companion_record_index: 4_000 + ordinal,
+        .map(|ordinal| {
+            crate::records::DesignParameterOwner::try_from(
+                crate::records::DesignParameterOwnerWire {
+                    id: format!(
+                        "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                        1_000 + ordinal
+                    ),
+                    byte_offset: (2_000 + u64::from(ordinal)) - 40,
+                    frame_length: 103,
+                    class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
+                    record_index: 1_000 + ordinal,
+                    scope_record_index,
+                    local_ordinal: ordinal,
+                    evaluated_value: match ordinal {
+                        4 => 0.25,
+                        5 => 1.0,
+                        6 => 2.0,
+                        7 => 3.0,
+                        _ => 0.0,
+                    },
+                    evaluated_value_offset: 2_000 + u64::from(ordinal),
+                    parameter_record_index: 1_000 + ordinal + 1,
+                    owned_ordinal: ordinal,
+                    variant: None,
+                    companion_record_index: 1_000 + ordinal + 2,
+                },
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -877,9 +888,9 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     scope.paired_byte_offset = 399;
 
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
+            byte_offset: (evaluated_value_offset) - 40,
             frame_length: 103,
             class_tag: crate::records::DesignClassTag::try_from("321".to_owned()).unwrap(),
             record_index,
@@ -891,7 +902,8 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
             owned_ordinal: local_ordinal,
             variant: None,
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     };
     let owners = [
         owner(50, 0, 0.25, 501),
@@ -1020,9 +1032,9 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                  class_tag: &str,
                  value: f64,
                  offset: u64| {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
+            byte_offset: (offset) - 40,
             frame_length: 103,
             class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             record_index,
@@ -1034,7 +1046,8 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             owned_ordinal: local_ordinal,
             variant: None,
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     };
     for (class_tag, paired_class_tag, owner_class, expected_limit_kind, reverse_limit_order) in [
         ("364", "272", "293", DesignAssemblyLimitKind::Angular, false),

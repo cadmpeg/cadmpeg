@@ -1785,16 +1785,16 @@ pub(crate) fn exact_assembly_alignment(
     let mut lanes = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.evaluated_value.is_finite()
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|owner| owner.local_ordinal);
+    lanes.sort_by_key(|owner| owner.local_ordinal());
     if lanes
         .iter()
         .enumerate()
-        .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+        .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
     {
         return None;
     }
@@ -1859,24 +1859,24 @@ pub(crate) fn exact_assembly_alignment(
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
         let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
-                angle.evaluated_value,
+                angle.evaluated_value(),
                 [
-                    offset_x.evaluated_value,
-                    offset_y.evaluated_value,
-                    offset_z.evaluated_value,
+                    offset_x.evaluated_value(),
+                    offset_y.evaluated_value(),
+                    offset_z.evaluated_value(),
                 ],
             ),
             [angle, axial_offset] => (
-                angle.evaluated_value,
-                [0.0, 0.0, axial_offset.evaluated_value],
+                angle.evaluated_value(),
+                [0.0, 0.0, axial_offset.evaluated_value()],
             ),
             _ => return None,
         };
         let owners: Vec<crate::records::Located<u32>> = alignment_lanes
             .iter()
             .map(|owner| crate::records::Located {
-                value: owner.record_index,
-                offset: owner.evaluated_value_offset,
+                value: owner.record_index(),
+                offset: owner.evaluated_value_offset(),
             })
             .collect();
         if legacy_class_388 {
@@ -1884,11 +1884,12 @@ pub(crate) fn exact_assembly_alignment(
                 .into_iter()
                 .zip(lanes.iter())
                 .all(|(scope_ordinal, owner)| {
-                    scope.reference_members.values().nth(scope_ordinal) == Some(&owner.record_index)
+                    scope.reference_members.values().nth(scope_ordinal)
+                        == Some(&owner.record_index())
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag.as_str() != "282" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1904,11 +1905,12 @@ pub(crate) fn exact_assembly_alignment(
                 .into_iter()
                 .zip(lanes.iter())
                 .all(|(scope_ordinal, owner)| {
-                    scope.reference_members.values().nth(scope_ordinal) == Some(&owner.record_index)
+                    scope.reference_members.values().nth(scope_ordinal)
+                        == Some(&owner.record_index())
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag.as_str() != "284" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1925,7 +1927,7 @@ pub(crate) fn exact_assembly_alignment(
         ) {
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag.as_str() != "289" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
                 || (0..scope.reference_members.len())
                     .filter(|&start| {
                         scope
@@ -4345,19 +4347,19 @@ pub(crate) fn exact_rectangular_pattern_construction(
     let mut lanes = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.evaluated_value.is_finite()
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|owner| owner.local_ordinal);
+    lanes.sort_by_key(|owner| owner.local_ordinal());
     let [u_count, v_count, u_extent, v_extent] = lanes.as_slice() else {
         return None;
     };
     if [u_count, v_count, u_extent, v_extent]
         .iter()
         .enumerate()
-        .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+        .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
     {
         return None;
     }
@@ -4365,25 +4367,25 @@ pub(crate) fn exact_rectangular_pattern_construction(
         (value > 0.0 && value <= f64::from(u32::MAX) && value.fract() == 0.0)
             .then_some(value as u32)
     };
-    let u_count_value = exact_count(u_count.evaluated_value)?;
-    let v_count_value = exact_count(v_count.evaluated_value)?;
+    let u_count_value = exact_count(u_count.evaluated_value())?;
+    let v_count_value = exact_count(v_count.evaluated_value())?;
     let mut construction = DesignRectangularPatternConstruction::try_from(
         crate::records::feature::DesignRectangularPatternConstructionWire {
             u_count: u_count_value,
             v_count: v_count_value,
-            u_extent: u_extent.evaluated_value,
-            v_extent: v_extent.evaluated_value,
+            u_extent: u_extent.evaluated_value(),
+            v_extent: v_extent.evaluated_value(),
             owner_record_indices: [
-                u_count.record_index,
-                v_count.record_index,
-                u_extent.record_index,
-                v_extent.record_index,
+                u_count.record_index(),
+                v_count.record_index(),
+                u_extent.record_index(),
+                v_extent.record_index(),
             ],
             value_offsets: [
-                u_count.evaluated_value_offset,
-                v_count.evaluated_value_offset,
-                u_extent.evaluated_value_offset,
-                v_extent.evaluated_value_offset,
+                u_count.evaluated_value_offset(),
+                v_count.evaluated_value_offset(),
+                u_extent.evaluated_value_offset(),
+                v_extent.evaluated_value_offset(),
             ],
             instances: None,
         },
@@ -4644,20 +4646,20 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         selection_record_index,
     } = select_circular_pattern_axis(&axis_candidates)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
-        if native_stream(&owner.id) != native_stream(&scope.id)
-            || owner.scope_record_index != scope.record_index
-            || owner.local_ordinal != 0
-            || !owner.evaluated_value.is_finite()
-            || owner.evaluated_value <= 0.0
-            || owner.evaluated_value > f64::from(u32::MAX)
-            || owner.evaluated_value.fract() != 0.0
+        if native_stream(owner.id()) != native_stream(&scope.id)
+            || owner.scope_record_index() != scope.record_index
+            || owner.local_ordinal() != 0
+            || !owner.evaluated_value().is_finite()
+            || owner.evaluated_value() <= 0.0
+            || owner.evaluated_value() > f64::from(u32::MAX)
+            || owner.evaluated_value().fract() != 0.0
         {
             return None;
         }
         Some((
-            owner.evaluated_value as u32,
-            owner.record_index,
-            owner.evaluated_value_offset,
+            owner.evaluated_value() as u32,
+            owner.record_index(),
+            owner.evaluated_value_offset(),
         ))
     });
     let mut count_candidates = owner_count_candidates.collect::<Vec<_>>();
@@ -4673,15 +4675,15 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         return None;
     };
     let owner_angle_candidates = parameter_owners.iter().filter_map(|owner| {
-        (native_stream(&owner.id) == native_stream(&scope.id)
-            && owner.scope_record_index == scope.record_index
-            && owner.local_ordinal == 1
-            && owner.evaluated_value.is_finite()
-            && owner.evaluated_value > 0.0)
+        (native_stream(owner.id()) == native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
+            && owner.local_ordinal() == 1
+            && owner.evaluated_value().is_finite()
+            && owner.evaluated_value() > 0.0)
             .then_some((
-                owner.evaluated_value,
-                owner.record_index,
-                owner.evaluated_value_offset,
+                owner.evaluated_value(),
+                owner.record_index(),
+                owner.evaluated_value_offset(),
             ))
     });
     let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
@@ -5248,8 +5250,8 @@ pub fn bind_mirror_constructions(
         let scope_owners = owners
             .iter()
             .filter(|owner| {
-                native_stream(&owner.id) == Some(stream.as_str())
-                    && owner.scope_record_index == scope_record_index
+                native_stream(owner.id()) == Some(stream.as_str())
+                    && owner.scope_record_index() == scope_record_index
             })
             .collect::<Vec<_>>();
         let records = record_offset_index
@@ -5259,9 +5261,9 @@ pub fn bind_mirror_constructions(
             .iter()
             .copied()
             .filter(|owner| {
-                owner.local_ordinal == 0
-                    && owner.evaluated_value == 2.0
-                    && owner.evaluated_value.is_finite()
+                owner.local_ordinal() == 0
+                    && owner.evaluated_value() == 2.0
+                    && owner.evaluated_value().is_finite()
             })
             .collect::<Vec<_>>();
         let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
@@ -5270,23 +5272,23 @@ pub fn bind_mirror_constructions(
             .iter()
             .copied()
             .filter(|owner| {
-                owner.local_ordinal == 1
-                    && owner.evaluated_value.is_finite()
-                    && owner.evaluated_value > 0.0
+                owner.local_ordinal() == 1
+                    && owner.evaluated_value().is_finite()
+                    && owner.evaluated_value() > 0.0
             })
             .collect::<Vec<_>>();
         let (count, tolerance_source) = (
             match (count.as_slice(), inline_count) {
-                ([count], None) => Some((count.record_index, count.evaluated_value_offset)),
+                ([count], None) => Some((count.record_index(), count.evaluated_value_offset())),
                 ([], Some(count)) => Some(count),
                 _ => None,
             },
             match (tolerance.as_slice(), inline_tolerance) {
                 ([tolerance], None) => Some((
-                    tolerance.evaluated_value,
-                    tolerance.evaluated_value_offset,
+                    tolerance.evaluated_value(),
+                    tolerance.evaluated_value_offset(),
                     crate::records::feature::DesignMirrorToleranceSource::Owner {
-                        record_index: tolerance.record_index,
+                        record_index: tolerance.record_index(),
                     },
                 )),
                 ([], Some((value, value_offset, scope_tail))) => Some((
@@ -6206,23 +6208,23 @@ fn exact_pipe_owner_lanes(
     let mut owners = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
                 && scope
                     .reference_members
                     .values()
-                    .any(|value| value == &owner.record_index)
-                && owner.class_tag.as_str() == "342"
-                && owner.frame_length == 103
-                && owner.evaluated_value.is_finite()
+                    .any(|value| value == &owner.record_index())
+                && owner.class_tag().as_str() == "342"
+                && owner.frame_length() == 103
+                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
-    owners.sort_by_key(|owner| owner.local_ordinal);
+    owners.sort_by_key(|owner| owner.local_ordinal());
     if owners.len() != 4
         || owners
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+            .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
     {
         return None;
     }
@@ -6230,12 +6232,12 @@ fn exact_pipe_owner_lanes(
         .into_iter()
         .map(|owner| {
             Some((
-                owner.record_index,
+                owner.record_index(),
                 FixedScalarFrame {
                     owner_record_index: Some(scope.record_index),
-                    ordinal: u8::try_from(owner.local_ordinal).ok()?,
-                    value: owner.evaluated_value,
-                    value_offset: owner.evaluated_value_offset,
+                    ordinal: u8::try_from(owner.local_ordinal()).ok()?,
+                    value: owner.evaluated_value(),
+                    value_offset: owner.evaluated_value_offset(),
                 },
             ))
         })
@@ -6818,16 +6820,16 @@ pub(crate) fn exact_fixed_extrude_parameters(
         let source_kind = parameter_owners
             .iter()
             .find(|owner| {
-                native_stream(&owner.id) == native_stream(&scope.id)
-                    && owner.scope_record_index == scope.record_index
-                    && owner.record_index == record_index
+                native_stream(owner.id()) == native_stream(&scope.id)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == record_index
             })
             .and_then(|owner| {
                 parameters
                     .iter()
                     .find(|parameter| {
                         native_stream(&parameter.id) == native_stream(&scope.id)
-                            && parameter.record_index == owner.parameter_record_index
+                            && parameter.record_index == owner.parameter_record_index()
                     })
                     .map(crate::records::DesignParameter::source_kind)
             });
@@ -7010,8 +7012,8 @@ pub(crate) fn exact_fixed_chamfer_parameters(
     let stream = native_stream(&scope.id);
     if parameter_owners.iter().any(|owner| {
         stream.is_some()
-            && native_stream(&owner.id) == stream
-            && owner.scope_record_index == scope.record_index
+            && native_stream(owner.id()) == stream
+            && owner.scope_record_index() == scope.record_index
     }) {
         return None;
     }
@@ -7054,16 +7056,16 @@ fn unique_revolve_angle_owner<'a>(
     record_index: Option<u32>,
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
-        native_stream(&owner.id) == native_stream(&scope.id)
-            && owner.scope_record_index == scope.record_index
+        native_stream(owner.id()) == native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
             && scope
                 .reference_members
                 .values()
-                .any(|value| value == &owner.record_index)
-            && record_index.is_none_or(|index| owner.record_index == index)
-            && owner.local_ordinal == 0
-            && owner.evaluated_value.is_finite()
-            && owner.evaluated_value > 0.0
+                .any(|value| value == &owner.record_index())
+            && record_index.is_none_or(|index| owner.record_index() == index)
+            && owner.local_ordinal() == 0
+            && owner.evaluated_value().is_finite()
+            && owner.evaluated_value() > 0.0
     });
     let angle = candidates.next()?;
     candidates.next().is_none().then_some(angle)
@@ -7099,9 +7101,9 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: angle.evaluated_value,
-                    angle_record_index: angle.record_index,
-                    angle_offset: angle.evaluated_value_offset,
+                    angle: angle.evaluated_value(),
+                    angle_record_index: angle.record_index(),
+                    angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
             ))
@@ -7168,9 +7170,9 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
                     operation_offset: u64::try_from(start + 21).ok()?,
-                    angle: angle.evaluated_value,
+                    angle: angle.evaluated_value(),
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset,
+                    angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
             ))
@@ -7192,9 +7194,9 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
-                    angle: angle.evaluated_value,
+                    angle: angle.evaluated_value(),
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset,
+                    angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
             ))
@@ -8630,11 +8632,11 @@ pub(crate) fn exact_draft_operation_with_owners(
             let owners = parameter_owners
                 .iter()
                 .filter(|owner| {
-                    owner.record_index == *record_index
-                        && owner.scope_record_index == scope.record_index
+                    owner.record_index() == *record_index
+                        && owner.scope_record_index() == scope.record_index
                         && scope_stream
-                            .is_none_or(|stream| native_stream(&owner.id) == Some(stream))
-                        && owner.evaluated_value.is_finite()
+                            .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
+                        && owner.evaluated_value().is_finite()
                 })
                 .collect::<Vec<_>>();
             let [owner] = owners.as_slice() else {
@@ -8642,9 +8644,9 @@ pub(crate) fn exact_draft_operation_with_owners(
             };
             Some((
                 *record_index,
-                owner.local_ordinal,
-                owner.evaluated_value,
-                owner.evaluated_value_offset,
+                owner.local_ordinal(),
+                owner.evaluated_value(),
+                owner.evaluated_value_offset(),
             ))
         })
         .collect::<Vec<_>>();
@@ -9785,17 +9787,17 @@ fn bind_coil_extent_from_parameters(
     let mut owned_kinds = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
         })
         .filter_map(|owner| {
             parameters
                 .iter()
                 .find(|parameter| {
                     native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index
+                        && parameter.record_index == owner.parameter_record_index()
                 })
-                .map(|parameter| (owner.local_ordinal, parameter.source_kind()))
+                .map(|parameter| (owner.local_ordinal(), parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     owned_kinds.sort_unstable_by_key(|(ordinal, _)| *ordinal);
