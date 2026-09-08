@@ -5,7 +5,7 @@ use super::super::feature_history::{
     feature_allows_additive_linear_extrusion, generated_profile_entry_is_admissible,
 };
 use super::super::native::annotate;
-use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
@@ -23,6 +23,7 @@ use super::profiles::{
 use crate::container::ContainerScan;
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -285,7 +286,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ProfileGeometry::Line { .. } => {
                             let placed_start = section_point_in_model(transform, start);
                             let placed_end = section_point_in_model(transform, end);
-                            let Some(direction) = normalized(std::array::from_fn(|axis| {
+                            let Some(direction) = normalize(std::array::from_fn(|axis| {
                                 placed_end[axis] - placed_start[axis]
                             })) else {
                                 continue;

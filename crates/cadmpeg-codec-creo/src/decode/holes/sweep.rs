@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact hole and circular-sweep geometry.
 
+use crate::vecmath::normalize;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{
@@ -11,7 +12,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::sketch::normalized;
 use super::super::sweep::{feature_outline_plane, feature_outline_planes, FeatureOutlinePlane};
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
@@ -570,7 +570,7 @@ pub fn extrusion_extent_and_direction(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let span = extrusion_span(profile_origin, direction, planes)?;
-    let direction = normalized(direction)?;
+    let direction = normalize(direction)?;
     if span.lower == 0.0 || span.upper == 0.0 {
         let signed_length = if span.upper == 0.0 {
             span.lower

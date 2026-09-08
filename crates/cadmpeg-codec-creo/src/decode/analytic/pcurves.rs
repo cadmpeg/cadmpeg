@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic pcurve carrier transfer and native pcurve helpers.
 
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -15,7 +16,6 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::surfaces::curve_contains_points;
 
 use super::carriers::placed_carriers;
@@ -1063,7 +1063,7 @@ pub fn linear_pcurve_carrier(
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
-            let direction = normalized(std::array::from_fn(|axis| second[axis] - first[axis]))?;
+            let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(first[0], first[1], first[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
@@ -1088,7 +1088,7 @@ pub fn linear_pcurve_carrier(
                 origin.y + radius * radial[1] + start[1] * axis.y,
                 origin.z + radius * radial[2] + start[1] * axis.z,
             ];
-            let direction = normalized([axis.x, axis.y, axis.z])?;
+            let direction = normalize([axis.x, axis.y, axis.z])?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(point[0], point[1], point[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
@@ -1120,7 +1120,7 @@ pub fn linear_pcurve_carrier(
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
-            let direction = normalized(std::array::from_fn(|axis| second[axis] - first[axis]))?;
+            let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             (ratio.is_finite() && *ratio > 0.0 && half_angle.is_finite()).then_some(())?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(first[0], first[1], first[2]),
@@ -1683,10 +1683,10 @@ pub fn planar_curve_pcurve(
         return None;
     };
     let origin = [origin.x, origin.y, origin.z];
-    let normal = normalized([normal.x, normal.y, normal.z])?;
-    let u_axis = normalized([u_axis.x, u_axis.y, u_axis.z])?;
+    let normal = normalize([normal.x, normal.y, normal.z])?;
+    let u_axis = normalize([u_axis.x, u_axis.y, u_axis.z])?;
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
-    let v_axis = normalized(cross(normal, u_axis))?;
+    let v_axis = normalize(cross(normal, u_axis))?;
     let project_point = |point: [f64; 3], tolerance: f64| {
         let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
         (dot(relative, normal).abs() <= tolerance)
@@ -1698,12 +1698,12 @@ pub fn planar_curve_pcurve(
             .then_some(Point2::new(dot(direction, u_axis), dot(direction, v_axis)))
     };
     let conic_frame = |center: [f64; 3], axis: [f64; 3], x_axis: [f64; 3], scale: f64| {
-        let axis = normalized(axis)?;
-        let x_axis = normalized(x_axis)?;
+        let axis = normalize(axis)?;
+        let x_axis = normalize(x_axis)?;
         ((dot(axis, normal).abs() - 1.0).abs() <= EPS_ORTHO
             && dot(axis, x_axis).abs() <= EPS_ORTHO)
             .then_some(())?;
-        let y_axis = normalized(cross(axis, x_axis))?;
+        let y_axis = normalize(cross(axis, x_axis))?;
         Some((
             project_point(center, EPS_AGREE * scale.max(1.0))?,
             project_direction(x_axis)?,

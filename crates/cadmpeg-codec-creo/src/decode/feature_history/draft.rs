@@ -9,7 +9,7 @@ use super::super::holes::{
     simple_drilled_hole_envelope_spans, simple_drilled_hole_placement, simple_drilled_hole_recipe,
     simple_hole_geometry, stepped_hole_form,
 };
-use super::super::sketch::{approximately_equal, normalized};
+use super::super::sketch::approximately_equal;
 use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};
 use super::super::sweep::{
     feature_outline_planes, feature_plane_equations, generated_arc_cylinder_extent,
@@ -41,6 +41,7 @@ use crate::decode::sketch_transfer::recipe::{
     feature_section_sweep_semantics_conflict,
 };
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -631,8 +632,7 @@ pub(in super::super) fn schema_feature_definition(
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
                 let raw_normal: [f64; 3] = values[6..9].try_into().expect("three values");
                 let raw_u_axis: [f64; 3] = values[0..3].try_into().expect("three values");
-                if let (Some(normal), Some(u_axis)) =
-                    (normalized(raw_normal), normalized(raw_u_axis))
+                if let (Some(normal), Some(u_axis)) = (normalize(raw_normal), normalize(raw_u_axis))
                 {
                     if dot(normal, u_axis).abs() <= EPS_FRAME_ORTHONORMAL {
                         let origin: [f64; 3] = values[9..12].try_into().expect("three values");
@@ -661,9 +661,9 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
-                let x_axis = normalized(values[0..3].try_into().expect("three values"));
-                let y_axis = normalized(values[3..6].try_into().expect("three values"));
-                let z_axis = normalized(values[6..9].try_into().expect("three values"));
+                let x_axis = normalize(values[0..3].try_into().expect("three values"));
+                let y_axis = normalize(values[3..6].try_into().expect("three values"));
+                let z_axis = normalize(values[6..9].try_into().expect("three values"));
                 let origin: [f64; 3] = values[9..12].try_into().expect("three values");
                 if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
                     let right_handed =
