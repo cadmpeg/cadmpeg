@@ -557,12 +557,32 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             history.configurations.sort_by_key(|record| record.ordinal);
+            if let Some(pair) = history
+                .configurations
+                .windows(2)
+                .find(|pair| pair[0].ordinal == pair[1].ordinal)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks history {} repeats configuration ordinal {}",
+                    history.id, pair[1].ordinal
+                )));
+            }
             history.features = features
                 .iter()
                 .filter(|record| record.parent == history.id)
                 .cloned()
                 .collect();
             history.features.sort_by_key(|record| record.ordinal);
+            if let Some(pair) = history
+                .features
+                .windows(2)
+                .find(|pair| pair[0].ordinal == pair[1].ordinal)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks history {} repeats feature ordinal {}",
+                    history.id, pair[1].ordinal
+                )));
+            }
         }
         for lane in &mut native.feature_input_lanes {
             lane.classes = classes

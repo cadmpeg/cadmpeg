@@ -419,3 +419,28 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         assert!(error.to_string().contains(field), "{field}: {error}");
     }
 }
+
+#[test]
+fn native_load_rejects_duplicate_history_ordinals_from_json() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+    for (arena, message) in [
+        ("features", "repeats feature ordinal"),
+        ("configurations", "repeats configuration ordinal"),
+    ] {
+        let mut wire = original.clone();
+        let records = wire[arena].as_array_mut().unwrap();
+        let mut duplicate = records[0].clone();
+        duplicate["id"] =
+            serde_json::json!(format!("{}-duplicate", records[0]["id"].as_str().unwrap()));
+        records.push(duplicate);
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(error.to_string().contains(message), "{arena}: {error}");
+    }
+}
