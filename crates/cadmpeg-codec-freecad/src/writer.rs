@@ -45,36 +45,18 @@ pub(crate) fn write_seekable(
     let ir = resolution.ir();
     let namespace = resolution.namespace();
     let document = resolution.document();
-    let entry_records = namespace
-        .arenas()
-        .get("entries")
-        .map_or(&[][..], Vec::as_slice);
-    let mut entries = entry_records
-        .iter()
-        .enumerate()
-        .map(|(record_index, record)| {
-            record
-                .field("name")
-                .and_then(|name| name.as_str().map(str::to_owned))
-                .map(|name| EntrySlot { record_index, name })
-                .ok_or_else(|| {
-                    CodecError::Malformed("FCStd entry record has no string name".into())
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     validate_entry_names(&entries)?;
-    let source_document_slot = entries
+    let source_document = entries
         .iter()
         .find(|entry| entry.name == "Document.xml")
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
-    let source_document = entry_at(namespace, source_document_slot.record_index)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
-    drop(source_document);
     let written_graph = crate::persistence::parse_with_context(&document_xml, document, None)?;
     validate_declarations(
         &objects,
@@ -102,8 +84,7 @@ pub(crate) fn write_seekable(
             (left.name != "Document.xml", left.name.as_str())
                 .cmp(&(right.name != "Document.xml", right.name.as_str()))
         });
-        for slot in &entries {
-            let entry = entry_at(namespace, slot.record_index)?;
+        for entry in &entries {
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
@@ -141,23 +122,7 @@ pub(crate) struct WriteOutcome {
     pub(crate) notes: Vec<String>,
 }
 
-struct EntrySlot {
-    record_index: usize,
-    name: String,
-}
-
-fn entry_at(
-    namespace: &cadmpeg_ir::native::NativeNamespace,
-    index: usize,
-) -> Result<EntryRecord, CodecError> {
-    namespace
-        .arena_iter_as::<EntryRecord>("entries")
-        .nth(index)
-        .ok_or_else(|| CodecError::Malformed("FCStd entry record disappeared".into()))?
-        .map_err(CodecError::from)
-}
-
-fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
+fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
     let mut names = HashSet::new();
     for entry in entries {
         if entry.name.is_empty()
