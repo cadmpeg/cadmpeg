@@ -43,16 +43,19 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         format!("f3d:configuration:entry#{name}")
     );
     assert_eq!(
-        native.design_configurations[0].kind,
+        native.design_configurations[0].kind(),
         crate::records::DesignConfigurationKind::Table
     );
     assert_eq!(
-        native.design_configurations[0].variant_order,
+        native.design_configurations[0].variant_order(),
         ["Small", "Medium", "Large"]
     );
-    assert_eq!(native.design_configurations[0].payload["active"], "Medium");
     assert_eq!(
-        native.design_configurations[0].payload["extension"]["future"],
+        native.design_configurations[0].payload()["active"],
+        "Medium"
+    );
+    assert_eq!(
+        native.design_configurations[0].payload()["extension"]["future"],
         7
     );
     assert_eq!(decoded.ir().model.configurations.len(), 3);
@@ -79,24 +82,16 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         medium.native_ref.as_deref(),
         Some(native.design_configurations[0].id.as_str())
     );
-    let mut invalid_order = decoded.ir().clone();
-    update_f3d_native(&mut invalid_order, |native| {
-        native.design_configurations[0].variant_order.pop();
-    });
-    assert!(crate::validate::validate_native(&invalid_order)
-        .iter()
-        .any(|finding| finding
-            .message
-            .contains("invalid identity, payload, or variant order")));
-
     let mut retained = decoded.ir().clone();
     update_f3d_native(&mut retained, |native| {
-        native.design_configurations[0].payload["active"] = "Narrow".into();
-        native.design_configurations[0].payload["configurations"]["Narrow"] =
+        let configuration = &mut native.design_configurations[0];
+        let mut payload = configuration.payload().clone();
+        payload["active"] = "Narrow".into();
+        payload["configurations"]["Narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
-        native.design_configurations[0]
-            .variant_order
-            .push("Narrow".into());
+        let mut order = configuration.variant_order().to_vec();
+        order.push("Narrow".into());
+        configuration.try_set_payload(payload, order).unwrap();
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
         &f3d_native(&retained).design_configurations,
@@ -173,8 +168,8 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             "configuration rule(s) were retained without an unambiguous neutral activation target"
         )));
     let rule = f3d_native(rule_result.ir()).design_configurations.remove(0);
-    assert_eq!(rule.kind, crate::records::DesignConfigurationKind::Rule);
-    assert_eq!(rule.payload["activate"], "wide");
+    assert_eq!(rule.kind(), crate::records::DesignConfigurationKind::Rule);
+    assert_eq!(rule.payload()["activate"], "wide");
 
     let invalid = F3dCodec.decode(
         &mut Cursor::new(f3d_with_configuration(
@@ -240,7 +235,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert!(partial_rule.ir().model.configurations.is_empty());
     let partial_native = f3d_native(partial_rule.ir());
     assert_eq!(
-        partial_native.design_configurations[0].payload["vendorExtension"],
+        partial_native.design_configurations[0].payload()["vendorExtension"],
         7
     );
     assert!(partial_rule
