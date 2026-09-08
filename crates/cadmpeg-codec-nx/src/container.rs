@@ -418,7 +418,7 @@ impl<'a> Container<'a> {
                         let entry_offset = self
                             .entries
                             .get(*entry_index)
-                            .and_then(|entry| entry.file_span())
+                            .and_then(crate::container::DirEntry::file_span)
                             .map_or(0, |(offset, _)| offset);
                         blocks.insert(
                             format!("nx:om-data-blocks-{section_ordinal}:block#0"),
@@ -486,7 +486,7 @@ impl<'a> Container<'a> {
         self.entries
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| entry.file_span().map(|span| (entry, span)))
+            .filter_map(crate::container::DirEntry::file_span.map(|span| (entry, span)))
             .flat_map(|(entry, (offset, size))| {
                 let Ok(offset) = usize::try_from(offset) else {
                     return Vec::new();
@@ -555,7 +555,7 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .filter(|entry| entry.file_span().is_some())?;
+            .filter(crate::container::DirEntry::file_span.is_some())?;
         let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let bytes = self.data.get(offset..offset.checked_add(size)?)?;
@@ -1009,7 +1009,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     }
     if entries
         .iter()
-        .filter_map(|entry| entry.file_span())
+        .filter_map(crate::container::DirEntry::file_span)
         .any(|(offset, size)| {
             offset
                 .checked_add(size)

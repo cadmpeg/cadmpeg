@@ -291,7 +291,7 @@ fn native_retains_rmfastload_table_and_member_words() {
         .entries
         .iter()
         .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-        .and_then(|entry| entry.file_span())
+        .and_then(crate::container::DirEntry::file_span)
         .expect("RMFastLoad span")
         .0;
     let (table, object_ids) =
