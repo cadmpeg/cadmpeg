@@ -1576,13 +1576,13 @@ fn exact_surface_offset_face_groups(
             continue;
         };
         if group.role() != DesignOperandRole::PROFILE
-            || group.frame.opaque_index != 252
-            || group.members.is_empty()
+            || group.frame.opaque_index.get() != 252
+            || group.members().is_empty()
             || !covered_references.insert(group.record_index)
         {
             return None;
         }
-        for member in group.members.iter().map(|member| &member.value) {
+        for member in group.members().iter().map(|member| &member.value) {
             if *member == *distance_record_index
                 || !scope
                     .reference_members
@@ -5158,7 +5158,7 @@ pub fn bind_mirror_constructions(
         let [crate::records::Located {
             value: plane_member,
             ..
-        }] = plane_group.members.as_slice()
+        }] = plane_group.members()
         else {
             continue;
         };
@@ -5219,7 +5219,7 @@ pub fn bind_mirror_constructions(
             } else {
                 continue;
             };
-        let seed_feature = match seed_group.members.as_slice() {
+        let seed_feature = match seed_group.members() {
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))

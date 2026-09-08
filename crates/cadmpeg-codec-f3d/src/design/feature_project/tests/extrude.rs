@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
@@ -650,41 +651,47 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )]
     ));
 
-    let body_group = DesignConstructionOperandGroup {
-        id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
-        scope_record_index: 12,
-        scope_reference_ordinal: 1,
-        record_index: 101,
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 200,
-            offset: 1026,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 1021,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 300,
-                offset: 1044,
+    let body_group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
+            scope_record_index: 12,
+            scope_reference_ordinal: 1,
+            record_index: 101,
+            byte_offset: 1000,
+            class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 200,
+                offset: 1026,
             }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 180,
-            opaque_index_offset: 1072,
-            opaque_scalar: 0.125,
-            opaque_scalar_offset: 1076,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
-        role_offset: 1054,
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![crate::records::Located {
+                        value: 300,
+                        offset: 1044,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 180,
+                    opaque_index_offset: 1072,
+                    opaque_scalar: 0.125,
+                    opaque_scalar_offset: 1076,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
+            role_offset: 1054,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1125,
-    };
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_byte_offset: 1125,
+        },
+    )
+    .unwrap();
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     let target_body = project_extrude(
         &scope,
@@ -715,10 +722,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.id = "f3d:Design/BulkStream.dat:operand-group#105".into();
     target_shape_group.record_index = 105;
     target_shape_group.scope_reference_ordinal = 2;
-    target_shape_group.members = vec![crate::records::Located {
-        value: 201,
-        offset: 1026,
-    }];
+    target_shape_group
+        .try_set_members(vec![crate::records::Located {
+            value: 201,
+            offset: 1026,
+        }])
+        .unwrap();
     target_shape_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -736,10 +745,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
     unrelated_target_group.record_index = 106;
     unrelated_target_group.scope_reference_ordinal = 3;
-    unrelated_target_group.members = vec![crate::records::Located {
-        value: 202,
-        offset: unrelated_target_group.members[0].offset,
-    }];
+    unrelated_target_group
+        .try_set_members(vec![crate::records::Located {
+            value: 202,
+            offset: unrelated_target_group.members()[0].offset,
+        }])
+        .unwrap();
     let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
@@ -860,10 +871,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
 
     let mut multi_target_group = target_shape_group.clone();
-    multi_target_group.members.push(crate::records::Located {
-        value: 202,
-        offset: 1030,
-    });
+    multi_target_group
+        .try_set_members(
+            multi_target_group
+                .members()
+                .iter()
+                .copied()
+                .chain([crate::records::Located {
+                    value: 202,
+                    offset: 1037,
+                }])
+                .collect(),
+        )
+        .unwrap();
     let mut second_target_operand = target_shape_operand.clone();
     second_target_operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#202".into();
     second_target_operand.owner = DesignOperandOwner::Group {

@@ -78,7 +78,7 @@ pub fn decode_edge_operands(
             Some((
                 native_stream(&group.id)?.to_owned(),
                 group.scope_record_index,
-                group.members.last()?.value,
+                group.members().last()?.value,
             ))
         })
         .collect::<HashSet<_>>();
@@ -106,7 +106,7 @@ pub fn decode_edge_operands(
                 native_stream(&group.id) == native_stream(&scope.id)
                     && group.scope_record_index == scope.record_index
             })
-            .flat_map(|group| group.members.iter().map(|member| member.value))
+            .flat_map(|group| group.members().iter().map(|member| member.value))
             .collect::<HashSet<_>>();
         if let Some(operation) = scope.surface_extend_operation() {
             member_indices.extend(operation.edge_record_indices.iter().copied());
@@ -222,7 +222,7 @@ pub fn decode_edge_treatment_vertex_operands(
                 })
                 .filter_map(|group| {
                     let mut ordinals = group
-                        .members
+                        .members()
                         .iter()
                         .map(|member| &member.value)
                         .enumerate()
@@ -627,7 +627,12 @@ pub fn decode_edge_identity_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
@@ -786,8 +791,11 @@ pub fn decode_face_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (group_member_index, record_index) in
-            group.members.iter().map(|member| &member.value).enumerate()
+        for (group_member_index, record_index) in group
+            .members()
+            .iter()
+            .map(|member| &member.value)
+            .enumerate()
         {
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
@@ -799,7 +807,7 @@ pub fn decode_face_operands(
                 continue;
             };
             let next_byte_offset = group
-                .members
+                .members()
                 .get(group_member_index + 1)
                 .and_then(|record| headers.get(&(stream, record.value)))
                 .copied()
@@ -1767,7 +1775,7 @@ pub fn decode_fillet_radius_groups(
                     group_ordinal,
                     group_record_index: group.record_index,
                     edge_operand_record_indices: group
-                        .members
+                        .members()
                         .iter()
                         .map(|member| member.value)
                         .collect(),
@@ -1804,7 +1812,7 @@ pub fn decode_fillet_radius_groups(
                 group_ordinal: 0,
                 group_record_index: group.record_index,
                 edge_operand_record_indices: group
-                    .members
+                    .members()
                     .iter()
                     .map(|member| member.value)
                     .collect(),
@@ -1841,7 +1849,7 @@ pub fn decode_fillet_radius_groups(
                     group_ordinal: 0,
                     group_record_index: group.record_index,
                     edge_operand_record_indices: group
-                        .members
+                        .members()
                         .iter()
                         .map(|member| member.value)
                         .collect(),
@@ -1886,7 +1894,11 @@ pub fn decode_fillet_radius_groups(
             scope_record_index: scope.record_index,
             group_ordinal: 0,
             group_record_index: group.record_index,
-            edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
+            edge_operand_record_indices: group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .collect(),
             law: DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index: *start,
                 end_radius_parameter_record_index: *end,
@@ -2229,16 +2241,8 @@ pub(crate) fn parse_construction_operand_group(
     let Ok(paired_class_tag) = paired_class_tag.try_into() else {
         return Unclosed;
     };
-    Complete(Box::new(DesignConstructionOperandGroup {
-        id: String::new(),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        members,
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
+    let Ok(frame) = DesignConstructionOperandGroupFrame::try_from(
+        crate::records::topology::DesignConstructionOperandGroupFrameDraft {
             member_count_offset,
             auxiliary_records,
             auxiliary_paths: Vec::new(),
@@ -2252,11 +2256,29 @@ pub(crate) fn parse_construction_operand_group(
             opaque_scalar_offset: opaque_index_offset + 4,
             variant,
         },
-        operand_role,
-        role_offset,
-        paired_class_tag,
-        paired_byte_offset,
-    }))
+    ) else {
+        return Unclosed;
+    };
+    let Ok(group) = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: String::new(),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            members,
+            lost_edge_references: Vec::new(),
+            frame,
+            operand_role,
+            role_offset,
+            paired_class_tag,
+            paired_byte_offset,
+        },
+    ) else {
+        return Unclosed;
+    };
+    Complete(Box::new(group))
 }
 
 /// Read the legacy Move/RemoveBody tail whose two flag bytes have no
@@ -2346,9 +2368,18 @@ pub fn bind_construction_operand_trailing_records(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     for group in groups {
-        group.frame.trailing_transforms.clear();
-        group.frame.trailing_dual_transforms.clear();
-        group.frame.trailing_flags.clear();
+        group
+            .frame
+            .try_set_trailing_transforms(Vec::new())
+            .map_err(crate::error::malformed)?;
+        group
+            .frame
+            .try_set_trailing_dual_transforms(Vec::new())
+            .map_err(crate::error::malformed)?;
+        group
+            .frame
+            .try_set_trailing_flags(Vec::new())
+            .map_err(crate::error::malformed)?;
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
@@ -2357,19 +2388,34 @@ pub fn bind_construction_operand_trailing_records(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for record in &group.frame.trailing_records {
+        let mut trailing_transforms = Vec::new();
+        let mut trailing_dual_transforms = Vec::new();
+        let mut trailing_flags = Vec::new();
+        for record in group.frame.trailing_records() {
             let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
-                group.frame.trailing_transforms.push(transform);
+                trailing_transforms.push(transform);
             } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
             {
-                group.frame.trailing_dual_transforms.push(transform);
+                trailing_dual_transforms.push(transform);
             } else if let Some(flag) = parse_construction_operand_flag(bytes, header) {
-                group.frame.trailing_flags.push(flag);
+                trailing_flags.push(flag);
             }
         }
+        group
+            .frame
+            .try_set_trailing_transforms(trailing_transforms)
+            .map_err(crate::error::malformed)?;
+        group
+            .frame
+            .try_set_trailing_dual_transforms(trailing_dual_transforms)
+            .map_err(crate::error::malformed)?;
+        group
+            .frame
+            .try_set_trailing_flags(trailing_flags)
+            .map_err(crate::error::malformed)?;
     }
     Ok(())
 }
@@ -2410,7 +2456,10 @@ pub fn bind_construction_operand_paths(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     for group in groups {
-        group.frame.auxiliary_paths.clear();
+        group
+            .frame
+            .try_set_auxiliary_paths(Vec::new())
+            .map_err(crate::error::malformed)?;
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
@@ -2419,6 +2468,7 @@ pub fn bind_construction_operand_paths(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let mut auxiliary_paths = Vec::new();
         for record in &group.frame.auxiliary_records {
             let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
@@ -2426,9 +2476,13 @@ pub fn bind_construction_operand_paths(
             if let Some(path) =
                 parse_construction_operand_path(bytes, group.scope_record_index, header)
             {
-                group.frame.auxiliary_paths.push(path);
+                auxiliary_paths.push(path);
             }
         }
+        group
+            .frame
+            .try_set_auxiliary_paths(auxiliary_paths)
+            .map_err(crate::error::malformed)?;
     }
     Ok(())
 }
@@ -2603,7 +2657,7 @@ pub fn decode_construction_operand_identities(
         };
         let Some(trailing_record_index) = group
             .frame
-            .trailing_records
+            .trailing_records()
             .first()
             .map(|record| &record.value)
         else {
@@ -2696,11 +2750,11 @@ pub fn bind_lost_edge_groups(
             start -= 1;
         }
         let run = &stream_edges[start..=*terminal];
-        if run.len() != group.members.len() {
+        if run.len() != group.members().len() {
             return Err(CodecError::malformed(format_args!(
                 "Fusion construction group {} has {} operands but its lost-edge run has {} records",
                 group.record_index,
-                group.members.len(),
+                group.members().len(),
                 run.len()
             )));
         }
@@ -3026,7 +3080,12 @@ pub fn decode_entity_selection_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -3454,7 +3513,12 @@ pub fn decode_body_recipe_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };

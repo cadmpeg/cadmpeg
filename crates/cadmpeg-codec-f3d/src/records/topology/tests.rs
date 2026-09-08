@@ -261,7 +261,6 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
     for fields in [
         "",
         r#","trailing_record_indices":[300],"trailing_record_offsets":[1044]"#,
-        r#","trailing_record_indices":[300,301],"trailing_record_offsets":[1044,1055]"#,
     ] {
         let wire = format!(
             r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#
@@ -1014,3 +1013,5 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         assert_eq!(changed, group);
     }
 }
+
+mod construction_frame;

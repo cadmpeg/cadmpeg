@@ -78,39 +78,45 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         .iter()
         .map(|parameter| (parameter.record_index, parameter))
         .collect::<Vec<_>>();
-    let path_group = DesignConstructionOperandGroup {
-        id: "f3d:test:pipe-group#20".into(),
-        scope_record_index: 1,
-        scope_reference_ordinal: 4,
-        record_index: 20,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 21,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    let path_group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "f3d:test:pipe-group#20".into(),
+            scope_record_index: 1,
+            scope_reference_ordinal: 4,
+            record_index: 20,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 21,
+                offset: 0,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::ROLE_0X5,
+            ),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X5,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
+    )
+    .unwrap();
 
     let definition = crate::design::feature_project::project_fixed_pipe(
         &scope,

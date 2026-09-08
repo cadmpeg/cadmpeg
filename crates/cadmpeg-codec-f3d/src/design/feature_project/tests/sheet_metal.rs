@@ -6,6 +6,8 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
+use crate::records::topology::DesignConstructionOperandGroup;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
 
 #[test]
@@ -106,39 +108,45 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         parameter(398, "FlangeHeight", "mm", 2.5),
         parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
     ];
-    let group = crate::records::topology::DesignConstructionOperandGroup {
-        id: format!("{stream}:design-construction-operand-group#385"),
-        scope_record_index: 382,
-        scope_reference_ordinal: 1,
-        record_index: 385,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 388,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 0,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    let group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: format!("{stream}:design-construction-operand-group#385"),
+            scope_record_index: 382,
+            scope_reference_ordinal: 1,
+            record_index: 385,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 388,
+                offset: 0,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 0,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::BODIES_B,
+            ),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::BODIES_B,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
+    )
+    .unwrap();
 
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
@@ -286,10 +294,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut second_group = group.clone();
     second_group.id = format!("{stream}:design-construction-operand-group#415");
     second_group.record_index = 415;
-    second_group.members = vec![crate::records::Located {
-        value: 418,
-        offset: second_group.members[0].offset,
-    }];
+    second_group
+        .try_set_members(vec![crate::records::Located {
+            value: 418,
+            offset: second_group.members()[0].offset,
+        }])
+        .unwrap();
     let multi_groups = [group, second_group];
     let multi_inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
@@ -577,47 +587,55 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         parameter(429, "ToObjectOffset", "mm", 1.5),
     ];
 
-    let edge_group = crate::records::topology::DesignConstructionOperandGroup {
-        id: format!("{stream}:design-construction-operand-group#385"),
-        scope_record_index: 382,
-        scope_reference_ordinal: 1,
-        record_index: 385,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 388,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 0,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    let edge_group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: format!("{stream}:design-construction-operand-group#385"),
+            scope_record_index: 382,
+            scope_reference_ordinal: 1,
+            record_index: 385,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 388,
+                offset: 0,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 0,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::BODIES_B,
+            ),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::BODIES_B,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
+    )
+    .unwrap();
     let mut target_group = edge_group.clone();
     target_group.id = format!("{stream}:design-construction-operand-group#421");
     target_group.scope_reference_ordinal = 2;
     target_group.record_index = 421;
-    target_group.members = vec![crate::records::Located {
-        value: 424,
-        offset: target_group.members[0].offset,
-    }];
+    target_group
+        .try_set_members(vec![crate::records::Located {
+            value: 424,
+            offset: target_group.members()[0].offset,
+        }])
+        .unwrap();
     target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
         DesignOperandRole::ROLE_0X21,
     );
@@ -888,38 +906,47 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         ];
     }
     let scope_record_index = scope.record_index;
-    let group = |record_index, ordinal, member| DesignConstructionOperandGroup {
-        id: format!("f3d:test:construction-group#{record_index}"),
-        scope_record_index,
-        scope_reference_ordinal: ordinal,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: member,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::BODIES_A,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
-        paired_byte_offset: 0,
+    let group = |record_index, ordinal, member| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("f3d:test:construction-group#{record_index}"),
+                scope_record_index,
+                scope_reference_ordinal: ordinal,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: member,
+                    offset: 0,
+                }],
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_A,
+                ),
+                role_offset: 0,
+                paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 0,
+            },
+        )
+        .unwrap()
     };
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
     assert!(matches!(
@@ -1024,9 +1051,12 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             evaluated_value: value,
             evaluated_value_offset: 0,
         };
-    let group =
-        |scope_record_index: u32, record_index: u32, member: u32, role: DesignOperandRole| {
-            DesignConstructionOperandGroup {
+    let group = |scope_record_index: u32,
+                 record_index: u32,
+                 member: u32,
+                 role: DesignOperandRole| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
                 id: format!("{stream}:design-construction-operand-group#{record_index}"),
                 scope_record_index,
                 scope_reference_ordinal: 0,
@@ -1038,27 +1068,32 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                     offset: 0,
                 }],
                 lost_edge_references: Vec::new(),
-                frame: DesignConstructionOperandGroupFrame {
-                    member_count_offset: 0,
-                    auxiliary_records: Vec::new(),
-                    auxiliary_paths: Vec::new(),
-                    trailing_records: Vec::new(),
-                    trailing_transforms: Vec::new(),
-                    trailing_dual_transforms: Vec::new(),
-                    trailing_flags: Vec::new(),
-                    opaque_index: 0,
-                    opaque_index_offset: 0,
-                    opaque_scalar: 0.0,
-                    opaque_scalar_offset: 0,
-                    variant: false,
-                },
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 0,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
                 operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
                 role_offset: 0,
                 paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned())
                     .unwrap(),
                 paired_byte_offset: 0,
-            }
-        };
+            },
+        )
+        .unwrap()
+    };
     let operation = |parameter_owners| DesignHemOperation {
         edge_wrapper_record_index: 708,
         edge_group_record_index: 710,

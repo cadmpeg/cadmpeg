@@ -185,7 +185,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                         && group.scope_record_index == scope.record_index
                         && group.role() == DesignOperandRole::PROFILE
                         && group
-                            .members
+                            .members()
                             .iter()
                             .map(|member| member.value)
                             .eq([profile_operand.record_index])
@@ -217,7 +217,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
                         && group.role() == DesignOperandRole::PROFILE
-                        && group.members.len() == 1
+                        && group.members().len() == 1
                         && native_stream(&group.id) == Some(stream)
                 });
                 let group = matching_groups.next()?;
@@ -228,7 +228,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     operand.scope_record_index == scope.record_index
                         && operand.group_record_index == group.record_index
                         && operand.group_member_ordinal == 0
-                        && operand.record_index == group.members[0].value
+                        && operand.record_index == group.members()[0].value
                         && native_stream(&operand.id) == Some(stream)
                 });
                 let operand = matching_operands.next()?;
@@ -283,7 +283,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     && native_stream(&group.id) == Some(stream)
             });
             let group = matching_groups.next()?;
-            if matching_groups.next().is_some() || group.members.len() != 1 {
+            if matching_groups.next().is_some() || group.members().len() != 1 {
                 return None;
             }
             *path = resolve_entity_selection_path(group, &path_resolution)?;
@@ -316,7 +316,7 @@ pub(crate) fn bind_split_face_sketch_selections(
         let mut matching_groups = resolution.groups.iter().filter(|group| {
             group.id == *group_id
                 && group.role() == DesignOperandRole::ROLE_0X21
-                && !group.members.is_empty()
+                && !group.members().is_empty()
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -348,7 +348,7 @@ pub(crate) fn bind_surface_trim_sketch_selections(
         let mut matching_groups = resolution.groups.iter().filter(|group| {
             group.id == *group_id
                 && group.role() == DesignOperandRole::ROLE_0X21
-                && !group.members.is_empty()
+                && !group.members().is_empty()
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -1838,16 +1838,21 @@ fn resolve_entity_selection_path(
     use cadmpeg_ir::features::PathRef;
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    if group.members.is_empty() {
+    if group.members().is_empty() {
         return None;
     }
     let stream = native_stream(&group.id)?;
-    let mut selected_identities = Vec::with_capacity(group.members.len());
-    let mut member_records = HashSet::with_capacity(group.members.len());
+    let mut selected_identities = Vec::with_capacity(group.members().len());
+    let mut member_records = HashSet::with_capacity(group.members().len());
     let mut primary_identity = None;
     let mut asset_id = None;
     let mut context_id = None;
-    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .enumerate()
+    {
         let ordinal = u32::try_from(ordinal).ok()?;
         if !member_records.insert(record_index) {
             return None;
@@ -2268,7 +2273,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         matches!(
             group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
-        ) && group.members.len() == 1
+        ) && group.members().len() == 1
     }) {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -2278,7 +2283,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(header) = headers.get(&(stream, group.members[0].value)) else {
+        let Some(header) = headers.get(&(stream, group.members()[0].value)) else {
             continue;
         };
         let Some(profile) = parse_sketch_profile(
@@ -2336,7 +2341,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         matches!(
             group.role(),
             DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
-        ) && !group.members.is_empty()
+        ) && !group.members().is_empty()
     }) {
         if let Some(path) = resolved_loft_entity_selection_path(group, resolution) {
             resolved_entity_paths.insert(group.id.clone(), path);
@@ -2344,7 +2349,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     }
     for group in groups
         .iter()
-        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5 && group.members.len() == 1)
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5 && group.members().len() == 1)
     {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -2357,7 +2362,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
-                    && operand.record_index == group.members[0].value
+                    && operand.record_index == group.members()[0].value
             });
         let Some(operand) = operands.next() else {
             continue;

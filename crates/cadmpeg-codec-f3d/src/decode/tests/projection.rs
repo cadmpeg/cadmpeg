@@ -1446,9 +1446,9 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 1.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 0x10_0000_0000u64,
