@@ -1245,7 +1245,9 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     ir.model.sketch_entities.push(SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::native("test".into()),
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("test").expect("nonempty source identity"),
+        ),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("test:test:sketch-constraint#0").unwrap(),

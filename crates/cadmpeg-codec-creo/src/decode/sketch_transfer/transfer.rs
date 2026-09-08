@@ -212,7 +212,11 @@ pub(in super::super) fn transfer_sketches(
                     .get(&segment.offset)
                     .cloned()
                     .flatten()
-                    .or_else(|| Some(SketchGeometry::native("line".to_string())));
+                    .or_else(|| {
+                        Some(SketchGeometry::native(
+                            cadmpeg_ir::products::NonEmptyString::new("line".to_string())?,
+                        ))
+                    });
             }
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
@@ -461,7 +465,7 @@ pub(in super::super) fn transfer_sketches(
             &materialized_saved_section_external_ids,
             profiles,
             &profile_entities,
-        );
+        )?;
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (external_id, offset) in solver_only_section_entities(definition) {
@@ -484,15 +488,20 @@ pub(in super::super) fn transfer_sketches(
                     id,
                     sketch_id.clone(),
                     SketchGeometry::native(
-                        match solver_only_section_entity_family(definition, external_id) {
-                            Some(SectionEntityIncidenceFamily::Point) => "point",
-                            Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
-                            Some(SectionEntityIncidenceFamily::Line) => "line",
-                            Some(SectionEntityIncidenceFamily::Arc) => "arc",
-                            Some(SectionEntityIncidenceFamily::Circular) => "circle",
-                            None => "solver_only_section_entity",
-                        }
-                        .to_string(),
+                        cadmpeg_ir::products::NonEmptyString::new(
+                            match solver_only_section_entity_family(definition, external_id) {
+                                Some(SectionEntityIncidenceFamily::Point) => "point",
+                                Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                                Some(SectionEntityIncidenceFamily::Line) => "line",
+                                Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                                Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                                None => "solver_only_section_entity",
+                            }
+                            .to_string(),
+                        )
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                        })?,
                     ),
                 )
                 .with_construction(true)

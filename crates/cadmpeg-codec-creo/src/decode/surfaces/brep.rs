@@ -1012,7 +1012,7 @@ pub(in super::super) fn transfer_native_brep(
     derived_intersection_curves: &BTreeSet<CurveId>,
     analytic_pcurve_carriers: &BTreeSet<CurveId>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-) -> NativeBrepTransferSummary {
+) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir);
     let planes = carriers
         .iter()
@@ -1431,7 +1431,12 @@ pub(in super::super) fn transfer_native_brep(
             position: Point3::new(position[0], position[1], position[2]),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("topology:vertex#{vertex_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "topology:vertex#{vertex_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1451,11 +1456,11 @@ pub(in super::super) fn transfer_native_brep(
         || diagnostics.legacy_body_ownership_ambiguous
         || diagnostics.empty_component_count != 0
     {
-        return NativeBrepTransferSummary {
+        return Ok(NativeBrepTransferSummary {
             topological_point_count: solved_point_count,
             diagnostics,
             ..NativeBrepTransferSummary::default()
-        };
+        });
     }
     diagnostics.emitted_face_count = body_components
         .iter()
@@ -1600,7 +1605,12 @@ pub(in super::super) fn transfer_native_brep(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{curve_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{curve_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -1801,7 +1811,14 @@ pub(in super::super) fn transfer_native_brep(
                     },
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: format!("VisibGeom:{face_id}"),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                            "VisibGeom:{face_id}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
                         name: None,
                         color: None,
                         visible: None,
@@ -2029,18 +2046,18 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
     }
-    NativeBrepTransferSummary {
+    Ok(NativeBrepTransferSummary {
         topological_point_count: solved_point_count,
         native_topological_edge_count: neutral_edge_curves.len(),
         diagnostics,
-    }
+    })
 }
 
 pub(in super::super) fn transfer_cap_pair_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for pair in &scan.curves.fc05_cylinder_cap_pairs {
         let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
             continue;
@@ -2076,7 +2093,13 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", pair.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    pair.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -2141,7 +2164,12 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{curve_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{curve_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -2151,4 +2179,5 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             });
         }
     }
+    Ok(())
 }

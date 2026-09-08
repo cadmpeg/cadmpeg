@@ -3,6 +3,8 @@ use super::super::super::graph::{
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
     B5Surface,
 };
+const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
+
 use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
@@ -440,7 +442,12 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         [8.0, 0.0, 2.0],
     )
     .expect("tolerant trimmed range");
-    assert!((tolerant.edge_tolerance.expect("edge tolerance") - (1e-4 + 1.0e-9)).abs() < 1e-15);
+    assert!(
+        (tolerant.edge_tolerance.expect("edge tolerance").get()
+            - (1e-4 + EPS_PCURVE_RESIDUAL_INCREMENT))
+            .abs()
+            < 1e-15
+    );
 }
 
 #[test]
@@ -510,7 +517,9 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     ));
     let tolerant = oriented_line_plan(&line, [1.001, 2.0, 5.0], [1.0, 2.0, 9.0])
         .expect("tolerant line endpoints");
-    assert!(tolerant.edge_tolerance.is_some_and(|value| value > 0.001));
+    assert!(tolerant
+        .edge_tolerance
+        .is_some_and(|value| value.get() > 0.001));
     assert_eq!(tolerant.cache_fit_tolerance, None);
     assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
     assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());

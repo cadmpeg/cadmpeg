@@ -124,7 +124,7 @@ fn append_oriented_wire_curve(
     geometry: CurveGeometry,
     source_pos: usize,
     procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
         let construction_id =
             ProceduralCurveId::mint(format!("{}-construction", curve_id.as_str()))
@@ -139,7 +139,9 @@ fn append_oriented_wire_curve(
         );
         annotations
             .derived(&construction_id, "curve")
-            .derived(&construction_id, "definition");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&construction_id, "definition")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         match ProceduralCurve::try_new(construction_id.clone(), definition, cache_fit_tolerance) {
             Ok(procedural) => {
                 let cache = match geometry {
@@ -166,12 +168,15 @@ fn append_oriented_wire_curve(
         "oriented_support_model_curve",
         Exactness::Derived,
     );
-    annotations.derived(&curve_id, "geometry");
+    annotations
+        .derived(&curve_id, "geometry")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.curves.push(Curve {
         id: curve_id,
         geometry,
         source_object: None,
     });
+    Ok(())
 }
 
 fn source_wire_procedural(ir: &CadIr, geometry: &CurveGeometry) -> Option<WireSourceProcedural> {
@@ -198,7 +203,7 @@ fn transfer_closed_wire_loops(
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
-) -> WireTransferCounts {
+) -> Result<WireTransferCounts, cadmpeg_core::CodecError> {
     let mut counts = WireTransferCounts::default();
     let root_owns_support_runs = ownership_root.is_some_and(|root| {
         root.face_slots.len() == support_runs.len()
@@ -285,7 +290,9 @@ fn transfer_closed_wire_loops(
                 );
                 annotations
                     .derived(&point_id, "position")
-                    .derived(&vertex_id, "point");
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .derived(&vertex_id, "point")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.points.push(Point {
                     id: point_id.clone(),
                     position: start,
@@ -294,7 +301,12 @@ fn transfer_closed_wire_loops(
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
-                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
+                    tolerance: Some(
+                        const {
+                            cadmpeg_ir::units::PositiveScalar::new(ZERO_ENTITY_WIRE_TOLERANCE)
+                                .expect("positive finite tolerance")
+                        },
+                    ),
                 });
                 vertex_ids.push(vertex_id);
                 counts.points += 1;
@@ -467,7 +479,7 @@ fn transfer_closed_wire_loops(
                                     geometry,
                                     support.pos,
                                     procedural,
-                                );
+                                )?;
                                 (oriented_curve_id, Some(edge_range))
                             }
                         } else {
@@ -498,18 +510,28 @@ fn transfer_closed_wire_loops(
                 );
                 annotations
                     .derived(&edge_id, "curve")
+                    .map_err(cadmpeg_core::CodecError::malformed)?
                     .derived(&edge_id, "start")
-                    .derived(&edge_id, "end");
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .derived(&edge_id, "end")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(curve_id),
                     start: vertex_ids[index].clone(),
                     end: vertex_ids[(index + 1) % member_count].clone(),
                     param_range,
-                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
+                    tolerance: Some(
+                        const {
+                            cadmpeg_ir::units::PositiveScalar::new(ZERO_ENTITY_WIRE_TOLERANCE)
+                                .expect("positive finite tolerance")
+                        },
+                    ),
                 });
                 if param_range.is_some() {
-                    annotations.derived(&edge_id, "param_range");
+                    annotations
+                        .derived(&edge_id, "param_range")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -547,7 +569,7 @@ fn transfer_closed_wire_loops(
 
     if root_owns_support_runs && counts.loops != 0 {
         let Some(root) = ownership_root else {
-            return counts;
+            return Ok(counts);
         };
         let identity = root.body_record_ordinal();
         let body_id = BodyId::mint(format!("catia:zero-entity:owned-wire-body#{identity}"))
@@ -605,7 +627,7 @@ fn transfer_closed_wire_loops(
         counts.owned_bodies += 1;
     }
 
-    counts
+    Ok(counts)
 }
 
 pub(crate) fn try_decode_zero_entity(
@@ -680,7 +702,7 @@ pub(crate) fn try_decode_zero_entity(
                     "support_model_curve",
                     Exactness::Derived,
                 );
-                annotations.derived(&curve_id, "geometry");
+                annotations.derived(&curve_id, "geometry").ok()?;
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry,
@@ -771,8 +793,11 @@ pub(crate) fn try_decode_zero_entity(
             );
             annotations
                 .derived(&curve_id, "geometry")
+                .ok()?
                 .derived(&construction_id, "curve")
-                .derived(&construction_id, "definition");
+                .ok()?
+                .derived(&construction_id, "definition")
+                .ok()?;
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Procedural {
@@ -823,9 +848,10 @@ pub(crate) fn try_decode_zero_entity(
             &support_curve_ids,
             ownership_root.as_ref(),
         )
+        .ok()?
     };
 
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
     let mut coverage: cadmpeg_ir::Coverage = [
         (
             crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
@@ -1057,7 +1083,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        );
+        )
+        .expect("valid exactness fields");
 
         assert_eq!(counts.edges, 2);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
@@ -1174,7 +1201,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             Some(&ownership_root),
-        );
+        )
+        .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
         assert_eq!(counts.owned_bodies, 1);
@@ -1309,7 +1337,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        );
+        )
+        .expect("valid exactness fields");
 
         assert_eq!(counts.loops, 1);
         assert_eq!(
@@ -1402,7 +1431,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        );
+        )
+        .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
         assert_eq!(counts.loops, 1);
@@ -1492,7 +1522,8 @@ mod tests {
             &support_runs,
             &HashMap::new(),
             None,
-        );
+        )
+        .expect("valid exactness fields");
 
         assert_eq!(counts, WireTransferCounts::default());
         assert!(ir.model.bodies.is_empty());

@@ -372,7 +372,10 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
     }));
-    ir.model.sketch_entities[0].geometry = SketchGeometry::native("center-bearing-curve".into());
+    ir.model.sketch_entities[0].geometry = SketchGeometry::native(
+        crate::products::NonEmptyString::new("center-bearing-curve")
+            .expect("nonempty source identity"),
+    );
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
@@ -2749,4 +2752,36 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
         direction: Vector3::new(0.0, 1.0, 0.0)
     })
     .is_ok());
+}
+
+#[test]
+fn native_and_external_geometry_identity_admission_preserves_wire() {
+    use super::{SketchGeometry, SpatialSketchGeometry};
+    for (wire, field) in [
+        (
+            serde_json::json!({"kind": "native", "native_kind": "line"}),
+            "native_kind",
+        ),
+        (
+            serde_json::json!({"kind": "external_reference", "object": "Sketch001"}),
+            "object",
+        ),
+    ] {
+        let value: SketchGeometry =
+            serde_json::from_value(wire.clone()).expect("nonempty identity");
+        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let mut invalid = wire;
+        invalid[field] = serde_json::json!("");
+        let error = serde_json::from_value::<SketchGeometry>(invalid).expect_err("empty identity");
+        assert!(error.to_string().contains(field));
+    }
+    let wire = serde_json::json!({"kind": "native", "native_kind": "curve"});
+    let value: SpatialSketchGeometry =
+        serde_json::from_value(wire.clone()).expect("nonempty native_kind");
+    assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+    let error = serde_json::from_value::<SpatialSketchGeometry>(
+        serde_json::json!({"kind": "native", "native_kind": ""}),
+    )
+    .expect_err("empty native_kind");
+    assert!(error.to_string().contains("native_kind"));
 }

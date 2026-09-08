@@ -891,10 +891,10 @@ fn finjpl_parser_splits_segments_and_classifies_type_words() {
     let bytes = finjpl_stream();
     let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
     assert_eq!(segments.len(), 2);
-    assert_eq!(segments[0].kind, FinjplKind::Storage);
+    assert_eq!(segments[0].kind(), FinjplKind::Storage);
     assert_eq!(segments[0].type_word, 0x0000_008e);
     assert_eq!(segments[0].range, 2..17);
-    assert_eq!(segments[1].kind, FinjplKind::ProjectFlags);
+    assert_eq!(segments[1].kind(), FinjplKind::ProjectFlags);
 }
 
 #[test]

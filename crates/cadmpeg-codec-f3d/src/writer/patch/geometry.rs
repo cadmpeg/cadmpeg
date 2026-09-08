@@ -357,9 +357,9 @@ fn patch_asm_geometry(
             match carrier {
                 DirectColorCarrier::NormalizedRgb { fields } => {
                     for (index, value) in fields.iter().copied().zip([
-                        f64::from(color.r),
-                        f64::from(color.g),
-                        f64::from(color.b),
+                        f64::from(color.r()),
+                        f64::from(color.g()),
+                        f64::from(color.b()),
                     ]) {
                         let offset =
                             asm_edits.required_payload_field(bytes, record, index, 0x06)?;
@@ -780,7 +780,7 @@ fn patch_asm_geometry(
 }
 
 fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
-    let channels = [color.r, color.g, color.b];
+    let channels = [color.r(), color.g(), color.b()];
     if channels
         .iter()
         .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(channel))

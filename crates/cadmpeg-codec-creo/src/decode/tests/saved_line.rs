@@ -633,7 +633,10 @@ fn saved_line_joins_through_order_table() {
     let solver_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
             .expect("valid test fixture"),
-        SketchGeometry::native("solver_only_section_entity".to_string()),
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity")
+                .expect("nonempty source identity"),
+        ),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -706,12 +709,18 @@ fn saved_line_joins_through_order_table() {
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
-            SketchGeometry::native("line".to_string()),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("line")
+                    .expect("nonempty source identity"),
+            ),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
                 .expect("valid test fixture"),
-            SketchGeometry::native("point".to_string()),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("point")
+                    .expect("nonempty source identity"),
+            ),
         ),
     ]);
     let solver_constraints = section_skamp_constraints_for_geometry(

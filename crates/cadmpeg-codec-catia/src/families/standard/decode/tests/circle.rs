@@ -57,7 +57,8 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     let curve = curve.expect("the serialized circle retains a carrier identity");
     assert_eq!(range, None);
     assert!(matches!(

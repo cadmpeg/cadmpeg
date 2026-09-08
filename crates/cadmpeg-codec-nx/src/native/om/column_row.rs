@@ -91,7 +91,7 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                 return Vec::new();
             };
             let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+                entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
             let block_count = records.len() + 1;
             crate::om::column_row::scan::index_rows(storage)
                 .into_iter()
@@ -135,7 +135,7 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                 return Vec::new();
             };
             let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+                entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
             let block_count = records.len() + 1;
             crate::om::column_row::scan::linked_rows(storage)
                 .into_iter()
@@ -181,7 +181,7 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
                 return Vec::new();
             };
             let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+                entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
             let block_count = records.len() + 1;
             crate::om::column_row::scan::target_rows(storage)
                 .into_iter()

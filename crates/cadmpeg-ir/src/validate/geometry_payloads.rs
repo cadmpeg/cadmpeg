@@ -149,14 +149,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
     {
-        if tolerance.is_some_and(nonpositive) {
-            findings.push(Finding {
-                check: Check::Tolerances,
-                severity: Severity::Error,
-                message: "topology tolerance is not positive and finite".into(),
-                entity: Some(id.to_owned()),
-            });
-        } else if tolerance.is_some_and(|value| value > 1.0e6) {
+        if tolerance.is_some_and(|value| value.get() > 1.0e6) {
             findings.push(Finding {
                 check: Check::Tolerances,
                 severity: Severity::Warning,

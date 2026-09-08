@@ -523,11 +523,11 @@ offset: 30,
     let mismatched_projected_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("line".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity")),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("arc".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("arc").expect("nonempty source identity")),
         ),
     ]);
     assert!(matches!(
@@ -790,7 +790,7 @@ offset: 30,
     ));
     let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:18".to_string()).expect("valid test fixture"),
-        SketchGeometry::native("bounded_curve".into()),
+        SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("bounded_curve").expect("nonempty source identity")),
     )]);
     let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
         &type_33_bounded_curve,
@@ -1038,11 +1038,11 @@ offset: 30,
     let point_pair_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("point".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity")),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("point".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity")),
         ),
     ]);
     assert_eq!(*(section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&point_pair_geometry))[0]
@@ -1061,7 +1061,7 @@ offset: 30,
     );
     let missing_point_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string()).expect("valid test fixture"),
-        SketchGeometry::native("point".into()),
+        SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity")),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&missing_point_geometry))
@@ -1190,7 +1190,7 @@ offset: 30,
         ),
         (
             native_endpoint.clone(),
-            SketchGeometry::native("solver_only_section_entity".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity").expect("nonempty source identity")),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
@@ -1268,7 +1268,7 @@ offset: 30,
     let mut unresolved_arc_geometry = incidence_geometry.clone();
     unresolved_arc_geometry.insert(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
-        SketchGeometry::native("arc".into()),
+        SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("arc").expect("nonempty source identity")),
     );
     let inactive = section_skamp_constraints_for_geometry(
         &point_coincidence_definition,
@@ -1300,7 +1300,7 @@ offset: 30,
     ];
     unresolved_arc_geometry.insert(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).expect("valid test fixture"),
-        SketchGeometry::native("solver_only_section_entity".into()),
+        SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity").expect("nonempty source identity")),
     );
     assert_eq!(*(section_skamp_constraints_for_geometry(
             &point_coincidence_definition,
@@ -1437,11 +1437,11 @@ offset: 30,
     let unresolved_curve_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("line".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity")),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("circle".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("circle").expect("nonempty source identity")),
         ),
     ]);
     assert_eq!(*(section_skamp_constraints_for_geometry(
@@ -1501,15 +1501,15 @@ offset: 30,
     let unresolved_point_symmetry_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:97".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("point".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity")),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:98".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("circle".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("circle").expect("nonempty source identity")),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).expect("valid test fixture"),
-            SketchGeometry::native("circle".into()),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new("circle").expect("nonempty source identity")),
         ),
     ]);
     assert_eq!(*(section_skamp_constraints_for_geometry(
@@ -2503,7 +2503,7 @@ offset: 30,
             Some(&BTreeMap::from([(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).expect("valid test fixture"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                    native_kind: "point".into(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
                 }).expect("valid test fixture"),
             )])),
         ),
@@ -2819,7 +2819,7 @@ offset: 30,
                 (
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string()).expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: "point".into(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
                     }).expect("valid test fixture"),
                 ),
             ])),
@@ -2878,7 +2878,7 @@ offset: 30,
             Some(&BTreeMap::from([(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string()).expect("valid test fixture"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                    native_kind: "line".into(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
                 }).expect("valid test fixture"),
             )])),
         )[0]
@@ -2901,7 +2901,7 @@ offset: 30,
                 (
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string()).expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: "line".into(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
                     }).expect("valid test fixture"),
                 ),
             ])),

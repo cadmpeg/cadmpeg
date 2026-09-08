@@ -145,7 +145,7 @@ impl TermUseNumericTail {
         self.offset
     }
     pub(crate) fn end(&self) -> usize {
-        self.offset + self.values.byte_len()
+        self.offset + self.values().byte_len()
     }
     pub(crate) fn values(&self) -> &NumericTailValues {
         &self.values

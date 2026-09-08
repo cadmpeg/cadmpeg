@@ -251,12 +251,7 @@ fn packed_u32(value: i64) -> Option<u32> {
 }
 
 fn packed_rgb(packed: u32) -> Color {
-    Color {
-        r: ((packed >> 16) & 0xff) as f32 / 255.0,
-        g: ((packed >> 8) & 0xff) as f32 / 255.0,
-        b: (packed & 0xff) as f32 / 255.0,
-        a: 1.0,
-    }
+    Color::from_rgba8((packed >> 16) as u8, (packed >> 8) as u8, packed as u8, 255)
 }
 
 /// Decode one well-formed exact direct-color attribute.
@@ -288,12 +283,7 @@ pub(crate) fn direct_attribute_color(record: &Record) -> Option<DirectAttributeC
                 return None;
             }
             Some(DirectAttributeColor {
-                color: Color {
-                    r: r as f32,
-                    g: g as f32,
-                    b: b as f32,
-                    a: 1.0,
-                },
+                color: Color::new(r as f32, g as f32, b as f32, 1.0)?,
                 carrier: DirectColorCarrier::NormalizedRgb {
                     fields: [r_field, g_field, b_field],
                 },

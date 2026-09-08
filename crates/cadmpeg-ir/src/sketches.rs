@@ -423,7 +423,7 @@ pub struct SketchGeometry(SketchGeometryDefinition);
 impl SketchGeometry {
     /// Retain source-native geometry without solved numeric fields.
     #[must_use]
-    pub fn native(native_kind: String) -> Self {
+    pub fn native(native_kind: NonEmptyString) -> Self {
         Self(SketchGeometryDefinition::Native { native_kind })
     }
 
@@ -697,7 +697,8 @@ pub enum SketchGeometryDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         document: Option<String>,
         /// Referenced object identity.
-        object: String,
+        #[serde(deserialize_with = "deserialize_object")]
+        object: NonEmptyString,
         /// Ordered source subelement selectors.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subelements: Vec<String>,
@@ -705,7 +706,8 @@ pub enum SketchGeometryDefinition {
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
-        native_kind: String,
+        #[serde(deserialize_with = "deserialize_native_kind")]
+        native_kind: NonEmptyString,
     },
 }
 
@@ -1535,7 +1537,8 @@ pub enum SpatialSketchGeometryDefinition {
     /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
-        native_kind: String,
+        #[serde(deserialize_with = "deserialize_native_kind")]
+        native_kind: NonEmptyString,
     },
 }
 
@@ -3163,6 +3166,19 @@ pub enum SketchConstraintDefinitionInput {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         operands: Vec<SketchNativeOperand>,
     },
+}
+
+fn deserialize_object<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("object: {error}")))
+}
+fn deserialize_native_kind<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("native_kind: {error}")))
 }
 
 #[cfg(test)]

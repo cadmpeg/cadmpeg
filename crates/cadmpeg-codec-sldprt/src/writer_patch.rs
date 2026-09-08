@@ -89,7 +89,7 @@ fn patch_partition_inner(
         .iter()
         .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline");
+    let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline").ok()?;
     if !same_graph(ir, &native) {
         return None;
     }

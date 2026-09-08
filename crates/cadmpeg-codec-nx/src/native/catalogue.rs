@@ -479,7 +479,7 @@ impl ContainerNoted for FeatureParameterBinding {
 }
 impl ContainerNoted for StoreHeader {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.header().id, self.header().source_offset)
     }
 }
 impl ContainerNoted for ExternalReference {

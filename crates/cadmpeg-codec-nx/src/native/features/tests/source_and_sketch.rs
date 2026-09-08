@@ -21,7 +21,7 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
     let entry = DirEntry {
         name: "section".into(),
         region: Region::Header,
-        file_span: None,
+        body: crate::container::DirEntryBody::Directory,
     };
     let entries = [entry];
     let entry = crate::container::entry_ref::EntryRef::new(&entries, 0).unwrap();

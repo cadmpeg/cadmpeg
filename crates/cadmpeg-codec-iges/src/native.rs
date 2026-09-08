@@ -5173,7 +5173,7 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|source| source.object_id.strip_prefix('D'))
+            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
             .and_then(|value| value.parse::<u32>().ok())
         {
             occurrence_neutral_links
@@ -5187,7 +5187,7 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|source| source.object_id.strip_prefix('D'))
+            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
             .and_then(|value| value.parse::<u32>().ok())
         {
             occurrence_neutral_links

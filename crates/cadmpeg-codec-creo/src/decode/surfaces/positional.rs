@@ -32,9 +32,9 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
-        return 0;
+        return Ok(0);
     }
     let mut transferred = 0;
     let associations = unique_surface_prototype_associations(scan)
@@ -120,7 +120,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("{}:{}", section.name(), row.id),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "{}:{}",
+                        section.name(),
+                        row.id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -131,7 +138,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]
@@ -141,7 +148,7 @@ pub(in super::super) fn transfer_positional_tori(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let constant_round_feature_ids = scan
         .surfaces
         .rows
@@ -231,7 +238,14 @@ pub(in super::super) fn transfer_positional_tori(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name(), row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "{}:{}",
+                    section.name(),
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -241,14 +255,14 @@ pub(in super::super) fn transfer_positional_tori(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_positional_line_extrusion_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let replay_bound_surfaces = scan
         .curves
         .tabulated_cylinder_replays
@@ -336,7 +350,13 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:surface_directrix#{}", record.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:surface_directrix#{}",
+                    record.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -357,7 +377,13 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", record.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    record.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -385,7 +411,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         );
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn section_contains_offset(
@@ -415,7 +441,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
         *replay_counts.entry(replay.surface_id).or_default() += 1;
@@ -501,7 +527,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             geometry: CurveGeometry::Nurbs(directrix),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:curve#{}", replay.curve_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:curve#{}",
+                    replay.curve_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -514,7 +546,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", replay.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    replay.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -538,5 +576,5 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         );
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

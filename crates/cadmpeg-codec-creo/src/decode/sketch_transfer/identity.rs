@@ -200,7 +200,10 @@ pub(in super::super) fn unresolved_saved_section_entity(
         SketchEntity::new(
             id,
             sketch.clone(),
-            SketchGeometry::native(format!("saved_{}", kind.name())),
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(format!(
+                "saved_{}",
+                kind.name()
+            ))?),
         )
         .with_construction(true)
         .with_native_ref(Some(sketch_native_ref(sketch))),

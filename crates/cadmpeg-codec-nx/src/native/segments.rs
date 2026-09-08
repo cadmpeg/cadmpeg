@@ -65,7 +65,7 @@ pub fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     index
         .rows
         .into_iter()
@@ -529,7 +529,7 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let sections = container
         .om_sections()
         .into_iter()
@@ -614,7 +614,7 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let words = index
         .rows
         .iter()

@@ -26,7 +26,8 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
             SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             })
             .unwrap(),
         )
@@ -179,7 +180,8 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         curve(
             "left",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             })
             .unwrap(),
             &[],

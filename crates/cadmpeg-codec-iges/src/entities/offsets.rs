@@ -782,7 +782,13 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: offset_source_geometry.clone(),
-                source_object: Some(source_object(entry)),
+                source_object: Some(match source_object(entry) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, error.to_string()));
+                        continue;
+                    }
+                }),
             });
         }
         ir.model.points.extend([
@@ -812,7 +818,13 @@ pub(super) fn project(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: Some(source_object(entry)),
+            source_object: Some(match source_object(entry) {
+                Ok(source) => source,
+                Err(error) => {
+                    losses.push(entity_loss(entry, error.to_string()));
+                    continue;
+                }
+            }),
         });
         ir.model.edges.push(Edge {
             id: edge_id.clone(),

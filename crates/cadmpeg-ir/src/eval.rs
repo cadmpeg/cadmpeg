@@ -3798,7 +3798,7 @@ pub fn model_curve_parameter_near_point_in_index(
         curve_id,
         point,
         seed,
-        index.ir().tolerances.linear,
+        index.ir().tolerances.linear.get(),
     )
 }
 
@@ -6024,6 +6024,7 @@ fn cacheless_circular_variable_blend_section(
         .ir()
         .tolerances
         .linear
+        .get()
         .max(256.0 * f64::EPSILON * scale.max(1.0));
 
     let mut best = None;
@@ -6150,7 +6151,7 @@ fn cacheless_constant_rolling_ball_section(
     let center = model_curve_point_by_id(index, &native.slice, v)?;
     let center_tangent = model_curve_differential_by_id(index, &native.slice, v)
         .map(|differential| differential.tangent);
-    let tolerance = index.ir().tolerances.linear.max(
+    let tolerance = index.ir().tolerances.linear.get().max(
         256.0
             * f64::EPSILON
             * radius

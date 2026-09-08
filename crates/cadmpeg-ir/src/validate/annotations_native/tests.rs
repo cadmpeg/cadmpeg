@@ -34,7 +34,9 @@ fn annotation_keys_and_field_paths_are_checked() {
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = annotations.stream("test:source");
     annotations.note("missing", &stream, 0);
-    annotations.derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field");
+    annotations
+        .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
+        .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings =
         crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;

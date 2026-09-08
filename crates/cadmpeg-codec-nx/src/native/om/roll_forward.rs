@@ -159,6 +159,11 @@ impl TryFrom<Vec<OmRollForwardStateGroup>> for OmRollForwardStateTable {
     type Error = &'static str;
 
     fn try_from(groups: Vec<OmRollForwardStateGroup>) -> Result<Self, Self::Error> {
+        for (index, group) in groups.iter().enumerate() {
+            if usize::try_from(group.ordinal).ok() != Some(index) {
+                return Err("ordinal must equal the group index");
+            }
+        }
         if let Some(first) = groups.first() {
             for group in &groups[1..] {
                 if group.section_link != first.section_link
@@ -190,10 +195,13 @@ mod tests {
             "rows": [], "table_trailing_bytes": [], "source_entry": "om",
             "source_offset": 0, "table_end_offset": 8
         });
-        let wire = serde_json::json!([group, group]);
+        let mut wire = serde_json::json!([group, group]);
+        wire[1]["ordinal"] = 1.into();
         let table: super::OmRollForwardStateTable = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(table).unwrap(), wire);
         for (field, value) in [
+            ("ordinal", serde_json::json!(0)),
+            ("ordinal", serde_json::json!(2)),
             ("table_trailing_bytes", serde_json::json!([1, 1])),
             ("table_end_offset", serde_json::json!(9)),
             ("section_link", serde_json::json!("other")),

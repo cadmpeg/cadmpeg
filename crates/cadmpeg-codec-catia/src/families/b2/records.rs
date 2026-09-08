@@ -917,8 +917,9 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         }
         if record.family == crate::wire::records::ConsolidatedFamily::B
             && record.class == 0x65
-            && data
-                .get(record.payload.clone())
+            && record
+                .payload()
+                .and_then(|payload| data.get(payload))
                 .is_some_and(|payload| payload == B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
         {
             allocation.clear();
@@ -929,7 +930,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         {
             allocation.push(index);
         }
-        let Some(packet) = packets.get(&(record.source_index, record.range.start)) else {
+        let Some(packet) = packets.get(&(record.source_index, record.byte_offset())) else {
             continue;
         };
         for (slot, (distance, encoding)) in (0u8..).zip(
@@ -964,7 +965,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
                 source_index: packet.source_index,
                 slot,
                 distance,
-                target_pos: target.range.start,
+                target_pos: target.byte_offset(),
                 target_class,
             });
         }
@@ -1053,7 +1054,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 _ => return None,
             };
             if !crate::wire::records::records_are_contiguous(window)
-                || window.iter().any(|record| !record.physically_contiguous)
+                || window.iter().any(|record| record.range().is_none())
                 || window[1..]
                     .iter()
                     .any(|record| record.family != ConsolidatedFamily::B)
@@ -1063,10 +1064,10 @@ pub(crate) fn b2_owner_charts_from_records(
             {
                 return None;
             }
-            let owner = owners.get(&(owner_record.source_index, owner_record.range.start))?;
+            let owner = owners.get(&(owner_record.source_index, owner_record.byte_offset()))?;
             let bridge = owner_chart_bridge(data, references, carrier_kind)?;
             let points = [side_05, side_09, side_0d, side_11]
-                .map(|record| parameter_points.get(&record.range.start).cloned())
+                .map(|record| parameter_points.get(&record.byte_offset()).cloned())
                 .into_iter()
                 .collect::<Option<Vec<_>>>()?;
             let points: [B2ParameterPoint; 4] = points.try_into().ok()?;
@@ -1078,7 +1079,7 @@ pub(crate) fn b2_owner_charts_from_records(
             Some(B2OwnerChart {
                 owner_pos: owner.pos,
                 source_index: owner.source_index,
-                carrier_pos: carrier.range.start,
+                carrier_pos: carrier.byte_offset(),
                 carrier: carrier_kind,
                 bridge,
                 parameter_points: points.map(|point| point.pos),
@@ -1266,21 +1267,17 @@ fn b2_fixed_owner_packet(
 fn b2_owner_frames(records: &[ConsolidatedRecord]) -> Vec<(ConsolidatedFrame, usize)> {
     records
         .iter()
-        .filter(|record| {
-            record.physically_contiguous
-                && record.family == ConsolidatedFamily::B
-                && record.class == 0x62
-        })
-        .map(|record| {
-            (
+        .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x62)
+        .filter_map(|record| {
+            Some((
                 ConsolidatedFrame {
-                    pos: record.range.start,
-                    payload: record.payload.start,
-                    end: record.range.end,
+                    pos: record.byte_offset(),
+                    payload: record.payload()?.start,
+                    end: record.range()?.end,
                     header_token: record.header_token,
                 },
                 record.source_index,
-            )
+            ))
         })
         .collect()
 }
@@ -1461,11 +1458,11 @@ pub(crate) fn b2_class5b5c_records_from_records(
     records
         .iter()
         .filter_map(|record| {
-            if !record.physically_contiguous || record.family != ConsolidatedFamily::B {
+            if record.family != ConsolidatedFamily::B {
                 return None;
             }
             let class = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class).ok()?;
-            let payload = data.get(record.payload.clone())?;
+            let payload = data.get(record.payload()?)?;
             Some(B2Class5b5cRecord {
                 frame: ConsolidatedRawFrame::from_record(record, payload.to_vec()),
                 source_index: record.source_index,
@@ -1547,8 +1544,8 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
             let [link_record, owner_record] = window else {
                 return None;
             };
-            let face_node = nodes.get(&link_record.range.start)?;
-            let owner = owners.get(&owner_record.range.start)?;
+            let face_node = nodes.get(&link_record.byte_offset())?;
+            let owner = owners.get(&owner_record.byte_offset())?;
             let terminal_is_admitted = face_node.terminal == [0x03, 0x05]
                 || (face_node.terminal == [0x03, 0x03]
                     && owner.reference_encoding == B2OwnerReferenceEncoding::AllCompact);
@@ -1589,8 +1586,8 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
             let [link_record, owner_record] = window else {
                 return None;
             };
-            let face_node = nodes.get(&link_record.range.start)?;
-            let owner = owners.get(&owner_record.range.start)?;
+            let face_node = nodes.get(&link_record.byte_offset())?;
+            let owner = owners.get(&owner_record.byte_offset())?;
             (face_node.target.checked_add(1) == owner.references.last().copied()).then(|| {
                 B2AdjacentFaceCountedOwner {
                     face_node: *face_node,
@@ -1679,12 +1676,13 @@ pub(crate) fn b2_plane_carriers_from_records(
         .iter()
         .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x27)
         .filter_map(|record| {
-            let marker = *data.get(record.payload.start)?;
-            let selector = *data.get(record.payload.start + 1)?;
+            let marker = *data.get(record.payload()?.start)?;
+            let selector = *data.get(record.payload()?.start + 1)?;
             if marker != 0xb4 {
                 return None;
             }
-            let values = finite_f64_lane(data.get(record.payload.start + 2..record.payload.end)?)?;
+            let values =
+                finite_f64_lane(data.get(record.payload()?.start + 2..record.payload()?.end)?)?;
             let payload = match selector {
                 0xe4 => {
                     let values: [f64; 7] = values.try_into().ok()?;
@@ -1713,8 +1711,8 @@ pub(crate) fn b2_plane_carriers_from_records(
                 _ => return None,
             };
             Some(B2PlaneCarrier {
-                pos: record.range.start,
-                end: record.range.end,
+                pos: record.byte_offset(),
+                end: record.range()?.end,
                 width: record.width,
                 flag: record.flag,
                 header_token: record.header_token,

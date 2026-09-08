@@ -999,12 +999,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
             .as_ref()
             .expect("required invariant")
             .color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
     assert_eq!(
         curve
@@ -1186,7 +1181,8 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
     );
 
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
         context.decode_geometry();
         assert!(context.mesh_budget_used() > 0);
         let result = crate::decode::seal_for_test(context.commit(), false);
@@ -1318,7 +1314,8 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         ],
     );
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry();
         let result = crate::decode::seal_for_test(context.commit(), false);

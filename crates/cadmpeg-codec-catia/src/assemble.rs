@@ -26,20 +26,29 @@ use std::collections::{BTreeMap, HashSet};
 use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
 
-pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
+pub(crate) fn cgm_source(
+    kind: &str,
+    tag: u32,
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     cgm_source_key(kind, format!("{tag:06x}"))
 }
 
-pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+pub(crate) fn cgm_source_key(
+    kind: &str,
+    key: impl std::fmt::Display,
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-        object_id: format!("cgm-{kind}:{key}"),
+        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("cgm-{kind}:{key}"))
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+            })?,
         name: None,
         color: None,
         visible: None,
         layer: None,
         instance_path: Vec::new(),
-    }
+    })
 }
 
 pub(crate) fn annotate(
@@ -630,7 +639,7 @@ pub(crate) fn link_payload_carriers(
     ir: &CadIr,
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let links = ir
         .model
         .surfaces
@@ -644,13 +653,16 @@ pub(crate) fn link_payload_carriers(
         )
         .collect::<Vec<_>>();
     if links.is_empty() {
-        return;
+        return Ok(());
     }
     let payload = unknowns
         .last_mut()
         .expect("partial CATIA decode preserves its source payload");
     *payload.links_mut() = links;
-    annotations.derived(payload.id(), "links");
+    annotations
+        .derived(payload.id(), "links")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok(())
 }
 
 pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {

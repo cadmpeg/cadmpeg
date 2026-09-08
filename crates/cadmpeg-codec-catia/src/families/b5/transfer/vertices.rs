@@ -70,7 +70,7 @@ pub(super) fn emit_vertices(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
     let vertex_tolerances = &plan.vertex_tolerances;
     for (index, coordinates) in graph.vertices.raw_points().iter().enumerate() {
@@ -99,7 +99,9 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations
+            .derived(&vertex_id, "point")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -122,7 +124,7 @@ pub(super) fn emit_vertices(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
-            source_object: Some(cgm_source("vertex", vertex.object_id)),
+            source_object: Some(cgm_source("vertex", vertex.object_id)?),
         });
         let vertex_id =
             VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
@@ -133,11 +135,14 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations
+            .derived(&vertex_id, "point")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
+    Ok(())
 }

@@ -84,7 +84,7 @@ pub(crate) struct LayerClassification {
 }
 
 impl LayerClassification {
-    pub(crate) fn container_kind(&self) -> &'static str {
+    pub(crate) fn container_kind(&self) -> cadmpeg_ir::ContainerKind {
         self.host.container_kind()
     }
 
@@ -151,10 +151,10 @@ impl NxDialect {
     ///
     /// One source for the label and the id, so a summary cannot name a
     /// container the classification disagrees with.
-    pub(crate) const fn container_kind(self) -> &'static str {
+    pub(crate) const fn container_kind(self) -> cadmpeg_ir::ContainerKind {
         match self {
-            Self::Splmsstr => "splmsstr",
-            Self::LegacyCfb => "cfb",
+            Self::Splmsstr => cadmpeg_ir::ContainerKind::Splmsstr,
+            Self::LegacyCfb => cadmpeg_ir::ContainerKind::Cfb,
         }
     }
 
