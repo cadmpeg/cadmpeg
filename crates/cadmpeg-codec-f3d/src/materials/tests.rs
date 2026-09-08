@@ -246,7 +246,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 500,
-        visual_guid: visual_guid.into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         visual_guid_offset: 600,
         physical_token: None,
         visual_preset: None,
@@ -294,7 +294,10 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 500,
-        visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(
+            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
+        )
+        .unwrap(),
         visual_guid_offset: 600,
         physical_token: None,
         visual_preset: None,
@@ -306,14 +309,18 @@ fn presetless_assignment_matches_only_its_visual_guid() {
             .is_none()
     );
 
-    assignment.visual_guid = appearance_guid.into();
+    assignment.visual_guid =
+        crate::records::DesignVisualToken::try_from(appearance_guid.to_owned()).unwrap();
     assert!(
         super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
             .expect("exact visual-token assignment")
             .is_some()
     );
 
-    assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
+    assignment.visual_guid = crate::records::DesignVisualToken::try_from(
+        "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
+    )
+    .unwrap();
     assignment.visual_preset = Some(crate::records::RecordedValue {
         value: "Prism-017".into(),
         offset: None,
@@ -348,9 +355,13 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#revised", revised_token),
     ];
 
-    let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
-        .expect("unique complete visual token")
-        .expect("revised appearance exists");
+    let selected = super::appearance_for_visual_token(
+        &appearances,
+        &crate::records::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
+        None,
+    )
+    .expect("unique complete visual token")
+    .expect("revised appearance exists");
     assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
 
     let duplicates = [
@@ -358,7 +369,11 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
-        super::appearance_for_visual_token(&duplicates, revised_token, None),
+        super::appearance_for_visual_token(
+            &duplicates,
+            &crate::records::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
+            None
+        ),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -386,7 +401,10 @@ fn visual_preset_fallback_requires_one_record() {
     assert!(matches!(
         super::appearance_for_visual_token(
             &appearances,
-            "11111111-2222-3333-4444-555555555555",
+            &crate::records::DesignVisualToken::try_from(
+                "11111111-2222-3333-4444-555555555555".to_owned()
+            )
+            .unwrap(),
             Some("Prism-017"),
         ),
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -710,7 +728,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
-            visual_guid: visual_guid.into(),
+            visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned())
+                .unwrap(),
             color: None,
         }],
     )
@@ -760,7 +779,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
-            visual_guid: visual_guid.into(),
+            visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned())
+                .unwrap(),
             color: None,
         }],
     )
@@ -828,7 +848,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     };
     let assignment = crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
-        visual_guid: visual_guid.into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         color: Some(assignment_color),
     };
 
@@ -866,7 +886,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
     let assignment = |r| crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
-        visual_guid: visual_guid.into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         color: Some(Color {
             r,
             g: 0.25,
@@ -1647,18 +1667,14 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
 #[test]
 fn protein_revision_suffix_distinguishes_visual_record_identity() {
-    assert!(!crate::materials::visual_tokens_match(
-        "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015",
-        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17",
-    ));
-    assert!(crate::materials::visual_tokens_match(
-        "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015",
-        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015",
-    ));
-    assert!(!crate::materials::visual_tokens_match(
-        "not-a-guid_Post2015",
-        "not-a-guid",
-    ));
+    let token = |text: &str| crate::records::DesignVisualToken::try_from(text.to_owned()).unwrap();
+    assert!(
+        !token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015")
+            .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
+    );
+    assert!(token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015")
+        .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
+    assert!(crate::records::DesignVisualToken::try_from("not-a-guid_Post2015".to_owned()).is_err());
 }
 
 #[test]
@@ -1699,8 +1715,14 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     assert_eq!(
         crate::materials::browser_body_appearances(&bytes),
         [
-            (37_251, records[0].1.to_string()),
-            (37_441, records[1].1.to_string()),
+            (
+                37_251,
+                crate::records::DesignVisualToken::try_from(records[0].1.to_string()).unwrap()
+            ),
+            (
+                37_441,
+                crate::records::DesignVisualToken::try_from(records[1].1.to_string()).unwrap()
+            ),
         ]
     );
     assert!(
@@ -1748,7 +1770,7 @@ fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
     let out = crate::materials::face_appearance_assignments(&bytes);
     assert_eq!(out.len(), 2);
     assert_eq!(out[0].face_guid, face_guid);
-    assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(&*out[0].visual_guid, visual_guid);
     assert_eq!(
         out[0].color,
         Some(cadmpeg_ir::topology::Color {
@@ -1863,7 +1885,7 @@ fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
     let out = crate::materials::face_appearance_assignments(&bytes);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].face_guid, face_guid);
-    assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(&*out[0].visual_guid, visual_guid);
     assert_eq!(out[0].color, None);
 
     let mut malformed = bytes;

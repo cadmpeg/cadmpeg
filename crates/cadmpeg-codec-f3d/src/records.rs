@@ -2303,6 +2303,41 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
     }
 }
 
+/// A complete serialized visual-appearance identity.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignVisualToken(String);
+
+impl TryFrom<String> for DesignVisualToken {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        crate::design::presentation::visual_token(&value)
+            .ok_or("visual_guid must be a complete visual token")?;
+        Ok(Self(value))
+    }
+}
+impl From<DesignVisualToken> for String {
+    fn from(value: DesignVisualToken) -> Self {
+        value.0
+    }
+}
+impl std::ops::Deref for DesignVisualToken {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+impl std::fmt::Display for DesignVisualToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl DesignVisualToken {
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&other.0)
+    }
+}
+
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -2323,7 +2358,7 @@ pub struct DesignMaterialAssignment {
     /// Byte offset of the UTF-16 entity-id code units.
     pub entity_id_offset: u64,
     /// Complete serialized visual token.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
     pub visual_guid_offset: u64,
     /// Physical-material token, when present.
@@ -2350,7 +2385,7 @@ struct DesignMaterialAssignmentWire {
     /// Byte offset of the UTF-16 entity-id code units.
     pub entity_id_offset: u64,
     /// Complete serialized visual token.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
     pub visual_guid_offset: u64,
     /// Physical-material token, when present.

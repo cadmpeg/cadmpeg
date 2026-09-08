@@ -5179,7 +5179,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             }
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
-                if !materials::visual_tokens_match(&existing.visual_guid, &assignment.visual_guid) {
+                if !existing.visual_guid.matches(&assignment.visual_guid) {
                     return Err(CodecError::malformed(format_args!(
                         "F3D face material GUID {} carries conflicting visual tokens",
                         assignment.face_guid

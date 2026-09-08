@@ -106,7 +106,10 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 0,
-        visual_guid: "11111111-2222-3333-4444-555555555555".into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(
+            "11111111-2222-3333-4444-555555555555".to_owned(),
+        )
+        .unwrap(),
         visual_guid_offset: 0,
         physical_token: Some(crate::records::RecordedValue {
             value: "PrismMaterial-Generated".into(),

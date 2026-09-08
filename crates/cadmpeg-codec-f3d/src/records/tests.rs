@@ -83,7 +83,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
 // Fixture fields are appended from the bounded table of explicit test cases.
 #[allow(clippy::format_push_string)]
 fn material_assignment_preserves_located_and_authored_token_wire() {
-    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"Prism-001","visual_guid_offset":40"#;
+    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
     for field in ["physical_token", "visual_preset"] {
         for value in ["\"\"", "\"Prism-002\""] {
             for offset in [None, Some(0), Some(50)] {
@@ -1714,4 +1714,35 @@ fn segment_base_guid_rejects_invalid_text() {
     let wire = r#"{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"base_type_guid":"invalid","version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}"#;
     let error = serde_json::from_str::<crate::records::SegmentType>(wire).unwrap_err();
     assert!(error.to_string().contains("base_type_guid"));
+}
+
+#[test]
+fn material_assignment_sidecar_rejects_invalid_visual_guid() {
+    let wire = serde_json::json!({
+        "id": "material#0", "asm_body_key": 42, "asm_body_key_offset": 10,
+        "entity_suffix": 985, "entity_suffix_offset": 20, "entity_id": "0_985",
+        "entity_id_offset": 30, "visual_guid": "not-a-guid", "visual_guid_offset": 40
+    });
+    assert!(serde_json::from_value::<super::DesignMaterialAssignment>(wire).is_err());
+}
+
+#[test]
+fn visual_token_wire_preserves_revision_spelling() {
+    for text in [
+        "abcdef01-2222-3333-4444-555555555555",
+        "ABCDEF01-2222-3333-4444-555555555555_Post2015_Post2015",
+    ] {
+        let wire = serde_json::json!(text);
+        let token: super::DesignVisualToken = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(token).unwrap(), wire);
+    }
+    for text in [
+        "",
+        "not-a-guid",
+        "abcdef01-2222-3333-4444-555555555555_post2015",
+    ] {
+        assert!(
+            serde_json::from_value::<super::DesignVisualToken>(serde_json::json!(text)).is_err()
+        );
+    }
 }
