@@ -1268,6 +1268,27 @@ fn exact_current_extrude_prologue(
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TailForm {
+    Ordered,
+    Unordered,
+    SymmetricThroughAll,
+}
+
+#[derive(Clone, Copy)]
+struct ShiftedReferenceAwareLayout {
+    frame_length: usize,
+    reference_count_offset: usize,
+    reference_member_count: usize,
+    expected_paired_class: &'static [u8; 3],
+    trailing_reference_count_offset: usize,
+    trailing_reference_offset: usize,
+    trailing_reference_padding_offset: usize,
+    guid_prefix_offset: usize,
+    second_side_extent_offset: usize,
+    tail_form: TailForm,
+}
+
 fn exact_shifted_reference_aware_extrude_prologue(
     bytes: &[u8],
     start: usize,
@@ -1285,7 +1306,19 @@ fn exact_shifted_reference_aware_extrude_prologue(
     let has_reference_layout = |reference_count: usize, reference_count_at: usize| {
         reference_count_at.checked_sub(start) == Some(reference_count)
     };
-    let (
+    let ordered = ShiftedReferenceAwareLayout {
+        frame_length: 538,
+        reference_count_offset: shifted_reference_aware::REFERENCE_COUNT,
+        reference_member_count: 13,
+        expected_paired_class: b"258",
+        trailing_reference_count_offset: shifted_reference_aware::BODY_GROUP_COUNT,
+        trailing_reference_offset: shifted_reference_aware::BODY_GROUP_REFERENCE,
+        trailing_reference_padding_offset: shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+        guid_prefix_offset: shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+        second_side_extent_offset: shifted_reference_aware::SECOND_SIDE_EXTENT,
+        tail_form: TailForm::Ordered,
+    };
+    let ShiftedReferenceAwareLayout {
         frame_length,
         reference_count_offset,
         reference_member_count,
@@ -1295,47 +1328,37 @@ fn exact_shifted_reference_aware_extrude_prologue(
         trailing_reference_padding_offset,
         guid_prefix_offset,
         second_side_extent_offset,
-        trailing_reference_is_ordered,
-        symmetric_through_all,
-    ) = match primary_class {
-        b"357" | b"275" | b"361" | b"349" | b"397" => (
-            538,
-            shifted_reference_aware::REFERENCE_COUNT,
-            13,
-            match primary_class {
-                b"357" => &b"258"[..],
-                b"275" | b"361" => &b"262"[..],
-                b"349" => &b"266"[..],
-                b"397" => &b"262"[..],
-                _ => unreachable!(),
-            },
-            shifted_reference_aware::BODY_GROUP_COUNT,
-            shifted_reference_aware::BODY_GROUP_REFERENCE,
-            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
-            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-            shifted_reference_aware::SECOND_SIDE_EXTENT,
-            true,
-            false,
-        ),
+        tail_form,
+    } = match primary_class {
+        b"357" => ordered,
+        b"275" | b"361" | b"397" => ShiftedReferenceAwareLayout {
+            expected_paired_class: b"262",
+            ..ordered
+        },
+        b"349" => ShiftedReferenceAwareLayout {
+            expected_paired_class: b"266",
+            ..ordered
+        },
         b"323"
             if has_reference_layout(
                 shifted_reference_aware::REFERENCE_COUNT,
                 reference_count_at,
             ) && reference_members.len() == 11 =>
         {
-            (
-                516,
-                shifted_reference_aware::REFERENCE_COUNT,
-                11,
-                &b"263"[..],
-                shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
-                shifted_reference_aware_323_tail::TRAILING_REFERENCE,
-                shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
-                shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-                shifted_reference_aware::SECOND_SIDE_EXTENT,
-                false,
-                false,
-            )
+            ShiftedReferenceAwareLayout {
+                frame_length: 516,
+                reference_count_offset: shifted_reference_aware::REFERENCE_COUNT,
+                reference_member_count: 11,
+                expected_paired_class: b"263",
+                trailing_reference_count_offset:
+                    shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
+                trailing_reference_offset: shifted_reference_aware_323_tail::TRAILING_REFERENCE,
+                trailing_reference_padding_offset:
+                    shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
+                guid_prefix_offset: shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+                second_side_extent_offset: shifted_reference_aware::SECOND_SIDE_EXTENT,
+                tail_form: TailForm::Unordered,
+            }
         }
         b"323"
             if has_reference_layout(
@@ -1343,19 +1366,22 @@ fn exact_shifted_reference_aware_extrude_prologue(
                 reference_count_at,
             ) && reference_members.len() == 10 =>
         {
-            (
-                485,
-                shifted_reference_aware_323_symmetric::REFERENCE_COUNT,
-                10,
-                &b"263"[..],
-                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
-                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE,
-                shifted_reference_aware_323_symmetric::GUID_PREFIX,
-                shifted_reference_aware_323_symmetric::GUID_PREFIX,
-                shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
-                true,
-                true,
-            )
+            ShiftedReferenceAwareLayout {
+                frame_length: 485,
+                reference_count_offset: shifted_reference_aware_323_symmetric::REFERENCE_COUNT,
+                reference_member_count: 10,
+                expected_paired_class: b"263",
+                trailing_reference_count_offset:
+                    shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
+                trailing_reference_offset:
+                    shifted_reference_aware_323_symmetric::TRAILING_REFERENCE,
+                trailing_reference_padding_offset:
+                    shifted_reference_aware_323_symmetric::GUID_PREFIX,
+                guid_prefix_offset: shifted_reference_aware_323_symmetric::GUID_PREFIX,
+                second_side_extent_offset:
+                    shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
+                tail_form: TailForm::SymmetricThroughAll,
+            }
         }
         _ => return None,
     };
@@ -1400,7 +1426,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
         View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
     ];
-    let expected_direction_face_extend = if symmetric_through_all {
+    let expected_direction_face_extend = if tail_form == TailForm::SymmetricThroughAll {
         [3, 0]
     } else {
         [2, 1]
@@ -1465,7 +1491,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if slot_offset != first_side_extent_offset {
         return None;
     }
-    let second_side_extent_offset = if symmetric_through_all {
+    let second_side_extent_offset = if tail_form == TailForm::SymmetricThroughAll {
         start.checked_add(second_side_extent_offset)?
     } else {
         reference_count_at.checked_sub(4)?
@@ -1475,7 +1501,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
     let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
-    let expected_side_extent_discriminators = if symmetric_through_all {
+    let expected_side_extent_discriminators = if tail_form == TailForm::SymmetricThroughAll {
         [4, 4]
     } else {
         [2, 0]
@@ -1483,7 +1509,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if side_extent_discriminators != expected_side_extent_discriminators {
         return None;
     }
-    let ordered_tail_references_valid = if symmetric_through_all {
+    let ordered_tail_references_valid = if tail_form == TailForm::SymmetricThroughAll {
         [
             marked_record_reference(
                 bytes,
@@ -1523,7 +1549,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     };
     let trailing_reference =
         marked_record_reference(bytes, start.checked_add(trailing_reference_offset)?)?;
-    let trailing_reference_valid = if trailing_reference_is_ordered {
+    let trailing_reference_valid = if tail_form != TailForm::Unordered {
         reference_members.contains(&trailing_reference)
     } else {
         trailing_reference != 0 && !reference_members.contains(&trailing_reference)
@@ -1533,7 +1559,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
             .get(start + range_start..start + range_end)
             .is_some_and(|value| value.iter().all(|byte| *byte == 0))
     };
-    let tail_fixed_valid = if symmetric_through_all {
+    let tail_fixed_valid = if tail_form == TailForm::SymmetricThroughAll {
         zero_range(
             shifted_reference_aware_323_symmetric::FIRST_SIDE_PADDING,
             shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
@@ -1604,7 +1630,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     }
     let (guid, guid_end) =
         lp_utf16_bounded(bytes, start.checked_add(guid_prefix_offset)?, 36..=36)?;
-    let expected_guid_end = if symmetric_through_all {
+    let expected_guid_end = if tail_form == TailForm::SymmetricThroughAll {
         start.checked_add(guid_prefix_offset)?.checked_add(76)?
     } else {
         second_side_extent_offset.checked_add(1)?
