@@ -803,7 +803,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
 #[test]
 fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| DesignParameterScope {
-        id: format!("f3d:native:scope#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
         byte_offset,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
@@ -841,14 +841,14 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             1.0,
         ))
         .expect("generated history-ordered parameter");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter.source_ordinal = record_index;
         parameter
     };
     let owner = |record_index, parameter_record_index, scope_record_index| {
         crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("f3d:native:owner#{record_index}"),
+            id: format!("f3d:native/BulkStream.dat:owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
@@ -871,7 +871,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     let owners = [owner(44, 45, 12), owner(54, 55, 22)];
     let scopes = vec![successor, predecessor];
     let timeline = DesignFeatureTimeline::try_new(
-        crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:native/BulkStream.dat", 0),
         crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
@@ -916,11 +916,11 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     .expect("authored cross-family timeline");
     let predecessor = features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#12"))
+        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native/BulkStream.dat:scope#12"))
         .expect("predecessor feature");
     let successor = features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#22"))
+        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native/BulkStream.dat:scope#22"))
         .expect("successor feature");
     assert_eq!(successor.dependencies, [predecessor.id.clone()]);
     assert!(predecessor.ordinal < successor.ordinal);

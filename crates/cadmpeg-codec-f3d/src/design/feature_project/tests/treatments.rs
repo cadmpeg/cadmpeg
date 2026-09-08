@@ -29,7 +29,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             value,
         ))
         .expect("generated feature parameter is canonical");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter.source_ordinal = record_index;
         parameter
@@ -41,7 +41,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             .unwrap();
         {
             let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
-            wire.id = format!("f3d:native:owner#{record_index}");
+            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = scope_record_index;
             wire.parameter_record_index = parameter_record_index;
@@ -52,7 +52,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
-        id: format!("f3d:native:scope#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
         byte_offset,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
@@ -112,7 +112,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     scopes[2].reference_members =
         crate::records::ReferenceRun::unlocated(vec![0, 363, 0, 370, 0, 378]);
     let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
-        id: format!("f3d:native:face-operand#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:face-operand#{record_index}"),
         scope_record_index: 32,
         scope_reference_ordinal,
         group: None,
@@ -123,7 +123,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         recipe_record_index: record_index + 3,
         recipe_record_byte_offset: 1300,
-        recipe_id: format!("f3d:native:construction-recipe#{}", record_index + 3),
+        recipe_id: format!(
+            "f3d:native/BulkStream.dat:construction-recipe#{}",
+            record_index + 3
+        ),
         recipe_prefix_offset: 1311,
         recipe_prefix_bytes: Vec::new(),
         recipe_references: Vec::new(),
@@ -536,7 +539,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     let construction_group = |record_index, scope_reference_ordinal| {
         DesignConstructionOperandGroup::try_from(
             crate::records::topology::DesignConstructionOperandGroupDraft {
-                id: format!("f3d:native:construction-group#{record_index}"),
+                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
                 scope_record_index: 22,
                 scope_reference_ordinal,
                 record_index,
@@ -581,7 +584,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
     construction_groups[1]
         .lost_edge_references
-        .push("f3d:native:lost-edge-reference#1".into());
+        .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
     let mut chamfer_scope = scopes[1].clone();
     chamfer_scope.previous_history_state_id = Some(21);
     let (features, _) = project_parameter_design(
@@ -951,7 +954,7 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
 #[test]
 fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let scope = DesignParameterScope {
-        id: "f3d:native:scope#12".into(),
+        id: "f3d:native/BulkStream.dat:scope#12".into(),
         byte_offset: 100,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
@@ -978,7 +981,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let group = |record_index, ordinal, members: Vec<u32>| {
         DesignConstructionOperandGroup::try_from(
             crate::records::topology::DesignConstructionOperandGroupDraft {
-                id: format!("f3d:native:construction-group#{record_index}"),
+                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
                 scope_record_index: 12,
                 scope_reference_ordinal: ordinal,
                 record_index,
@@ -1037,7 +1040,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             value,
         ))
         .expect("canonical localized Fillet parameter");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter
     };
@@ -1048,7 +1051,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             .unwrap();
         {
             let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
-            wire.id = format!("f3d:native:owner#{record_index}");
+            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = 12;
             wire.parameter_record_index = parameter_record_index;
@@ -1332,7 +1335,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     operand_groups[0]
         .lost_edge_references
-        .push("f3d:native:lost-edge-reference#1".into());
+        .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
 
     let (features, _) = project_parameter_design(
         &parameters,
@@ -1444,7 +1447,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.previous_history_state_id = Some(8);
     let edge_identity = |record_index, group_record_index, edge| {
         crate::records::topology::DesignEdgeIdentityOperand {
-            id: format!("f3d:native:edge-identity#{record_index}"),
+            id: format!("f3d:native/BulkStream.dat:edge-identity#{record_index}"),
             scope_record_index: patch_scope.record_index,
             group_record_index,
             group_member_ordinal: 0,

@@ -195,7 +195,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         6.0,
     ))
     .unwrap();
-    parameter.id = "f3d:native:parameter#45".into();
+    parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
     parameter.record_index = 45;
     let mut owner = parse_parameter_owner(&parameter_owner_frame())
         .unwrap()
@@ -203,11 +203,11 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         .unwrap();
     {
         let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
-        wire.id = "f3d:native:parameter-owner#44".into();
+        wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
         owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
     }
     let scope = DesignParameterScope {
-        id: "f3d:native:parameter-scope#12".into(),
+        id: "f3d:native/BulkStream.dat:parameter-scope#12".into(),
         byte_offset: 100,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
@@ -495,7 +495,7 @@ fn parameter_expressions_project_feature_dependencies() {
             1.0,
         ))
         .expect("generated owned parameter is canonical");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter.source_ordinal = record_index;
         parameter
@@ -507,7 +507,7 @@ fn parameter_expressions_project_feature_dependencies() {
             .unwrap();
         {
             let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
-            wire.id = format!("f3d:native:owner#{record_index}");
+            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = scope_record_index;
             wire.parameter_record_index = parameter_record_index;
@@ -517,7 +517,7 @@ fn parameter_expressions_project_feature_dependencies() {
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
-        id: format!("f3d:native:scope#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
         byte_offset,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,

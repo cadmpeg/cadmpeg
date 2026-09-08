@@ -497,7 +497,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         axis_bytes.extend_from_slice(&record_index.to_le_bytes());
     }
     let mut axis_scope = scope.clone();
-    axis_scope.id = "f3d:native:parameter-scope#55".into();
+    axis_scope.id = "f3d:native/BulkStream.dat:parameter-scope#55".into();
     axis_scope.payload = crate::records::feature::DesignFeatureKind::WorkAxis.into();
     axis_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 101, 102, 103, 104]);
@@ -1716,7 +1716,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&extend_boundary);
 
     let mut extend_scope = scope.clone();
-    extend_scope.id = "f3d:native:parameter-scope#12".into();
+    extend_scope.id = "f3d:native/BulkStream.dat:parameter-scope#12".into();
     extend_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceExtend.into();
     extend_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         extend_distance_record_index,
