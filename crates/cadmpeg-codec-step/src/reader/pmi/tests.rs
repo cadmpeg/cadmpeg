@@ -1315,6 +1315,59 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
 }
 
 #[test]
+fn invalid_datum_system_records_a_loss_and_preserves_good_annotations() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#4=DATUM_SYSTEM('first good system','',#5,.F.,(#20));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=(DATUM('A') SHAPE_ASPECT('','',#5,.F.));
+#7=(DATUM('B') SHAPE_ASPECT('','',#5,.F.));
+#8=DATUM_SYSTEM('bad system','',#5,.F.,(#24));
+#9=DATUM_SYSTEM('last good system','',#5,.F.,(#23));
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#6,());
+#21=DATUM_REFERENCE_ELEMENT('',$,#5,.F.,#6,());
+#22=DATUM_REFERENCE_ELEMENT('',$,#5,.F.,#5,());
+#23=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,());
+#24=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,COMMON_DATUM_LIST((#21,#22)),());
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let annotations = &result.ir().model.pmi;
+    assert_eq!(annotations.len(), 4);
+    for (system, datum) in [(4, 6), (9, 7)] {
+        let annotation = annotations
+            .iter()
+            .find(|annotation| annotation.id.as_str() == format!("step:presentation:pmi#{system}"))
+            .expect("valid datum system survives");
+        assert!(matches!(
+            &annotation.definition,
+            PmiDefinition::DatumSystem { references }
+                if references.as_slice().len() == 1
+                    && references.as_slice()[0].datum.as_str() == format!("step:presentation:pmi#{datum}")
+                    && references.as_slice()[0].common_group.is_none()
+        ));
+    }
+    for identification in ["A", "B"] {
+        assert!(annotations.iter().any(|annotation| matches!(
+            &annotation.definition,
+            PmiDefinition::Datum { identification: actual } if actual == identification
+        )));
+    }
+    assert!(!annotations
+        .iter()
+        .any(|annotation| annotation.id.as_str() == "step:presentation:pmi#8"));
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::PmiDatumSystemInvalid.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("DATUM_SYSTEM #8"));
+    assert!(losses[0].message.contains("common_group"));
+}
+
+#[test]
 fn complex_datum_names_use_the_inherited_shape_aspect_name() {
     use cadmpeg_ir::pmi::PmiDefinition;
 
