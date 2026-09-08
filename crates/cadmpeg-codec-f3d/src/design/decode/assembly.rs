@@ -80,7 +80,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         return None;
     }
     if lanes.iter().any(|owner| {
-        owner.class_tag.as_str() != generation.owner_class_tag() || owner.frame_length != 103
+        owner.class_tag().as_str() != generation.owner_class_tag() || owner.frame_length() != 103
     }) {
         return None;
     }
@@ -88,12 +88,13 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         return None;
     };
     let alignment_owner_record_indices = [
-        offset_x.record_index,
-        offset_y.record_index,
-        offset_z.record_index,
-        angle.record_index,
+        offset_x.record_index(),
+        offset_y.record_index(),
+        offset_z.record_index(),
+        angle.record_index(),
     ];
-    let source_limit_owner_record_indices = [limit_first.record_index, limit_second.record_index];
+    let source_limit_owner_record_indices =
+        [limit_first.record_index(), limit_second.record_index()];
     if !scope
         .reference_members
         .values()
@@ -115,28 +116,28 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         (limit_first, limit_second)
     };
     let kind = generation.limit_kind();
-    let minimum = minimum_owner.evaluated_value;
-    let maximum = maximum_owner.evaluated_value;
-    let limit_owner_record_indices = [minimum_owner.record_index, maximum_owner.record_index];
+    let minimum = minimum_owner.evaluated_value();
+    let maximum = maximum_owner.evaluated_value();
+    let limit_owner_record_indices = [minimum_owner.record_index(), maximum_owner.record_index()];
     let limit_value_offsets = [
-        minimum_owner.evaluated_value_offset,
-        maximum_owner.evaluated_value_offset,
+        minimum_owner.evaluated_value_offset(),
+        maximum_owner.evaluated_value_offset(),
     ];
     if !minimum.is_finite() || !maximum.is_finite() || minimum > maximum {
         return None;
     }
     Some(LegacyAsBuilt421Alignment {
-        angle: angle.evaluated_value,
+        angle: angle.evaluated_value(),
         offset: [
-            offset_x.evaluated_value,
-            offset_y.evaluated_value,
-            offset_z.evaluated_value,
+            offset_x.evaluated_value(),
+            offset_y.evaluated_value(),
+            offset_z.evaluated_value(),
         ],
         owners: [angle, offset_x, offset_y, offset_z]
             .into_iter()
             .map(|owner| crate::records::Located {
-                value: owner.record_index,
-                offset: owner.evaluated_value_offset,
+                value: owner.record_index(),
+                offset: owner.evaluated_value_offset(),
             })
             .collect(),
         limits: DesignAssemblyLimits {

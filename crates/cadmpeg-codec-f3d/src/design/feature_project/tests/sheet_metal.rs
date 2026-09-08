@@ -56,8 +56,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         });
     }
 
-    let owner =
-        |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
+    let owner = |record_index: u32, parameter_record_index: u32| {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
@@ -66,12 +66,14 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             scope_record_index: 382,
             local_ordinal: 0,
             evaluated_value: 0.0,
-            evaluated_value_offset: 0,
+            evaluated_value_offset: 40,
             parameter_record_index,
             owned_ordinal: 0,
-            variant: None,
-            companion_record_index: 0,
-        };
+            variant: Some(0),
+            companion_record_index: record_index + 1,
+        })
+        .unwrap()
+    };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("{stream}:design-parameter#{record_index}"),
@@ -558,8 +560,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         });
     }
 
-    let owner =
-        |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
+    let owner = |record_index: u32, parameter_record_index: u32| {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
@@ -568,12 +570,14 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             scope_record_index: 382,
             local_ordinal: 0,
             evaluated_value: 0.0,
-            evaluated_value_offset: 0,
+            evaluated_value_offset: 40,
             parameter_record_index,
             owned_ordinal: 0,
-            variant: None,
-            companion_record_index: 0,
-        };
+            variant: Some(0),
+            companion_record_index: record_index + 1,
+        })
+        .unwrap()
+    };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("{stream}:design-parameter#{record_index}"),
@@ -1031,7 +1035,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                  record_index: u32,
                  parameter_record_index: u32|
      -> DesignParameterOwner {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
@@ -1040,12 +1044,13 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             scope_record_index,
             local_ordinal: 0,
             evaluated_value: 0.0,
-            evaluated_value_offset: 0,
+            evaluated_value_offset: 40,
             parameter_record_index,
             owned_ordinal: 0,
-            variant: None,
-            companion_record_index: 0,
-        }
+            variant: Some(0),
+            companion_record_index: record_index + 1,
+        })
+        .unwrap()
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, value: f64| {
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {

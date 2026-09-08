@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 
 mod graphics;
 mod parameter;
+mod parameter_owner;
 
 #[test]
 fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {

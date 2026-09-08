@@ -61,11 +61,11 @@ pub fn decode_dimension_recipe_records(
     let dimension_owners = owners
         .iter()
         .filter_map(|owner| {
-            let stream = native_stream(&owner.id)?;
+            let stream = native_stream(owner.id())?;
             parameters
-                .get(&(stream, owner.parameter_record_index))
+                .get(&(stream, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-                .then_some((stream.to_owned(), owner.record_index))
+                .then_some((stream.to_owned(), owner.record_index()))
         })
         .collect::<HashSet<_>>();
     let recipes = recipes
@@ -618,17 +618,17 @@ pub fn decode_dimension_locus_pairs(
     let dimension_companions = owners
         .iter()
         .filter(|owner| {
-            let Some(scope) = native_stream(&owner.id) else {
+            let Some(scope) = native_stream(owner.id()) else {
                 return false;
             };
             parameters
-                .get(&(scope, owner.parameter_record_index))
+                .get(&(scope, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
-                native_stream(&owner.id)?.to_owned(),
-                owner.companion_record_index,
+                native_stream(owner.id())?.to_owned(),
+                owner.companion_record_index(),
             ))
         })
         .collect::<HashSet<_>>();
@@ -709,10 +709,10 @@ pub(crate) fn following_dimension_companion_record_index<'a>(
             .or_insert(Some(parameter));
     }
     let mut matches = owners.iter().filter(|owner| {
-        native_stream(&owner.id) == Some(scope)
-            && owner.byte_offset == paired_byte_offset.saturating_add(59)
+        native_stream(owner.id()) == Some(scope)
+            && owner.byte_offset() == paired_byte_offset.saturating_add(59)
             && parameters
-                .get(&owner.parameter_record_index)
+                .get(&owner.parameter_record_index())
                 .and_then(|parameter| *parameter)
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
     });
@@ -720,7 +720,7 @@ pub(crate) fn following_dimension_companion_record_index<'a>(
     matches
         .next()
         .is_none()
-        .then_some(owner.companion_record_index)
+        .then_some(owner.companion_record_index())
 }
 
 pub(crate) fn find_dimension_locus_pair(
@@ -851,17 +851,17 @@ pub fn decode_dimension_null_locus_pairs(
     let dimension_companions = owners
         .iter()
         .filter(|owner| {
-            let Some(scope) = native_stream(&owner.id) else {
+            let Some(scope) = native_stream(owner.id()) else {
                 return false;
             };
             parameters
-                .get(&(scope, owner.parameter_record_index))
+                .get(&(scope, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
-                native_stream(&owner.id)?.to_owned(),
-                owner.companion_record_index,
+                native_stream(owner.id())?.to_owned(),
+                owner.companion_record_index(),
             ))
         })
         .collect::<HashSet<_>>();
@@ -1065,18 +1065,18 @@ pub fn decode_dimension_annotation_frames(
     let dimension_companions = owners
         .iter()
         .filter(|owner| {
-            let Some(stream) = native_stream(&owner.id) else {
+            let Some(stream) = native_stream(owner.id()) else {
                 return false;
             };
             parameters
-                .get(&(stream, owner.parameter_record_index))
+                .get(&(stream, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
                 (
-                    native_stream(&owner.id)?.to_owned(),
-                    owner.companion_record_index,
+                    native_stream(owner.id())?.to_owned(),
+                    owner.companion_record_index(),
                 ),
                 owner,
             ))
@@ -1112,11 +1112,11 @@ pub fn decode_dimension_annotation_frames(
         let governed_owners = owners
             .iter()
             .filter(|owner| {
-                native_stream(&owner.id) == Some(stream)
+                native_stream(owner.id()) == Some(stream)
                     && dimension_companions
-                        .contains_key(&(stream.to_owned(), owner.companion_record_index))
+                        .contains_key(&(stream.to_owned(), owner.companion_record_index()))
             })
-            .map(|owner| (owner.record_index, owner.companion_record_index))
+            .map(|owner| (owner.record_index(), owner.companion_record_index()))
             .collect::<HashMap<_, _>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut intervals = companions
@@ -1141,15 +1141,15 @@ pub fn decode_dimension_annotation_frames(
             let end = owners
                 .iter()
                 .filter(|owner| {
-                    native_stream(&owner.id) == Some(stream)
-                        && owner.scope_record_index == scope.record_index
+                    native_stream(owner.id()) == Some(stream)
+                        && owner.scope_record_index() == scope.record_index
                 })
                 .filter_map(|owner| {
                     companions
                         .iter()
                         .find(|companion| {
                             native_stream(&companion.id) == Some(stream)
-                                && companion.record_index == owner.companion_record_index
+                                && companion.record_index == owner.companion_record_index()
                         })
                         .and_then(|companion| usize::try_from(companion.byte_offset).ok())
                 })
@@ -1409,8 +1409,8 @@ pub fn decode_dimension_presentation_frames(
     let dimension_owners = owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id).is_some_and(|stream| {
-                parameter_kinds.get(&(stream, owner.parameter_record_index))
+            native_stream(owner.id()).is_some_and(|stream| {
+                parameter_kinds.get(&(stream, owner.parameter_record_index()))
                     == Some(&DesignParameterKind::Dimension)
             })
         })
@@ -1492,23 +1492,23 @@ pub fn decode_dimension_presentation_frames(
             let Some(owner) = dimension_owners
                 .iter()
                 .filter(|owner| {
-                    native_stream(&owner.id) == Some(stream.as_str())
-                        && owner.byte_offset > frame.paired_byte_offset
+                    native_stream(owner.id()) == Some(stream.as_str())
+                        && owner.byte_offset() > frame.paired_byte_offset
                         && sketch_scope_by_entity
                             .get(&(stream.as_str(), u64::from(frame.owner_reference)))
                             .is_some_and(|scope_record_index| {
-                                owner.scope_record_index == *scope_record_index
+                                owner.scope_record_index() == *scope_record_index
                             })
                 })
-                .min_by_key(|owner| owner.byte_offset)
+                .min_by_key(|owner| owner.byte_offset())
             else {
                 continue;
             };
             frame.id =
                 ids::native_design_dimension_presentation_frame_id(&entry.name, frame.byte_offset);
-            frame.governing_owner_record_index = owner.record_index;
-            frame.governing_parameter_record_index = owner.parameter_record_index;
-            frame.governing_companion_record_index = owner.companion_record_index;
+            frame.governing_owner_record_index = owner.record_index();
+            frame.governing_parameter_record_index = owner.parameter_record_index();
+            frame.governing_companion_record_index = owner.companion_record_index();
             out.push(frame);
         }
     }
@@ -1629,17 +1629,17 @@ pub fn decode_dimension_locus_groups(
     let dimension_companions = owners
         .iter()
         .filter(|owner| {
-            let Some(scope) = native_stream(&owner.id) else {
+            let Some(scope) = native_stream(owner.id()) else {
                 return false;
             };
             parameters
-                .get(&(scope, owner.parameter_record_index))
+                .get(&(scope, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
-                native_stream(&owner.id)?.to_owned(),
-                owner.companion_record_index,
+                native_stream(owner.id())?.to_owned(),
+                owner.companion_record_index(),
             ))
         })
         .collect::<HashSet<_>>();
@@ -1749,10 +1749,10 @@ pub(crate) fn companion_owned_interval<'a>(
     let owning_scope_record_index = owners
         .iter()
         .find(|owner| {
-            native_stream(&owner.id) == Some(native_scope)
-                && owner.record_index == companion.owner_record_index
+            native_stream(owner.id()) == Some(native_scope)
+                && owner.record_index() == companion.owner_record_index
         })
-        .map(|owner| owner.scope_record_index);
+        .map(|owner| owner.scope_record_index());
     let foreign_scope_members = scopes
         .iter()
         .filter(|scope| {
@@ -1767,10 +1767,10 @@ pub(crate) fn companion_owned_interval<'a>(
     let end = owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(native_scope)
-                && owner.byte_offset > companion.byte_offset
+            native_stream(owner.id()) == Some(native_scope)
+                && owner.byte_offset() > companion.byte_offset
         })
-        .filter_map(|owner| usize::try_from(owner.byte_offset).ok())
+        .filter_map(|owner| usize::try_from(owner.byte_offset()).ok())
         .chain(
             parameters
                 .into_iter()

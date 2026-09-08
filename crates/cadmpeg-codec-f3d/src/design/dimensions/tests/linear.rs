@@ -752,21 +752,23 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             evaluated_value_offset: 90,
         })
         .unwrap();
-    let owner = DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#21"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 21,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-        parameter_record_index: 20,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 22,
-    };
+    let owner =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 40,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 22,
+        })
+        .unwrap();
     let companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 0,
@@ -1129,7 +1131,13 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     ));
 
     let mut group_owner = owner.clone();
-    group_owner.companion_record_index = group.companion_record_index;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(group_owner.clone());
+        wire.companion_record_index = group.companion_record_index;
+        wire.record_index = group.companion_record_index - 1;
+        wire.parameter_record_index = group.companion_record_index - 2;
+        group_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let combined = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),

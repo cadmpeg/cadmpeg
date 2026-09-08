@@ -18,23 +18,28 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
     let owners = (0_u32..12)
-        .map(|local_ordinal| DesignParameterOwner {
-            id: format!(
-                "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
-                100 + local_ordinal
-            ),
-            byte_offset: 0,
-            frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
-            record_index: 100 + local_ordinal,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: f64::from(local_ordinal),
-            evaluated_value_offset: u64::from(1_000 + local_ordinal),
-            parameter_record_index: 300 + local_ordinal,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: 400 + local_ordinal,
+        .map(|local_ordinal| {
+            crate::records::DesignParameterOwner::try_from(
+                crate::records::DesignParameterOwnerWire {
+                    id: format!(
+                        "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                        100 + local_ordinal
+                    ),
+                    byte_offset: (u64::from(1_000 + local_ordinal)) - 40,
+                    frame_length: 103,
+                    class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
+                    record_index: 100 + local_ordinal,
+                    scope_record_index,
+                    local_ordinal,
+                    evaluated_value: f64::from(local_ordinal),
+                    evaluated_value_offset: u64::from(1_000 + local_ordinal),
+                    parameter_record_index: 100 + local_ordinal + 1,
+                    owned_ordinal: local_ordinal,
+                    variant: None,
+                    companion_record_index: 100 + local_ordinal + 2,
+                },
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
     let mut bytes = super::assembly::assembly_operand_frame_fixture(scope_record_index);

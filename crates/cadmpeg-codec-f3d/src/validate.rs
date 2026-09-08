@@ -607,7 +607,7 @@ impl<'a> Ctx<'a> {
         let owners_by_index = native
             .design_parameter_owners
             .iter()
-            .map(|owner| ((design_stream(&owner.id), owner.record_index), owner))
+            .map(|owner| ((design_stream(owner.id()), owner.record_index()), owner))
             .collect::<std::collections::HashMap<_, _>>();
         let companions_by_index = native
             .design_parameter_companions
@@ -2073,8 +2073,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .design_parameter_owners
                         .iter()
                         .filter(|owner| {
-                            design_stream(&owner.id) == native_stream
-                                && owner.scope_record_index == scope.record_index
+                            design_stream(owner.id()) == native_stream
+                                && owner.scope_record_index() == scope.record_index
                         })
                         .count()
                         == 4
@@ -2101,12 +2101,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .enumerate()
                         .all(|(ordinal, ((record_index, value_offset), value))| {
                             native.design_parameter_owners.iter().any(|owner| {
-                                design_stream(&owner.id) == native_stream
-                                    && owner.record_index == *record_index
-                                    && owner.scope_record_index == scope.record_index
-                                    && owner.local_ordinal == ordinal as u32
-                                    && owner.evaluated_value == value
-                                    && owner.evaluated_value_offset == value_offset
+                                design_stream(owner.id()) == native_stream
+                                    && owner.record_index() == *record_index
+                                    && owner.scope_record_index() == scope.record_index
+                                    && owner.local_ordinal() == ordinal as u32
+                                    && owner.evaluated_value() == value
+                                    && owner.evaluated_value_offset() == value_offset
                             })
                         })
             }
@@ -2172,8 +2172,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .design_parameter_owners
                     .iter()
                     .filter(|owner| {
-                        design_stream(&owner.id) == native_stream
-                            && owner.scope_record_index == scope.record_index
+                        design_stream(owner.id()) == native_stream
+                            && owner.scope_record_index() == scope.record_index
                     })
                     .count();
                 let alignment_lane_bounds = design::assembly::alignment_lane_bounds(
@@ -2461,12 +2461,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && alignment_lanes.into_iter().chain(limit_lanes).all(
                                     |(record_index, value_offset, value, local_ordinal)| {
                                         native.design_parameter_owners.iter().any(|owner| {
-                                            design_stream(&owner.id) == native_stream
-                                                && owner.record_index == record_index
-                                                && owner.scope_record_index == scope.record_index
-                                                && owner.local_ordinal == local_ordinal
-                                                && owner.evaluated_value == value
-                                                && owner.evaluated_value_offset == value_offset
+                                            design_stream(owner.id()) == native_stream
+                                                && owner.record_index() == record_index
+                                                && owner.scope_record_index() == scope.record_index
+                                                && owner.local_ordinal() == local_ordinal
+                                                && owner.evaluated_value() == value
+                                                && owner.evaluated_value_offset() == value_offset
                                         })
                                     },
                                 )
@@ -2479,13 +2479,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && alignment.owners.iter().zip(&values).enumerate().all(
                                 |(ordinal, (lane, value))| {
                                     native.design_parameter_owners.iter().any(|owner| {
-                                        design_stream(&owner.id) == native_stream
-                                            && owner.record_index == lane.value
-                                            && owner.scope_record_index == scope.record_index
-                                            && owner.local_ordinal
+                                        design_stream(owner.id()) == native_stream
+                                            && owner.record_index() == lane.value
+                                            && owner.scope_record_index() == scope.record_index
+                                            && owner.local_ordinal()
                                                 == (alignment_start + ordinal) as u32
-                                            && owner.evaluated_value == *value
-                                            && owner.evaluated_value_offset == lane.offset
+                                            && owner.evaluated_value() == *value
+                                            && owner.evaluated_value_offset() == lane.offset
                                     })
                                 },
                             )
@@ -3975,11 +3975,11 @@ fn valid_work_plane_construction(
     let transform = frame.work_plane_transform;
     let transform_offset = frame.work_plane_transform_offset;
     let Some(owner) = ctx.native.design_parameter_owners.iter().find(|owner| {
-        design_stream(&owner.id) == native_stream
-            && owner.record_index == *extra_offset
-            && owner.scope_record_index == scope.record_index
-            && owner.evaluated_value.is_finite()
-            && owner.evaluated_value == 0.0
+        design_stream(owner.id()) == native_stream
+            && owner.record_index() == *extra_offset
+            && owner.scope_record_index() == scope.record_index
+            && owner.evaluated_value().is_finite()
+            && owner.evaluated_value() == 0.0
     }) else {
         return false;
     };
@@ -4003,8 +4003,8 @@ fn valid_work_plane_construction(
         && valid_three_point_recipe_resolution(inputs)
         && ctx.native.design_parameters.iter().any(|parameter| {
             design_stream(&parameter.id) == native_stream
-                && parameter.record_index == owner.parameter_record_index
-                && parameter.owner_record_index() == Some(owner.record_index)
+                && parameter.record_index == owner.parameter_record_index()
+                && parameter.owner_record_index() == Some(owner.record_index())
                 && parameter.source_kind() == "ExtraOffset"
                 && parameter.evaluated_value() == 0.0
         })
@@ -5055,11 +5055,11 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .design_parameter_owners
                     .iter()
                     .filter(|owner| {
-                        design_stream(&owner.id) == native_stream
-                            && owner.scope_record_index == scope.record_index
+                        design_stream(owner.id()) == native_stream
+                            && owner.scope_record_index() == scope.record_index
                     })
                     .filter_map(|owner| {
-                        parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                        parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                     })
                     .filter(|parameter| parameter.source_kind() == source_kind)
                     .count()
@@ -5069,11 +5069,11 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .design_parameter_owners
                     .iter()
                     .filter(|owner| {
-                        design_stream(&owner.id) == native_stream
-                            && owner.scope_record_index == scope.record_index
+                        design_stream(owner.id()) == native_stream
+                            && owner.scope_record_index() == scope.record_index
                     })
                     .filter_map(|owner| {
-                        parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                        parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                     })
                     .filter(|parameter| parameter.source_kind() == source_kind)
                     .map(|parameter| parameter.evaluated_value())
@@ -5316,8 +5316,8 @@ fn validate_fillet_radius_groups<'a>(
         let assignment_parameter = |record_index: u32| {
             let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
             let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index()?))?;
-            (owner.scope_record_index == assignment.scope_record_index
-                && owner.parameter_record_index == record_index)
+            (owner.scope_record_index() == assignment.scope_record_index
+                && owner.parameter_record_index() == record_index)
                 .then_some(parameter)
         };
         let tangency_weight = assignment
@@ -5491,8 +5491,8 @@ fn validate_fillet_operand_groups<'a>(
         let has_radius_assignment =
             fillet_radius_group_records.contains(&(native_stream, group.record_index));
         let has_parameter_owner = native.design_parameter_owners.iter().any(|owner| {
-            design_stream(&owner.id) == native_stream
-                && owner.scope_record_index == group.scope_record_index
+            design_stream(owner.id()) == native_stream
+                && owner.scope_record_index() == group.scope_record_index
         });
         let sole_compact_group_shape = scope.is_some_and(|scope| {
             native
@@ -5594,8 +5594,8 @@ fn validate_fillet_operand_groups<'a>(
                                 .windows(2)
                                 .all(|rows| rows[0].parameter.value < rows[1].parameter.value)
                     }) && native.design_parameter_owners.iter().all(|owner| {
-                        design_stream(&owner.id) != native_stream
-                            || owner.scope_record_index != scope.record_index
+                        design_stream(owner.id()) != native_stream
+                            || owner.scope_record_index() != scope.record_index
                     }) && fixed
                         .groups
                         .iter()
@@ -7414,65 +7414,32 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut owner_indices = HashSet::new();
     let mut owner_local_ordinals = HashSet::new();
     for owner in &native.design_parameter_owners {
-        let native_stream = design_stream(&owner.id);
-        let unique_index = owner_indices.insert((native_stream, owner.record_index));
-        let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index));
-        let owner_first = owner.parameter_record_index == owner.record_index.saturating_add(1)
-            && owner.companion_record_index == owner.record_index.saturating_add(2);
-        let parameter_first = owner.record_index == owner.parameter_record_index.saturating_add(1)
-            && owner.companion_record_index == owner.record_index.saturating_add(1);
-        let companion_first = owner.companion_record_index == owner.record_index.saturating_add(1)
-            && owner.parameter_record_index == owner.record_index.saturating_add(2);
-        let modern_frame_layout = match (
-            owner.frame_length,
-            owner.evaluated_value_offset.checked_sub(owner.byte_offset),
-            owner.variant,
-        ) {
-            (99 | 103, Some(40), None) | (100, Some(41), None) | (107, Some(44), None) => true,
-            (101, Some(41), Some(variant))
-            | (104, Some(40), Some(variant))
-            | (108, Some(44), Some(variant)) => variant <= 1,
-            _ => false,
-        };
-        let legacy_68_frame = owner.frame_length == 68
-            && design::decode::parameters::is_legacy_parameter_owner_68_class(
-                owner.class_tag.as_str(),
-            )
-            && owner.scope_record_index == 0
-            && owner.local_ordinal == 0
-            && parameter.is_some_and(|parameter| {
-                owner.evaluated_value_offset == parameter.evaluated_value_offset()
+        let native_stream = design_stream(owner.id());
+        let unique_index = owner_indices.insert((native_stream, owner.record_index()));
+        let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index()));
+        let legacy_68_frame = owner.frame_length() == 68;
+        let frame_layout = !matches!(owner.frame_length(), 68 | 88)
+            || parameter.is_some_and(|parameter| {
+                owner.evaluated_value_offset() == parameter.evaluated_value_offset()
             });
-        let legacy_88_frame = owner.frame_length == 88
-            && design::decode::parameters::is_legacy_parameter_owner_88_class(
-                owner.class_tag.as_str(),
-            )
-            && owner.scope_record_index != 0
-            && owner.local_ordinal == 0
-            && parameter.is_some_and(|parameter| {
-                owner.evaluated_value_offset == parameter.evaluated_value_offset()
-            });
-        let frame_layout = modern_frame_layout || legacy_68_frame || legacy_88_frame;
         let scope_resolves = legacy_68_frame
-            || records_by_index.contains_key(&(native_stream, owner.scope_record_index));
+            || records_by_index.contains_key(&(native_stream, owner.scope_record_index()));
         let unique_local_ordinal = legacy_68_frame
             || owner_local_ordinals.insert((
                 native_stream,
-                owner.scope_record_index,
-                owner.local_ordinal,
+                owner.scope_record_index(),
+                owner.local_ordinal(),
             ));
-        let valid = owner.evaluated_value.is_finite()
-            && frame_layout
-            && (owner_first || parameter_first || companion_first)
+        let valid = frame_layout
             && scope_resolves
-            && records_by_index.contains_key(&(native_stream, owner.parameter_record_index))
-            && records_by_index.contains_key(&(native_stream, owner.companion_record_index))
+            && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
+            && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index
-                .get(&(native_stream, owner.companion_record_index))
-                .is_some_and(|companion| companion.owner_record_index == owner.record_index)
+                .get(&(native_stream, owner.companion_record_index()))
+                .is_some_and(|companion| companion.owner_record_index == owner.record_index())
             && parameter.is_some_and(|parameter| {
-                parameter.owner_record_index() == Some(owner.record_index)
-                    && parameter.evaluated_value().to_bits() == owner.evaluated_value.to_bits()
+                parameter.owner_record_index() == Some(owner.record_index())
+                    && parameter.evaluated_value().to_bits() == owner.evaluated_value().to_bits()
             })
             && unique_index
             && unique_local_ordinal;
@@ -7482,7 +7449,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 severity: Severity::Error,
                 message: "Fusion Design parameter owner has an invalid frame or indexed link"
                     .into(),
-                entity: Some(owner.id.clone()),
+                entity: Some(owner.id().clone()),
             });
         }
     }
@@ -7528,7 +7495,7 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .map(String::as_str)
                 .eq(expected_recipe_ids)
             && records_by_index.contains_key(&(native_stream, companion.record_index))
-            && owner.is_some_and(|owner| owner.companion_record_index == companion.record_index)
+            && owner.is_some_and(|owner| owner.companion_record_index() == companion.record_index)
             && unique_index
             && unique_owner;
         if !valid {
@@ -7560,7 +7527,7 @@ fn validate_dimension_recipe_records<'a>(
             owners_by_index
                 .get(&(native_stream, companion.owner_record_index))
                 .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
                     parameter.kind() == records::DesignParameterKind::Dimension
@@ -7649,7 +7616,7 @@ fn validate_dimension_companion_recipes<'a>(
         let dimension_companion = owners_by_index
             .get(&(native_stream, companion.owner_record_index))
             .and_then(|owner| {
-                parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
             })
             .is_some_and(|parameter| parameter.kind() == records::DesignParameterKind::Dimension);
         if dimension_companion
@@ -7689,16 +7656,16 @@ fn validate_dimension_locus_pairs<'a>(
         let companion_contains_frame = companion.is_some_and(|companion| {
             pair.byte_offset >= companion.byte_offset.saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
-                    design_stream(&owner.id) == native_stream
-                        && owner.byte_offset > companion.byte_offset
-                        && owner.byte_offset <= pair.byte_offset
+                    design_stream(owner.id()) == native_stream
+                        && owner.byte_offset() > companion.byte_offset
+                        && owner.byte_offset() <= pair.byte_offset
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
                 .get(&(native_stream, companion.owner_record_index))
                 .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
                     parameter.kind() == records::DesignParameterKind::Dimension
@@ -7770,18 +7737,18 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 }),
             None => governing_owner.is_some_and(|owner| {
                 scopes_by_index
-                    .get(&(native_stream, owner.scope_record_index))
+                    .get(&(native_stream, owner.scope_record_index()))
                     .is_some_and(|scope| frame.byte_offset >= scope.byte_offset)
                     && native
                         .design_parameter_owners
                         .iter()
                         .filter(|candidate| {
-                            design_stream(&candidate.id) == native_stream
-                                && candidate.scope_record_index == owner.scope_record_index
+                            design_stream(candidate.id()) == native_stream
+                                && candidate.scope_record_index() == owner.scope_record_index()
                         })
                         .filter_map(|candidate| {
                             companions_by_index
-                                .get(&(native_stream, candidate.companion_record_index))
+                                .get(&(native_stream, candidate.companion_record_index()))
                                 .map(|companion| companion.byte_offset)
                         })
                         .min()
@@ -7789,9 +7756,9 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             }),
         };
         let governing_link_valid = governing_owner.is_some_and(|owner| {
-            owner.companion_record_index == frame.governing_companion_record_index
+            owner.companion_record_index() == frame.governing_companion_record_index
                 && parameters_by_index
-                    .get(&(native_stream, owner.parameter_record_index))
+                    .get(&(native_stream, owner.parameter_record_index()))
                     .is_some_and(|parameter| {
                         parameter.kind() == records::DesignParameterKind::Dimension
                     })
@@ -7888,34 +7855,35 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
         let companion =
             companions_by_index.get(&(native_stream, frame.governing_companion_record_index));
         let owner_link_valid = owner.is_some_and(|owner| {
-            owner.parameter_record_index == frame.governing_parameter_record_index
-                && owner.companion_record_index == frame.governing_companion_record_index
+            owner.parameter_record_index() == frame.governing_parameter_record_index
+                && owner.companion_record_index() == frame.governing_companion_record_index
                 && parameter.is_some_and(|parameter| {
                     parameter.kind() == records::DesignParameterKind::Dimension
                 })
                 && companion
-                    .is_some_and(|companion| companion.owner_record_index == owner.record_index)
+                    .is_some_and(|companion| companion.owner_record_index == owner.record_index())
         });
         let nearest_owner = native
             .design_parameter_owners
             .iter()
             .filter(|candidate| {
-                design_stream(&candidate.id) == native_stream
+                design_stream(candidate.id()) == native_stream
                     && sketch_scope_by_entity
                         .get(&(native_stream, u64::from(frame.owner_reference)))
                         .is_some_and(|scope_record_index| {
-                            candidate.scope_record_index == *scope_record_index
+                            candidate.scope_record_index() == *scope_record_index
                         })
-                    && candidate.byte_offset > frame.paired_byte_offset
+                    && candidate.byte_offset() > frame.paired_byte_offset
                     && parameters_by_index
-                        .get(&(native_stream, candidate.parameter_record_index))
+                        .get(&(native_stream, candidate.parameter_record_index()))
                         .is_some_and(|parameter| {
                             parameter.kind() == records::DesignParameterKind::Dimension
                         })
             })
-            .min_by_key(|candidate| candidate.byte_offset);
-        let governing_owner_is_nearest = nearest_owner
-            .is_some_and(|candidate| candidate.record_index == frame.governing_owner_record_index);
+            .min_by_key(|candidate| candidate.byte_offset());
+        let governing_owner_is_nearest = nearest_owner.is_some_and(|candidate| {
+            candidate.record_index() == frame.governing_owner_record_index
+        });
         let operand_start = frame.byte_offset.saturating_add(24);
         let operands_valid = !frame.operands.is_empty()
             && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
@@ -7975,16 +7943,16 @@ fn validate_dimension_locus_groups<'a>(
         let companion_contains_frame = companion.is_some_and(|companion| {
             group.byte_offset >= companion.byte_offset.saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
-                    design_stream(&owner.id) == native_stream
-                        && owner.byte_offset > companion.byte_offset
-                        && owner.byte_offset <= group.byte_offset
+                    design_stream(owner.id()) == native_stream
+                        && owner.byte_offset() > companion.byte_offset
+                        && owner.byte_offset() <= group.byte_offset
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
                 .get(&(native_stream, companion.owner_record_index))
                 .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
                     parameter.kind() == records::DesignParameterKind::Dimension
@@ -8082,16 +8050,16 @@ fn validate_dimension_null_locus_pairs<'a>(
         let companion_contains_frame = companion.is_some_and(|companion| {
             pair.byte_offset >= companion.byte_offset.saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
-                    design_stream(&owner.id) == native_stream
-                        && owner.byte_offset > companion.byte_offset
-                        && owner.byte_offset <= pair.byte_offset
+                    design_stream(owner.id()) == native_stream
+                        && owner.byte_offset() > companion.byte_offset
+                        && owner.byte_offset() <= pair.byte_offset
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
                 .get(&(native_stream, companion.owner_record_index))
                 .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
                     parameter.kind() == records::DesignParameterKind::Dimension
@@ -8471,7 +8439,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 owners_by_index.get(&(native_stream, companion.owner_record_index))
             })
             .and_then(|parameter_owner| {
-                placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index))
+                placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index()))
             })
             .and_then(|placement| u32::try_from(placement.entity_id.suffix()).ok());
         let Some(owner) = owner else {
@@ -8520,7 +8488,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 owners_by_index.get(&(native_stream, companion.owner_record_index))
             })
             .and_then(|parameter_owner| {
-                placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index))
+                placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index()))
             })
             .and_then(|placement| u32::try_from(placement.entity_id.suffix()).ok());
         let Some(owner) = owner else {

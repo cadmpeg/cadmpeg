@@ -633,7 +633,7 @@ pub fn project_parameter_design_with_edge_identities(
         .collect::<HashMap<_, _>>();
     let owners_by_index = owners
         .iter()
-        .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
+        .filter_map(|owner| Some(((native_stream(owner.id())?, owner.record_index()), owner)))
         .collect::<HashMap<_, _>>();
     let native_scope_properties = |scope: &DesignParameterScope, native_scope: &str| {
         scope_properties(scope, native_scope, placements)
@@ -649,17 +649,17 @@ pub fn project_parameter_design_with_edge_identities(
             let parameters = owners
                 .iter()
                 .filter(|owner| {
-                    native_stream(&owner.id) == Some(native_scope)
-                        && owner.scope_record_index == scope.record_index
+                    native_stream(owner.id()) == Some(native_scope)
+                        && owner.scope_record_index() == scope.record_index
                 })
                 .filter_map(|owner| {
                     native
                         .iter()
                         .find(|parameter| {
                             native_stream(&parameter.id) == Some(native_scope)
-                                && parameter.record_index == owner.parameter_record_index
+                                && parameter.record_index == owner.parameter_record_index()
                         })
-                        .map(|parameter| (owner.local_ordinal, parameter))
+                        .map(|parameter| (owner.local_ordinal(), parameter))
                 })
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind());
@@ -1074,8 +1074,8 @@ pub fn project_parameter_design_with_edge_identities(
                                 face_operands,
                             );
                             let has_parameter_owners = owners.iter().any(|owner| {
-                                native_stream(&owner.id) == Some(native_scope)
-                                    && owner.scope_record_index == scope.record_index
+                                native_stream(owner.id()) == Some(native_scope)
+                                    && owner.scope_record_index() == scope.record_index
                             });
                             let face_reference_count = construction
                                 .face_group_record_indices
@@ -1536,7 +1536,7 @@ pub fn project_parameter_design_with_edge_identities(
                 .owner_record_index()
                 .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
             let owner =
-                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index)));
+                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index())));
             let mut properties = BTreeMap::new();
             if parameter.kind() != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind().to_owned());
@@ -1566,7 +1566,7 @@ pub fn project_parameter_design_with_edge_identities(
                 owner: owner.cloned(),
                 ordinal: owner
                     .zip(native_owner)
-                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal),
+                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal()),
                 name: parameter.name().to_owned(),
                 expression: parameter.expression().to_owned(),
                 display: if parameter.source_kind().contains("Diameter Dimension") {
@@ -2397,7 +2397,8 @@ fn project_full_round_fillet(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     let stream = native_stream(&scope.id)?;
     if owners.iter().any(|owner| {
-        native_stream(&owner.id) == Some(stream) && owner.scope_record_index == scope.record_index
+        native_stream(owner.id()) == Some(stream)
+            && owner.scope_record_index() == scope.record_index
     }) || fillet_radius_groups.iter().any(|assignment| {
         native_stream(&assignment.id) == Some(stream)
             && assignment.scope_record_index == scope.record_index
@@ -3500,9 +3501,9 @@ pub(crate) fn project_edge_flange(
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.record_index == owner_record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.record_index() == owner_record_index
         });
         let owner = matching.next()?;
         if matching.next().is_some() {
@@ -3510,7 +3511,7 @@ pub(crate) fn project_edge_flange(
         }
         parameters.iter().find(|parameter| {
             native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index
+                && parameter.record_index == owner.parameter_record_index()
                 && parameter.source_kind() == source_kind
         })
     };
@@ -3731,9 +3732,9 @@ pub(crate) fn project_hem(
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index: u32, source_kind: &str| {
         let mut matching_owners = owners.iter().filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.record_index == owner_record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.record_index() == owner_record_index
         });
         let owner = matching_owners.next()?;
         if matching_owners.next().is_some() {
@@ -3741,7 +3742,7 @@ pub(crate) fn project_hem(
         }
         let mut matching_parameters = parameters.iter().filter(|parameter| {
             native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index
+                && parameter.record_index == owner.parameter_record_index()
                 && parameter.source_kind() == source_kind
         });
         let parameter = matching_parameters.next()?;
@@ -3925,9 +3926,9 @@ pub(crate) fn project_ruled_surface(
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.record_index == owner_record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.record_index() == owner_record_index
         });
         let owner = matching.next()?;
         if matching.next().is_some() {
@@ -3935,7 +3936,7 @@ pub(crate) fn project_ruled_surface(
         }
         parameters.iter().find(|parameter| {
             native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index
+                && parameter.record_index == owner.parameter_record_index()
                 && parameter.source_kind() == source_kind
         })
     };

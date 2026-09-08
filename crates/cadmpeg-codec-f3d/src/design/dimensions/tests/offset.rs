@@ -756,20 +756,23 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let owner = |stream: &str| DesignParameterOwner {
-        id: format!("f3d:{stream}:design-parameter-owner#0"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 9,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 1.0,
-        evaluated_value_offset: 40,
-        parameter_record_index: 11,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 12,
+    let owner = |stream: &str| {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("f3d:{stream}:design-parameter-owner#0"),
+            byte_offset: (40) - 40,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 10,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 11,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 12,
+        })
+        .unwrap()
     };
     let pair = |stream: &str| DesignDimensionLocusPair {
         id: format!("f3d:{stream}:design-dimension-locus-pair#0"),

@@ -299,9 +299,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes[count_start + 4] = b'x';
     bytes[angle_start + 4] = b'x';
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
+            byte_offset: (evaluated_value_offset) - 40,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
@@ -311,9 +311,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             evaluated_value_offset,
             parameter_record_index: record_index + 1,
             owned_ordinal: local_ordinal,
-            variant: None,
+            variant: Some(0),
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     };
     let owners = [
         owner(count_record_index, 0, 25.0, 101),
@@ -435,7 +436,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
 
     let mut invalid_inactive_spacing = rectangular_owners.clone();
-    invalid_inactive_spacing[3].evaluated_value = 1.0;
+    {
+        let mut wire =
+            crate::records::DesignParameterOwnerWire::from(invalid_inactive_spacing[3].clone());
+        wire.evaluated_value = 1.0;
+        invalid_inactive_spacing[3] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
@@ -446,7 +452,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
     let mut duplicate_lane = rectangular_owners.clone();
-    duplicate_lane[3].local_ordinal = 2;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(duplicate_lane[3].clone());
+        wire.local_ordinal = 2;
+        duplicate_lane[3] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
@@ -822,7 +832,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.reference_members = crate::records::ReferenceRun::unlocated(
         placement_and_alignment_owners
             .iter()
-            .map(|owner| owner.record_index)
+            .map(|owner| owner.record_index())
             .collect(),
     );
     if let crate::records::feature::DesignScopePayload::Assemble(slot)

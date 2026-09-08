@@ -323,21 +323,23 @@ pub(super) fn continue_fixed_kind_operations(
         })
     );
     chamfer_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
-    let indexed_owner = DesignParameterOwner {
-        id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 97,
-        scope_record_index: chamfer_scope.record_index,
-        local_ordinal: 0,
-        evaluated_value: 0.04,
-        evaluated_value_offset: 0,
-        parameter_record_index: 98,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 99,
-    };
+    let indexed_owner =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 97,
+            scope_record_index: chamfer_scope.record_index,
+            local_ordinal: 0,
+            evaluated_value: 0.04,
+            evaluated_value_offset: 40,
+            parameter_record_index: 98,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 99,
+        })
+        .unwrap();
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
@@ -416,21 +418,23 @@ pub(super) fn continue_fixed_kind_operations(
     indexed_revolve_scope.frame_length = 377;
     indexed_revolve_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
-    let indexed_angle = DesignParameterOwner {
-        id: indexed_revolve_scope.id.clone(),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
-        record_index: indexed_angle_record_index,
-        scope_record_index: indexed_revolve_scope.record_index,
-        local_ordinal: 0,
-        evaluated_value: std::f64::consts::TAU,
-        evaluated_value_offset: 45,
-        parameter_record_index: 1_792,
-        owned_ordinal: 8,
-        variant: None,
-        companion_record_index: 1_793,
-    };
+    let indexed_angle =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: indexed_revolve_scope.id.clone(),
+            byte_offset: 5,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
+            record_index: indexed_angle_record_index,
+            scope_record_index: indexed_revolve_scope.record_index,
+            local_ordinal: 0,
+            evaluated_value: std::f64::consts::TAU,
+            evaluated_value_offset: 45,
+            parameter_record_index: 1_791,
+            owned_ordinal: 8,
+            variant: Some(0),
+            companion_record_index: 1_792,
+        })
+        .unwrap();
     let indexed_revolve_construction = exact_path_feature_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -479,8 +483,13 @@ pub(super) fn continue_fixed_kind_operations(
         indexed_angle_record_index,
     ]);
     let mut class403_angle = indexed_angle.clone();
-    class403_angle.scope_record_index = class403_scope.record_index;
-    class403_angle.evaluated_value_offset = (class403_start + 40) as u64;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(class403_angle.clone());
+        wire.scope_record_index = class403_scope.record_index;
+        wire.byte_offset = class403_start as u64;
+        wire.evaluated_value_offset = (class403_start + 40) as u64;
+        class403_angle = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -534,21 +543,23 @@ pub(super) fn continue_fixed_kind_operations(
         legacy_angle_record_index,
         204,
     ]);
-    let legacy_angle = DesignParameterOwner {
-        id: legacy_revolve_scope.id.clone(),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
-        record_index: legacy_angle_record_index,
-        scope_record_index: legacy_revolve_scope.record_index,
-        local_ordinal: 0,
-        evaluated_value: std::f64::consts::TAU,
-        evaluated_value_offset: 55,
-        parameter_record_index: 1_801,
-        owned_ordinal: 8,
-        variant: None,
-        companion_record_index: 1_802,
-    };
+    let legacy_angle =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: legacy_revolve_scope.id.clone(),
+            byte_offset: 15,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
+            record_index: legacy_angle_record_index,
+            scope_record_index: legacy_revolve_scope.record_index,
+            local_ordinal: 0,
+            evaluated_value: std::f64::consts::TAU,
+            evaluated_value_offset: 55,
+            parameter_record_index: 1_801,
+            owned_ordinal: 8,
+            variant: Some(0),
+            companion_record_index: 1_802,
+        })
+        .unwrap();
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1675,23 +1686,28 @@ pub(super) fn continue_fixed_kind_operations(
     let owner_pipe_owners = owner_pipe_values
         .into_iter()
         .enumerate()
-        .map(|(ordinal, value)| DesignParameterOwner {
-            id: format!(
-                "f3d:Design/BulkStream.dat:parameter-owner#{}",
-                owner_pipe_record_indexes[ordinal]
-            ),
-            byte_offset: 0,
-            frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("342".to_owned()).unwrap(),
-            record_index: owner_pipe_record_indexes[ordinal],
-            scope_record_index: scope.record_index,
-            local_ordinal: ordinal as u32,
-            evaluated_value: value,
-            evaluated_value_offset: 10_000 + ordinal as u64,
-            parameter_record_index: owner_pipe_record_indexes[ordinal] + 1,
-            owned_ordinal: ordinal as u32,
-            variant: None,
-            companion_record_index: owner_pipe_record_indexes[ordinal] + 2,
+        .map(|(ordinal, value)| {
+            crate::records::DesignParameterOwner::try_from(
+                crate::records::DesignParameterOwnerWire {
+                    id: format!(
+                        "f3d:Design/BulkStream.dat:parameter-owner#{}",
+                        owner_pipe_record_indexes[ordinal]
+                    ),
+                    byte_offset: (10_000 + ordinal as u64) - 40,
+                    frame_length: 103,
+                    class_tag: crate::records::DesignClassTag::try_from("342".to_owned()).unwrap(),
+                    record_index: owner_pipe_record_indexes[ordinal],
+                    scope_record_index: scope.record_index,
+                    local_ordinal: ordinal as u32,
+                    evaluated_value: value,
+                    evaluated_value_offset: 10_000 + ordinal as u64,
+                    parameter_record_index: owner_pipe_record_indexes[ordinal] + 1,
+                    owned_ordinal: ordinal as u32,
+                    variant: None,
+                    companion_record_index: owner_pipe_record_indexes[ordinal] + 2,
+                },
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
     let mut owner_pipe_scope = scope.clone();
@@ -1727,8 +1743,9 @@ pub(super) fn continue_fixed_kind_operations(
         ))
     );
     let mut wrong_owner_class = owner_pipe_owners.clone();
-    wrong_owner_class[0].class_tag =
-        crate::records::DesignClassTag::try_from("341".to_owned()).unwrap();
+    let mut wire = crate::records::DesignParameterOwnerWire::from(wrong_owner_class[0].clone());
+    wire.class_tag = crate::records::DesignClassTag::try_from("341".to_owned()).unwrap();
+    wrong_owner_class[0] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
