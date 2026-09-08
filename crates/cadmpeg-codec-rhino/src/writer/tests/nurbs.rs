@@ -132,11 +132,12 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                 )
                 .expect("valid explicit pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 Some(false),
                 Some([2.0, 5.0]),
                 Some(0.001),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -200,11 +201,12 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
             None,
             ir.model.edges[0].param_range,
             None,
-        ),
+        )
+        .unwrap(),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -249,7 +251,12 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 2.0]), None),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                None,
+                Some([0.0, 2.0]),
+                None,
+            )
+            .unwrap(),
         });
     }
     ir.model.coedges[0].pcurves = vec![
@@ -296,11 +303,12 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
             None,
             Some([0.0, 2.0]),
             Some(0.002),
-        ),
+        )
+        .unwrap(),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,

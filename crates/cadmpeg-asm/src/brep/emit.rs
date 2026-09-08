@@ -3339,7 +3339,7 @@ pub(crate) fn emit_pcurves(
     carriers: &mut Carriers,
     reach: &Reachable,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Carriers { pcurve_geo, .. } = &mut *carriers;
     let Reachable {
         pcurves: kept_pcurves,
@@ -3374,14 +3374,22 @@ pub(crate) fn emit_pcurves(
                         Some(native_tail_flags),
                         Some(parameter_range),
                         Some(fit_tolerance),
-                    ) => PcurveMetadata::AsmInline(PcurveInlineForm {
-                        wrapper_reversed,
-                        native_tail_flags,
-                        parameter_range,
-                        fit_tolerance,
-                    }),
+                    ) => PcurveMetadata::AsmInline(
+                        PcurveInlineForm::try_new(
+                            wrapper_reversed,
+                            native_tail_flags,
+                            parameter_range,
+                            fit_tolerance,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                     (wrapper_reversed, _, parameter_range, fit_tolerance) => {
-                        PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
+                        PcurveMetadata::try_general(
+                            wrapper_reversed,
+                            parameter_range,
+                            fit_tolerance,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?
                     }
                 };
                 out.pcurves.push(Pcurve {
@@ -3392,6 +3400,8 @@ pub(crate) fn emit_pcurves(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Emit reachable point carriers, scaled to millimetres.

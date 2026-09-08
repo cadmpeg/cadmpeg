@@ -653,11 +653,12 @@ mod tests {
                         )
                         .unwrap(),
                     ),
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                         None,
                         Some([0.0, 1.0]),
                         None,
-                    ),
+                    )
+                    .unwrap(),
                 });
                 pcurve_uses.insert(
                     (loop_id, member),

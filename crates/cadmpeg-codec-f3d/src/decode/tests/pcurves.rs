@@ -995,7 +995,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     };
     inline.wrapper_reversed = true;
     inline.native_tail_flags = [false, true, false, true];
-    inline.parameter_range = [-2.0, 3.0];
+    inline.set_parameter_range([-2.0, 3.0]).unwrap();
     inline.fit_tolerance = 0.0025;
     let expected = pcurve.clone();
 
@@ -1091,7 +1091,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
         panic!("decoded fixture uses general pcurve metadata")
     };
-    metadata.parameter_range = Some([-3.0, 5.0]);
+    metadata.set_parameter_range(Some([-3.0, 5.0])).unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1132,13 +1132,15 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let Some(parameter_range) = inline.parameter_range() else {
         panic!("ref-form fixture carries a parameter range")
     };
-    inline.metadata =
-        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(cadmpeg_ir::geometry::PcurveInlineForm {
-            wrapper_reversed: false,
-            native_tail_flags: [true, false, true, false],
+    inline.metadata = cadmpeg_ir::geometry::PcurveMetadata::AsmInline(
+        cadmpeg_ir::geometry::PcurveInlineForm::try_new(
+            false,
+            [true, false, true, false],
             parameter_range,
-            fit_tolerance: 0.002,
-        });
+            0.002,
+        )
+        .unwrap(),
+    );
     mixed.model.coedges[1].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: inline.id.clone(),
         isoparametric: None,

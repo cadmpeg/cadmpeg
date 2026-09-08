@@ -36,7 +36,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -244,7 +244,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         .expect("identity grammar"),
                     transform.offset,
                     pcurve_geometry,
-                );
+                )?;
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
@@ -306,5 +306,5 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

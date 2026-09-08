@@ -11036,7 +11036,7 @@ impl Pcurve {
 }
 
 /// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PcurveMetadata {
@@ -11046,18 +11046,21 @@ pub enum PcurveMetadata {
     General(PcurveGeneralForm),
 }
 
+impl Default for PcurveMetadata {
+    fn default() -> Self {
+        Self::General(PcurveGeneralForm::default())
+    }
+}
+
 impl PcurveMetadata {
-    /// Build metadata without an ASM inline-record claim.
-    pub fn general(
+    /// Admit metadata without an ASM inline-record claim.
+    pub fn try_general(
         wrapper_reversed: Option<bool>,
         parameter_range: Option<[f64; 2]>,
         fit_tolerance: Option<f64>,
-    ) -> Self {
-        Self::General(PcurveGeneralForm {
-            wrapper_reversed,
-            parameter_range,
-            fit_tolerance,
-        })
+    ) -> Result<Self, &'static str> {
+        PcurveGeneralForm::try_new(wrapper_reversed, parameter_range, fit_tolerance)
+            .map(Self::General)
     }
 
     /// Native wrapper reversal, when the source stores one.
@@ -11093,35 +11096,189 @@ impl PcurveMetadata {
     }
 }
 
+impl<'de> Deserialize<'de> for PcurveMetadata {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        fn present_flags<'de, D: serde::Deserializer<'de>>(
+            deserializer: D,
+        ) -> Result<Option<[bool; 4]>, D::Error> {
+            <[bool; 4]>::deserialize(deserializer).map(Some)
+        }
+
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            #[serde(default)]
+            wrapper_reversed: Option<bool>,
+            #[serde(default, deserialize_with = "present_flags")]
+            native_tail_flags: Option<[bool; 4]>,
+            #[serde(default)]
+            parameter_range: Option<[f64; 2]>,
+            #[serde(default)]
+            fit_tolerance: Option<f64>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        if let Some(flags) = wire.native_tail_flags {
+            let wrapper = wire
+                .wrapper_reversed
+                .ok_or_else(|| serde::de::Error::missing_field("wrapper_reversed"))?;
+            let range = wire
+                .parameter_range
+                .ok_or_else(|| serde::de::Error::missing_field("parameter_range"))?;
+            let tolerance = wire
+                .fit_tolerance
+                .ok_or_else(|| serde::de::Error::missing_field("fit_tolerance"))?;
+            PcurveInlineForm::try_new(wrapper, flags, range, tolerance)
+                .map(Self::AsmInline)
+                .map_err(serde::de::Error::custom)
+        } else {
+            Self::try_general(
+                wire.wrapper_reversed,
+                wire.parameter_range,
+                wire.fit_tolerance,
+            )
+            .map_err(serde::de::Error::custom)
+        }
+    }
+}
+
+fn admit_pcurve_parameter_range(range: [f64; 2]) -> Result<[f64; 2], &'static str> {
+    if range.iter().all(|value| value.is_finite()) {
+        Ok(range)
+    } else {
+        Err("pcurve parameter_range endpoints must be finite")
+    }
+}
+
 /// The fields carried together by an ASM inline `exp_par_cur` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, try_from = "PcurveInlineFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveInlineForm {
     /// Parameterization wrapper reversal.
     pub wrapper_reversed: bool,
     /// Four native booleans following the inline subtype scope.
     pub native_tail_flags: [bool; 4],
-    /// Directed native parameter interval.
-    pub parameter_range: [f64; 2],
+    parameter_range: [f64; 2],
     /// Parameter-space fit tolerance following the solved UV cache.
     pub fit_tolerance: f64,
 }
 
-/// Pcurve metadata with no ASM inline-record contract.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PcurveInlineFormWire {
+    wrapper_reversed: bool,
+    native_tail_flags: [bool; 4],
+    parameter_range: [f64; 2],
+    fit_tolerance: f64,
+}
+
+impl TryFrom<PcurveInlineFormWire> for PcurveInlineForm {
+    type Error = &'static str;
+    fn try_from(wire: PcurveInlineFormWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.wrapper_reversed,
+            wire.native_tail_flags,
+            wire.parameter_range,
+            wire.fit_tolerance,
+        )
+    }
+}
+
+impl PcurveInlineForm {
+    /// Admit inline metadata with finite parameter endpoints.
+    pub fn try_new(
+        wrapper_reversed: bool,
+        native_tail_flags: [bool; 4],
+        parameter_range: [f64; 2],
+        fit_tolerance: f64,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            wrapper_reversed,
+            native_tail_flags,
+            parameter_range: admit_pcurve_parameter_range(parameter_range)?,
+            fit_tolerance,
+        })
+    }
+
+    /// Directed native parameter interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> [f64; 2] {
+        self.parameter_range
+    }
+
+    /// Replace the parameter range while preserving the previous range on rejection.
+    pub fn set_parameter_range(&mut self, range: [f64; 2]) -> Result<(), &'static str> {
+        self.parameter_range = admit_pcurve_parameter_range(range)?;
+        Ok(())
+    }
+}
+
+/// Pcurve metadata with no ASM inline-record contract.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, try_from = "PcurveGeneralFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
     /// Source wrapper reversal, when stored independently of an ASM tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrapper_reversed: Option<bool>,
-    /// Directed native parameter interval.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_range: Option<[f64; 2]>,
+    parameter_range: Option<[f64; 2]>,
     /// Parameter-space fit tolerance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fit_tolerance: Option<f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PcurveGeneralFormWire {
+    #[serde(default)]
+    wrapper_reversed: Option<bool>,
+    #[serde(default)]
+    parameter_range: Option<[f64; 2]>,
+    #[serde(default)]
+    fit_tolerance: Option<f64>,
+}
+
+impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
+    type Error = &'static str;
+    fn try_from(wire: PcurveGeneralFormWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.wrapper_reversed,
+            wire.parameter_range,
+            wire.fit_tolerance,
+        )
+    }
+}
+
+impl PcurveGeneralForm {
+    /// Admit general metadata with finite parameter endpoints.
+    pub fn try_new(
+        wrapper_reversed: Option<bool>,
+        parameter_range: Option<[f64; 2]>,
+        fit_tolerance: Option<f64>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            wrapper_reversed,
+            parameter_range: parameter_range
+                .map(admit_pcurve_parameter_range)
+                .transpose()?,
+            fit_tolerance,
+        })
+    }
+
+    /// Directed native parameter interval.
+    #[must_use]
+    pub const fn parameter_range(&self) -> Option<[f64; 2]> {
+        self.parameter_range
+    }
+
+    /// Replace the parameter range while preserving the previous range on rejection.
+    pub fn set_parameter_range(&mut self, range: Option<[f64; 2]>) -> Result<(), &'static str> {
+        self.parameter_range = range.map(admit_pcurve_parameter_range).transpose()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

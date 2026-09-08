@@ -1989,7 +1989,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         ir.model.pcurves.push(Pcurve {
             id: PcurveId::mint(ids::data("pcurve", id)).expect("identity grammar"),
             geometry,
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
         });
         typed.insert(id);
         if let Some(representation) =

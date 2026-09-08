@@ -229,7 +229,7 @@ fn untrimmed_surface_curve() -> CadIr {
             )
             .unwrap(),
         ),
-        metadata: PcurveMetadata::general(None, None, None),
+        metadata: PcurveMetadata::default(),
     });
     ir.model.coedges.push(Coedge {
         id: "test:model:coedge#coedge"
@@ -395,7 +395,9 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let PcurveMetadata::General(metadata) = &mut ir.model.pcurves[0].metadata else {
         panic!("fixture uses general pcurve metadata")
     };
-    metadata.parameter_range = Some([0.0, std::f64::consts::PI]);
+    metadata
+        .set_parameter_range(Some([0.0, std::f64::consts::PI]))
+        .unwrap();
 
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(&ir, &mut findings);
@@ -465,7 +467,7 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
             )
             .unwrap(),
         },
-        metadata: PcurveMetadata::general(None, None, None),
+        metadata: PcurveMetadata::default(),
     };
     assert_eq!(pcurve_parameter_domain(&pcurve.geometry), Some([0.0, 1.0]));
     assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
@@ -538,7 +540,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
             crate::geometry::LinePcurve::try_new(Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))
                 .unwrap(),
         ),
-        metadata: PcurveMetadata::general(None, None, None),
+        metadata: PcurveMetadata::default(),
     };
     let context = SurfacePcurveContext {
         index: &index,
@@ -774,7 +776,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 )
                 .unwrap(),
             },
-            metadata: PcurveMetadata::general(None, None, fit_tolerance),
+            metadata: PcurveMetadata::try_general(None, None, fit_tolerance).unwrap(),
         });
         let coedge = ir
             .model
@@ -839,7 +841,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             )
             .unwrap(),
         },
-        metadata: PcurveMetadata::general(None, None, None),
+        metadata: PcurveMetadata::default(),
     });
     let coedge = procedural
         .model
@@ -936,7 +938,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 )
                 .unwrap(),
             },
-            metadata: PcurveMetadata::general(None, None, None),
+            metadata: PcurveMetadata::default(),
         });
     let coedge = negative_parameterization
         .model

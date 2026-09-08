@@ -1960,7 +1960,13 @@ pub(in super::super) fn transfer_native_brep(
                             ))
                         });
                     let pcurves = pcurve_geometry
-                        .map(|(geometry, parameter_range, offset, tag)| {
+                        .and_then(|(geometry, parameter_range, offset, tag)| {
+                            let metadata = cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                                None,
+                                parameter_range,
+                                None,
+                            )
+                            .ok()?;
                             let pcurve = PcurveId::mint(format!(
                                 "creo:visibgeom:pcurve#{}:{face_id}",
                                 half_edge.curve_id
@@ -1978,18 +1984,14 @@ pub(in super::super) fn transfer_native_brep(
                                 ir.model.pcurves.push(Pcurve {
                                     id: pcurve.clone(),
                                     geometry,
-                                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
-                                        None,
-                                        parameter_range,
-                                        None,
-                                    ),
+                                    metadata,
                                 });
                             }
-                            PcurveUse {
+                            Some(PcurveUse {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }
+                            })
                         })
                         .into_iter()
                         .collect();

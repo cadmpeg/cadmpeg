@@ -1294,18 +1294,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
-    for pcurve in &ir.model.pcurves {
-        if pcurve
-            .parameter_range()
-            .is_some_and(|range| range.into_iter().any(|value| !value.is_finite()))
-        {
-            bounds_err(
-                findings,
-                pcurve.id.as_str(),
-                "pcurve parameter range is invalid",
-            );
-        }
-    }
     for procedural in &ir.model.procedural_curves {
         if let ProceduralCurveDefinition::Offset {
             distance,

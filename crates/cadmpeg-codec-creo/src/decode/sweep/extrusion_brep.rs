@@ -449,7 +449,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     extrusion_cap_pcurve(geometry, *reversed, *start, *end).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
                     })?,
-                );
+                )?;
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: bottom_loop.clone(),
@@ -479,7 +479,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     extrusion_cap_pcurve(geometry, *reversed, *start, *end).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
                     })?,
-                );
+                )?;
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: top_loop.clone(),
@@ -586,7 +586,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 )
                             },
                         )?,
-                    );
+                    )?;
                     ir.model.coedges.push(Coedge {
                         id: coedges[use_index].clone(),
                         owner_loop: loop_id.clone(),

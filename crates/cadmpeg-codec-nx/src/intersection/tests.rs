@@ -85,7 +85,8 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     ir.model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some([0.0, 1.0]), None)
+            .unwrap(),
     });
     let second_face = ir
         .model

@@ -1094,7 +1094,9 @@ pub(crate) fn transfer_e5_topology(
     {
         return false;
     };
-    emit_e5_pcurves(ir, annotations, &pcurve_plan);
+    if emit_e5_pcurves(ir, annotations, &pcurve_plan).is_none() {
+        return false;
+    }
     emit_e5_bodies(ir, annotations, &bodies);
     if !emit_e5_faces_loops_coedges(
         ir,
@@ -1640,7 +1642,7 @@ fn emit_e5_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
-) {
+) -> Option<()> {
     for (&record_id, (geometry, range)) in pcurve_plan {
         let id = PcurveId::mint(format!("catia:e5:pcurve#{record_id}")).expect("identity grammar");
         annotate(
@@ -1655,9 +1657,12 @@ fn emit_e5_pcurves(
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some(*range), None),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some(*range), None)
+                .ok()?,
         });
     }
+
+    Some(())
 }
 
 /// Emits the body/region/shell layer.

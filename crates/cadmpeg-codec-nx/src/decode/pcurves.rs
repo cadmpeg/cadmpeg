@@ -3791,7 +3791,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
         });
 
         index.complete_from_stream(&mut ir, later_starts);

@@ -825,11 +825,12 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
             geometry: PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 None,
                 Some(domain),
                 Some(0.001),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -921,11 +922,12 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
             geometry: PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 None,
                 Some(domain),
                 Some(0.001),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -992,11 +994,12 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             geometry: PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 None,
                 Some(domain),
                 Some(0.0001),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
