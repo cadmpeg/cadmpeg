@@ -40,10 +40,10 @@ fn destination_policy_discards_flags_irrelevant_to_the_destination() {
     let file = DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true);
     assert_eq!(
         file,
-        DestinationPolicy::File {
+        DestinationPolicy::File(FileDestination {
             path: PathBuf::from("part.step"),
             overwrite: true,
-        }
+        })
     );
     assert_eq!(file.path(), Some(Path::new("part.step")));
     let stdout = DestinationPolicy::new(None, true, false);
