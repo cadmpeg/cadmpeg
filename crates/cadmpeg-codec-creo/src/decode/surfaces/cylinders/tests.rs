@@ -166,7 +166,11 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
             cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin.into(),
                 normal.into(),
-                [1.0, 0.0, 0.0].into(),
+                if normal[0].abs() > 0.5 {
+                    [0.0, 1.0, 0.0].into()
+                } else {
+                    [1.0, 0.0, 0.0].into()
+                },
             )
             .unwrap(),
         ),
