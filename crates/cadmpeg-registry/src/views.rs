@@ -96,18 +96,13 @@ pub struct FormatDialects {
 /// The identity registry crossed with the capability registry.
 ///
 /// `format` selects one section; `None` returns every one. The word is
-/// resolved through [`Format::from_name`] first, so an output-format spelling
-/// and a registry section name reach the same rows.
+/// resolved through the identity registry.
 pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, UnknownFormat> {
     let registries = registries();
     let formats = match format {
         None => registries.formats.clone(),
         Some(name) => {
-            let name = Format::from_name(name)
-                .map(|format| format.name().as_str())
-                .or_else(|| canonical_format_name(name))
-                .unwrap_or(name)
-                .to_owned();
+            let name = canonical_format_name(name).unwrap_or(name).to_owned();
             if !registries.formats.contains(&name) {
                 return Err(UnknownFormat {
                     name,
