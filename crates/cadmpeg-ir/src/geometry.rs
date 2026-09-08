@@ -7905,15 +7905,124 @@ pub enum CompoundLoftTail {
     },
 }
 
+/// A bounded leading prefix of compound-loft scales.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Vec<Option<CompoundLoftScale>>")]
+pub struct CompoundLoftScales<const CAPACITY: usize>(Vec<CompoundLoftScale>);
+
+#[cfg(feature = "schema")]
+impl<const CAPACITY: usize> JsonSchema for CompoundLoftScales<CAPACITY> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        format!("CompoundLoftScales_{CAPACITY}").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let mut schema = Vec::<Option<CompoundLoftScale>>::json_schema(generator);
+        schema.insert("minItems".into(), CAPACITY.into());
+        schema.insert("maxItems".into(), CAPACITY.into());
+        schema
+    }
+}
+
+impl<const CAPACITY: usize> CompoundLoftScales<CAPACITY> {
+    /// Admit a leading scale list within the native slot capacity.
+    pub fn try_new(scales: Vec<CompoundLoftScale>) -> Result<Self, &'static str> {
+        if scales.len() > CAPACITY {
+            return Err("compound loft scales exceed slot capacity");
+        }
+        Ok(Self(scales))
+    }
+
+    /// Admit native optional slots whose present values form a leading prefix.
+    pub fn try_from_slots(
+        slots: impl IntoIterator<Item = Option<CompoundLoftScale>>,
+    ) -> Result<Self, &'static str> {
+        let mut scales = Vec::new();
+        let mut absent = false;
+        for (index, slot) in slots.into_iter().enumerate() {
+            if index >= CAPACITY {
+                return Err("compound loft scales exceed slot capacity");
+            }
+            match slot {
+                Some(scale) if !absent => scales.push(scale),
+                Some(_) => return Err("compound loft scales must form a leading prefix"),
+                None => absent = true,
+            }
+        }
+        Ok(Self(scales))
+    }
+
+    /// Present scales in native order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[CompoundLoftScale] {
+        &self.0
+    }
+}
+
+impl<const CAPACITY: usize> TryFrom<Vec<Option<CompoundLoftScale>>>
+    for CompoundLoftScales<CAPACITY>
+{
+    type Error = &'static str;
+    fn try_from(slots: Vec<Option<CompoundLoftScale>>) -> Result<Self, Self::Error> {
+        if slots.len() != CAPACITY {
+            return Err("compound loft scales have the wrong slot count");
+        }
+        Self::try_from_slots(slots)
+    }
+}
+
+impl<const CAPACITY: usize> Serialize for CompoundLoftScales<CAPACITY> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq((0..CAPACITY).map(|index| self.0.get(index)))
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CompoundLoftScalesWire {
+    scales: [Option<CompoundLoftScale>; 4],
+    #[serde(default)]
+    fifth_scale: Option<CompoundLoftScale>,
+}
+
+mod compound_loft_scales_wire {
+    use super::{CompoundLoftScale, CompoundLoftScales, CompoundLoftScalesWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        scales: &CompoundLoftScales<5>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            scales: [Option<&'a CompoundLoftScale>; 4],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            fifth_scale: Option<&'a CompoundLoftScale>,
+        }
+        Wire {
+            scales: std::array::from_fn(|index| scales.as_slice().get(index)),
+            fifth_scale: scales.as_slice().get(4),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<CompoundLoftScales<5>, D::Error> {
+        let wire = CompoundLoftScalesWire::deserialize(deserializer)?;
+        CompoundLoftScales::try_from_slots(wire.scales.into_iter().chain([wire.fifth_scale]))
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// Complete native compound-loft construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CompoundLoftConstruction {
-    /// Four mandatory scale slots; a boolean token encodes an absent slot.
-    pub scales: Box<[Option<CompoundLoftScale>; 4]>,
-    /// Optional fifth leading scale slot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fifth_scale: Option<Box<CompoundLoftScale>>,
+    /// Present leading scales, up to the optional fifth native slot.
+    #[serde(flatten, with = "compound_loft_scales_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftScalesWire"))]
+    pub scales: CompoundLoftScales<5>,
     /// Two flags before the tail kind.
     pub flags: [bool; 2],
     /// Kind-specific trailing graph.
@@ -7988,8 +8097,8 @@ pub struct ScaledCompoundLoftConstruction {
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
-    /// Three leading scale slots; absent slots leave the following boolean in place.
-    pub scales: Box<[Option<CompoundLoftScale>; 3]>,
+    /// Present leading scales within the three native slots.
+    pub scales: CompoundLoftScales<3>,
     /// Two native flags preceding the selector.
     pub flags: [bool; 2],
     /// Native integer preceding the middle branch.

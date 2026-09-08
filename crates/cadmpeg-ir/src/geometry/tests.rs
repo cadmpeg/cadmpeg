@@ -1060,3 +1060,5 @@ fn composite_curve_requires_a_segment_on_construction_and_serde() {
 mod offset_coordinate;
 
 mod tolerant_intersection;
+
+mod loft_scale_prefix;

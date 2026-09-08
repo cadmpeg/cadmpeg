@@ -202,10 +202,10 @@ fn emit_carrier_surface(
                 emit_loft_surface(out, i, embedded, format)
             }
             DecodedProceduralSurfaceDefinition::CompoundLoft(embedded) => {
-                emit_compound_loft_surface(out, i, *embedded, format)
+                emit_compound_loft_surface(out, i, *embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(embedded) => {
-                emit_scaled_compound_loft_surface(out, i, embedded, format)
+                emit_scaled_compound_loft_surface(out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::Law(embedded) => {
                 emit_law_surface(out, i, embedded, format)
@@ -718,7 +718,7 @@ fn emit_compound_loft_surface(
     i: i64,
     embedded: EmbeddedCompoundLoft,
     format: IdFormat<'_>,
-) -> ProceduralSurfaceDefinition {
+) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let map_scale = |out: &mut AsmBrep, name: &str, scale: EmbeddedCompoundLoftScale| {
         let members = scale
                                     .members
@@ -858,14 +858,16 @@ fn emit_compound_loft_surface(
             }
         }
     };
-    ProceduralSurfaceDefinition::CompoundLoft {
+    Ok(ProceduralSurfaceDefinition::CompoundLoft {
         construction: Box::new(cadmpeg_ir::geometry::CompoundLoftConstruction {
-            scales: Box::new(scales),
-            fifth_scale,
+            scales: cadmpeg_ir::geometry::CompoundLoftScales::try_from_slots(
+                scales.into_iter().chain([fifth_scale.map(|scale| *scale)]),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             flags: embedded.flags,
             tail,
         }),
-    }
+    })
 }
 
 fn emit_scaled_compound_loft_surface(
@@ -873,7 +875,7 @@ fn emit_scaled_compound_loft_surface(
     i: i64,
     embedded: Box<EmbeddedScaledCompoundLoft>,
     format: IdFormat<'_>,
-) -> ProceduralSurfaceDefinition {
+) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let embedded = *embedded;
     let map_scale = |out: &mut AsmBrep, name: &str, scale: EmbeddedCompoundLoftScale| {
         let members = scale
@@ -1017,13 +1019,14 @@ fn emit_scaled_compound_loft_surface(
             parameters,
         },
     };
-    ProceduralSurfaceDefinition::ScaledCompoundLoft {
+    Ok(ProceduralSurfaceDefinition::ScaledCompoundLoft {
         construction: Box::new(cadmpeg_ir::geometry::ScaledCompoundLoftConstruction {
             singularity: embedded.singularity,
             shape,
             discontinuities: embedded.discontinuities,
             discontinuity_flag: embedded.discontinuity_flag,
-            scales: Box::new(scales),
+            scales: cadmpeg_ir::geometry::CompoundLoftScales::try_from_slots(scales)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             flags: embedded.flags,
             selector: embedded.selector,
             branch,
@@ -1033,7 +1036,7 @@ fn emit_scaled_compound_loft_surface(
             tail_singularity: embedded.tail_singularity,
             tail_curve,
         }),
-    }
+    })
 }
 
 fn emit_law_surface(

@@ -158,8 +158,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::CompoundLoft { construction } => {
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
-                scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
@@ -196,7 +195,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,

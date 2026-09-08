@@ -115,8 +115,8 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     else {
         panic!("expected compound loft")
     };
-    let scale = construction.scales[0].as_ref().expect("first scale");
-    assert!(construction.scales[1..].iter().all(Option::is_none));
+    let scale = &construction.scales.as_slice()[0];
+    assert_eq!(construction.scales.as_slice().len(), 1);
     assert_eq!(scale.members.len(), 1);
     assert!(scale.members[0].data.pcurve.is_some());
     assert_eq!(scale.auxiliaries.len(), 1);
@@ -184,8 +184,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     else {
         panic!("expected round-trip compound loft")
     };
-    assert!(construction.scales[0].is_some());
-    assert!(construction.scales[1..].iter().all(Option::is_none));
+    assert_eq!(construction.scales.as_slice().len(), 1);
     assert_eq!(construction.flags, [true, false]);
     assert!(matches!(
         construction.tail,
@@ -194,11 +193,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
             ..
         }
     ));
-    let member_curve = &construction.scales[0]
-        .as_ref()
-        .expect("round-trip scale")
-        .members[0]
-        .curve;
+    let member_curve = &construction.scales.as_slice()[0].members[0].curve;
     assert!(matches!(
         round_trip
             .ir()
@@ -230,7 +225,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
     else {
         panic!("expected compound loft")
     };
-    let scale = construction.scales[0].clone().expect("generated scale");
+    let scale = construction.scales.as_slice()[0].clone();
     let curve = scale.path.clone();
     let line_curve = cadmpeg_ir::ids::CurveId::mint("generated:test:compound_loft_tail_line#0")
         .expect("identity grammar");
@@ -371,8 +366,7 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     assert_eq!(construction.discontinuities[0], [0.25]);
     assert!(construction.discontinuities[1..].iter().all(Vec::is_empty));
     assert!(construction.discontinuity_flag);
-    assert!(construction.scales[0].is_some());
-    assert!(construction.scales[1..].iter().all(Option::is_none));
+    assert_eq!(construction.scales.as_slice().len(), 1);
     assert_eq!(construction.flags, [true, false]);
     assert_eq!(construction.selector, 0);
     assert!(matches!(
@@ -435,7 +429,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
     else {
         panic!("expected scaled compound loft")
     };
-    let scale = construction.scales[0].clone().expect("generated scale");
+    let scale = construction.scales.as_slice()[0].clone();
     let curve = scale.path.clone();
     let cases = [
         (
