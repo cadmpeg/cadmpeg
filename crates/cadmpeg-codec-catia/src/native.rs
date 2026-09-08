@@ -7967,12 +7967,12 @@ fn zero_entity_oriented_use_pairs(
             id: format!("catia:zero-entity:oriented-use-pair#{index}"),
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
-            base_columns: pair.base_columns,
-            uses: pair.uses.map(|use_| CatiaZeroEntityOrientedUse {
-                byte_offset: use_.pos as u64,
-                record_ordinal: use_.record_ordinal,
-                side: use_.side,
-                allocations: use_.allocations,
+            base_columns: pair.base_columns(),
+            uses: std::array::from_fn(|slot| CatiaZeroEntityOrientedUse {
+                byte_offset: pair.uses[slot].pos as u64,
+                record_ordinal: pair.uses[slot].record_ordinal,
+                side: pair.side(slot),
+                allocations: pair.allocations(slot),
             }),
         })
         .collect()

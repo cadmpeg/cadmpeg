@@ -176,10 +176,6 @@ pub struct ZeroEntityOrientedUse {
     pub pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
     pub record_ordinal: u32,
-    /// Positional side number, either one or two.
-    pub side: u32,
-    /// Two stored allocation values.
-    pub allocations: [u32; 2],
 }
 
 /// One `2569` header and its two immediately following positional uses.
@@ -189,10 +185,27 @@ pub struct ZeroEntityOrientedUsePair {
     pub header_pos: usize,
     /// One-based global record ordinal of the `2569` header.
     pub header_record_ordinal: u32,
-    /// Stored base columns.
-    pub base_columns: [u32; 2],
+    base_columns: [u32; 2],
     /// Side-one then side-two oriented uses.
     pub uses: [ZeroEntityOrientedUse; 2],
+}
+
+impl ZeroEntityOrientedUsePair {
+    /// Stored base columns.
+    pub const fn base_columns(&self) -> [u32; 2] {
+        self.base_columns
+    }
+
+    /// Positional side number for the zero-based use slot.
+    pub const fn side(&self, index: usize) -> u32 {
+        [1, 2][index]
+    }
+
+    /// Allocation columns for the zero-based use slot.
+    pub const fn allocations(&self, index: usize) -> [u32; 2] {
+        let side = self.side(index);
+        [self.base_columns[0] + side, self.base_columns[1] + side]
+    }
 }
 
 /// Counted allocation vector of a zero-entity vertex-incidence record.
@@ -1783,8 +1796,6 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
                 Some(ZeroEntityOrientedUse {
                     pos: record.pos,
                     record_ordinal: record.ordinal,
-                    side: expected_side,
-                    allocations,
                 })
             };
             Some(ZeroEntityOrientedUsePair {
@@ -2703,9 +2714,9 @@ mod tests {
         assert_eq!(pair.header_record_ordinal, 2);
         assert_eq!(pair.base_columns, [100, 200]);
         assert_eq!(pair.uses[0].record_ordinal, 3);
-        assert_eq!(pair.uses[0].allocations, [101, 201]);
+        assert_eq!(pair.allocations(0), [101, 201]);
         assert_eq!(pair.uses[1].record_ordinal, 4);
-        assert_eq!(pair.uses[1].allocations, [102, 202]);
+        assert_eq!(pair.allocations(1), [102, 202]);
 
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
@@ -2760,8 +2771,8 @@ mod tests {
         let [pair] = pairs.as_slice() else {
             panic!("one oriented-use pair")
         };
-        assert_eq!(pair.uses[0].allocations, [101, 201]);
-        assert_eq!(pair.uses[1].allocations, [102, 202]);
+        assert_eq!(pair.allocations(0), [101, 201]);
+        assert_eq!(pair.allocations(1), [102, 202]);
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
             panic!("one vertex incidence")
