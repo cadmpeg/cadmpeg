@@ -309,8 +309,14 @@ pub struct EmbeddedProjection {
 
 /// Shared context and tail fields of a silhouette intcurve.
 pub struct EmbeddedSilhouette {
-    /// Shared embedded support context.
-    pub context: EmbeddedIntersection,
+    /// Two ordered support surfaces.
+    pub surfaces: [SurfaceGeometry; 2],
+    /// Two ordered parameter curves.
+    pub pcurves: [PcurveNurbs; 2],
+    /// The shared parameter interval.
+    pub parameter_range: [f64; 2],
+    /// The three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
     /// The silhouette family the subtype name selects.
     pub silhouette: cadmpeg_ir::geometry::SilhouetteKind,
     /// The embedded surface the silhouette is cast on.
@@ -753,9 +759,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Pcur
             let context = surface_curve.context();
             selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
         }
-        ProceduralCurveConstruction::Silhouette(context) => {
-            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
-        }
+        ProceduralCurveConstruction::Silhouette(context) => context.pcurves.get(slot).cloned(),
         ProceduralCurveConstruction::SurfaceOffset(context) => {
             selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
         }
@@ -1796,12 +1800,10 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
         };
     }
     Some(EmbeddedSilhouette {
-        context: EmbeddedIntersection {
-            surfaces: surfaces.map(SupportSlot::Surface),
-            pcurves: pcurves.map(Some),
-            parameter_range,
-            discontinuities,
-        },
+        surfaces,
+        pcurves,
+        parameter_range,
+        discontinuities,
         silhouette,
         cast_surface,
         light_direction,
