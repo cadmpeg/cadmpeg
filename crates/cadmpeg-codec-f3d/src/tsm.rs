@@ -223,7 +223,6 @@ struct ParsedCage {
 #[derive(Debug)]
 struct DerivedGripConnectivity {
     vertex: usize,
-    wedges: usize,
     spoke_lengths: Vec<usize>,
     grip_indices: Vec<i64>,
 }
@@ -673,7 +672,7 @@ fn build_secondary_layouts(
             .flatten()
             .ok_or_else(|| malformed(name, "derived-grip vertex has no root direction"))?;
         let fan = build_fan(name, vertex, root, half_edges, face_live)?;
-        if connectivity.wedges != fan.len() {
+        if connectivity.spoke_lengths.len() != fan.len() {
             return Err(malformed(
                 name,
                 "derived-grip wedge count does not match the completed vertex fan",
@@ -682,11 +681,12 @@ fn build_secondary_layouts(
 
         let offset = direction_offset(direction);
         let mut cursor = 0usize;
-        let mut wedges = Vec::with_capacity(connectivity.wedges);
-        for wedge in 0..connectivity.wedges {
-            let spoke_count = connectivity.spoke_lengths[wedge];
+        let mut wedges = Vec::with_capacity(connectivity.spoke_lengths.len());
+        for (wedge, &spoke_count) in connectivity.spoke_lengths.iter().enumerate() {
             let sector_count = spoke_count
-                .checked_mul(connectivity.spoke_lengths[(wedge + 1) % connectivity.wedges])
+                .checked_mul(
+                    connectivity.spoke_lengths[(wedge + 1) % connectivity.spoke_lengths.len()],
+                )
                 .ok_or_else(|| malformed(name, "derived-grip sector arity overflows"))?;
             let slot = fan[(wedge + offset) % fan.len()];
             let FanSlot::Slot { half_edge, face } = slot else {
@@ -919,28 +919,30 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 Some("cg") if in_grip_map => {
                     let vertex = parse_usize(name, fields.next(), "derived-grip vertex")?;
                     let wedges = parse_usize(name, fields.next(), "derived-grip wedge count")?;
-                    if wedges == 0 {
-                        return Err(malformed(name, "derived-grip wedge count is zero"));
-                    }
                     let spoke_lengths = (0..wedges)
                         .map(|_| parse_usize(name, fields.next(), "derived-grip spoke length"))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let grip_count = (0..wedges).try_fold(0usize, |count, wedge| {
-                        let cross = spoke_lengths[wedge]
-                            .checked_mul(spoke_lengths[(wedge + 1) % wedges])
-                            .ok_or_else(|| malformed(name, "derived-grip arity overflows"))?;
-                        count
-                            .checked_add(spoke_lengths[wedge])
-                            .and_then(|count| count.checked_add(cross))
-                            .ok_or_else(|| malformed(name, "derived-grip arity overflows"))
-                    })?;
+                    if spoke_lengths.is_empty() {
+                        return Err(malformed(name, "derived-grip wedge count is zero"));
+                    }
+                    let grip_count = spoke_lengths.iter().enumerate().try_fold(
+                        0usize,
+                        |count, (wedge, &spoke_count)| {
+                            let cross = spoke_count
+                                .checked_mul(spoke_lengths[(wedge + 1) % spoke_lengths.len()])
+                                .ok_or_else(|| malformed(name, "derived-grip arity overflows"))?;
+                            count
+                                .checked_add(spoke_count)
+                                .and_then(|count| count.checked_add(cross))
+                                .ok_or_else(|| malformed(name, "derived-grip arity overflows"))
+                        },
+                    )?;
                     let grip_indices = (0..grip_count)
                         .map(|_| parse_i64(name, fields.next(), "derived-grip index"))
                         .collect::<Result<Vec<_>, _>>()?;
                     require_end(name, fields, "derived-grip connectivity")?;
                     derived_grips.push(DerivedGripConnectivity {
                         vertex,
-                        wedges,
                         spoke_lengths,
                         grip_indices,
                     });
