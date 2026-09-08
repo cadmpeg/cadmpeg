@@ -2061,8 +2061,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(|record| record.occurrence_id)
         .collect::<HashSet<_>>();
     for placement in &data.assembly_placements {
-        if !occurrence_ids.contains(&placement.occurrence_id) || placement.suffix_sha256.len() != 64
-        {
+        if !occurrence_ids.contains(&placement.occurrence_id) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor assembly placement does not resolve to a finite occurrence".into(),

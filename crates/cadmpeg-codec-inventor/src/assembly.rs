@@ -717,7 +717,7 @@ mod tests {
     }
 
     fn assembly_placement(occurrence_id: u32) -> AssemblyPlacementRecord {
-        AssemblyPlacementRecord {
+        AssemblyPlacementRecord::try_from(crate::native::AssemblyPlacementRecordWire {
             id: format!("inventor:assembly:placement#{occurrence_id}"),
             segment_token: "synthetic".into(),
             record_ordinal: occurrence_id,
@@ -735,7 +735,8 @@ mod tests {
             object_reference: 0,
             suffix_len: 0,
             suffix_sha256: "0".repeat(64),
-        }
+        })
+        .expect("valid placement fixture")
     }
 
     fn occurrence_fixture(occurrence_id: u32, related: &[u32]) -> Vec<u8> {

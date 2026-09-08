@@ -33,14 +33,15 @@ use crate::native::ufrx::{
     UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
-    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
+    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, MetaSectionRecord,
+    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
+    RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedMember,
+    UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -856,28 +857,31 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let assembly_placements = assembly_inventory
         .placements
         .iter()
-        .map(|placement| AssemblyPlacementRecord {
-            id: format!(
-                "inventor:assembly:placement#{}-{}",
-                placement.segment_token, placement.record_ordinal
-            ),
-            segment_token: placement.segment_token.clone(),
-            record_ordinal: placement.record_ordinal,
-            header_id: placement.header_id,
-            owner_reference: placement.owner_reference,
-            attribute_reference: placement.attribute_reference,
-            state: placement.state,
-            transform_prefix: placement.transform_prefix,
-            transform: placement.transform,
-            branch: placement.branch,
-            graphics_state: placement.graphics_state,
-            occurrence_id: placement.occurrence_id,
-            graphics_index: placement.graphics_index,
-            object_reference: placement.object_reference,
-            suffix_len: placement.suffix.window().len() as u64,
-            suffix_sha256: sha256_hex(placement.suffix.window()),
+        .map(|placement| {
+            AssemblyPlacementRecord::try_from(AssemblyPlacementRecordWire {
+                id: format!(
+                    "inventor:assembly:placement#{}-{}",
+                    placement.segment_token, placement.record_ordinal
+                ),
+                segment_token: placement.segment_token.clone(),
+                record_ordinal: placement.record_ordinal,
+                header_id: placement.header_id,
+                owner_reference: placement.owner_reference,
+                attribute_reference: placement.attribute_reference,
+                state: placement.state,
+                transform_prefix: placement.transform_prefix,
+                transform: placement.transform,
+                branch: placement.branch,
+                graphics_state: placement.graphics_state,
+                occurrence_id: placement.occurrence_id,
+                graphics_index: placement.graphics_index,
+                object_reference: placement.object_reference,
+                suffix_len: placement.suffix.window().len() as u64,
+                suffix_sha256: sha256_hex(placement.suffix.window()),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(CodecError::malformed)?;
     let pm_app_default_styles = presentation_inventory
         .default_styles
         .iter()
