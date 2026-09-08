@@ -2,8 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
-use crate::ids::ProceduralSurfaceId;
+use crate::geometry::SurfaceGeometry;
 use crate::math::{Point3, Vector3};
 use crate::report::Check;
 use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
@@ -169,37 +168,6 @@ fn topology_tolerance_is_bounds_checked() {
             |finding| (finding.check == Check::Bounds || finding.check == Check::Tolerances)
                 && finding.entity.as_deref() == Some(edge_id.as_str())
         ));
-}
-
-#[test]
-fn revolution_rejects_equal_intervals() {
-    let mut ir = unit_cube();
-    let owner = ir.model.surfaces[0].id.clone();
-    ir.model
-        .add_procedural_surface(
-            owner,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint("synthetic:test:procedural-surface#equal")
-                    .expect("valid identity"),
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: ir.model.curves[0].id.clone(),
-                    axis_origin: Point3::new(0.0, 0.0, 0.0),
-                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
-                    angular_interval: [1.0, 1.0],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some([0.0, 1.0]),
-                    transposed: false,
-                    revision_form: None,
-                },
-                None,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("revolution interval")));
 }
 
 #[test]

@@ -3893,8 +3893,69 @@ impl<'de> Deserialize<'de> for ProceduralSurfaceDefinition {
     }
 }
 
+const EPS_REVOLUTION_AXIS_UNIT: f64 = 1.0e-9;
+
 impl ProceduralSurfaceDefinition {
     fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
+        if let Self::Revolution {
+            angular_interval,
+            angular_parameter_interval,
+            parameter_interval,
+            ..
+        } = self
+        {
+            for (interval, message) in [
+                (
+                    Some(angular_interval),
+                    "revolution angular_interval must be finite and strictly increasing",
+                ),
+                (
+                    angular_parameter_interval.as_ref(),
+                    "revolution angular_parameter_interval must be finite and strictly increasing",
+                ),
+                (
+                    parameter_interval.as_ref(),
+                    "revolution parameter_interval must be finite and strictly increasing",
+                ),
+            ] {
+                if interval.is_some_and(|interval| {
+                    !interval[0].is_finite()
+                        || !interval[1].is_finite()
+                        || interval[0] >= interval[1]
+                }) {
+                    return Err(ProceduralGeometryError::Payload(message));
+                }
+            }
+        }
+        if let Self::AxisRevolution {
+            axis_origin,
+            axis_direction,
+            ..
+        } = self
+        {
+            if ![
+                axis_origin.x,
+                axis_origin.y,
+                axis_origin.z,
+                axis_direction.x,
+                axis_direction.y,
+                axis_direction.z,
+            ]
+            .into_iter()
+            .all(f64::is_finite)
+                || (axis_direction.norm() - 1.0).abs() > EPS_REVOLUTION_AXIS_UNIT
+            {
+                return Err(ProceduralGeometryError::Payload("revolution axis_origin and axis_direction must be finite, with unit axis_direction"));
+            }
+        }
+        if let Self::Sum { basepoint, .. } = self {
+            if !basepoint.x.is_finite() || !basepoint.y.is_finite() || !basepoint.z.is_finite() {
+                return Err(ProceduralGeometryError::Payload(
+                    "sum basepoint must be finite",
+                ));
+            }
+        }
+
         if let ProceduralSurfaceDefinition::Extrusion {
             parameter_interval,
             direction,
