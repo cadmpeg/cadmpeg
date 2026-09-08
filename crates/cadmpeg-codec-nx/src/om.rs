@@ -2479,20 +2479,16 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
             }
             continue;
         };
-        let next = ExpressionDeclarationName {
-            offset: at,
-            name,
-            literal: None,
-        };
-        if declaration.replace(next).is_some() {
+        if declaration.replace((at, name)).is_some() {
             return None;
         }
     }
-    let declaration = declaration?;
+    let (offset, name) = declaration?;
     let literal = (!multiple_literals).then_some(literal).flatten();
     Some(ExpressionDeclarationName {
+        offset,
+        name,
         literal,
-        ..declaration
     })
 }
 
