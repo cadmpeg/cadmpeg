@@ -322,7 +322,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         registration: crate::records::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
-            crate::records::ReferenceRun::Unlocated(Vec::new()),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
         )
         .expect("valid module registration"),
     };
@@ -671,7 +671,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })
@@ -804,7 +804,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
         registration: crate::records::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
-            crate::records::ReferenceRun::Located(
+            crate::records::ReferenceRun::located(
                 members
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })

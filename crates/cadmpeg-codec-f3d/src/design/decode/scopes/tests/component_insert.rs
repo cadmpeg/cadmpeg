@@ -196,7 +196,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         byte_offset: expanded_scope_at as u64,
         class_tag: crate::records::DesignClassTag::try_from("335".to_owned()).unwrap(),
         frame_length: 404,
-        reference_members: crate::records::ReferenceRun::Located(vec![crate::records::Located {
+        reference_members: crate::records::ReferenceRun::located(vec![crate::records::Located {
             value: 20,
             offset: (expanded_scope_at + 42) as u64,
         }]),

@@ -383,7 +383,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         state_offset: 100,
         owner_reference: 1,
         owner_entity_id: "0_1".into(),
-        auxiliary_references: crate::records::ReferenceRun::Located(vec![
+        auxiliary_references: crate::records::ReferenceRun::located(vec![
             crate::records::Located {
                 value: 0,
                 offset: 80,

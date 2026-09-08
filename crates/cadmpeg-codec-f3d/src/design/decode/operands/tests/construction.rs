@@ -710,7 +710,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut multiple_targets_scope = split_body_scope.clone();
     multiple_targets_scope.frame_length = 358;
     multiple_targets_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 400, 500, 501]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
     let mut multiple_targets = split_target_group.clone();
     multiple_targets.members = vec![500, 501]
         .into_iter()
@@ -728,7 +728,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut construction_tool_scope = split_body_scope.clone();
     construction_tool_scope.frame_length = 347;
     construction_tool_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 400, 500]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
     let mut construction_tool = split_tool_group.clone();
     construction_tool.role = DesignOperandRole::ROLE_0X21;
     construction_tool.members = vec![200, 201]
@@ -1100,7 +1100,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut stitch_scope = scope;
     stitch_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceStitch.into();
     stitch_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
     if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
         &mut stitch_scope.payload
     {
@@ -1214,7 +1214,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             scope_kind,
             scope_record_index,
         );
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![group_record_index]);
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![group_record_index]);
         let record = DesignRecordHeader {
             id: format!("f3d:test:legacy-body-record#{group_record_index}"),
             byte_offset: frame_at,
@@ -1252,7 +1252,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated((0..13).map(|index| 296_500 + index).collect());
+        crate::records::ReferenceRun::unlocated((0..13).map(|index| 296_500 + index).collect());
     if let crate::records::feature::DesignScopePayload::Extrude(slot)
     | crate::records::feature::DesignScopePayload::Extrusion(slot)
     | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload

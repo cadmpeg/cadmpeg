@@ -200,7 +200,7 @@ fn compact_coil_placement_fixture(
         42,
     );
     scope.frame_length = 442;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         selection_record_index,
         transform_record_index,
         300,
@@ -400,7 +400,7 @@ fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, us
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.pop();
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
     if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
     | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
@@ -464,7 +464,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         42,
     );
     scope.frame_length = 432;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         selection_record_index,
         transform_record_index,
         300,
@@ -939,7 +939,7 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.push(55);
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
     (bytes, scope, position_at, input_reference_at)
 }
@@ -1080,7 +1080,7 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.push(100);
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
     let selection = exact_hole_face_selection(
         &bytes,

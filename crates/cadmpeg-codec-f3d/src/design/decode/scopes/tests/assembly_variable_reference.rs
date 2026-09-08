@@ -16,7 +16,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
+        crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
     let owners = (0_u32..12)
         .map(|local_ordinal| DesignParameterOwner {
             id: format!(

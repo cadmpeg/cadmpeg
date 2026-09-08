@@ -8948,7 +8948,7 @@ pub(crate) fn parse_parameter_scope(
             .and_then(|offset| u64::try_from(offset).ok())
             .filter(|&offset| offset != 0),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
-        reference_members: crate::records::ReferenceRun::Located(
+        reference_members: crate::records::ReferenceRun::located(
             reference_members
                 .iter()
                 .copied()

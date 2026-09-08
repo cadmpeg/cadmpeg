@@ -1692,7 +1692,7 @@ mod tests {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -2328,7 +2328,7 @@ mod tests {
             panic!("one mesh-collection entity");
         };
         let collection_entity = *collection_entity;
-        collection_type.entities = crate::records::ReferenceRun::Unlocated(Vec::new());
+        collection_type.entities = crate::records::ReferenceRun::unlocated(Vec::new());
         graph
             .meta
             .records

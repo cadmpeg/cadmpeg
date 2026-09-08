@@ -420,7 +420,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(related_guid_offsets, [67, 143, 275]);
 
     let mut invalid_scope = snapshot_scope;
-    invalid_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![302]);
+    invalid_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![302]);
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
@@ -463,7 +463,7 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
     scope.frame_length = 314;
     scope.kind_offset = 213;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     scope.paired_byte_offset = 314;
     let construction = exact_base_feature_construction(&bytes, &scope)
@@ -549,7 +549,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         scope.frame_length = frame_length as u64;
         scope.kind_offset = (frame_length + 102) as u64;
         scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -633,7 +633,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     zero_scope.frame_length = 258;
     zero_scope.kind_offset = (prefix + 157) as u64;
     zero_scope.paired_byte_offset = (prefix + 258) as u64;
-    zero_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![701]);
+    zero_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![701]);
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-409/class-262 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -712,7 +712,7 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     scope.frame_length = frame_length as u64;
     scope.kind_offset = (frame_length + 102) as u64;
     scope.paired_byte_offset = frame_length as u64;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
     assert_eq!(cursor, 155);
 
     let construction = exact_base_feature_construction(&bytes, &scope)
@@ -796,7 +796,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         scope.frame_length = frame_length as u64;
         scope.kind_offset = (frame_length + 102) as u64;
         scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -1157,7 +1157,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![scope_reference]);
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![scope_reference]);
         scope.reference_count_offset = reference_count as u64;
         scope.reference_members = crate::records::ReferenceRun::from_columns(
             scope.reference_members.values().copied().collect(),
@@ -1225,7 +1225,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     compact_scope.frame_length = compact::LEN as u64;
     compact_scope.paired_byte_offset = compact::LEN as u64;
-    compact_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![196]);
+    compact_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![196]);
     compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
     compact_scope.reference_members = crate::records::ReferenceRun::from_columns(
         compact_scope.reference_members.values().copied().collect(),

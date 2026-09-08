@@ -1264,7 +1264,7 @@ mod tests {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -1329,7 +1329,7 @@ mod tests {
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
-                    entities: crate::records::ReferenceRun::Located(vec![
+                    entities: crate::records::ReferenceRun::located(vec![
                         crate::records::Located {
                             value: 900,
                             offset: 0,
@@ -1498,7 +1498,7 @@ mod tests {
     #[test]
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
-        metadata.types[2].entities = crate::records::ReferenceRun::Unlocated(Vec::new());
+        metadata.types[2].entities = crate::records::ReferenceRun::unlocated(Vec::new());
         assert!(
             snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
                 .expect("mixed carrier family")

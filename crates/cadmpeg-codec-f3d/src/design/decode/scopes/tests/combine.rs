@@ -287,7 +287,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     scope.class_tag = crate::records::DesignClassTag::try_from("329".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = 363;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![91, 92, 93, 94]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
     let records = IndexedRecordOffsets::build(&bytes);
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .expect("extended-reference Combine construction");

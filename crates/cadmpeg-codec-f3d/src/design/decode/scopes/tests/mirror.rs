@@ -260,7 +260,7 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![1, 2, 3, count_record_index]);
+        crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
     let records = IndexedRecordOffsets::build(&bytes);
 
     assert_eq!(

@@ -50,7 +50,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
                 record_reference_offset: 1010,
                 references: Vec::new(),
             }),
-            crate::records::ReferenceRun::Unlocated(Vec::new()),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
         )
         .expect("valid module registration"),
     };
@@ -158,7 +158,7 @@ fn generated_base_flange_profile_frame_resolves() {
         registration: crate::records::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
-            crate::records::ReferenceRun::Unlocated(Vec::new()),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
         )
         .expect("valid module registration"),
     };

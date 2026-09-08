@@ -7864,7 +7864,7 @@ impl DesignParameterScope {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 0,
-            reference_members: ReferenceRun::Unlocated(Vec::new()),
+            reference_members: ReferenceRun::unlocated(Vec::new()),
             payload: kind.into(),
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),

@@ -373,9 +373,9 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             version_offset: version_offset as u64,
             module,
             entities: if entity_ids.is_empty() {
-                crate::records::ReferenceRun::Unlocated(entity_ids)
+                crate::records::ReferenceRun::unlocated(entity_ids)
             } else {
-                crate::records::ReferenceRun::Located(
+                crate::records::ReferenceRun::located(
                     entity_ids
                         .into_iter()
                         .enumerate()

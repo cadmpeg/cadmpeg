@@ -28,7 +28,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         crate::records::feature::DesignFeatureKind::EdgeFlange,
         382,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         383, 385, 388, 393, 396, 399, 402, 404, 407, 411,
     ]);
     if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
@@ -713,7 +713,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         317,
     );
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![318, 320, 323, 328, 331, 334, 336, 339, 343]);
+        crate::records::ReferenceRun::unlocated(vec![318, 320, 323, 328, 331, 334, 336, 339, 343]);
     if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
             shape: crate::records::feature::DesignEdgeFlangeShape::Symmetric {
@@ -851,7 +851,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         1,
     );
     scope.frame_length = 442;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         900, 100, 101, 102, 110, 111, 112, 120, 121, 122,
     ]);
     if let crate::records::feature::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload {
@@ -937,7 +937,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
     ));
 
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         100, 101, 102, 110, 111, 112, 120, 121, 122, 900,
     ]);
     let crate::records::feature::DesignScopePayload::SurfacePatch(boundaries) = &mut scope.payload

@@ -260,7 +260,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
                     .map(|(value, offset)| crate::records::Located { value, offset })
                     .collect(),
             }),
-            crate::records::ReferenceRun::Unlocated(Vec::new()),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
         )
         .expect("valid module registration"),
     };
@@ -289,7 +289,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         state_offset: 0,
         owner_reference: 100,
         owner_entity_id: String::new(),
-        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: (vec![SketchRelationMember::from_index(20)])
             .try_into()

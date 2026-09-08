@@ -155,7 +155,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         },
         version_offset: 44,
         module: crate::records::DESIGN_MODULE_FUSION.into(),
-        entities: crate::records::ReferenceRun::Located(
+        entities: crate::records::ReferenceRun::located(
             entities
                 .into_iter()
                 .map(|value| crate::records::Located { value, offset: 100 })
@@ -312,7 +312,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             },
             scope_record_index,
         );
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(if hole_scope {
+        scope.reference_members = crate::records::ReferenceRun::unlocated(if hole_scope {
             vec![1, 2, 3, 4, 5, 6, operand_record_index]
         } else {
             vec![1, 2, 3, 4, 5, operand_record_index]
@@ -445,7 +445,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         crate::records::feature::DesignFeatureKind::Hole,
         10,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 101, 200, 201]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![100, 101, 200, 201]);
     let group = |record_index: u32,
                  scope_reference_ordinal: u32,
                  member: u32,
@@ -584,7 +584,7 @@ fn validation_checks_pipe_path_group_roles() {
         ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1, 2, 3, 4, 20, 21]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
     let path_group = DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#20"),
         scope_record_index: 10,

@@ -1599,3 +1599,26 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
 }
 
 mod sketch_relation_wire;
+
+#[test]
+fn empty_reference_runs_have_one_representation() {
+    use crate::records::{Located, ReferenceRun};
+
+    let empty = ReferenceRun::<u32>::unlocated(Vec::new());
+    assert_eq!(empty, ReferenceRun::located(Vec::new()));
+    assert!(matches!(empty, ReferenceRun::Located(ref rows) if rows.is_empty()));
+    assert_eq!(
+        ReferenceRun::<u32>::from_columns(Vec::new(), Vec::new(), "field").expect("empty columns"),
+        ReferenceRun::located(Vec::new())
+    );
+
+    let unlocated = ReferenceRun::unlocated(vec![7u32]);
+    assert!(matches!(unlocated, ReferenceRun::Unlocated(_)));
+    assert_ne!(
+        unlocated,
+        ReferenceRun::located(vec![Located {
+            value: 7u32,
+            offset: 0
+        }])
+    );
+}

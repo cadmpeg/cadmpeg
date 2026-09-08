@@ -176,7 +176,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })

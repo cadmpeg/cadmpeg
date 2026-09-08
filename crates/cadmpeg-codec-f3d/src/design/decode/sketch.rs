@@ -1024,7 +1024,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 registration: crate::records::DesignEntityRegistration::new(
                     module,
                     references,
-                    crate::records::ReferenceRun::Located(members),
+                    crate::records::ReferenceRun::located(members),
                 )
                 .map_err(CodecError::Malformed)?,
             });
@@ -1086,7 +1086,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 registration: crate::records::DesignEntityRegistration::new(
                     Some(DESIGN_MODULE_SKETCH.to_owned()),
                     None,
-                    crate::records::ReferenceRun::Located(members),
+                    crate::records::ReferenceRun::located(members),
                 )
                 .map_err(CodecError::Malformed)?,
             });
@@ -1254,7 +1254,7 @@ pub fn decode_sketch_relations(
                 owner_reference: parsed.owner_reference,
                 owner_entity_id: String::new(),
                 owner_reference_offset: parsed.owner_reference_offset as u32,
-                auxiliary_references: crate::records::ReferenceRun::Located(
+                auxiliary_references: crate::records::ReferenceRun::located(
                     parsed
                         .auxiliary_references
                         .into_iter()

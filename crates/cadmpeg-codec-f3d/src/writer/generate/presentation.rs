@@ -343,7 +343,7 @@ mod tests {
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_BODY.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })
@@ -365,7 +365,7 @@ mod tests {
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_FUSION.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })

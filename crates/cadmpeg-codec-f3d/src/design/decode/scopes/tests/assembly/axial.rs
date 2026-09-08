@@ -34,7 +34,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         500,
     );
     assembly.frame_length = 772;
-    assembly.reference_members = crate::records::ReferenceRun::Unlocated(
+    assembly.reference_members = crate::records::ReferenceRun::unlocated(
         first_members
             .into_iter()
             .chain(second_members)
@@ -165,7 +165,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     );
     assembly.frame_length = 705;
     assembly.reference_members =
-        crate::records::ReferenceRun::Unlocated(members.into_iter().chain([90, 91]).collect());
+        crate::records::ReferenceRun::unlocated(members.into_iter().chain([90, 91]).collect());
     if let crate::records::feature::DesignScopePayload::Assemble(slot)
     | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
     {

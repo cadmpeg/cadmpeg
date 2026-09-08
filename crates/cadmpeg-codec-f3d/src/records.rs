@@ -199,26 +199,32 @@ impl<T, O> Located<T, O> {
 }
 
 /// An ordered run whose encoding locations are either complete or absent.
-#[derive(Debug, Clone)]
+///
+/// Build one with [`ReferenceRun::unlocated`] or [`ReferenceRun::located`]:
+/// they canonicalize the empty run to `Located(vec![])` so that one run has
+/// one representation.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReferenceRun<T, O = u64> {
     Unlocated(Vec<T>),
     Located(Vec<Located<T, O>>),
 }
 
-impl<T: PartialEq, O: PartialEq> PartialEq for ReferenceRun<T, O> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Unlocated(left), Self::Unlocated(right)) => left == right,
-            (Self::Located(left), Self::Located(right)) => left == right,
-            // An empty run has no locations in either wire form.
-            _ => self.is_empty() && other.is_empty(),
+impl<T, O> ReferenceRun<T, O> {
+    /// A run whose values carry no encoding locations. The empty run has no
+    /// locations in either wire form, so it is always `Located(vec![])`.
+    pub fn unlocated(values: Vec<T>) -> Self {
+        if values.is_empty() {
+            Self::Located(Vec::new())
+        } else {
+            Self::Unlocated(values)
         }
     }
-}
 
-impl<T: Eq, O: Eq> Eq for ReferenceRun<T, O> {}
+    /// A run whose values each carry an encoding location.
+    pub fn located(rows: Vec<Located<T, O>>) -> Self {
+        Self::Located(rows)
+    }
 
-impl<T, O> ReferenceRun<T, O> {
     pub fn values(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone {
         (0..self.len()).map(|index| match self {
             Self::Unlocated(values) => &values[index],
@@ -292,7 +298,7 @@ impl<T, O> ReferenceRun<T, O> {
         field: &str,
     ) -> Result<Self, String> {
         if offsets.is_empty() {
-            return Ok(Self::Unlocated(values));
+            return Ok(Self::unlocated(values));
         }
         if values.len() != offsets.len() {
             return Err(format!(
@@ -2979,7 +2985,7 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
         let declared_reference_count = header.declared_reference_count();
         let (module, references, members) = match header.registration.0 {
             DesignEntityRegistrationKind::Other(module) => {
-                (module, None, ReferenceRun::Unlocated(Vec::new()))
+                (module, None, ReferenceRun::unlocated(Vec::new()))
             }
             DesignEntityRegistrationKind::Sketch {
                 references,

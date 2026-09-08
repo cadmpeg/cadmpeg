@@ -77,7 +77,7 @@ fn parameter_scope_parses_named_variable_tail() {
 
     let mut owner_scope = scope.clone();
     owner_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![327, 330, 55, 56, 57, 58]);
+        crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
     let owners = vec![
         DesignParameterOwner {
             id: "f3d:test:owner#327".into(),

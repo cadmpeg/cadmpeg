@@ -374,7 +374,7 @@ fn reads_class_328_form_envelope() {
         scope_record,
     );
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![group_record, metadata_record]);
+        crate::records::ReferenceRun::unlocated(vec![group_record, metadata_record]);
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;

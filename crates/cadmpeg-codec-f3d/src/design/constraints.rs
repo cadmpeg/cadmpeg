@@ -991,7 +991,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references: crate::records::ReferenceRun::Unlocated(auxiliary_references),
+            auxiliary_references: crate::records::ReferenceRun::unlocated(auxiliary_references),
             rectangular_counted_reference_count: Some(rectangular_counted_reference_count),
             members: (members
                 .clone()
@@ -1228,7 +1228,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20, 21]),
+            auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
             members: (vec![
                 SketchRelationMember::from_index(1),
@@ -1339,7 +1339,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20, 21]),
+            auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
             members: (vec![
                 SketchRelationMember::from_index(1),
@@ -1426,7 +1426,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: String::new(),
-            auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![2]),
+            auxiliary_references: crate::records::ReferenceRun::unlocated(vec![2]),
             rectangular_counted_reference_count: None,
             members: (vec![
                 SketchRelationMember::from_index(1),

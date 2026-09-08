@@ -636,7 +636,7 @@ mod tests {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 

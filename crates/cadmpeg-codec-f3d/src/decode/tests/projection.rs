@@ -88,7 +88,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         10,
     );
     // The feature's owning entity reference is distinct from its scope index.
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![221]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![221]);
     let mut features = vec![Feature {
         id: FeatureId::mint("test:model:feature#mesh-import").expect("identity grammar"),
         ordinal: 0,
@@ -1324,7 +1324,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         state_offset: 0,
         owner_reference: 1,
         owner_entity_id: "0_1".into(),
-        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: (Vec::new()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 0,

@@ -92,7 +92,7 @@ fn sketch_visibility_accepts_settled_container_header() {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })

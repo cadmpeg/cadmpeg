@@ -70,7 +70,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     scope.class_tag = crate::records::DesignClassTag::try_from("901".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("902".to_owned()).unwrap();
     scope.frame_length = 17;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 989]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     let mut owner_marked = bytes;
@@ -141,7 +141,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 991]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 991]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     scope.class_tag = crate::records::DesignClassTag::try_from("335".to_owned()).unwrap();
@@ -239,7 +239,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("903".to_owned()).unwrap();
     scope.frame_length = 19;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 989, 992, 993]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
@@ -263,7 +263,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.push(994);
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
     assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
 }
@@ -316,7 +316,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
     scope.class_tag = crate::records::DesignClassTag::try_from("414".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     scope.frame_length = 19;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 989]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
