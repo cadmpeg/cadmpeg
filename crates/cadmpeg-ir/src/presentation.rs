@@ -27,7 +27,9 @@ pub struct CameraState {
 }
 
 /// Closed set of document GUI state families.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "type", content = "value")]
 pub enum PresentationStateKind {
     /// Persisted camera pose.
     Camera(CameraState),
@@ -43,44 +45,6 @@ impl PresentationStateKind {
             Self::Camera(_) => "Camera",
             Self::Native(kind) => kind,
         }
-    }
-}
-
-impl Serialize for PresentationStateKind {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for PresentationStateKind {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Ok(if value == "Camera" {
-            Self::Camera(CameraState {
-                position: None,
-                orientation: None,
-                properties: BTreeMap::new(),
-            })
-        } else {
-            Self::Native(value)
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for PresentationStateKind {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "PresentationStateKind".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        String::json_schema(generator)
     }
 }
 
@@ -124,8 +88,6 @@ struct PresentationDocumentWire {
     schema_version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     active_view: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    camera: Option<CameraState>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     states: Vec<PresentationState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -155,12 +117,10 @@ impl PresentationDocument {
 
 impl From<PresentationDocument> for PresentationDocumentWire {
     fn from(document: PresentationDocument) -> Self {
-        let camera = document.camera().cloned();
         Self {
             id: document.id,
             schema_version: document.schema_version,
             active_view: document.active_view,
-            camera,
             states: document.states,
             native_ref: document.native_ref,
         }
@@ -169,20 +129,11 @@ impl From<PresentationDocument> for PresentationDocumentWire {
 
 impl From<PresentationDocumentWire> for PresentationDocument {
     fn from(wire: PresentationDocumentWire) -> Self {
-        let mut states = wire.states;
-        if let Some(camera) = wire.camera {
-            if let Some(state) = states
-                .iter_mut()
-                .find(|state| matches!(state.kind, PresentationStateKind::Camera(_)))
-            {
-                state.kind = PresentationStateKind::Camera(camera);
-            }
-        }
         Self {
             id: wire.id,
             schema_version: wire.schema_version,
             active_view: wire.active_view,
-            states,
+            states: wire.states,
             native_ref: wire.native_ref,
         }
     }
@@ -335,6 +286,56 @@ pub struct PresentationLayer {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn camera_kinds_and_states_round_trip_without_payload_or_tag_loss() {
+        use super::*;
+        let kinds = [
+            PresentationStateKind::Camera(CameraState {
+                position: Some([1.0, 2.0, 3.0]),
+                orientation: None,
+                properties: BTreeMap::new(),
+            }),
+            PresentationStateKind::Camera(CameraState {
+                position: Some([4.0, 5.0, 6.0]),
+                orientation: None,
+                properties: BTreeMap::new(),
+            }),
+            PresentationStateKind::Native("Camera".to_owned()),
+        ];
+        let mut states = Vec::new();
+        for (order, kind) in kinds.into_iter().enumerate() {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(
+                serde_json::from_str::<PresentationStateKind>(&json).unwrap(),
+                kind
+            );
+            let state = PresentationState {
+                kind,
+                order: order as u32,
+                attributes: BTreeMap::new(),
+                assets: Vec::new(),
+            };
+            let json = serde_json::to_string(&state).unwrap();
+            assert_eq!(
+                serde_json::from_str::<PresentationState>(&json).unwrap(),
+                state
+            );
+            states.push(state);
+        }
+        let document = PresentationDocument {
+            id: PresentationId::mint("presentation").unwrap(),
+            schema_version: None,
+            active_view: None,
+            states,
+            native_ref: None,
+        };
+        let json = serde_json::to_string(&document).unwrap();
+        assert_eq!(
+            serde_json::from_str::<PresentationDocument>(&json).unwrap(),
+            document
+        );
+    }
+
     use super::*;
     use crate::document::CadIr;
     use crate::report::Check;

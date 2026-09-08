@@ -555,14 +555,6 @@ fn transfer_neutral_presentation(
     neutral_schema_version: Option<u32>,
 ) -> Result<(), CodecError> {
     for document in &graph.documents {
-        let mut camera_states = document
-            .states
-            .iter()
-            .filter(|state| state.kind == "Camera");
-        let camera_state = camera_states
-            .next()
-            .filter(|_| camera_states.next().is_none());
-        let camera = camera_state.map(camera_state_value).transpose()?;
         plan.presentation_documents.push(PresentationDocument {
             id: PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
             schema_version: neutral_schema_version,
@@ -570,25 +562,23 @@ fn transfer_neutral_presentation(
             states: document
                 .states
                 .iter()
-                .map(|state| PresentationState {
-                    kind: if state.kind == "Camera" {
-                        PresentationStateKind::Camera(camera.clone().unwrap_or(CameraState {
-                            position: None,
-                            orientation: None,
-                            properties: BTreeMap::new(),
-                        }))
-                    } else {
-                        PresentationStateKind::Native(state.kind.clone())
-                    },
-                    order: state.order as u32,
-                    attributes: state.attributes.clone(),
-                    assets: state
-                        .side_entries
-                        .iter()
-                        .map(|entry| crate::native::native_id("entry", entry))
-                        .collect(),
+                .map(|state| {
+                    Ok(PresentationState {
+                        kind: if state.kind == "Camera" {
+                            PresentationStateKind::Camera(camera_state_value(state)?)
+                        } else {
+                            PresentationStateKind::Native(state.kind.clone())
+                        },
+                        order: state.order as u32,
+                        attributes: state.attributes.clone(),
+                        assets: state
+                            .side_entries
+                            .iter()
+                            .map(|entry| crate::native::native_id("entry", entry))
+                            .collect(),
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, CodecError>>()?,
             native_ref: Some(document.id.clone()),
         });
     }
