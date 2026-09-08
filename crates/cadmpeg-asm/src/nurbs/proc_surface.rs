@@ -39,15 +39,51 @@ pub enum EmbeddedOffsetLayout {
     Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm<[bool; 4]>>),
 }
 
-/// A decoded native procedural definition and the fit contract of its solved cache.
+/// A decoded native procedural definition with layout-owned cache tolerance.
 pub struct DecodedProceduralSurface {
-    /// The native procedural surface construction (blend, sweep, loft, or
-    /// taper family) decoded from its subtype-dispatched inline fields.
-    pub definition: DecodedProceduralSurfaceDefinition,
-    /// `surface_fit_tolerance` of the cached B-spline block, if present.
-    /// `0.0` marks fidelity to the procedural surface. Primitive identity uses
-    /// a separate value ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
-    pub cache_fit_tolerance: Option<f64>,
+    definition: DecodedProceduralSurfaceDefinition,
+    cache: ProceduralSurfaceCache,
+}
+
+pub(crate) enum ProceduralSurfaceCache {
+    Legacy(Option<f64>),
+    Revision,
+}
+
+impl DecodedProceduralSurface {
+    pub(super) fn legacy(
+        definition: DecodedProceduralSurfaceDefinition,
+        cache_fit_tolerance: Option<f64>,
+    ) -> Self {
+        Self {
+            definition,
+            cache: ProceduralSurfaceCache::Legacy(cache_fit_tolerance),
+        }
+    }
+
+    pub(super) fn revision(definition: DecodedProceduralSurfaceDefinition) -> Self {
+        Self {
+            definition,
+            cache: ProceduralSurfaceCache::Revision,
+        }
+    }
+
+    /// Borrow the native construction definition.
+    pub fn definition(&self) -> &DecodedProceduralSurfaceDefinition {
+        &self.definition
+    }
+
+    /// Return the tolerance stored outside a legacy construction.
+    pub fn legacy_cache_fit_tolerance(&self) -> Option<f64> {
+        match self.cache {
+            ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
+            ProceduralSurfaceCache::Revision => None,
+        }
+    }
+
+    pub(crate) fn into_parts(self) -> (DecodedProceduralSurfaceDefinition, ProceduralSurfaceCache) {
+        (self.definition, self.cache)
+    }
 }
 
 /// Source-native procedural semantics before embedded geometry is assigned IR ids.
@@ -588,8 +624,8 @@ fn g2_blend_spl_sur(
         } = revision_surface_tail(&mut cur)?;
         let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::RevisionG2Blend(Box::new(
+        return Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::RevisionG2Blend(Box::new(
                 EmbeddedRevisionG2Blend {
                     revision,
                     leading_parameters,
@@ -610,8 +646,7 @@ fn g2_blend_spl_sur(
                     tail_extensions,
                 },
             )),
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     let first = g2_side(&mut cur)?;
     let singularity = cur.take_enum()?;
@@ -669,8 +704,8 @@ fn g2_blend_spl_sur(
         cur.take_float_array()?,
         cur.take_float_array()?,
     ];
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
             first,
             singularity,
             first_shape,
@@ -684,7 +719,7 @@ fn g2_blend_spl_sur(
             discontinuities,
         })),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 /// Constraint fields carried by a classic loft profile.
@@ -1844,8 +1879,8 @@ fn revision_loft(
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             layout: EmbeddedLoftLayout::Revision(
                 Box::new(cadmpeg_ir::geometry::LoftRevisionForm {
@@ -1859,8 +1894,7 @@ fn revision_loft(
                 wrap_ranges,
             ),
         }),
-        cache_fit_tolerance: None,
-    })
+    ))
 }
 
 fn loft_spl_sur(
@@ -1902,8 +1936,8 @@ fn loft_spl_sur(
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             layout: EmbeddedLoftLayout::Legacy {
                 ranges: parameter_ranges,
@@ -1914,7 +1948,7 @@ fn loft_spl_sur(
             },
         }),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 /// One revision-gated compound-loft scale block: counted profile members,
@@ -2038,8 +2072,8 @@ fn revision_compound_loft(
         }
     };
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
                 revision,
                 cache: cache.into_form(),
@@ -2054,8 +2088,7 @@ fn revision_compound_loft(
                 tail,
             },
         )),
-        cache_fit_tolerance: None,
-    })
+    ))
 }
 
 fn compound_loft_spl_sur(
@@ -2142,17 +2175,15 @@ fn compound_loft_spl_sur(
         }
         _ => return None,
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::CompoundLoft(Box::new(
-            EmbeddedCompoundLoft {
-                scales,
-                fifth_scale,
-                flags,
-                tail,
-            },
-        )),
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::CompoundLoft(Box::new(EmbeddedCompoundLoft {
+            scales,
+            fifth_scale,
+            flags,
+            tail,
+        })),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -2247,8 +2278,8 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
     let second = cur.take_vector3()?;
     let tail_singularity = cur.take_enum()?;
     let (tail_curve, _) = curve_block(span, cur.pos())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(Box::new(
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(Box::new(
             EmbeddedScaledCompoundLoft {
                 singularity,
                 shape,
@@ -2269,7 +2300,7 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
             },
         )),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 /// Decode one recursive law expression.
@@ -2498,8 +2529,8 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Skin(Box::new(EmbeddedSkinSurface {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Skin(Box::new(EmbeddedSkinSurface {
             surface_boolean,
             surface_normal,
             surface_direction,
@@ -2514,7 +2545,7 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuity_flag,
         })),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -2597,8 +2628,8 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.take_float_array()?,
         cur.take_float_array()?,
     ];
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Law(Box::new(EmbeddedLawSurface {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Law(Box::new(EmbeddedLawSurface {
             parameter_ranges,
             primary,
             additional,
@@ -2606,7 +2637,7 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuities,
         })),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 pub(crate) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -2619,13 +2650,13 @@ pub(crate) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         [cur.take_f64()?, cur.take_f64()?],
     ];
     let support = embedded_surface(&mut cur)?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::SubSurface {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::SubSurface {
             support,
             parameter_ranges,
         },
-        cache_fit_tolerance: None,
-    })
+        None,
+    ))
 }
 
 fn net_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -2662,8 +2693,8 @@ fn net_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Net(Box::new(EmbeddedNetSurface {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Net(Box::new(EmbeddedNetSurface {
             sections,
             frame_parameters,
             flag,
@@ -2673,7 +2704,7 @@ fn net_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuity_flag,
         })),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn sweep_spl_sur(
@@ -2888,8 +2919,8 @@ fn sweep_spl_sur(
         cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_bool()?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             layout: EmbeddedSweepSurfaceLayout::Legacy {
                 primary_kind,
                 layout,
@@ -2898,7 +2929,7 @@ fn sweep_spl_sur(
             discontinuity_flag,
         })),
         cache_fit_tolerance,
-    })
+    ))
 }
 
 /// Revision-gated `sweep_sur` layouts.
@@ -3041,10 +3072,9 @@ fn revision_sweep_sur(
         discontinuities,
         tail_flag: discontinuity_flag,
     } = revision_surface_tail(&mut cur)?;
-    let cache_fit_tolerance = None;
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             layout: EmbeddedSweepSurfaceLayout::Revision {
                 form: cadmpeg_ir::geometry::SweepRevisionForm {
                     revision,
@@ -3059,8 +3089,7 @@ fn revision_sweep_sur(
             discontinuities,
             discontinuity_flag,
         })),
-        cache_fit_tolerance,
-    })
+    ))
 }
 
 fn taper_spl_sur(
@@ -3112,8 +3141,8 @@ fn taper_spl_sur(
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
         let sense = cur.take_bool()?;
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::Taper {
+        return Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Taper {
                 support,
                 reference,
                 pcurve,
@@ -3131,8 +3160,7 @@ fn taper_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     let support = embedded_surface(&mut cur)?;
     let (reference, reference_end) = curve_block(span, cur.pos())?;
@@ -3185,8 +3213,8 @@ fn taper_spl_sur(
         _ => return None,
     };
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Taper {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Taper {
             support,
             reference,
             pcurve,
@@ -3195,7 +3223,7 @@ fn taper_spl_sur(
             revision_form: None,
         },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -3218,10 +3246,10 @@ fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         });
     }
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Compound { components },
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Compound { components },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 /// Approximation data carried by a revision surface tail.
@@ -3347,8 +3375,8 @@ fn off_spl_sur(
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::Offset {
+        return Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
                 layout: EmbeddedOffsetLayout::Revision(Box::new(
@@ -3365,8 +3393,7 @@ fn off_spl_sur(
                     },
                 )),
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     let support = embedded_surface(&mut cur)?;
     let distance = cur.take_f64()? * LEN_TO_MM;
@@ -3390,8 +3417,8 @@ fn off_spl_sur(
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Offset {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Offset {
             support,
             distance,
             layout: EmbeddedOffsetLayout::Legacy {
@@ -3401,7 +3428,7 @@ fn off_spl_sur(
             },
         },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn rot_spl_sur(
@@ -3441,8 +3468,8 @@ fn rot_spl_sur(
             profile_endpoints[0].unwrap_or(*profile.knots().first()?),
             profile_endpoints[1].unwrap_or(*profile.knots().last()?),
         ];
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::Revolution {
+        return Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Revolution {
                 directrix: CurveGeometry::Nurbs(profile),
                 axis_origin: Point3::new(
                     origin[0] * LEN_TO_MM,
@@ -3464,8 +3491,7 @@ fn rot_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     let (directrix, directrix_end) = curve_block(span, cur.pos())?;
     cur.set_pos(directrix_end);
@@ -3482,8 +3508,8 @@ fn rot_spl_sur(
     cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots().first()?, *cache.v_knots().last()?];
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Revolution {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Revolution {
             directrix: CurveGeometry::Nurbs(directrix),
             axis_origin,
             axis_direction,
@@ -3492,7 +3518,7 @@ fn rot_spl_sur(
             revision_form: None,
         },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn sum_spl_sur(
@@ -3528,8 +3554,8 @@ fn sum_spl_sur(
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::Sum {
+        return Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Sum {
                 first: CurveGeometry::Nurbs(first),
                 second: CurveGeometry::Nurbs(second),
                 basepoint: Vector3::new(
@@ -3549,8 +3575,7 @@ fn sum_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     let (first, first_end) = curve_block(span, cur.pos())?;
     cur.set_pos(first_end);
@@ -3569,15 +3594,15 @@ fn sum_spl_sur(
         cur.set_pos(cache_end);
         optional_trailing_cache_tolerance(&mut cur)?.value()
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Sum {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Sum {
             first: CurveGeometry::Nurbs(first),
             second: CurveGeometry::Nurbs(second),
             basepoint,
             revision_form: None,
         },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -3596,10 +3621,10 @@ fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.set_pos(cache_end);
         optional_trailing_cache_tolerance(&mut cur)?.value()
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Ruled { first, second },
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Ruled { first, second },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -3635,8 +3660,8 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         ];
         let extension = cur.take_enum()?;
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::Exact {
+        return Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Revision {
                     intervals: unextended_ranges,
                     extension,
@@ -3653,8 +3678,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     },
                 },
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
@@ -3666,15 +3690,15 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let extension = cur.take_long()?;
     cur.at_scope_end().then_some(())?;
     let _ = name;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Exact {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Exact {
             spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                 ranges: parameter_ranges,
                 extension,
             },
         },
         cache_fit_tolerance,
-    })
+    ))
 }
 
 fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -3683,14 +3707,16 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
     let span = toks::subtype_span(toks, start)?;
     let mut cur = Cur::at(span, 2);
-    let (
-        cache_fit_tolerance,
-        discontinuities,
-        discontinuity_flag,
-        parameter_ranges,
-        type_code,
-        revision_form,
-    );
+    enum Layout {
+        Legacy {
+            cache_fit_tolerance: f64,
+            discontinuities: [Vec<f64>; 6],
+            discontinuity_flag: bool,
+            parameter_ranges: [[f64; 2]; 2],
+        },
+        Revision(cadmpeg_ir::geometry::RevisionSurfaceForm),
+    }
+    let (layout, type_code);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
         // parameter values, the type code as an enum, then the nested
@@ -3706,15 +3732,8 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         for bound in &mut bounds {
             *bound = cur.take_optional_range_value()?.value();
         }
-        cache_fit_tolerance = None;
-        discontinuities = tail_discontinuities.clone();
-        discontinuity_flag = tail_flag;
-        parameter_ranges = [
-            [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
-            [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
-        ];
         type_code = cur.take_enum()?;
-        revision_form = Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+        layout = Layout::Revision(cadmpeg_ir::geometry::RevisionSurfaceForm {
             revision,
             support_bounds: bounds,
             reference_endpoints: [None; 2],
@@ -3728,8 +3747,8 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     } else {
         let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
-        cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-        discontinuities = [
+        let cache_fit_tolerance = cur.take_f64()? * LEN_TO_MM;
+        let discontinuities = [
             cur.take_float_array()?,
             cur.take_float_array()?,
             cur.take_float_array()?,
@@ -3737,13 +3756,18 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             cur.take_float_array()?,
             cur.take_float_array()?,
         ];
-        discontinuity_flag = cur.take_bool()?;
-        parameter_ranges = [
+        let discontinuity_flag = cur.take_bool()?;
+        let parameter_ranges = [
             [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM],
             [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM],
         ];
         type_code = cur.take_long()?;
-        revision_form = None;
+        layout = Layout::Legacy {
+            cache_fit_tolerance,
+            discontinuities,
+            discontinuity_flag,
+            parameter_ranges,
+        };
     }
     if !matches!(cur.peek(), Some(Token::SubtypeOpen)) {
         return None;
@@ -3777,19 +3801,41 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     cur.bump();
     let trailing_value = cur.take_long()?;
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::TSpline(Box::new(
-            TSplineSurfaceConstruction {
+    Some(match layout {
+        Layout::Legacy {
+            cache_fit_tolerance,
+            discontinuities,
+            discontinuity_flag,
+            parameter_ranges,
+        } => DecodedProceduralSurface::legacy(
+            DecodedProceduralSurfaceDefinition::TSpline(Box::new(TSplineSurfaceConstruction {
                 parameter_ranges,
                 type_code,
                 subtransform,
                 trailing_value,
                 discontinuities,
                 discontinuity_flag,
-                revision_form,
-            },
-        )),
-        cache_fit_tolerance,
+                revision_form: None,
+            })),
+            Some(cache_fit_tolerance),
+        ),
+        Layout::Revision(form) => {
+            let bounds = form.support_bounds;
+            DecodedProceduralSurface::revision(DecodedProceduralSurfaceDefinition::TSpline(
+                Box::new(TSplineSurfaceConstruction {
+                    parameter_ranges: [
+                        [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
+                        [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
+                    ],
+                    type_code,
+                    subtransform,
+                    trailing_value,
+                    discontinuities: form.discontinuities.clone(),
+                    discontinuity_flag: form.tail_flag,
+                    revision_form: Some(form),
+                }),
+            ))
+        }
     })
 }
 
@@ -4019,30 +4065,32 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         }
         _ => return None,
     };
-    let (layout, cache_fit_tolerance) = if let Some((revision, support_bounds)) = revision_form_head
-    {
+    if let Some((revision, support_bounds)) = revision_form_head {
         let RevisionSurfaceTail {
             cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        (
-            EmbeddedDeformableSurfaceLayout::Revision(Box::new(
-                cadmpeg_ir::geometry::RevisionSurfaceForm {
-                    revision,
-                    support_bounds,
-                    reference_endpoints: [None; 2],
-                    second_endpoints: [None; 2],
-                    flags: Vec::new(),
-                    cache: cache.into_form(),
-                    discontinuities,
-                    tail_flag,
-                    trailing_flags: Vec::new(),
-                },
-            )),
-            None,
-        )
+        Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Deformable(Box::new(EmbeddedDeformableSurface {
+                support,
+                layout: EmbeddedDeformableSurfaceLayout::Revision(Box::new(
+                    cadmpeg_ir::geometry::RevisionSurfaceForm {
+                        revision,
+                        support_bounds,
+                        reference_endpoints: [None; 2],
+                        second_endpoints: [None; 2],
+                        flags: Vec::new(),
+                        cache: cache.into_form(),
+                        discontinuities,
+                        tail_flag,
+                        trailing_flags: Vec::new(),
+                    },
+                )),
+                data,
+            })),
+        ))
     } else {
         let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
@@ -4056,25 +4104,18 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             cur.take_float_array()?,
         ];
         let discontinuity_flag = cur.take_bool()?;
-        (
-            EmbeddedDeformableSurfaceLayout::Legacy {
-                discontinuities,
-                discontinuity_flag,
-            },
-            cache_fit_tolerance,
-        )
-    };
-
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Deformable(Box::new(
-            EmbeddedDeformableSurface {
+        Some(DecodedProceduralSurface::legacy(
+            DecodedProceduralSurfaceDefinition::Deformable(Box::new(EmbeddedDeformableSurface {
                 support,
-                layout,
+                layout: EmbeddedDeformableSurfaceLayout::Legacy {
+                    discontinuities,
+                    discontinuity_flag,
+                },
                 data,
-            },
-        )),
-        cache_fit_tolerance,
-    })
+            })),
+            cache_fit_tolerance,
+        ))
+    }
 }
 
 pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -4156,15 +4197,15 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             ),
         }
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Helix(Box::new(HelixSurfaceConstruction {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Helix(Box::new(HelixSurfaceConstruction {
             angle_range,
             dimension_range,
             path,
             profile,
         })),
-        cache_fit_tolerance: None,
-    })
+        None,
+    ))
 }
 
 fn t_spline_subtransform(span: &[Token]) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {

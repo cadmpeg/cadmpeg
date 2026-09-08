@@ -49,14 +49,7 @@ pub(crate) fn cyl_spl_sur(
     // and ends with the shared revision-gated surface tail, so its cache is
     // located by parsing that tail. The compact layout has no tail: its optional
     // final surface cache is the last surface block in the scope.
-    let (
-        directrix,
-        parameter_interval,
-        direction,
-        native_position,
-        cache_fit_tolerance,
-        revision_form,
-    ) = if matches!(cur.peek(), Some(Token::Long(_))) {
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         let revision = cur.take_long()?;
         // Sense flag of the embedded directrix curve. It is the carrier's
         // whole boolean run, so it travels in the revision form's `flags`.
@@ -82,24 +75,33 @@ pub(crate) fn cyl_spl_sur(
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        (
-            directrix,
-            interval,
-            direction,
-            native_position,
-            None,
-            Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
-                revision,
-                support_bounds: [None; 4],
-                reference_endpoints: [None; 2],
-                second_endpoints: [None; 2],
-                flags: vec![directrix_sense],
-                cache: cache.into_form(),
-                discontinuities,
-                tail_flag,
-                trailing_flags: Vec::new(),
-            }),
-        )
+        Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                parameter_interval: interval,
+                direction: Vector3::new(
+                    direction[0] * LEN_TO_MM,
+                    direction[1] * LEN_TO_MM,
+                    direction[2] * LEN_TO_MM,
+                ),
+                native_position: Point3::new(
+                    native_position[0] * LEN_TO_MM,
+                    native_position[1] * LEN_TO_MM,
+                    native_position[2] * LEN_TO_MM,
+                ),
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds: [None; 4],
+                    reference_endpoints: [None; 2],
+                    second_endpoints: [None; 2],
+                    flags: vec![directrix_sense],
+                    cache: cache.into_form(),
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            },
+        ))
     } else {
         let directrix = crate::nurbs::core::curve_cache(span)?;
         let interval = [cur.take_f64()?, cur.take_f64()?];
@@ -113,34 +115,25 @@ pub(crate) fn cyl_spl_sur(
                 Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                 _ => None,
             });
-        (
-            directrix,
-            interval,
-            direction,
-            native_position,
+        Some(DecodedProceduralSurface::legacy(
+            DecodedProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                parameter_interval: interval,
+                direction: Vector3::new(
+                    direction[0] * LEN_TO_MM,
+                    direction[1] * LEN_TO_MM,
+                    direction[2] * LEN_TO_MM,
+                ),
+                native_position: Point3::new(
+                    native_position[0] * LEN_TO_MM,
+                    native_position[1] * LEN_TO_MM,
+                    native_position[2] * LEN_TO_MM,
+                ),
+                revision_form: None,
+            },
             cache_fit_tolerance,
-            None,
-        )
-    };
-
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            direction: Vector3::new(
-                direction[0] * LEN_TO_MM,
-                direction[1] * LEN_TO_MM,
-                direction[2] * LEN_TO_MM,
-            ),
-            native_position: Point3::new(
-                native_position[0] * LEN_TO_MM,
-                native_position[1] * LEN_TO_MM,
-                native_position[2] * LEN_TO_MM,
-            ),
-            revision_form,
-        },
-        cache_fit_tolerance,
-    })
+        ))
+    }
 }
 
 pub(crate) fn decode_rolling_ball_side(
@@ -1108,7 +1101,6 @@ pub(crate) fn var_blend_spl_sur(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let cache_fit_tolerance = None;
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let saved = cur.pos();
     let secondary_curve = if cur.take_ident() == Some("null_curve") {
@@ -1142,52 +1134,49 @@ pub(crate) fn var_blend_spl_sur(
     };
     let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
-            EmbeddedVariableBlend {
-                subtype,
-                revision,
-                sides,
-                slice: slice.curve,
-                slice_range: slice.parameter_range,
-                offsets,
-                radii,
-                cross_section,
-                u_range: [u_lower, u_upper],
-                v_lower,
-                shape_parameter,
-                shape_length,
-                shape_tail,
-                cache: match cache.into_form() {
-                    RevisionCacheForm::SolvedCache { fit_tolerance } => {
-                        match std::num::NonZeroI64::new(shape_prefix) {
-                            Some(shape_prefix) => VariableBlendCache::Current {
-                                shape_prefix,
-                                fit_tolerance,
-                            },
-                            None => VariableBlendCache::Stale,
-                        }
-                    }
-                    RevisionCacheForm::Parameterization(parameterization) => {
-                        VariableBlendCache::Parameterization {
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
+            subtype,
+            revision,
+            sides,
+            slice: slice.curve,
+            slice_range: slice.parameter_range,
+            offsets,
+            radii,
+            cross_section,
+            u_range: [u_lower, u_upper],
+            v_lower,
+            shape_parameter,
+            shape_length,
+            shape_tail,
+            cache: match cache.into_form() {
+                RevisionCacheForm::SolvedCache { fit_tolerance } => {
+                    match std::num::NonZeroI64::new(shape_prefix) {
+                        Some(shape_prefix) => VariableBlendCache::Current {
                             shape_prefix,
-                            parameterization,
-                        }
+                            fit_tolerance,
+                        },
+                        None => VariableBlendCache::Stale,
                     }
-                },
-                discontinuities,
-                tail_flag,
-                tail_extensions,
-                secondary_curve,
-                convexity,
-                render_mode,
-                post_range,
-                post_curve,
-                post_pcurve,
+                }
+                RevisionCacheForm::Parameterization(parameterization) => {
+                    VariableBlendCache::Parameterization {
+                        shape_prefix,
+                        parameterization,
+                    }
+                }
             },
-        )),
-        cache_fit_tolerance,
-    })
+            discontinuities,
+            tail_flag,
+            tail_extensions,
+            secondary_curve,
+            convexity,
+            render_mode,
+            post_range,
+            post_curve,
+            post_pcurve,
+        })),
+    ))
 }
 
 fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundary> {
@@ -1425,17 +1414,15 @@ pub(crate) fn vertex_blend_spl_sur(
     }
     let grid_size = cur.take_long()?;
     let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(
-            EmbeddedVertexBlend {
-                revision,
-                boundaries,
-                grid_size,
-                fit_tolerance,
-            },
-        )),
-        cache_fit_tolerance: None,
-    })
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(EmbeddedVertexBlend {
+            revision,
+            boundaries,
+            grid_size,
+            fit_tolerance,
+        })),
+        None,
+    ))
 }
 
 pub(crate) fn full_rb_blend_spl_sur(
@@ -1487,7 +1474,6 @@ pub(crate) fn full_rb_blend_spl_sur(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let cache_fit_tolerance = None;
     let third = if has_third {
         Some(Box::new(rolling_ball_third_side(&mut cur)?))
     } else {
@@ -1505,8 +1491,8 @@ pub(crate) fn full_rb_blend_spl_sur(
             end: offsets[1],
         }
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Blend {
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
                 CurveGeometry::Nurbs(curve) => Some(curve.clone()),
@@ -1533,8 +1519,7 @@ pub(crate) fn full_rb_blend_spl_sur(
                 tail_extensions,
             })),
         },
-        cache_fit_tolerance,
-    })
+    ))
 }
 
 /// Decode the compact rolling-ball carrier emitted without the native side
@@ -1595,8 +1580,8 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
             end: offsets[1],
         }
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Blend {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new(supports),
             spine: Some(spine),
             radius,
@@ -1604,5 +1589,5 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
             native: None,
         },
         cache_fit_tolerance,
-    })
+    ))
 }
