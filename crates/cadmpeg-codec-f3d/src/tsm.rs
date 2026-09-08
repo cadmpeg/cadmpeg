@@ -244,10 +244,10 @@ enum SymmetryMode {
 }
 
 #[derive(Debug)]
-struct SymmetryBlock {
+struct PartialSymmetryBlock {
     mode: SymmetryMode,
     plane: Option<[f64; 12]>,
-    radial_segments: Option<u32>,
+    radial_segments: Option<std::num::NonZeroU32>,
     radial_sweep: Option<f64>,
     radial_maps: Vec<SubdRadialSymmetryMap>,
     record_kinds: BTreeSet<String>,
@@ -259,7 +259,7 @@ struct SymmetryBlock {
     vertex_reverse: BTreeMap<usize, usize>,
 }
 
-impl SymmetryBlock {
+impl PartialSymmetryBlock {
     fn new(mode: SymmetryMode) -> Self {
         Self {
             mode,
@@ -276,6 +276,32 @@ impl SymmetryBlock {
             vertex_reverse: BTreeMap::new(),
         }
     }
+}
+
+#[derive(Debug)]
+struct SymmetryBlock {
+    plane: [f64; 12],
+    kind: SymmetryKind,
+}
+
+#[derive(Debug)]
+enum SymmetryKind {
+    Correspondence {
+        face: SymmetryPairs,
+        edge: SymmetryPairs,
+        vertex: SymmetryPairs,
+    },
+    Radial {
+        segments: std::num::NonZeroU32,
+        sweep: f64,
+        maps: Vec<SubdRadialSymmetryMap>,
+    },
+}
+
+#[derive(Debug)]
+struct SymmetryPairs {
+    forward: BTreeMap<usize, usize>,
+    reverse: BTreeMap<usize, usize>,
 }
 
 fn parse_pairs<'a>(
@@ -768,7 +794,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut selected_grips = BTreeSet::new();
     let mut editor_declarations = BTreeSet::new();
     let mut symmetry_blocks = Vec::new();
-    let mut current_symmetry: Option<SymmetryBlock> = None;
+    let mut current_symmetry: Option<PartialSymmetryBlock> = None;
     let mut terminal_declarations = BTreeSet::new();
     let mut unknown_record_kinds = BTreeMap::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -957,7 +983,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     _ => return Err(malformed(name, "unsupported symmetry flags")),
                 };
                 require_end(name, fields, "symmetry header")?;
-                if let Some(block) = current_symmetry.replace(SymmetryBlock::new(mode)) {
+                if let Some(block) = current_symmetry.replace(PartialSymmetryBlock::new(mode)) {
                     symmetry_blocks.push(block);
                 }
             }
@@ -1026,16 +1052,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     "segments" => {
                         let segments =
                             parse_usize(name, fields.next(), "radial symmetry segments")?;
-                        if segments == 0 {
-                            return Err(malformed(
-                                name,
-                                "radial symmetry segments is not positive",
-                            ));
-                        }
-                        block.radial_segments =
-                            Some(u32::try_from(segments).map_err(|_| {
+                        block.radial_segments = Some(
+                            std::num::NonZeroU32::new(u32::try_from(segments).map_err(|_| {
                                 malformed(name, "radial symmetry segments exceed u32")
-                            })?);
+                            })?)
+                            .ok_or_else(|| {
+                                malformed(name, "radial symmetry segments is not positive")
+                            })?,
+                        );
                         require_end(name, fields, "radial symmetry segments")?;
                     }
                     "sweep" => {
@@ -1150,43 +1174,79 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             return Err(malformed(name, "selected grip is out of range or deleted"));
         }
     }
-    for block in &symmetry_blocks {
-        if block.plane.is_none() {
-            return Err(malformed(name, "symmetry block has no plane"));
-        }
-        if block.mode == SymmetryMode::Correspondence {
-            validate_symmetry_map(
-                name,
-                &block.face_forward,
-                &block.face_reverse,
-                &face_live,
-                "face",
-            )?;
-            validate_symmetry_map(
-                name,
-                &block.edge_forward,
-                &block.edge_reverse,
-                &edge_live,
-                "edge",
-            )?;
-            validate_symmetry_map(
-                name,
-                &block.vertex_forward,
-                &block.vertex_reverse,
-                &vertex_live,
-                "vertex",
-            )?;
-        } else {
-            for required in ["segments", "sweep", "ef", "er", "ff", "fr", "vf", "vr"] {
-                if !block.record_kinds.contains(required) {
-                    return Err(malformed(
+    let symmetry_blocks = symmetry_blocks
+        .into_iter()
+        .map(|block| {
+            let plane = block
+                .plane
+                .ok_or_else(|| malformed(name, "symmetry block has no plane"))?;
+            let kind = match block.mode {
+                SymmetryMode::Correspondence => {
+                    let face = SymmetryPairs {
+                        forward: block.face_forward,
+                        reverse: block.face_reverse,
+                    };
+                    let edge = SymmetryPairs {
+                        forward: block.edge_forward,
+                        reverse: block.edge_reverse,
+                    };
+                    let vertex = SymmetryPairs {
+                        forward: block.vertex_forward,
+                        reverse: block.vertex_reverse,
+                    };
+                    validate_symmetry_map(name, &face.forward, &face.reverse, &face_live, "face")?;
+                    validate_symmetry_map(name, &edge.forward, &edge.reverse, &edge_live, "edge")?;
+                    validate_symmetry_map(
                         name,
-                        format!("radial symmetry block is missing {required}"),
-                    ));
+                        &vertex.forward,
+                        &vertex.reverse,
+                        &vertex_live,
+                        "vertex",
+                    )?;
+                    SymmetryKind::Correspondence { face, edge, vertex }
                 }
-            }
-        }
-    }
+                SymmetryMode::Radial => {
+                    let segments = block.radial_segments.ok_or_else(|| {
+                        malformed(name, "radial symmetry block is missing segments")
+                    })?;
+                    let sweep = block
+                        .radial_sweep
+                        .ok_or_else(|| malformed(name, "radial symmetry block is missing sweep"))?;
+                    for selector in [
+                        SubdRadialMapSelector::Ef,
+                        SubdRadialMapSelector::Er,
+                        SubdRadialMapSelector::Ff,
+                        SubdRadialMapSelector::Fr,
+                        SubdRadialMapSelector::Vf,
+                        SubdRadialMapSelector::Vr,
+                    ] {
+                        if !block.radial_maps.iter().any(|map| map.selector == selector) {
+                            return Err(malformed(
+                                name,
+                                format!(
+                                    "radial symmetry block is missing {}",
+                                    match selector {
+                                        SubdRadialMapSelector::Ef => "ef",
+                                        SubdRadialMapSelector::Er => "er",
+                                        SubdRadialMapSelector::Ff => "ff",
+                                        SubdRadialMapSelector::Fr => "fr",
+                                        SubdRadialMapSelector::Vf => "vf",
+                                        SubdRadialMapSelector::Vr => "vr",
+                                    }
+                                ),
+                            ));
+                        }
+                    }
+                    SymmetryKind::Radial {
+                        segments,
+                        sweep,
+                        maps: block.radial_maps,
+                    }
+                }
+            };
+            Ok(SymmetryBlock { plane, kind })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
     for connectivity in &derived_grips {
         if !vertex_live
             .get(connectivity.vertex)
@@ -1249,28 +1309,23 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let symmetries = symmetry_blocks
         .iter()
         .map(|block| {
-            let plane = symmetry_plane(
-                name,
-                block
-                    .plane
-                    .ok_or_else(|| malformed(name, "symmetry block has no plane"))?,
-            )?;
-            let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.mode {
-                SymmetryMode::Correspondence => (
+            let plane = symmetry_plane(name, block.plane)?;
+            let (kind, face_pairs, edge_pairs, vertex_pairs) = match &block.kind {
+                SymmetryKind::Correspondence { face, edge, vertex } => (
                     SubdSymmetryKind::Correspondence,
-                    remap_symmetry_pairs(name, &block.face_forward, &face_ir, "face")?,
-                    remap_symmetry_pairs(name, &block.edge_forward, &edge_ir, "edge")?,
-                    remap_symmetry_pairs(name, &block.vertex_forward, &vertex_ir, "vertex")?,
+                    remap_symmetry_pairs(name, &face.forward, &face_ir, "face")?,
+                    remap_symmetry_pairs(name, &edge.forward, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(name, &vertex.forward, &vertex_ir, "vertex")?,
                 ),
-                SymmetryMode::Radial => (
+                SymmetryKind::Radial {
+                    segments,
+                    sweep,
+                    maps,
+                } => (
                     SubdSymmetryKind::Radial {
-                        segments: block.radial_segments.ok_or_else(|| {
-                            malformed(name, "radial symmetry block has no segment count")
-                        })?,
-                        sweep: block
-                            .radial_sweep
-                            .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
-                        radial_maps: block.radial_maps.clone(),
+                        segments: segments.get(),
+                        sweep: *sweep,
+                        radial_maps: maps.clone(),
                     },
                     Vec::new(),
                     Vec::new(),
