@@ -370,6 +370,9 @@ impl ValidatedRawBrep {
                 ));
             }
         }
+        for (index, region) in raw.regions.iter_mut().enumerate() {
+            region.index = index as i32;
+        }
         for vertex in &raw.vertices {
             refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
             finite_tolerance(vertex.tolerance, "vertex tolerance")?;
