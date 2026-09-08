@@ -2850,7 +2850,7 @@ fn build_geometry_ir(
                 "feature source ID(s) {} have no agreeing DisplayFace persistent reference",
                 unmatched_feature_sources
                     .iter()
-                    .map(u32::to_string)
+                    .map(|source| source.value().to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
