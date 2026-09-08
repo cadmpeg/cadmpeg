@@ -1068,3 +1068,5 @@ mod helix_payloads;
 mod procedural_surface_payloads;
 
 mod procedural_curve_payloads;
+
+mod revolution_payloads;
