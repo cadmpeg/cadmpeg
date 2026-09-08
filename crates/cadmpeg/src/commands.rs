@@ -266,7 +266,7 @@ fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyh
 pub fn dump(
     inputs: &InputCatalog,
     path: &Path,
-    destination: DestinationPolicy,
+    destination: &DestinationPolicy,
     report_path: Option<&FileDestination>,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
