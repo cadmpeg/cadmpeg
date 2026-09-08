@@ -1929,12 +1929,13 @@ fn decode_graph(
         .face_atoms
         .into_iter()
         .filter_map(|atom| {
+            let identity = atom.identity?;
             let face = emitted_faces.get(id_face(atom.face_attr).as_str())?;
             bound_faces
                 .insert(atom.face_attr)
                 .then(|| attrib::FaceAtom {
                     face: (*face).clone(),
-                    identity: atom.identity,
+                    identity,
                 })
         })
         .collect();

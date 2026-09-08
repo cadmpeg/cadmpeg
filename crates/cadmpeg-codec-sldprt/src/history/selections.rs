@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind native topology selections to decoded B-rep identities.
 
+use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
@@ -75,7 +76,8 @@ fn surface_selection_face_bindings<'a>(
     feature_sources: &HashMap<String, Option<u32>>,
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> SurfaceSelectionFaceBindings {
-    let mut faces_by_identity = HashMap::<(u32, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
+    let mut faces_by_identity =
+        HashMap::<(FeatureSourceId, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
     for (target, identity) in face_identities {
         let candidate = target.clone();
         let entry = faces_by_identity
@@ -95,7 +97,8 @@ fn surface_selection_face_bindings<'a>(
             let feature_source_id = match selection.terminal_feature_ref.as_deref() {
                 Some(terminal_feature) => feature_sources.get(terminal_feature).copied().flatten(),
                 None => View::u32_le_at(&component.type_signature, 4),
-            }?;
+            }
+            .and_then(|source| FeatureSourceId::try_from(source).ok())?;
             let local_face_id = component.local_id?;
             faces_by_identity
                 .get(&(feature_source_id, local_face_id))
@@ -685,7 +688,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 47,
+                        feature_source_id: 47_u32.try_into().unwrap(),
                         local_id: 8,
                         trailing_fields: Vec::new(),
                     },
@@ -694,7 +697,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 50,
+                        feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
                         trailing_fields: Vec::new(),
                     },
@@ -726,7 +729,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#first-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 50,
+                        feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
                         trailing_fields: Vec::new(),
                     },
@@ -735,7 +738,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 50,
+                        feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
                         trailing_fields: Vec::new(),
                     },
@@ -761,7 +764,7 @@ mod tests {
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                     .expect("identity grammar"),
                 crate::brep::PersistentFaceIdentity {
-                    feature_source_id: 50,
+                    feature_source_id: 50_u32.try_into().unwrap(),
                     local_id: 5,
                     trailing_fields: Vec::new(),
                 },

@@ -46,6 +46,7 @@ pub(crate) use self::graph::{decode, decode_bodies, Brep};
 pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 pub(crate) use self::topology::patch_point;
 
+pub(crate) mod feature_source;
 mod graph;
 
 /// The native persistent identity shared by B-rep face attributes and display
@@ -53,7 +54,7 @@ mod graph;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PersistentFaceIdentity {
     /// Native history-feature object identifier.
-    pub(crate) feature_source_id: u32,
+    pub(crate) feature_source_id: feature_source::FeatureSourceId,
     /// Face identity local to the producing feature.
     pub(crate) local_id: u32,
     /// Optional signed path fields stored as their native u32 bit patterns.

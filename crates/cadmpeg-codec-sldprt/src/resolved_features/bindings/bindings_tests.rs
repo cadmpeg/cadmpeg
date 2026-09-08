@@ -270,7 +270,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 45,
+                feature_source_id: 45_u32.try_into().unwrap(),
                 local_id: 7,
                 trailing_fields: Vec::new(),
             },
@@ -310,7 +310,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 45,
+                feature_source_id: 45_u32.try_into().unwrap(),
                 local_id: 7,
                 trailing_fields: Vec::new(),
             },
@@ -336,7 +336,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             (
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
                 crate::brep::PersistentFaceIdentity {
-                    feature_source_id: 45,
+                    feature_source_id: 45_u32.try_into().unwrap(),
                     local_id: 7,
                     trailing_fields: Vec::new(),
                 },
@@ -345,7 +345,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#other-face")
                     .expect("identity grammar"),
                 crate::brep::PersistentFaceIdentity {
-                    feature_source_id: 45,
+                    feature_source_id: 45_u32.try_into().unwrap(),
                     local_id: 7,
                     trailing_fields: Vec::new(),
                 },
