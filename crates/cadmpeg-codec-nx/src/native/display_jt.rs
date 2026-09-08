@@ -1961,7 +1961,7 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
         .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
         .enumerate()
         .filter_map(|(index_ordinal, entry)| {
-            let (source_offset, byte_len) = entry.file_span?;
+            let (source_offset, byte_len) = entry.file_span()?;
             let payload = container.bounded_entry_bytes(source_offset, byte_len)?;
             let version = View::u32_le_at(payload, 0)?;
             let declared_count = View::u32_le_at(payload, 4)?;
@@ -2022,7 +2022,7 @@ pub fn display_jt_documents(
     let [entry] = entries.as_slice() else {
         return Vec::new();
     };
-    let Some((stream_source_offset, stream_byte_len)) = entry.file_span else {
+    let Some((stream_source_offset, stream_byte_len)) = entry.file_span() else {
         return Vec::new();
     };
     let Some(stream) = container.bounded_entry_bytes(stream_source_offset, stream_byte_len) else {
@@ -4655,7 +4655,10 @@ mod tests {
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
-                file_span: Some((0, data_len)),
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: data_len,
+                },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
@@ -4706,11 +4709,17 @@ mod tests {
         );
 
         let mut cross_entry = container.clone();
-        cross_entry.entries[0].file_span = Some((0, data_len - 1));
+        cross_entry.entries[0].body = crate::container::DirEntryBody::File {
+            offset: 0,
+            len: data_len - 1,
+        };
         cross_entry.entries.push(DirEntry {
             name: "/Root/other".to_string(),
             region: Region::Header,
-            file_span: Some((data_len - 1, 1)),
+            body: crate::container::DirEntryBody::File {
+                offset: data_len - 1,
+                len: 1,
+            },
         });
         assert!(super::display_jt_segments(None, &cross_entry, &documents).is_empty());
 
@@ -4764,7 +4773,10 @@ mod tests {
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
-                file_span: Some((0, data_len)),
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: data_len,
+                },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
@@ -4868,7 +4880,10 @@ mod tests {
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
-                file_span: Some((0, data_len)),
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: data_len,
+                },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
@@ -5806,7 +5821,10 @@ mod tests {
             entries: vec![crate::container::DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: crate::container::Region::Header,
-                file_span: Some((0, data_len)),
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: data_len,
+                },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),

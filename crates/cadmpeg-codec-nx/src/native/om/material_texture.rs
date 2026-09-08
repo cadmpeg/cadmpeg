@@ -143,7 +143,7 @@ pub(crate) fn material_texture_assets(container: &Container) -> Vec<MaterialText
     let mut assets = Vec::new();
     for entry in entries {
         let parse = || {
-            let (offset, size) = entry.file_span?;
+            let (offset, size) = entry.file_span()?;
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let payload = container.data.get(start..start.checked_add(size)?)?;
             let (byte_order, first_ifd_offset) = match payload.get(..8)? {

@@ -619,7 +619,7 @@ pub fn extract_streams<'a>(
         .entries
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
-        .and_then(|entry| entry.file_span)
+        .and_then(|entry| entry.file_span())
     else {
         return Ok(Vec::new());
     };

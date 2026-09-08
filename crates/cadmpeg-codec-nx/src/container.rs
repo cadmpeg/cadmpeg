@@ -47,8 +47,22 @@ pub struct DirEntry {
     pub name: String,
     /// Which region the entry was read from.
     pub region: Region,
-    /// An in-bounds byte offset and length, or `None` for non-file entries.
-    pub file_span: Option<(u64, u64)>,
+    /// Directory or file payload.
+    pub body: DirEntryBody,
+}
+
+/// Payload of a directory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirEntryBody {
+    /// A directory without a file payload.
+    Directory,
+    /// A file payload at an offset and length.
+    File {
+        /// Payload byte offset.
+        offset: u64,
+        /// Payload byte length.
+        len: u64,
+    },
 }
 
 /// Directory region containing an entry.
@@ -116,25 +130,32 @@ impl EntryContent {
 }
 
 impl DirEntry {
+    pub(crate) fn file_span(&self) -> Option<(u64, u64)> {
+        match self.body {
+            DirEntryBody::Directory => None,
+            DirEntryBody::File { offset, len } => Some((offset, len)),
+        }
+    }
+
     /// Classify this entry by its canonical storage path.
     pub(crate) fn content(&self) -> EntryContent {
-        if self.file_span.is_none() {
-            return EntryContent::Directory;
-        }
-        match self.name.as_str() {
-            "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
-            "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
-            "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
-            "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
-            "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
-            "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
-            "/Root/images/preview" => EntryContent::PreviewImage,
-            "/Root/part/arrangements" => EntryContent::Arrangements,
-            "/Root/part/attrs" => EntryContent::PartAttributes,
-            "/Root/qafmetadata" => EntryContent::AssetCatalog,
-            name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
-            name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
-            _ => EntryContent::NamedOpaqueStream,
+        match self.body {
+            DirEntryBody::Directory => EntryContent::Directory,
+            DirEntryBody::File { .. } => match self.name.as_str() {
+                "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
+                "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
+                "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
+                "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
+                "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
+                "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
+                "/Root/images/preview" => EntryContent::PreviewImage,
+                "/Root/part/arrangements" => EntryContent::Arrangements,
+                "/Root/part/attrs" => EntryContent::PartAttributes,
+                "/Root/qafmetadata" => EntryContent::AssetCatalog,
+                name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
+                name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
+                _ => EntryContent::NamedOpaqueStream,
+            },
         }
     }
 }
@@ -212,7 +233,7 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .filter_map(|entry| {
-                let (start, entry_byte_len) = entry.file_span?;
+                let (start, entry_byte_len) = entry.file_span()?;
                 let start = usize::try_from(start).ok()?;
                 let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
                 let entry_end = start.checked_add(entry_byte_len)?;
@@ -232,7 +253,7 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .filter_map(|entry| {
-                let (start, byte_len) = entry.file_span?;
+                let (start, byte_len) = entry.file_span()?;
                 let start = usize::try_from(start).ok()?;
                 let byte_len = usize::try_from(byte_len).ok()?;
                 let end = start.checked_add(byte_len)?;
@@ -247,8 +268,8 @@ impl<'a> Container<'a> {
         let entry = self
             .entries
             .iter()
-            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span.is_some())?;
-        let (offset, size) = entry.file_span?;
+            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some())?;
+        let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let payload = self.data.get(offset..offset.checked_add(size)?)?;
         let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
@@ -287,7 +308,7 @@ impl<'a> Container<'a> {
         let Some((entry, index)) = self.segment_index() else {
             return Vec::new();
         };
-        let Some((entry_offset, entry_size)) = entry.file_span else {
+        let Some((entry_offset, entry_size)) = entry.file_span() else {
             return Vec::new();
         };
         let (Ok(entry_start), Ok(entry_size)) =
@@ -388,7 +409,7 @@ impl<'a> Container<'a> {
                         let entry_offset = self
                             .entries
                             .get(*entry_index)
-                            .and_then(|entry| entry.file_span)
+                            .and_then(|entry| entry.file_span())
                             .map_or(0, |(offset, _)| offset);
                         blocks.insert(
                             format!("nx:om-data-blocks-{section_ordinal}:block#0"),
@@ -456,7 +477,7 @@ impl<'a> Container<'a> {
         self.entries
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| entry.file_span.map(|span| (entry, span)))
+            .filter_map(|entry| entry.file_span().map(|span| (entry, span)))
             .flat_map(|(entry, (offset, size))| {
                 let Ok(offset) = usize::try_from(offset) else {
                     return Vec::new();
@@ -484,7 +505,7 @@ impl<'a> Container<'a> {
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
             .filter_map(|entry| {
-                let (offset, size) = entry.file_span?;
+                let (offset, size) = entry.file_span()?;
                 let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
                 let payload = self.data.get(offset..offset.checked_add(size)?)?;
                 Some(
@@ -505,7 +526,7 @@ impl<'a> Container<'a> {
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
             .filter_map(|entry| {
-                let (offset, size) = entry.file_span?;
+                let (offset, size) = entry.file_span()?;
                 let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
                 let payload = self.data.get(offset..offset.checked_add(size)?)?;
                 Some(
@@ -525,8 +546,8 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .filter(|entry| entry.file_span.is_some())?;
-        let (offset, size) = entry.file_span?;
+            .filter(|entry| entry.file_span().is_some())?;
+        let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let bytes = self.data.get(offset..offset.checked_add(size)?)?;
         let registry_offset = find(bytes, REGISTRY_MARKER)?;
@@ -835,7 +856,7 @@ fn parse_framed_section_cache<'bytes>(
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
@@ -875,7 +896,7 @@ fn parse_indexed_section_cache<'bytes>(
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
@@ -987,7 +1008,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     }
     if entries
         .iter()
-        .filter_map(|entry| entry.file_span)
+        .filter_map(|entry| entry.file_span())
         .any(|(offset, size)| {
             offset
                 .checked_add(size)
@@ -1085,14 +1106,18 @@ pub fn scan_legacy<'a>(
             "retain legacy NX directory entry",
             Some(root.location()),
         )?;
-        let file_span = match entry {
-            CompoundEntry::Stream(stream) => stream_spans.get(&stream.id()).copied(),
-            CompoundEntry::Storage(_) => None,
+        let body = match entry {
+            CompoundEntry::Stream(stream) => stream_spans
+                .get(&stream.id())
+                .map_or(DirEntryBody::Directory, |&(offset, len)| {
+                    DirEntryBody::File { offset, len }
+                }),
+            CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
         entries.push(DirEntry {
             name: format!("/Root/{}", entry.path()),
             region: Region::Header,
-            file_span,
+            body,
         });
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
@@ -1179,27 +1204,23 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
     // Interpret the 16-byte payload as a file span when it lands within the file.
-    let file_span = match (
+    let body = match (
         View::u64_le_at(data, payload),
         View::u64_le_at(data, payload + file_payload::SIZE),
     ) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
-                Some(e) if size > 0 && e <= data.len() as u64 && off >= 8 => Some((off, size)),
-                _ => None,
+                Some(e) if size > 0 && e <= data.len() as u64 && off >= 8 => DirEntryBody::File {
+                    offset: off,
+                    len: size,
+                },
+                _ => DirEntryBody::Directory,
             }
         }
-        _ => None,
+        _ => DirEntryBody::Directory,
     };
-    Some((
-        DirEntry {
-            name,
-            region,
-            file_span,
-        },
-        payload + file_payload::LEN,
-    ))
+    Some((DirEntry { name, region, body }, payload + file_payload::LEN))
 }
 
 #[cfg(test)]

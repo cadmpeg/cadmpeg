@@ -1290,7 +1290,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         .iter()
         .filter(|entry| entry.name == "/Root/images/preview")
     {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {

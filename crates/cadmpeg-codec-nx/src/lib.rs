@@ -155,7 +155,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
         attributes.insert("region".to_string(), entry.region.label().to_string());
-        let (compressed, uncompressed) = match entry.file_span {
+        let (compressed, uncompressed) = match entry.file_span() {
             Some((off, size)) => {
                 attributes.insert("file_offset".to_string(), off.to_string());
                 (size, size)

@@ -327,14 +327,14 @@ pub fn fast_load_component_roster(
     let mut entries = container
         .entries
         .iter()
-        .filter(|entry| entry.name == ENTRY_NAME && entry.file_span.is_some());
+        .filter(|entry| entry.name == ENTRY_NAME && entry.file_span().is_some());
     let Some(entry) = entries.next() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
     if entries.next().is_some() {
         return (Vec::new(), Vec::new(), Vec::new());
     }
-    let Some((entry_offset, entry_size)) = entry.file_span else {
+    let Some((entry_offset, entry_size)) = entry.file_span() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
     let (Ok(entry_offset_usize), Ok(entry_size)) =
@@ -686,7 +686,10 @@ mod tests {
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,
-                file_span: Some((0, len)),
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: len,
+                },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
