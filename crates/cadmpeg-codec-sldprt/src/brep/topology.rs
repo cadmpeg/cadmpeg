@@ -545,25 +545,25 @@ impl Candidate for Coedge {
     }
 }
 #[derive(Clone, Copy)]
-struct CoedgeEvidence {
-    owner_valid: bool,
-    start_valid: bool,
-    edge_valid: bool,
-    next_owner_valid: Option<bool>,
-    previous_valid: bool,
-    loop_head_valid: bool,
+struct CoedgeEvidence<'a> {
+    owner: Option<&'a Loop>,
+    start: Option<&'a VertexUse>,
+    edge: Option<&'a [EdgeUse]>,
+    next_owner: Option<bool>,
+    previous: bool,
+    loop_head: bool,
 }
 
-impl CoedgeEvidence {
+impl CoedgeEvidence<'_> {
     fn flags(self) -> [bool; 7] {
         [
-            self.owner_valid,
-            self.start_valid,
-            self.edge_valid,
-            self.next_owner_valid == Some(true),
-            self.next_owner_valid.is_some(),
-            self.previous_valid,
-            self.loop_head_valid,
+            self.owner.is_some(),
+            self.start.is_some(),
+            self.edge.is_some(),
+            self.next_owner == Some(true),
+            self.next_owner.is_some(),
+            self.previous,
+            self.loop_head,
         ]
     }
 }
@@ -608,25 +608,27 @@ fn loop_is_owned(record: &Loop, bridges: &HashMap<u16, Bridge>) -> bool {
 /// fields identify the owner, vertex-use, edge-use, and ring; reciprocal links
 /// and loop-head membership provide additional confirmation. No field is a
 /// byte-position discriminator.
-fn coedge_evidence(
+fn coedge_evidence<'a>(
     candidate: &Coedge,
-    loops: &[Loop],
+    loops: &'a [Loop],
     bridges: &HashMap<u16, Bridge>,
-    vertex_uses: &HashMap<u16, VertexUse>,
-    edge_candidates: &CandidateMap<EdgeUse>,
+    vertex_uses: &'a HashMap<u16, VertexUse>,
+    edge_candidates: &'a CandidateMap<EdgeUse>,
     coedge_candidates: &CandidateMap<Coedge>,
-) -> CoedgeEvidence {
+) -> CoedgeEvidence<'a> {
     let owner = candidate.refs[1];
-    let owner_valid = owner != 0
-        && loops
-            .iter()
-            .rev()
-            .find(|loop_| loop_.attr == owner)
-            .is_some_and(|loop_| loop_is_owned(loop_, bridges));
+    let owner_evidence = loops
+        .iter()
+        .rev()
+        .find(|loop_| loop_.attr == owner)
+        .filter(|loop_| owner != 0 && loop_is_owned(loop_, bridges));
     let start = candidate.refs[4];
-    let start_valid = start != 0 && vertex_uses.contains_key(&start);
+    let start_evidence = vertex_uses.get(&start).filter(|_| start != 0);
     let edge = candidate.refs[6];
-    let edge_valid = edge != 0 && edge_candidates.contains_key(&edge);
+    let edge_evidence = edge_candidates
+        .get(&edge)
+        .filter(|_| edge != 0)
+        .map(Vec::as_slice);
     let next = candidate.refs[3];
     let next_owner_valid = coedge_candidates
         .get(&next)
@@ -647,16 +649,16 @@ fn coedge_evidence(
         loop_.attr == owner && loop_is_owned(loop_, bridges) && loop_.refs[1] == candidate.attr
     });
     CoedgeEvidence {
-        owner_valid,
-        start_valid,
-        edge_valid,
-        next_owner_valid,
-        previous_valid,
-        loop_head_valid,
+        owner: owner_evidence,
+        start: start_evidence,
+        edge: edge_evidence,
+        next_owner: next_owner_valid,
+        previous: previous_valid,
+        loop_head: loop_head_valid,
     }
 }
 
-fn evidence_dominates(left: CoedgeEvidence, right: CoedgeEvidence) -> bool {
+fn evidence_dominates(left: CoedgeEvidence<'_>, right: CoedgeEvidence<'_>) -> bool {
     let left = left.flags();
     let right = right.flags();
     let at_least_as_supported = left.iter().zip(right).all(|(left, right)| *left || !right);
@@ -675,7 +677,7 @@ fn select_coedge(
     if candidates.len() == 1 {
         return candidates.first().cloned();
     }
-    let evidence: Vec<CoedgeEvidence> = candidates
+    let evidence: Vec<CoedgeEvidence<'_>> = candidates
         .iter()
         .map(|candidate| {
             coedge_evidence(
