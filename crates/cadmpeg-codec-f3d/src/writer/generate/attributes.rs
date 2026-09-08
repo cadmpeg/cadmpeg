@@ -63,17 +63,6 @@ pub(crate) struct AttributeOwnerStarts {
     pub(crate) vertex: i64,
 }
 
-fn native_owner(start: Option<i64>, ordinal: usize) -> Result<i64, CodecError> {
-    native_record_index(
-        start.ok_or_else(|| {
-            CodecError::NotImplemented(
-                "source-less F3D attribute target has no native owner section".into(),
-            )
-        })?,
-        ordinal,
-    )
-}
-
 impl<'a> AttributeIndex<'a> {
     pub(crate) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
@@ -908,8 +897,39 @@ pub(crate) fn encode_source_less_attributes(
     owners: AttributeOwnerStarts,
 ) -> Result<(), CodecError> {
     let model = &target.model;
-    let face_start = owners.surface.map(|surface| surface.face);
-    let coedge_start = owners.surface.map(|surface| surface.coedge);
+    let (faces, coedges) = match owners.surface {
+        Some(surface) => (
+            model
+                .faces
+                .iter()
+                .enumerate()
+                .map(|(ordinal, face)| (ordinal, face, surface.face))
+                .collect::<Vec<_>>(),
+            model
+                .coedges
+                .iter()
+                .enumerate()
+                .map(|(ordinal, coedge)| (ordinal, coedge, surface.coedge))
+                .collect::<Vec<_>>(),
+        ),
+        None => {
+            if model.faces.iter().any(|face| {
+                face.color.is_some()
+                    || face.name.is_some()
+                    || !face_persistent_tags(index, face).is_empty()
+                    || creation_timestamp(index, &AttributeTarget::Face(face.id.clone())).is_some()
+            }) || model.coedges.iter().any(|coedge| {
+                sketch_link(index, coedge).is_some()
+                    || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
+                        .is_some()
+            }) {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D attribute target has no native owner section".into(),
+                ));
+            }
+            (Vec::new(), Vec::new())
+        }
+    };
     for (ordinal, timestamp) in index.creation_timestamps.iter().enumerate() {
         if !timestamp.unix_microseconds.is_finite() {
             return Err(CodecError::malformed(format_args!(
@@ -955,15 +975,14 @@ pub(crate) fn encode_source_less_attributes(
             records,
             color,
             next,
-            native_owner(Some(owners.body), body_ordinal)?,
+            native_record_index(owners.body, body_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face) in model
-        .faces
+    for (face_ordinal, face, face_start) in faces
         .iter()
-        .enumerate()
-        .filter(|(_, face)| face.color.is_some())
+        .copied()
+        .filter(|(_, face, _)| face.color.is_some())
     {
         let owner_target = AttributeTarget::Face(face.id.clone());
         let next = if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)?
@@ -980,7 +999,7 @@ pub(crate) fn encode_source_less_attributes(
             records,
             face.color.expect("filtered colored face"),
             next,
-            native_owner(face_start, face_ordinal)?,
+            native_record_index(face_start, face_ordinal)?,
         )?;
         records.push(0x11);
     }
@@ -1010,15 +1029,14 @@ pub(crate) fn encode_source_less_attributes(
             body.name.as_deref().expect("filtered named body"),
             next,
             previous,
-            native_owner(Some(owners.body), body_ordinal)?,
+            native_record_index(owners.body, body_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face) in model
-        .faces
+    for (face_ordinal, face, face_start) in faces
         .iter()
-        .enumerate()
-        .filter(|(_, face)| face.name.is_some())
+        .copied()
+        .filter(|(_, face, _)| face.name.is_some())
     {
         let owner_target = AttributeTarget::Face(face.id.clone());
         let next = if let Some(reference) =
@@ -1040,7 +1058,7 @@ pub(crate) fn encode_source_less_attributes(
             face.name.as_deref().expect("filtered named face"),
             next,
             previous,
-            native_owner(face_start, face_ordinal)?,
+            native_record_index(face_start, face_ordinal)?,
         )?;
         records.push(0x11);
     }
@@ -1074,11 +1092,11 @@ pub(crate) fn encode_source_less_attributes(
             3,
             next,
             previous,
-            native_owner(Some(owners.body), body_ordinal)?,
+            native_record_index(owners.body, body_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face) in model.faces.iter().enumerate() {
+    for (face_ordinal, face, face_start) in faces.iter().copied() {
         let tags = face_persistent_tags(index, face);
         if tags.is_empty() {
             continue;
@@ -1107,7 +1125,7 @@ pub(crate) fn encode_source_less_attributes(
             tags,
             next,
             previous,
-            native_owner(face_start, face_ordinal)?,
+            native_record_index(face_start, face_ordinal)?,
         )?;
         records.push(0x11);
     }
@@ -1128,11 +1146,11 @@ pub(crate) fn encode_source_less_attributes(
             tags,
             next,
             -1,
-            native_owner(Some(owners.edge), edge_ordinal)?,
+            native_record_index(owners.edge, edge_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
+    for (coedge_ordinal, coedge, coedge_start) in coedges.iter().copied() {
         let Some(link) = sketch_link(index, coedge) else {
             continue;
         };
@@ -1147,7 +1165,7 @@ pub(crate) fn encode_source_less_attributes(
             records,
             link,
             next,
-            native_owner(coedge_start, coedge_ordinal)?,
+            native_record_index(coedge_start, coedge_ordinal)?,
         )?;
         records.push(0x11);
     }
@@ -1156,34 +1174,29 @@ pub(crate) fn encode_source_less_attributes(
             .bodies
             .iter()
             .enumerate()
-            .map(|(ordinal, item)| {
-                (
-                    AttributeTarget::Body(item.id.clone()),
-                    Some(owners.body),
-                    ordinal,
-                )
-            })
-            .chain(model.faces.iter().enumerate().map(|(ordinal, item)| {
+            .map(|(ordinal, item)| (AttributeTarget::Body(item.id.clone()), owners.body, ordinal))
+            .chain(faces.iter().copied().map(|(ordinal, item, face_start)| {
                 (AttributeTarget::Face(item.id.clone()), face_start, ordinal)
             }))
             .chain(model.edges.iter().enumerate().map(|(ordinal, item)| {
-                (
-                    AttributeTarget::Edge(item.id.clone()),
-                    Some(owners.edge),
-                    ordinal,
-                )
+                (AttributeTarget::Edge(item.id.clone()), owners.edge, ordinal)
             }))
-            .chain(model.coedges.iter().enumerate().map(|(ordinal, item)| {
-                (
-                    AttributeTarget::Coedge(item.id.clone()),
-                    coedge_start,
-                    ordinal,
-                )
-            }))
+            .chain(
+                coedges
+                    .iter()
+                    .copied()
+                    .map(|(ordinal, item, coedge_start)| {
+                        (
+                            AttributeTarget::Coedge(item.id.clone()),
+                            coedge_start,
+                            ordinal,
+                        )
+                    }),
+            )
             .chain(model.vertices.iter().enumerate().map(|(ordinal, item)| {
                 (
                     AttributeTarget::Vertex(item.id.clone()),
-                    Some(owners.vertex),
+                    owners.vertex,
                     ordinal,
                 )
             }))
@@ -1199,7 +1212,7 @@ pub(crate) fn encode_source_less_attributes(
             records,
             -1,
             previous,
-            native_owner(owner_start, owner_ordinal)?,
+            native_record_index(owner_start, owner_ordinal)?,
         );
         native_string(records, "Timestamp_attrib_def")?;
         native_i64(records, 1);
