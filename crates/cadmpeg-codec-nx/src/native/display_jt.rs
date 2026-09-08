@@ -166,7 +166,7 @@ pub struct DisplayJtDocument {
     /// Payload-relative table-of-contents offset.
     pub toc_offset: u32,
     /// Exact 16-byte logical scene-graph segment identifier.
-    pub lsg_segment_id: Vec<u8>,
+    pub lsg_segment_id: [u8; 16],
     /// Ordered table-of-contents entries.
     pub toc_entries: Vec<DisplayJtTocEntry>,
     /// Physical byte length ending at the next indexed header or stream boundary.
@@ -184,7 +184,7 @@ struct DisplayJtDocumentWire {
     format_minor: u16,
     byte_order: u8,
     toc_offset: u32,
-    lsg_segment_id: Vec<u8>,
+    lsg_segment_id: [u8; 16],
     toc_entries: Vec<DisplayJtTocEntry>,
     physical_byte_len: u64,
     source_offset: u64,
@@ -241,13 +241,13 @@ pub struct DisplayJtTocEntry {
     /// Zero-based serialized entry order.
     pub ordinal: u32,
     /// Exact 16-byte segment identifier.
-    pub segment_id: Vec<u8>,
+    pub segment_id: [u8; 16],
     /// Document-relative segment offset.
     pub segment_offset: u32,
     /// Physical segment byte length.
     pub segment_byte_len: u32,
     /// Exact four-byte segment attribute field.
-    pub attributes: Vec<u8>,
+    pub attributes: [u8; 4],
     /// Absolute source offset of the TOC entry.
     pub source_offset: u64,
 }
@@ -262,7 +262,7 @@ pub struct DisplayJtSegment {
     /// Owning table-of-contents entry.
     pub toc_entry: String,
     /// Exact 16-byte segment identifier.
-    pub segment_id: Vec<u8>,
+    pub segment_id: [u8; 16],
     /// Segment type repeated by the table-of-contents attribute word.
     pub segment_type: u32,
     /// Physical segment byte length, including its 24-byte header.
@@ -344,7 +344,7 @@ pub struct DisplayJtShapeLodElement {
     /// Zero-based serialized element order.
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    pub object_type_id: Vec<u8>,
+    pub object_type_id: [u8; 16],
     /// Serialized object identifier.
     pub object_id: u32,
     /// Bytes following the common element header.
@@ -360,7 +360,7 @@ struct DisplayJtShapeLodElementWire {
     id: String,
     segment: String,
     ordinal: u32,
-    object_type_id: Vec<u8>,
+    object_type_id: [u8; 16],
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
@@ -695,7 +695,7 @@ pub struct DisplayJtCompressedElement {
     /// Zero-based serialized element order.
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    pub object_type_id: Vec<u8>,
+    pub object_type_id: [u8; 16],
     /// Serialized object-base-type discriminator.
     pub object_base_type: u8,
     /// Serialized object identifier.
@@ -833,7 +833,7 @@ pub struct DisplayJtBaseNodeData {
     /// Owning compressed element.
     pub element: String,
     /// Exact 16-byte object-type identifier of the owning element.
-    pub object_type_id: Vec<u8>,
+    pub object_type_id: [u8; 16],
     /// Serialized node object identifier.
     pub object_id: u32,
     /// Common node-data version.
@@ -1110,7 +1110,7 @@ pub struct DisplayJtRangeLodNode {
 
 struct ParsedJtElement<'a> {
     offset: usize,
-    object_type_id: &'a [u8],
+    object_type_id: [u8; 16],
     object_id: u32,
     object_base_type: u8,
     body: &'a [u8],
@@ -1127,7 +1127,7 @@ fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>
         if element_byte_len == 16 && element == END_OBJECT_TYPE {
             return Some((elements, view.position()));
         }
-        let object_type_id = element.get(..16)?;
+        let object_type_id = element.get(..16)?.try_into().ok()?;
         let &object_base_type = element.get(16)?;
         let object_id = View::u32_le_at(element, 17)?;
         elements.push(ParsedJtElement {
@@ -1760,7 +1760,10 @@ pub fn display_jt_documents(
         let Some(toc_offset) = View::u32_le_at(document, jt_hdr::TOC_OFFSET) else {
             return Vec::new();
         };
-        let Some(lsg_segment_id) = document.get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN) else {
+        let Some(lsg_segment_id) = document
+            .get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN)
+            .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+        else {
             return Vec::new();
         };
         let Ok(toc_start) = usize::try_from(toc_offset) else {
@@ -1810,13 +1813,19 @@ pub fn display_jt_documents(
             {
                 return Vec::new();
             }
+            let (Ok(segment_id), Ok(attributes)) = (
+                bytes[jt_toc::SEGMENT_ID..jt_toc::SEGMENT_OFFSET].try_into(),
+                bytes[jt_toc::ATTRIBUTES..jt_toc::LEN].try_into(),
+            ) else {
+                return Vec::new();
+            };
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
                 ordinal: ordinal as u32,
-                segment_id: bytes[jt_toc::SEGMENT_ID..jt_toc::SEGMENT_OFFSET].to_vec(),
+                segment_id,
                 segment_offset,
                 segment_byte_len,
-                attributes: bytes[jt_toc::ATTRIBUTES..jt_toc::LEN].to_vec(),
+                attributes,
                 source_offset: stream_source_offset + document_start as u64 + offset as u64,
             });
         }
@@ -1825,7 +1834,7 @@ pub fn display_jt_documents(
             index_row: row.id.clone(),
             version,
             toc_offset,
-            lsg_segment_id: lsg_segment_id.to_vec(),
+            lsg_segment_id,
             toc_entries,
             physical_byte_len: document.len() as u64,
             source_offset: stream_source_offset + document_start as u64,
@@ -1862,7 +1871,10 @@ pub fn display_jt_segments(
             else {
                 return Vec::new();
             };
-            let Some(segment_id) = segment.get(..16) else {
+            let Some(segment_id) = segment
+                .get(..16)
+                .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+            else {
                 return Vec::new();
             };
             let Some(segment_type) = View::u32_le_at(segment, 16) else {
@@ -1912,7 +1924,7 @@ pub fn display_jt_segments(
                 id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
                 document: document.id.clone(),
                 toc_entry: entry.id.clone(),
-                segment_id: segment_id.to_vec(),
+                segment_id,
                 segment_type,
                 segment_byte_len: header_byte_len,
                 payload_sha256: sha256_hex(payload),
@@ -1952,7 +1964,7 @@ pub fn display_jt_shape_lod_elements(
                 id: format!("{}-element-{ordinal}", segment.id),
                 segment: segment.id.clone(),
                 ordinal: ordinal as u32,
-                object_type_id: element.object_type_id.to_vec(),
+                object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 body_byte_len: element.body.len() as u32,
                 body_sha256: sha256_hex(element.body),
@@ -2791,7 +2803,7 @@ pub fn display_jt_compressed_element_sequences(
                 segment: segment.id.clone(),
                 segment_type: segment.segment_type,
                 ordinal: ordinal as u32,
-                object_type_id: element.object_type_id.to_vec(),
+                object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 object_base_type: element.object_base_type,
                 body_byte_len: element.body.len() as u32,
@@ -2920,7 +2932,9 @@ pub fn display_jt_shape_lod_bindings(
                 let Some(property_version) = View::u16_le_at(atom.body, 6) else {
                     return Vec::new();
                 };
-                let segment_id = atom.body[8..24].to_vec();
+                let Ok(segment_id) = <[u8; 16]>::try_from(&atom.body[8..24]) else {
+                    return Vec::new();
+                };
                 let Some(segment_type) = View::u32_le_at(atom.body, 24) else {
                     return Vec::new();
                 };
@@ -3065,7 +3079,7 @@ pub fn display_jt_base_node_data(
             nodes.push(DisplayJtBaseNodeData {
                 id: format!("{}-base-node-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
-                object_type_id: element.object_type_id.to_vec(),
+                object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 version,
                 flags,
@@ -4428,7 +4442,7 @@ mod tests {
             id: "segment".to_string(),
             document: "document".to_string(),
             toc_entry: "entry".to_string(),
-            segment_id: vec![1; 16],
+            segment_id: [1; 16],
             segment_type: 7,
             segment_byte_len: 78,
             payload_sha256: String::new(),
@@ -4445,6 +4459,12 @@ mod tests {
             4
         );
         assert_eq!(elements[0].body_byte_len, 3);
+        let wire = serde_json::to_value(&elements[0]).unwrap();
+        for length in [15, 17] {
+            let mut invalid = wire.clone();
+            invalid["object_type_id"] = serde_json::json!(vec![0; length]);
+            assert!(serde_json::from_value::<super::DisplayJtShapeLodElement>(invalid).is_err());
+        }
 
         let mut malformed = container;
         *malformed
@@ -4526,7 +4546,7 @@ mod tests {
             id: "scene".into(),
             document: "document".into(),
             toc_entry: "scene-entry".into(),
-            segment_id: vec![1; 16],
+            segment_id: [1; 16],
             segment_type: 1,
             segment_byte_len: (33 + compressed.len()) as u32,
             payload_sha256: String::new(),
@@ -4537,7 +4557,7 @@ mod tests {
             id: "shape".into(),
             document: "document".into(),
             toc_entry: "shape-entry".into(),
-            segment_id: vec![9; 16],
+            segment_id: [9; 16],
             segment_type: 7,
             segment_byte_len: 0,
             payload_sha256: String::new(),
@@ -4635,7 +4655,7 @@ mod tests {
             id: "shape-element".into(),
             segment: "shape-segment".into(),
             ordinal: 0,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 7,
             body_byte_len: 0,
             body_sha256: "00".repeat(32),
@@ -4659,7 +4679,7 @@ mod tests {
         let base = DisplayJtBaseNodeData {
             id: "base".into(),
             element: "scene-element".into(),
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 9,
             version: 1,
             flags: 0,
@@ -4673,7 +4693,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 0,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 2,
             object_id: 9,
             body_byte_len: 0,
@@ -4684,7 +4704,7 @@ mod tests {
         let instance_base = DisplayJtBaseNodeData {
             id: "instance-base".into(),
             element: "instance-element".into(),
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 11,
             version: 1,
             flags: 0,
@@ -4698,7 +4718,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 1,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 0,
             object_id: 11,
             body_byte_len: 0,
@@ -4735,7 +4755,7 @@ mod tests {
         let group_base = DisplayJtBaseNodeData {
             id: "group-base".into(),
             element: "group-element".into(),
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 20,
             version: 1,
             flags: 0,
@@ -4749,7 +4769,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 3,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 1,
             object_id: 20,
             body_byte_len: 0,
@@ -4808,7 +4828,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 5,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 3,
             object_id: 13,
             body_byte_len: 0,
@@ -5428,7 +5448,7 @@ mod tests {
             id: "shape-lod".into(),
             segment: "segment".into(),
             ordinal: 0,
-            object_type_id: vec![
+            object_type_id: [
                 0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
                 0x59, 0x97,
             ],
