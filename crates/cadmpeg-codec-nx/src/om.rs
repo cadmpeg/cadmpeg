@@ -740,7 +740,7 @@ pub struct PointFeaturePayloadHeader {
     /// Construction object referenced by the header.
     pub reference: PayloadObjectReference,
     /// Serialized header mode.
-    pub mode: u8,
+    pub mode: discriminators::PointHeaderMode,
 }
 
 /// Exact six-scalar lane selected by a point-feature construction header.
@@ -1910,8 +1910,7 @@ pub fn point_feature_payload_header(
     (record.payload().get(at..at + REFERENCE_SUFFIX.len()) == Some(&REFERENCE_SUFFIX))
         .then_some(())?;
     at += REFERENCE_SUFFIX.len();
-    let mode = *record.payload().get(at)?;
-    matches!(mode, 0x02 | 0x03).then_some(())?;
+    let mode = discriminators::PointHeaderMode::try_from(*record.payload().get(at)?).ok()?;
     at += 1;
     (record.payload().get(at..at + MODE_SUFFIX.len()) == Some(&MODE_SUFFIX)).then_some(())?;
     Some(PointFeaturePayloadHeader {
