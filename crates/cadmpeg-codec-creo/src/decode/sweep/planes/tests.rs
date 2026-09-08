@@ -234,7 +234,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         0.75,
         Some(34.0),
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable {

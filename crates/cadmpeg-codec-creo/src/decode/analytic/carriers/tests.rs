@@ -139,7 +139,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
                         0.75,
                         Some(34.0),
                     )
-                    .unwrap(),
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -203,7 +203,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
                         0.8,
                         Some(0.282_842_712_474_619),
                     )
-                    .unwrap(),
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),

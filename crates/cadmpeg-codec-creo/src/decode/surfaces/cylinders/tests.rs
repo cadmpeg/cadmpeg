@@ -15,7 +15,7 @@ fn axial_interval_candidate(origin: [f64; 3]) -> crate::surface::PositionalCylin
         4.0,
         Some(6.0),
     )
-    .unwrap()
+    .expect("valid positional cylinder frame")
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
         0.25,
         None,
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
     let tangent = PlaneEquation {
         origin: [0.0, -5.5, 0.0],
         normal: [0.0, 1.0, 0.0],
@@ -380,7 +380,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
                         1.0,
                         Some(2.0),
                     )
-                    .unwrap(),
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -449,7 +449,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
                     radius,
                     Some(2.0),
                 )
-                .unwrap(),
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -512,7 +512,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
                         1.0,
                         Some(2.0),
                     )
-                    .unwrap(),
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -576,7 +576,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
                         0.75,
                         Some(34.0),
                     )
-                    .unwrap(),
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -777,7 +777,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
                         radius,
                         Some(2.0),
                     )
-                    .unwrap(),
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
