@@ -397,18 +397,19 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         )
     })
     .collect::<Vec<_>>();
-    let profile = SpatialSketchProfile {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-        boundary: results
+    let profile = SpatialSketchProfile::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        results
             .iter()
             .map(|entity| SpatialSketchEntityUse {
                 entity: entity.id().clone(),
                 reversed: false,
             })
             .collect(),
-    };
+    )
+    .unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
         name: None,
@@ -571,20 +572,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         -3.0,
         &sketch_id,
         std::slice::from_ref(&sketch),
-        &by_record,
-    )
-    .is_none());
-    let mut repeated_boundary = sketch.clone();
-    repeated_boundary.profiles[0].boundary[1] = repeated_boundary.profiles[0].boundary[0].clone();
-    assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&repeated_boundary),
         &by_record,
     )
     .is_none());

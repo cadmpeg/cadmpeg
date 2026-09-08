@@ -199,18 +199,19 @@ fn spatial_profile(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     primary_ids: &[u64],
 ) -> SpatialSketchProfile {
-    SpatialSketchProfile {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-        boundary: primary_ids
+    SpatialSketchProfile::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        primary_ids
             .iter()
             .map(|primary_id| SpatialSketchEntityUse {
                 entity: neutral_spatial_sketch_curve_id(sketch, *primary_id, 0).unwrap(),
                 reversed: false,
             })
             .collect(),
-    }
+    )
+    .unwrap()
 }
 
 #[test]
@@ -561,15 +562,16 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         visible: None,
         profiles: vec![
             spatial_profile(&sketch_id, &[100, 101, 102]),
-            SpatialSketchProfile {
-                origin: Point3::new(10.0, 10.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-                boundary: vec![SpatialSketchEntityUse {
+            SpatialSketchProfile::try_new(
+                Point3::new(10.0, 10.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                vec![SpatialSketchEntityUse {
                     entity: arc_id,
                     reversed: false,
                 }],
-            },
+            )
+            .unwrap(),
         ],
         native_ref: None,
     };
@@ -617,14 +619,17 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         circle(200, 1.0, Vector3::new(0.0, 0.0, 1.0)),
         circle(201, 1.0, Vector3::new(0.0, 0.0, -1.0)),
     ];
-    let profile = |primary| SpatialSketchProfile {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-        boundary: vec![SpatialSketchEntityUse {
-            entity: entity_id(primary),
-            reversed: false,
-        }],
+    let profile = |primary| {
+        SpatialSketchProfile::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            vec![SpatialSketchEntityUse {
+                entity: entity_id(primary),
+                reversed: false,
+            }],
+        )
+        .unwrap()
     };
     let spatial_sketches = [SpatialSketch {
         id: sketch_id.clone(),

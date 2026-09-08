@@ -588,7 +588,7 @@ fn resolve_entity_selection_profile(
                 curves.iter(),
                 source.profiles.iter().map(|profile| {
                     profile
-                        .boundary
+                        .boundary()
                         .iter()
                         .map(|use_| &use_.entity)
                         .collect::<HashSet<_>>()
@@ -1161,7 +1161,7 @@ fn resolved_spatial_extrude_profile_selection(
                 .profiles
                 .iter()
                 .enumerate()
-                .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == entity))
+                .filter(|(_, profile)| profile.boundary().iter().any(|use_| use_.entity == entity))
                 .map(|(index, _)| u32::try_from(index).ok())
                 .collect::<Option<Vec<_>>>();
             let Some(matches) = matches else {
@@ -1265,7 +1265,7 @@ fn spatial_polyline_profile_containing_points(
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let offsets = points
             .iter()
-            .map(|point| point.vector_from(profile.origin).dot(profile.normal))
+            .map(|point| point.vector_from(profile.origin()).dot(profile.normal()))
             .collect::<Vec<_>>();
         if !offsets.first().is_some_and(|first| {
             offsets
@@ -1274,13 +1274,13 @@ fn spatial_polyline_profile_containing_points(
         }) {
             continue;
         }
-        let v_axis = profile.normal.cross(profile.u_axis);
+        let v_axis = profile.normal().cross(profile.u_axis());
         let project = |point: Point3| {
-            let offset = point.vector_from(profile.origin);
-            Point2::new(offset.dot(profile.u_axis), offset.dot(v_axis))
+            let offset = point.vector_from(profile.origin());
+            Point2::new(offset.dot(profile.u_axis()), offset.dot(v_axis))
         };
         let polygon = profile
-            .boundary
+            .boundary()
             .iter()
             .map(|use_| {
                 let entity = entities
@@ -2187,7 +2187,7 @@ fn resolved_spatial_sketch_profile_regions(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate
-                        .boundary
+                        .boundary()
                         .iter()
                         .any(|use_| &use_.entity == first.id())
                 });
@@ -2205,13 +2205,13 @@ fn resolved_spatial_sketch_profile_regions(
                 resolution.spatial_sketch_entities,
             )?;
             if selected_profile
-                .boundary
+                .boundary()
                 .iter()
                 .any(|use_| &use_.entity == entity.id())
             {
                 continue;
             }
-            let coincident = selected_profile.boundary.iter().any(|use_| {
+            let coincident = selected_profile.boundary().iter().any(|use_| {
                 resolution
                     .spatial_sketch_entities
                     .iter()
@@ -2248,7 +2248,7 @@ fn spatial_profile_containing_entity(
         .profiles
         .iter()
         .enumerate()
-        .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == *entity));
+        .filter(|(_, profile)| profile.boundary().iter().any(|use_| use_.entity == *entity));
     let (index, _) = profiles.next()?;
     if profiles.next().is_some() {
         return None;

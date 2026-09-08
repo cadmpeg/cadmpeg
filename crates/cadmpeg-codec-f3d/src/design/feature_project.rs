@@ -8403,15 +8403,18 @@ pub(crate) fn closed_spatial_sketch_profiles(
                 normal,
                 reference_direction,
                 ..
-            } => Some(SpatialSketchProfile {
-                origin: *center,
-                normal: *normal,
-                u_axis: *reference_direction,
-                boundary: vec![SpatialSketchEntityUse {
-                    entity: entity.id().clone(),
-                    reversed: false,
-                }],
-            }),
+            } => Some(
+                SpatialSketchProfile::try_new(
+                    *center,
+                    *normal,
+                    *reference_direction,
+                    vec![SpatialSketchEntityUse {
+                        entity: entity.id().clone(),
+                        reversed: false,
+                    }],
+                )
+                .ok()?,
+            ),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -8490,20 +8493,22 @@ pub(crate) fn closed_spatial_sketch_profiles(
         {
             continue;
         }
-        profiles.push(SpatialSketchProfile {
-            origin,
-            normal,
-            u_axis,
-            boundary: uses
-                .into_iter()
-                .map(|(index, reversed)| SpatialSketchEntityUse {
-                    entity: edges[index].0.id().clone(),
-                    reversed,
-                })
-                .collect(),
-        });
+        profiles.extend(
+            SpatialSketchProfile::try_new(
+                origin,
+                normal,
+                u_axis,
+                uses.into_iter()
+                    .map(|(index, reversed)| SpatialSketchEntityUse {
+                        entity: edges[index].0.id().clone(),
+                        reversed,
+                    })
+                    .collect(),
+            )
+            .ok(),
+        );
     }
-    profiles.sort_by(|a, b| a.boundary[0].entity.cmp(&b.boundary[0].entity));
+    profiles.sort_by(|a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity));
     profiles
 }
 

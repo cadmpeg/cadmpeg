@@ -2900,12 +2900,12 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     let mut used_entities = HashSet::new();
     let mut pairs = Vec::new();
     for profile in &sketch.profiles {
-        if profile.boundary.len() < 4 {
+        if profile.boundary().len() < 4 {
             continue;
         }
-        for index in 0..profile.boundary.len() {
-            let first_id = &profile.boundary[index].entity;
-            let second_id = &profile.boundary[(index + 2) % profile.boundary.len()].entity;
+        for index in 0..profile.boundary().len() {
+            let first_id = &profile.boundary()[index].entity;
+            let second_id = &profile.boundary()[(index + 2) % profile.boundary().len()].entity;
             let key = if first_id < second_id {
                 (first_id, second_id)
             } else {
@@ -3205,19 +3205,14 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         .find(|candidate| &candidate.id == sketch)?;
     let mut matching_profiles = spatial.profiles.iter().filter(|profile| {
         let boundary = profile
-            .boundary
+            .boundary()
             .iter()
             .map(|use_| &use_.entity)
             .collect::<HashSet<_>>();
-        boundary.len() == profile.boundary.len() && boundary == result_ids
+        boundary == result_ids
     });
-    let normal = matching_profiles.next()?.normal;
-    let normal_length = normal.norm();
-    if matching_profiles.next().is_some()
-        || !normal_length.is_finite()
-        || (normal_length - 1.0).abs()
-            > EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9
-    {
+    let normal = matching_profiles.next()?.normal();
+    if matching_profiles.next().is_some() {
         return None;
     }
     let mut sources = Vec::with_capacity(source_count);

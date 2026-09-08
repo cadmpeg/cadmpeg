@@ -566,12 +566,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         name: None,
         configuration: None,
         visible: None,
-        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            boundary: Vec::new(),
-        }],
+        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            vec![cadmpeg_ir::sketches::SpatialSketchEntityUse {
+                entity: cadmpeg_ir::sketches::SpatialSketchEntityId::mint(
+                    "synthetic:test:spatial-entity#extrude-profile",
+                )
+                .unwrap(),
+                reversed: false,
+            }],
+        )
+        .unwrap()],
         native_ref: Some(placement.id.clone()),
     };
     crate::design::feature_project::bind_sketch_feature_geometry(
