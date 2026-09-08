@@ -38,7 +38,7 @@ mod tests {
         let entry = DirEntry {
             name: "same".into(),
             region: Region::Header,
-            file_span: None,
+            body: crate::container::DirEntryBody::Directory,
         };
         let entries = [entry.clone(), entry];
         let first = EntryRef::new(&entries, 0).unwrap();

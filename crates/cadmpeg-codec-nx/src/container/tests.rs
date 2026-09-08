@@ -18,7 +18,7 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
     let container = container::scan_bytes(file).unwrap();
     let (_, index) = container.segment_index().expect("segment index");
-    assert_eq!(index.byte_len, 28);
+    assert_eq!(index.rows.len() * 12 + index.padding.len(), 28);
     assert_eq!(index.rows.len(), 2);
     assert_eq!(index.rows[0].type_code, 7);
     assert_eq!(index.rows[0].subtype_code, 9);
@@ -34,23 +34,21 @@ fn container_parses_header_and_directory() {
     let c = container::scan_bytes(single_part_prt()).unwrap();
     assert_eq!(c.layout.version(), 0x06);
     let ContainerLayout::Modern {
-        header_entry_count,
         file_tag,
-        footer_entry_count,
         footer_fingerprint,
         ..
     } = c.layout
     else {
         panic!("SPLMSSTR input must have modern layout facts");
     };
-    assert_eq!(header_entry_count, 1);
+    assert_eq!(c.entry_count(Region::Header), 1);
     assert_eq!(file_tag, 0x33_22_11);
-    assert_eq!(footer_entry_count, 0);
+    assert_eq!(c.entry_count(Region::Footer), 0);
     assert_eq!(footer_fingerprint, [0; 4]);
     assert!(c
         .entries
         .iter()
-        .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
+        .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span().is_some()));
 }
 
 #[test]
@@ -59,20 +57,17 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let container = Container {
         data: payload.as_slice().into(),
         physical_size: payload.len() as u64,
-        layout: ContainerLayout::LegacyCfb {
-            version: 0,
-            entry_count: 2,
-        },
+        layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![
             DirEntry {
                 name: "/Root/first".into(),
                 region: Region::Header,
-                file_span: Some((0, 3)),
+                body: crate::container::DirEntryBody::File { offset: 0, len: 3 },
             },
             DirEntry {
                 name: "/Root/second".into(),
                 region: Region::Header,
-                file_span: Some((3, 3)),
+                body: crate::container::DirEntryBody::File { offset: 3, len: 3 },
             },
         ],
         indexed_section_layouts: std::sync::OnceLock::new(),
@@ -92,11 +87,14 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let container = Container {
         data: payload.as_slice().into(),
         physical_size: payload.len() as u64,
-        layout: test_modern_layout(0, 1),
+        layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
-            file_span: Some((0, payload.len() as u64)),
+            body: crate::container::DirEntryBody::File {
+                offset: 0,
+                len: payload.len() as u64,
+            },
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
@@ -132,11 +130,14 @@ fn container_caches_owned_section_layouts() {
     let container = Container {
         data: file.into(),
         physical_size,
-        layout: test_modern_layout(0, 1),
+        layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
-            file_span: Some((17, payload_len)),
+            body: crate::container::DirEntryBody::File {
+                offset: 17,
+                len: payload_len,
+            },
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
@@ -205,6 +206,21 @@ fn container_reuses_borrowed_offset_store_block_index() {
     assert!(!first.is_empty());
     assert!(first.contains_key("nx:om-data-blocks-0:block#0"));
     assert!(std::ptr::eq(first, second));
+}
+
+#[test]
+fn container_counts_admitted_entries_in_each_region() {
+    let mut file = single_part_prt();
+    file.truncate(file.len() - 8);
+    file.extend_from_slice(&1_u32.to_le_bytes());
+    file.extend_from_slice(&6_u32.to_le_bytes());
+    file.extend_from_slice(b"/Root/");
+    file.extend_from_slice(&[0; 16]);
+    file.extend_from_slice(&[0; 4]);
+    let container = container::scan_bytes(file).expect("one entry in each counted region");
+    assert_eq!(container.entry_count(Region::Header), 1);
+    assert_eq!(container.entry_count(Region::Footer), 1);
+    assert_eq!(container.entries.len(), 2);
 }
 
 #[test]
@@ -284,28 +300,17 @@ fn container_reads_rmfastload_active_ids() {
     assert_eq!(table.count_offset, b"UGS::Solid::Topol".len());
     assert_eq!(table.object_ids.count().to_le_bytes(), 50u32.to_le_bytes());
     assert_eq!(
-        table
-            .object_ids
-            .as_slice()
-            .iter()
-            .map(|object_id| object_id.value)
-            .collect::<Vec<_>>(),
+        table.object_ids.as_slice().to_vec(),
         (1..=50).collect::<Vec<_>>()
     );
+    assert_eq!(table.member_offset(0), table.count_offset + 4);
     assert_eq!(
-        table.object_ids.as_slice()[0].offset,
-        table.count_offset + 4
-    );
-    assert_eq!(
-        table.object_ids.as_slice()[0].value.to_le_bytes(),
+        table.object_ids.as_slice()[0].to_le_bytes(),
         1u32.to_le_bytes()
     );
+    assert_eq!(table.member_offset(49), table.count_offset + 4 + 49 * 4);
     assert_eq!(
-        table.object_ids.as_slice()[49].offset,
-        table.count_offset + 4 + 49 * 4
-    );
-    assert_eq!(
-        table.object_ids.as_slice()[49].value.to_le_bytes(),
+        table.object_ids.as_slice()[49].to_le_bytes(),
         50u32.to_le_bytes()
     );
 }
@@ -320,15 +325,7 @@ fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() 
         .rmfastload_object_id_table()
         .expect("product-bounded RMFastLoad table");
     assert_eq!(table.object_ids.as_slice().len(), 3);
-    assert_eq!(
-        table
-            .object_ids
-            .as_slice()
-            .iter()
-            .map(|object_id| object_id.value)
-            .collect::<Vec<_>>(),
-        [0, u32::MAX, 7]
-    );
+    assert_eq!(table.object_ids.as_slice().to_vec(), [0, u32::MAX, 7]);
 }
 
 #[test]
@@ -357,13 +354,5 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("first product-bounded table");
-    assert_eq!(
-        table
-            .object_ids
-            .as_slice()
-            .iter()
-            .map(|object_id| object_id.value)
-            .collect::<Vec<_>>(),
-        [1, 2, 3]
-    );
+    assert_eq!(table.object_ids.as_slice().to_vec(), [1, 2, 3]);
 }

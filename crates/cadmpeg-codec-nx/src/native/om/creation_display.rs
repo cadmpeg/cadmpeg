@@ -75,7 +75,7 @@ pub fn rm_creation_display_data_relations(
             continue;
         };
         let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + record_area_offset as u64;
         let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
 

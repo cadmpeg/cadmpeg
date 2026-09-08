@@ -3604,7 +3604,7 @@ fn visit_feature_history_operation_records(
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
-                .file_span
+                .file_span()
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
@@ -3613,7 +3613,7 @@ fn visit_feature_history_operation_records(
             continue;
         };
         let section_key = format!("{section_ordinal:010}");
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             visit(
                 section,
@@ -3640,7 +3640,7 @@ fn visit_feature_history_unlabeled_operation_records(
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
-                .file_span
+                .file_span()
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
@@ -3649,7 +3649,7 @@ fn visit_feature_history_unlabeled_operation_records(
             continue;
         };
         let section_key = format!("{section_ordinal:010}");
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.unlabeled_operation_records_with_ordinals() {
             visit(
                 section,
@@ -3766,7 +3766,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
-                .file_span
+                .file_span()
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
@@ -3775,7 +3775,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
             continue;
         };
         let section_key = format!("{section_ordinal:010}");
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         labels.extend(
             section
                 .operation_records_with_label_ordinals()
@@ -5749,7 +5749,7 @@ fn offset_data_block_bytes<'a>(
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         blocks.extend(offset_data_block_bytes_for_section(
             section_ordinal,
             entry_offset,
@@ -6130,7 +6130,7 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
             continue;
         };
         let section_key = format!("nx:om-data-blocks-{section_ordinal}");
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for ordinal in 0..records.len() {
             let Some(point) = crate::om::offset_store_named_point(
                 records[ordinal..].iter().map(|record| record.bytes),
@@ -6798,7 +6798,7 @@ pub fn feature_point_construction_scalar_lanes(
         let [(section_ordinal, entry, preceding, target, lane)] = candidates.as_slice() else {
             continue;
         };
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let Some(first_source_offset) = entry_offset
             .checked_add(preceding.offset as u64)
             .and_then(|base| base.checked_add(lane.value_offsets()[0] as u64))

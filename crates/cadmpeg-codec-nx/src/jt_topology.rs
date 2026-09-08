@@ -6,11 +6,13 @@ const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
 use cadmpeg_core::decode::alloc_filled;
 
+mod face_slots;
+use face_slots::FaceSlots;
+
 /// Decoded polygon in topological-vertex visit order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Polygon {
-    pub(crate) vertex_indices: Vec<u32>,
-    pub(crate) attribute_indices: Vec<Option<u32>>,
+    pub(crate) corners: Vec<(u32, Option<u32>)>,
     pub(crate) group: i32,
     pub(crate) flags: u16,
 }
@@ -24,8 +26,7 @@ struct Vertex {
 
 #[derive(Clone)]
 struct Face {
-    vertices: Vec<Option<usize>>,
-    empty: usize,
+    vertices: FaceSlots,
     attribute_mask: Vec<bool>,
     attributes: Vec<u32>,
 }
@@ -213,16 +214,7 @@ impl Decoder<'_> {
     }
 
     fn set_face_vertex(&mut self, face: usize, slot: usize, vertex: usize) -> Option<()> {
-        let face = self.faces.get_mut(face)?;
-        let target = face.vertices.get_mut(slot)?;
-        if target.is_some_and(|existing| existing != vertex) {
-            return None;
-        }
-        if target.is_none() {
-            face.empty = face.empty.checked_sub(1)?;
-        }
-        *target = Some(vertex);
-        Some(())
+        self.faces.get_mut(face)?.vertices.fill(slot, vertex)
     }
 
     fn add_vertex_to_face(
@@ -300,8 +292,7 @@ impl Decoder<'_> {
             self.removed.try_reserve(1).ok()?;
             self.active.try_reserve(1).ok()?;
             self.faces.push(Face {
-                vertices: alloc_filled(degree, None, "nx JT face vertex slots").ok()?,
-                empty: degree,
+                vertices: FaceSlots::new(degree)?,
                 attribute_mask,
                 attributes,
             });
@@ -401,8 +392,9 @@ impl Decoder<'_> {
             let face = self.active[index];
             if self.removed[face] {
                 self.active.remove(index);
-            } else if best.is_none_or(|current| self.faces[face].empty < self.faces[current].empty)
-            {
+            } else if best.is_none_or(|current| {
+                self.faces[face].vertices.empty() < self.faces[current].vertices.empty()
+            }) {
                 best = Some(face);
             }
         }
@@ -424,7 +416,7 @@ impl Decoder<'_> {
             }
         }
         if !self.symbols.exhausted()
-            || self.faces.iter().any(|face| face.empty != 0)
+            || self.faces.iter().any(|face| face.vertices.empty() != 0)
             || self
                 .vertices
                 .iter()
@@ -435,37 +427,30 @@ impl Decoder<'_> {
         let mut polygons = Vec::new();
         polygons.try_reserve_exact(self.vertices.len()).ok()?;
         for (vertex_index, vertex) in self.vertices.into_iter().enumerate() {
-            let mut attribute_indices = Vec::new();
-            attribute_indices
-                .try_reserve_exact(vertex.faces.len())
-                .ok()?;
-            for &face in &vertex.faces {
-                let face = self.faces.get(face?)?;
-                if face.attributes.is_empty() {
-                    attribute_indices.push(None);
-                    continue;
-                }
-                let vertex_slot = face
-                    .vertices
-                    .iter()
-                    .position(|&candidate| candidate == Some(vertex_index))?;
-                let mut attribute_slot = face.attributes.len() - 1;
-                for slot in 0..=vertex_slot {
-                    if face.attribute_mask[slot] {
-                        attribute_slot = (attribute_slot + 1) % face.attributes.len();
+            let mut corners = Vec::new();
+            corners.try_reserve_exact(vertex.faces.len()).ok()?;
+            for face_index in vertex.faces {
+                let face_index = face_index?;
+                let face = self.faces.get(face_index)?;
+                let attribute = if face.attributes.is_empty() {
+                    None
+                } else {
+                    let vertex_slot = face
+                        .vertices
+                        .iter()
+                        .position(|&candidate| candidate == Some(vertex_index))?;
+                    let mut attribute_slot = face.attributes.len() - 1;
+                    for slot in 0..=vertex_slot {
+                        if face.attribute_mask[slot] {
+                            attribute_slot = (attribute_slot + 1) % face.attributes.len();
+                        }
                     }
-                }
-                attribute_indices.push(Some(face.attributes[attribute_slot]));
-            }
-
-            let mut vertex_indices = Vec::new();
-            vertex_indices.try_reserve_exact(vertex.faces.len()).ok()?;
-            for face in vertex.faces {
-                vertex_indices.push(u32::try_from(face?).ok()?);
+                    Some(face.attributes[attribute_slot])
+                };
+                corners.push((u32::try_from(face_index).ok()?, attribute));
             }
             polygons.push(Polygon {
-                vertex_indices,
-                attribute_indices,
+                corners,
                 group: vertex.group,
                 flags: vertex.flags,
             });
