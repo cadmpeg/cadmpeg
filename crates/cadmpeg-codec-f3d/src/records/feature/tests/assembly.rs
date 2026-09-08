@@ -39,11 +39,12 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                         "external_asset_id",
                         "occurrence_role",
                     ],
+                    |_, _| {},
                 );
                 if mask == 15 {
                     assert_relaxed_guid_fields::<
                         crate::records::feature::DesignAssemblyAxialSelectorIdentity,
-                    >(&value, &["external_property_key"]);
+                    >(&value, &["external_property_key"], |_, _| {});
                 }
                 assert_eq!(
                     serde_json::to_string(&result.expect("complete version form"))
@@ -59,16 +60,16 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
         }
     }
     {
-        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_body_reference":0,"external_body_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
-        let suffix = r#","tail_values":[0,0],"tail_value_offsets":[0,0]}"#;
+        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":44,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":120,"occurrence_reference":1,"occurrence_reference_offset":205,"external_body_reference":2,"external_body_reference_offset":220,"external_segment":0,"external_segment_offset":229,"external_asset_id":"00000004-1111-4111-8111-111111111111","external_asset_id_offset":237,"external_link_name":"identity","external_link_name_offset":314"#;
+        let suffix = r#","tail_values":[0,0],"tail_value_offsets":[337,349]}"#;
         let fields = [
             (
                 "external_property_key",
                 "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"",
             ),
-            ("external_property_key_offset", "100"),
+            ("external_property_key_offset", "335"),
             ("external_version_urn", "\"urn\""),
-            ("external_version_urn_offset", "110"),
+            ("external_version_urn_offset", "411"),
         ];
         for mask in 0..16 {
             let mut wire = prefix.to_owned();
@@ -77,7 +78,11 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                     wire.push_str(&format!(",\"{field}\":{value}"));
                 }
             }
-            wire.push_str(suffix);
+            wire.push_str(&if mask == 15 {
+                suffix.replace("[337,349]", "[423,435]")
+            } else {
+                suffix.to_owned()
+            });
             let result = serde_json::from_str::<
                 crate::records::feature::DesignCombineExternalBodyIdentity,
             >(&wire);
@@ -92,11 +97,16 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                         "selector_context_id",
                         "external_asset_id",
                     ],
+                    complete_combine_field_edit,
                 );
                 if mask == 15 {
                     assert_relaxed_guid_fields::<
                         crate::records::feature::DesignCombineExternalBodyIdentity,
-                    >(&value, &["external_property_key"]);
+                    >(
+                        &value,
+                        &["external_property_key"],
+                        complete_combine_field_edit,
+                    );
                 }
                 assert_eq!(
                     serde_json::to_string(&result.expect("complete version form"))
@@ -123,6 +133,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
     assert_relaxed_guid_fields::<crate::records::feature::DesignComponentOccurrence>(
         &base,
         &["component_guid", "occurrence_guid"],
+        |_, _| {},
     );
     let transform = serde_json::json!([
         [1.0, 0.0, 0.0, 0.0],
@@ -603,11 +614,13 @@ fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal
 fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>(
     wire: &serde_json::Value,
     fields: &[&str],
+    complete_edit: impl Fn(&mut serde_json::Value, &str),
 ) {
     for field in fields {
         for guid in ["g".repeat(36), "_".repeat(38), "invalid".into()] {
             let mut changed = wire.clone();
             changed[field] = serde_json::json!(guid);
+            complete_edit(&mut changed, field);
             let decoded = serde_json::from_value::<T>(changed.clone());
             if guid == "invalid" {
                 assert!(decoded.is_err(), "{field}");
@@ -738,4 +751,44 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
     wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");
     wrong_class["class_tag"] = serde_json::json!("386");
     assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wrong_class).is_err());
+}
+
+fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
+    if field == "external_asset_id" {
+        wire["selector_asset_id"] = wire[field].clone();
+    }
+    if field == "selector_asset_id" {
+        wire["external_asset_id"] = wire[field].clone();
+    }
+    let end = |wire: &serde_json::Value, value: &str, offset: &str| {
+        wire[offset].as_u64().unwrap()
+            + 2 * wire[value].as_str().unwrap().encode_utf16().count() as u64
+    };
+    wire["selector_context_id_offset"] =
+        serde_json::json!(end(wire, "selector_asset_id", "selector_asset_id_offset") + 4);
+    wire["occurrence_reference_offset"] =
+        serde_json::json!(end(wire, "selector_context_id", "selector_context_id_offset") + 13);
+    wire["external_body_reference_offset"] =
+        serde_json::json!(wire["occurrence_reference_offset"].as_u64().unwrap() + 15);
+    wire["external_segment_offset"] =
+        serde_json::json!(wire["external_body_reference_offset"].as_u64().unwrap() + 9);
+    wire["external_asset_id_offset"] =
+        serde_json::json!(wire["external_segment_offset"].as_u64().unwrap() + 8);
+    wire["external_link_name_offset"] =
+        serde_json::json!(end(wire, "external_asset_id", "external_asset_id_offset") + 5);
+    let link_end = end(wire, "external_link_name", "external_link_name_offset");
+    let tail = if wire.get("external_property_key").is_some() {
+        wire["external_property_key_offset"] = serde_json::json!(link_end + 5);
+        wire["external_version_urn_offset"] = serde_json::json!(
+            end(
+                wire,
+                "external_property_key",
+                "external_property_key_offset"
+            ) + 4
+        );
+        end(wire, "external_version_urn", "external_version_urn_offset") + 6
+    } else {
+        link_end + 7
+    };
+    wire["tail_value_offsets"] = serde_json::json!([tail, tail + 12]);
 }

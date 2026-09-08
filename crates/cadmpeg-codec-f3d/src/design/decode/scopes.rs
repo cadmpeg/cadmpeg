@@ -148,12 +148,12 @@ use crate::records::feature::{
     DesignAssemblyOperandQualifier, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
     DesignBendPosition, DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement,
     DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
-    DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
-    DesignComponentInsertConstruction, DesignComponentOccurrence, DesignCopyPasteBodiesOperation,
-    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
-    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeHeightExtent,
-    DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource, DesignEdgeWidthMode,
-    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignCombineExternalBodyIdentity, DesignCombineExternalBodyIdentityWire, DesignCombineForm,
+    DesignCombineOperation, DesignComponentInsertConstruction, DesignComponentOccurrence,
+    DesignCopyPasteBodiesOperation, DesignCopyPasteComponentOperation,
+    DesignDerivedInstanceConstruction, DesignDirectFaceOperation, DesignDraftOperation,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource,
+    DesignEdgeWidthMode, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
     DesignExtrudePrologueReference, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
     DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
@@ -1308,7 +1308,7 @@ fn exact_assembly_axial_selector(
     let occurrence_reference_offset = cursor.checked_add(1)?;
     let occurrence = take_reference(bytes, &mut cursor)?;
     let (occurrence_reference, _) = occurrence.local()?;
-    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
+    if View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -8487,9 +8487,7 @@ fn exact_combine_external_body_identity(
     }
     cursor = cursor.checked_add(4)?;
     let external = take_external_reference_identity(bytes, &mut cursor)?;
-    if external.asset_id != selector_asset_id
-        || View::u32_le_at(bytes, cursor)? != 9
-        || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
+    if View::u32_le_at(bytes, cursor)? != 9 || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
     {
         return None;
     }
@@ -8522,7 +8520,7 @@ fn exact_combine_external_body_identity(
     if cursor != paired_at {
         return None;
     }
-    Some(DesignCombineExternalBodyIdentity {
+    DesignCombineExternalBodyIdentity::try_from(DesignCombineExternalBodyIdentityWire {
         selector_asset_id,
         selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
         selector_context_id,
@@ -8537,13 +8535,29 @@ fn exact_combine_external_body_identity(
         external_asset_id_offset: external.asset_id_offset,
         external_link_name: external.link_name,
         external_link_name_offset: external.link_name_offset,
-        external_version: external.version,
+        external_property_key: external
+            .version
+            .as_ref()
+            .map(|version| version.property_key.value.clone()),
+        external_property_key_offset: external
+            .version
+            .as_ref()
+            .map(|version| version.property_key.offset),
+        external_version_urn: external
+            .version
+            .as_ref()
+            .map(|version| version.version_urn.value.clone()),
+        external_version_urn_offset: external
+            .version
+            .as_ref()
+            .map(|version| version.version_urn.offset),
         tail_values: [first_tail_value, second_tail_value],
         tail_value_offsets: [
             u64::try_from(first_tail_value_at).ok()?,
             u64::try_from(second_tail_value_at).ok()?,
         ],
     })
+    .ok()
 }
 
 #[derive(Clone, Copy)]

@@ -3931,6 +3931,45 @@ pub struct DesignExternalVersion {
 )]
 pub struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
+    selector_asset_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_asset_id`.
+    selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing body selector.
+    selector_context_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_context_id`.
+    selector_context_id_offset: u64,
+    /// Same-segment occurrence reference preceding the external body reference.
+    occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    occurrence_reference_offset: u64,
+    /// Entity reference of the body in the referenced document.
+    external_body_reference: u64,
+    /// Byte offset of `external_body_reference`.
+    external_body_reference_offset: u64,
+    /// Segment carried by the cross-document body reference.
+    external_segment: u32,
+    /// Byte offset of `external_segment`.
+    external_segment_offset: u64,
+    /// Byte offset of `external_asset_id`.
+    external_asset_id_offset: u64,
+    /// Link name carried by the cross-document body reference.
+    external_link_name: String,
+    /// Byte offset of `external_link_name`.
+    external_link_name_offset: u64,
+    /// Located property key and referenced-document version identity.
+    external_version: Option<DesignExternalVersion>,
+    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
+    #[serde(default)]
+    tail_values: [u64; 2],
+    /// Byte offsets of `tail_values` in source order.
+    #[serde(default)]
+    tail_value_offsets: [u64; 2],
+}
+
+/// Wire fields for an external Combine body identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignCombineExternalBodyIdentityWire {
+    /// Asset GUID of the enclosing body selector.
     pub selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     pub selector_asset_id_offset: u64,
@@ -3958,8 +3997,18 @@ pub struct DesignCombineExternalBodyIdentity {
     pub external_link_name: String,
     /// Byte offset of `external_link_name`.
     pub external_link_name_offset: u64,
-    /// Located property key and referenced-document version identity.
-    pub external_version: Option<DesignExternalVersion>,
+    /// Optional property key preceding the version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key: Option<DesignRelaxedGuidText>,
+    /// Byte offset of `external_property_key` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key_offset: Option<u64>,
+    /// Optional referenced-document version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn: Option<String>,
+    /// Byte offset of `external_version_urn` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn_offset: Option<u64>,
     /// Retained u64 values around the fixed `u32 48` member in the selector tail.
     #[serde(default)]
     pub tail_values: [u64; 2],
@@ -3968,59 +4017,168 @@ pub struct DesignCombineExternalBodyIdentity {
     pub tail_value_offsets: [u64; 2],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct DesignCombineExternalBodyIdentityWire {
-    /// Asset GUID of the enclosing body selector.
-    selector_asset_id: DesignRelaxedGuidText,
-    /// Byte offset of `selector_asset_id`.
-    selector_asset_id_offset: u64,
-    /// Context GUID of the enclosing body selector.
-    selector_context_id: DesignRelaxedGuidText,
-    /// Byte offset of `selector_context_id`.
-    selector_context_id_offset: u64,
-    /// Same-segment occurrence reference preceding the external body reference.
-    occurrence_reference: u64,
-    /// Byte offset of `occurrence_reference`.
-    occurrence_reference_offset: u64,
-    /// Entity reference of the body in the referenced document.
-    external_body_reference: u64,
-    /// Byte offset of `external_body_reference`.
-    external_body_reference_offset: u64,
-    /// Segment carried by the cross-document body reference.
-    external_segment: u32,
-    /// Byte offset of `external_segment`.
-    external_segment_offset: u64,
-    /// Asset GUID carried by the cross-document body reference.
-    external_asset_id: DesignRelaxedGuidText,
-    /// Byte offset of `external_asset_id`.
-    external_asset_id_offset: u64,
-    /// Link name carried by the cross-document body reference.
-    external_link_name: String,
-    /// Byte offset of `external_link_name`.
-    external_link_name_offset: u64,
-    /// Optional property key preceding the version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key: Option<DesignRelaxedGuidText>,
-    /// Byte offset of `external_property_key` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key_offset: Option<u64>,
-    /// Optional referenced-document version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_version_urn: Option<String>,
-    /// Byte offset of `external_version_urn` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_version_urn_offset: Option<u64>,
-    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
-    #[serde(default)]
-    tail_values: [u64; 2],
-    /// Byte offsets of `tail_values` in source order.
-    #[serde(default)]
-    tail_value_offsets: [u64; 2],
+impl DesignCombineExternalBodyIdentity {
+    pub(crate) fn selector_asset_id(&self) -> &DesignRelaxedGuidText {
+        &self.selector_asset_id
+    }
+    pub(crate) fn selector_asset_id_offset(&self) -> u64 {
+        self.selector_asset_id_offset
+    }
+    pub(crate) fn selector_context_id(&self) -> &DesignRelaxedGuidText {
+        &self.selector_context_id
+    }
+    pub(crate) fn occurrence_reference(&self) -> u64 {
+        self.occurrence_reference
+    }
+    pub(crate) fn external_body_reference(&self) -> u64 {
+        self.external_body_reference
+    }
+    pub(crate) fn external_segment(&self) -> u32 {
+        self.external_segment
+    }
+    pub(crate) fn external_asset_id(&self) -> &DesignRelaxedGuidText {
+        &self.selector_asset_id
+    }
+    pub(crate) fn external_link_name(&self) -> &str {
+        &self.external_link_name
+    }
+    pub(crate) fn external_version(&self) -> Option<&DesignExternalVersion> {
+        self.external_version.as_ref()
+    }
+    #[cfg(test)]
+    pub(crate) fn tail_values(&self) -> [u64; 2] {
+        self.tail_values
+    }
+    #[cfg(test)]
+    pub(crate) fn tail_value_offsets(&self) -> [u64; 2] {
+        self.tail_value_offsets
+    }
+    #[cfg(test)]
+    pub(crate) fn external_asset_id_offset(&self) -> u64 {
+        self.external_asset_id_offset
+    }
 }
 
 impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBodyIdentity {
     type Error = String;
     fn try_from(wire: DesignCombineExternalBodyIdentityWire) -> Result<Self, Self::Error> {
+        let external_version = match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
+            (None, None, None, None) => None,
+            (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
+            _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
+        };
+        if wire.external_asset_id != wire.selector_asset_id {
+            return Err("external_asset_id must match selector_asset_id".into());
+        }
+        if wire.occurrence_reference == 0 {
+            return Err("occurrence_reference must be nonzero".into());
+        }
+        if wire.external_body_reference == 0 {
+            return Err("external_body_reference must be nonzero".into());
+        }
+        if wire.external_link_name.is_empty() {
+            return Err("external_link_name must not be empty".into());
+        }
+        let utf16_end = |offset: u64, text: &str| -> Option<u64> {
+            offset.checked_add(
+                u64::try_from(text.encode_utf16().count())
+                    .ok()?
+                    .checked_mul(2)?,
+            )
+        };
+        let after_text = |offset: u64, text: &str, delta: u64| {
+            utf16_end(offset, text).and_then(|end| end.checked_add(delta))
+        };
+        let prefix = (crate::layout::combine_external_selector_prefix::LEN + 4) as u64;
+        if wire.selector_asset_id_offset < prefix {
+            return Err("selector_asset_id_offset must follow the selector header".into());
+        }
+        for (field, actual, expected) in [
+            (
+                "selector_context_id_offset",
+                wire.selector_context_id_offset,
+                after_text(
+                    wire.selector_asset_id_offset,
+                    wire.selector_asset_id.as_str(),
+                    4,
+                ),
+            ),
+            (
+                "occurrence_reference_offset",
+                wire.occurrence_reference_offset,
+                after_text(
+                    wire.selector_context_id_offset,
+                    wire.selector_context_id.as_str(),
+                    13,
+                ),
+            ),
+            (
+                "external_body_reference_offset",
+                wire.external_body_reference_offset,
+                wire.occurrence_reference_offset.checked_add(15),
+            ),
+            (
+                "external_segment_offset",
+                wire.external_segment_offset,
+                wire.external_body_reference_offset.checked_add(9),
+            ),
+            (
+                "external_asset_id_offset",
+                wire.external_asset_id_offset,
+                wire.external_segment_offset.checked_add(8),
+            ),
+            (
+                "external_link_name_offset",
+                wire.external_link_name_offset,
+                after_text(
+                    wire.external_asset_id_offset,
+                    wire.external_asset_id.as_str(),
+                    5,
+                ),
+            ),
+            (
+                "tail_value_offsets[1]",
+                wire.tail_value_offsets[1],
+                wire.tail_value_offsets[0].checked_add(12),
+            ),
+        ] {
+            if expected != Some(actual) {
+                return Err(format!(
+                    "{field} disagrees with the external identity offset chain"
+                ));
+            }
+        }
+        let tail_offset = match &external_version {
+            None => after_text(wire.external_link_name_offset, &wire.external_link_name, 7),
+            Some(version) => {
+                if version.version_urn.value.is_empty() {
+                    return Err("external_version_urn must not be empty".into());
+                }
+                if after_text(wire.external_link_name_offset, &wire.external_link_name, 5)
+                    != Some(version.property_key.offset)
+                {
+                    return Err(
+                        "external_property_key_offset disagrees with external_link_name".into(),
+                    );
+                }
+                if after_text(
+                    version.property_key.offset,
+                    version.property_key.value.as_str(),
+                    4,
+                ) != Some(version.version_urn.offset)
+                {
+                    return Err(
+                        "external_version_urn_offset disagrees with external_property_key".into(),
+                    );
+                }
+                after_text(version.version_urn.offset, &version.version_urn.value, 6)
+            }
+        };
+        if tail_offset != Some(wire.tail_value_offsets[0]) {
+            return Err(
+                "tail_value_offsets[0] disagrees with the external identity offset chain".into(),
+            );
+        }
         Ok(Self {
             selector_asset_id: wire.selector_asset_id,
             selector_asset_id_offset: wire.selector_asset_id_offset,
@@ -4032,15 +4190,10 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
             external_body_reference_offset: wire.external_body_reference_offset,
             external_segment: wire.external_segment,
             external_segment_offset: wire.external_segment_offset,
-            external_asset_id: wire.external_asset_id,
             external_asset_id_offset: wire.external_asset_id_offset,
             external_link_name: wire.external_link_name,
             external_link_name_offset: wire.external_link_name_offset,
-            external_version: match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
-                (None, None, None, None) => None,
-                (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
-                _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
-            },
+            external_version,
             tail_values: wire.tail_values,
             tail_value_offsets: wire.tail_value_offsets,
         })
@@ -4050,7 +4203,7 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
 impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdentityWire {
     fn from(record: DesignCombineExternalBodyIdentity) -> Self {
         Self {
-            selector_asset_id: record.selector_asset_id,
+            selector_asset_id: record.selector_asset_id.clone(),
             selector_asset_id_offset: record.selector_asset_id_offset,
             selector_context_id: record.selector_context_id,
             selector_context_id_offset: record.selector_context_id_offset,
@@ -4060,7 +4213,7 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
             external_body_reference_offset: record.external_body_reference_offset,
             external_segment: record.external_segment,
             external_segment_offset: record.external_segment_offset,
-            external_asset_id: record.external_asset_id,
+            external_asset_id: record.selector_asset_id,
             external_asset_id_offset: record.external_asset_id_offset,
             external_link_name: record.external_link_name,
             external_link_name_offset: record.external_link_name_offset,
