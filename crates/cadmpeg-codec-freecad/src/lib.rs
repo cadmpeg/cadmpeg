@@ -1094,7 +1094,7 @@ impl CodecBackend for FcstdCodec {
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
-                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
                 ir.model.entity_count() as u64,
                 &mut admitted_entities,

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocumentReference, JointConnector, JointLimits, JointOperand,
@@ -264,7 +265,7 @@ pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
-) -> Vec<AssemblyJoint> {
+) -> Result<Vec<AssemblyJoint>, CodecError> {
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
         let Some(stream) = native_stream(&occurrence.id) else {
@@ -322,10 +323,12 @@ pub(crate) fn project_assembly_joints(
         };
         let (angular_limits, linear_limits) = match limits {
             Some(limits) => {
-                let projected = JointLimits::Both {
-                    minimum: limits.minimum,
-                    maximum: limits.maximum,
-                };
+                let projected = JointLimits::new(Some(limits.minimum), Some(limits.maximum))
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "joint limits minimum/maximum must be finite and ordered".into(),
+                        )
+                    })?;
                 match limits.kind {
                     DesignAssemblyLimitKind::Angular => (Some(projected), None),
                     DesignAssemblyLimitKind::Linear => (None, Some(projected)),
@@ -364,7 +367,7 @@ pub(crate) fn project_assembly_joints(
             joint
         });
     }
-    joints.into_values().collect()
+    Ok(joints.into_values().collect())
 }
 
 fn project_qualified_operands(

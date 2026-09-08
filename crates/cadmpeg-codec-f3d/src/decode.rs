@@ -2874,7 +2874,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
             &self.ir.model.features,
-        );
+        )?;
         Ok(())
     }
 
