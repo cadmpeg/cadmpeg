@@ -12396,6 +12396,14 @@ impl ProceduralCurve {
         Ok(result)
     }
 
+    /// Mutable checked support context of an intersection construction.
+    pub fn intersection_context_mut(&mut self) -> Option<&mut IntcurveSupportContext> {
+        match &mut self.definition {
+            ProceduralCurveDefinition::Intersection { context, .. } => Some(context),
+            _ => None,
+        }
+    }
+
     /// Effective fit tolerance of the solved cache.
     #[must_use]
     pub fn cache_fit_tolerance(&self) -> Option<f64> {

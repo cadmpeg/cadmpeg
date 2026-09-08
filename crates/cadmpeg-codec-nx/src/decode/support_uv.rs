@@ -650,16 +650,11 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         else {
             continue;
         };
-        if procedural
-            .edit_definition(|definition| {
-                if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
-                    context.set_unmapped_pcurve(side, Some(replacement));
-                }
-            })
-            .is_err()
-        {
+        let Some(context) = procedural.intersection_context_mut() else {
             continue;
-        }
+        };
+
+        context.set_unmapped_pcurve(side, Some(replacement));
     }
 }
 
@@ -890,16 +885,11 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         else {
             continue;
         };
-        if procedural
-            .edit_definition(|definition| {
-                if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
-                    context.set_unmapped_pcurve(side, None);
-                }
-            })
-            .is_err()
-        {
+        let Some(context) = procedural.intersection_context_mut() else {
             continue;
-        }
+        };
+
+        context.set_unmapped_pcurve(side, None);
     }
     SupportUvValidationResult {
         endpoint_witnesses,
@@ -1759,23 +1749,17 @@ fn complete_coupled_support_uv(
         else {
             continue;
         };
-        if procedural
-            .edit_definition(|definition| {
-                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                    return;
-                };
-                if pcurve_requires_completion(
-                    context.sides()[side]
-                        .pcurve
-                        .as_ref()
-                        .map(|pcurve| &pcurve.geometry),
-                ) {
-                    context.set_unmapped_pcurve(side, Some(pcurve));
-                }
-            })
-            .is_err()
-        {
+        let Some(context) = procedural.intersection_context_mut() else {
             continue;
+        };
+
+        if pcurve_requires_completion(
+            context.sides()[side]
+                .pcurve
+                .as_ref()
+                .map(|pcurve| &pcurve.geometry),
+        ) {
+            context.set_unmapped_pcurve(side, Some(pcurve));
         }
     }
     lane_geometry_exhausted
@@ -1851,22 +1835,18 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
             .collect::<Vec<_>>()
     };
     for (procedural_index, side, source) in replacements {
-        if ir.model.procedural_curves[procedural_index]
-            .edit_definition(|definition| {
-                if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
-                    if pcurve_requires_completion(
-                        context.sides()[side]
-                            .pcurve
-                            .as_ref()
-                            .map(|pcurve| &pcurve.geometry),
-                    ) {
-                        context.copy_pcurve(source, side);
-                    }
-                }
-            })
-            .is_err()
-        {
+        let Some(context) = ir.model.procedural_curves[procedural_index].intersection_context_mut()
+        else {
             continue;
+        };
+
+        if pcurve_requires_completion(
+            context.sides()[side]
+                .pcurve
+                .as_ref()
+                .map(|pcurve| &pcurve.geometry),
+        ) {
+            context.copy_pcurve(source, side);
         }
     }
 }
