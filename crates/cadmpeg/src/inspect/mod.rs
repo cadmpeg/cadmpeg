@@ -18,15 +18,17 @@ pub mod search;
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
+use clap::builder::TypedValueParser;
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
-use numeric::{parse_offset, EndianArgs, ScalarType};
+use numeric::{parse_offset, Endian, ScalarType};
 
 /// Default number of bytes a bare `inspect hex` prints.
 const DEFAULT_HEX_LEN: u64 = 256;
@@ -55,8 +57,23 @@ pub struct SummaryArgs {
     /// Resource-limit profile applied during inspection.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
-    #[command(flatten)]
-    pub input_args: crate::InputArgs,
+    /// Treat the input as this native format.
+    #[arg(long, visible_alias = "from", value_parser = native_input_parser())]
+    pub input_format: Option<&'static cadmpeg_registry::NativeDescriptor>,
+}
+
+fn native_input_parser(
+) -> impl TypedValueParser<Value = &'static cadmpeg_registry::NativeDescriptor> {
+    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().filter(|name| {
+        matches!(
+            cadmpeg_registry::forced_input(name),
+            Some(cadmpeg_registry::ForcedInput::Codec(_))
+        )
+    }))
+    .try_map(|name| match cadmpeg_registry::forced_input(&name) {
+        Some(cadmpeg_registry::ForcedInput::Codec(native)) => Ok(native),
+        _ => Err(format!("unsupported native input format: {name}")),
+    })
 }
 
 impl clap::Args for InspectArgs {
@@ -209,10 +226,20 @@ pub struct HexArgs {
     #[arg(long, visible_alias = "length", value_parser = parse_offset)]
     pub len: Option<u64>,
     /// Bytes per output line.
-    #[arg(long, default_value_t = 16)]
-    pub width: usize,
+    #[arg(long, default_value = "16")]
+    pub width: NonZeroUsize,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
+}
+
+fn parse_stride(text: &str) -> Result<NonZeroU64, String> {
+    NonZeroU64::new(parse_offset(text)?).ok_or_else(|| "stride must be at least 1".to_owned())
+}
+
+type CountLimit = Option<NonZeroUsize>;
+
+fn parse_limit(text: &str) -> Result<CountLimit, std::num::ParseIntError> {
+    text.parse::<usize>().map(NonZeroUsize::new)
 }
 
 /// Arguments for `cadmpeg inspect read`.
@@ -230,10 +257,11 @@ pub struct ReadArgs {
     #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
     /// Byte step between consecutive values; defaults to the scalar width.
-    #[arg(long, alias = "step", value_parser = parse_offset)]
-    pub stride: Option<u64>,
-    #[command(flatten)]
-    pub endian: EndianArgs,
+    #[arg(long, alias = "step", value_parser = parse_stride)]
+    pub stride: Option<NonZeroU64>,
+    /// Byte order for scalar reads.
+    #[arg(long, value_enum, default_value_t = Endian::Le)]
+    pub endian: Endian,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
@@ -247,8 +275,8 @@ pub struct FindArgs {
     #[arg(long, value_enum)]
     pub encoding: FindEncoding,
     /// Stop after this many hits; 0 reports every hit.
-    #[arg(long, default_value_t = 100)]
-    pub max: usize,
+    #[arg(long, default_value = "100", value_parser = parse_limit)]
+    pub max: CountLimit,
     /// Bytes of context dumped before and after each hit; 0 prints none.
     #[arg(long, default_value = "0", value_parser = parse_offset)]
     pub context: u64,
@@ -357,9 +385,9 @@ pub struct StringsArgs {
         long,
         visible_alias = "min-len",
         alias = "min-length",
-        default_value_t = 4
+        default_value = "4"
     )]
-    pub min: usize,
+    pub min: NonZeroUsize,
     /// Which encodings to scan for.
     #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
     pub encoding: search::StringScan,
@@ -405,18 +433,76 @@ pub struct ExtractArgs {
     pub file: PathBuf,
     /// Exact entry or stream path (quotes removed).
     pub member: String,
-    /// Output file for the extracted bytes; omit it or pass `-` to write
-    /// them to standard output.
-    #[arg(short = 'o', long)]
-    pub output: Option<PathBuf>,
-    /// Replace an existing output file.
-    #[arg(long)]
-    pub force: bool,
+    /// Extracted-byte destination.
+    #[command(flatten)]
+    pub output: ExtractDestination,
     /// Resource-limit profile applied while reading the archive.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
+}
+
+/// Extracted-byte destination and its file overwrite policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtractDestination {
+    /// Write bytes to standard output.
+    Stdout,
+    /// Write bytes with the file overwrite policy.
+    File(crate::application::artifact_store::FileDestination),
+}
+
+fn parse_destination(value: std::ffi::OsString) -> ExtractDestination {
+    if value == "-" {
+        ExtractDestination::Stdout
+    } else {
+        ExtractDestination::File(crate::application::artifact_store::FileDestination {
+            path: value.into(),
+            overwrite: false,
+        })
+    }
+}
+
+impl clap::Args for ExtractDestination {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(
+                clap::Arg::new("output")
+                    .short('o')
+                    .long("output")
+                    .help("Output file; omit it or pass - for standard output")
+                    .default_value("-")
+                    .value_parser(clap::builder::OsStringValueParser::new().map(parse_destination)),
+            )
+            .arg(
+                clap::Arg::new("force")
+                    .long("force")
+                    .help("Replace an existing output file")
+                    .action(clap::ArgAction::SetTrue),
+            )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for ExtractDestination {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let mut destination = matches
+            .get_one::<Self>("output")
+            .cloned()
+            .unwrap_or(Self::Stdout);
+        if let Self::File(file) = &mut destination {
+            file.overwrite = matches.get_flag("force");
+        }
+        Ok(destination)
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
 }
 
 /// Arguments for `cadmpeg inspect cmp`.
@@ -430,8 +516,8 @@ pub struct CmpArgs {
     #[arg(long, default_value_t = 8)]
     pub gap: u64,
     /// Stop listing after this many runs; 0 lists every run.
-    #[arg(long, default_value_t = 32)]
-    pub max_runs: usize,
+    #[arg(long, default_value = "32", value_parser = parse_limit)]
+    pub max_runs: CountLimit,
     /// Bytes of context dumped on each side of the first difference.
     #[arg(long, default_value = "32", value_parser = parse_offset)]
     pub context: u64,
@@ -451,10 +537,7 @@ pub fn run(command: ByteCommand) -> Result<ExitCode> {
     };
     match tool {
         ByteTool::Hex(args) => hex(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Read(args) => {
-            let mode = args.endian.mode();
-            read(&args, mode).map(|()| ExitCode::SUCCESS)
-        }
+        ByteTool::Read(args) => read(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Find(args) => find(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Strings(args) => strings(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Struct(args) => structure(&args).map(|()| ExitCode::SUCCESS),
@@ -505,9 +588,6 @@ fn read_whole(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn hex(args: &HexArgs) -> Result<()> {
-    if args.width == 0 {
-        bail!("--width must be at least 1");
-    }
     let len = args.len.unwrap_or(DEFAULT_HEX_LEN);
     let bytes = read_window(args.file.path(), args.offset, len)?;
     if bytes.is_empty() {
@@ -518,14 +598,12 @@ fn hex(args: &HexArgs) -> Result<()> {
     Ok(())
 }
 
-fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
+fn read(args: &ReadArgs) -> Result<()> {
+    let endian = args.endian;
     let width = args.ty.width() as u64;
-    let stride = args.stride.unwrap_or(width);
+    let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
         return Ok(());
-    }
-    if stride == 0 {
-        bail!("--stride 0 would read the same bytes forever");
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
@@ -570,9 +648,9 @@ fn find(args: &FindArgs) -> Result<()> {
     };
     let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
     let bytes = read_whole(file)?;
-    let limit = (args.max > 0).then_some(args.max);
+    let limit = args.max;
     let hits = search::find_all(&bytes, &pattern, limit);
-    let truncated = limit.is_some_and(|max| hits.len() >= max);
+    let truncated = limit.is_some_and(|max| hits.len() >= max.get());
     if args.json {
         let payload = serde_json::json!({
             "subcommand": "find",
@@ -611,16 +689,13 @@ fn find(args: &FindArgs) -> Result<()> {
     if truncated {
         println!(
             "note: output truncated at {} matches; pass --max 0 for all",
-            args.max
+            hits.len()
         );
     }
     Ok(())
 }
 
 fn strings(args: &StringsArgs) -> Result<()> {
-    if args.min == 0 {
-        bail!("--min must be at least 1");
-    }
     let bytes = read_whole(args.file.path())?;
     for found in search::extract_strings(&bytes, args.min, args.encoding) {
         println!(
@@ -665,7 +740,10 @@ fn structure(args: &StructArgs) -> Result<()> {
             let at = base + field.offset as u64;
             println!(
                 "  0x{at:08x}  {:<name_width$}  {:<8}  {:<24}  {}",
-                field.name, field.type_name, field.decimal, field.hex
+                field.name,
+                field.type_name,
+                field.decimal.as_deref().unwrap_or(""),
+                field.hex
             );
         }
     }
@@ -695,13 +773,9 @@ fn extract_entry(args: &ExtractArgs) -> Result<()> {
     let bytes = read_whole(&args.file)?;
     let payload = container::extract(&bytes, args.limits.limits(), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
-    let destination = crate::application::artifact_store::FileDestination::optional(
-        args.output.clone().filter(|path| path != Path::new("-")),
-        args.force,
-    );
-    match destination {
-        None => write_payload_to_stdout(&payload),
-        Some(destination) => {
+    match &args.output {
+        ExtractDestination::Stdout => write_payload_to_stdout(&payload),
+        ExtractDestination::File(destination) => {
             let path = &destination.path;
             if path.exists() && !destination.overwrite {
                 bail!("{} exists; pass --force to replace it", path.display());
@@ -755,11 +829,9 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
         args.gap,
         summary.runs().len()
     );
-    let shown = if args.max_runs == 0 {
-        summary.runs().len()
-    } else {
-        args.max_runs.min(summary.runs().len())
-    };
+    let shown = args.max_runs.map_or(summary.runs().len(), |max| {
+        max.get().min(summary.runs().len())
+    });
     for run in &summary.runs()[..shown] {
         println!(
             "  0x{:08x}..0x{:08x}  {} bytes",
@@ -792,5 +864,37 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
     let end = usize::try_from(start.saturating_add(len))
         .unwrap_or(usize::MAX)
         .min(bytes.len());
-    hexdump::render(begin as u64, &bytes[begin..end], 16)
+    hexdump::render(
+        begin as u64,
+        &bytes[begin..end],
+        const { NonZeroUsize::new(16).unwrap() },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::FromArgMatches;
+
+    #[test]
+    fn inspect_rejects_cadir_at_argument_admission() {
+        use clap::Parser;
+        let error =
+            crate::Cli::try_parse_from(["cadmpeg", "inspect", "missing", "--from", "cadir"])
+                .unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn extract_stdout_spellings_have_one_destination() {
+        let parse = |args: Vec<&str>| {
+            let matches = ExtractArgs::augment_args(clap::Command::new("extract"))
+                .try_get_matches_from(args)
+                .unwrap();
+            ExtractArgs::from_arg_matches(&matches).unwrap()
+        };
+        let omitted = parse(vec!["extract", "input.zip", "entry"]);
+        let explicit = parse(vec!["extract", "input.zip", "entry", "-o", "-", "--force"]);
+        assert_eq!(omitted.output, explicit.output);
+    }
 }

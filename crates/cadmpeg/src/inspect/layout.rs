@@ -247,9 +247,9 @@ impl Layout {
                 let (decimal, hex) = match *kind {
                     FieldKind::Scalar(ty, endian) => {
                         let value = ty.read(bytes, endian);
-                        (value.decimal(), value.hex())
+                        (Some(value.decimal()), value.hex())
                     }
-                    FieldKind::Bytes(_) => (String::new(), hex_bytes(bytes)),
+                    FieldKind::Bytes(_) => (None, hex_bytes(bytes)),
                 };
                 Some(DecodedField {
                     name: name.clone(),
@@ -272,8 +272,8 @@ pub struct DecodedField {
     pub type_name: String,
     /// Byte offset from the start of the record.
     pub offset: usize,
-    /// Decimal rendering, empty for `bytesN` fields.
-    pub decimal: String,
+    /// Decimal rendering, absent for `bytesN` fields.
+    pub decimal: Option<String>,
     /// Hexadecimal rendering of the encoded bytes.
     pub hex: String,
 }
@@ -561,14 +561,14 @@ mod tests {
         assert_eq!(decoded.len(), 3);
         assert_eq!(decoded[0].name, "count");
         assert_eq!(decoded[0].type_name, "u32le");
-        assert_eq!(decoded[0].decimal, "42");
+        assert_eq!(decoded[0].decimal.as_deref(), Some("42"));
         assert_eq!(decoded[0].hex, "0x0000002a");
         assert_eq!(decoded[1].name, "delta");
-        assert_eq!(decoded[1].decimal, "-2");
+        assert_eq!(decoded[1].decimal.as_deref(), Some("-2"));
         assert_eq!(decoded[1].hex, "0xfffe");
         assert_eq!(decoded[1].offset, 6);
         assert_eq!(decoded[2].type_name, "bytes2");
         assert_eq!(decoded[2].hex, "ab cd");
-        assert_eq!(decoded[2].decimal, "");
+        assert_eq!(decoded[2].decimal, None);
     }
 }

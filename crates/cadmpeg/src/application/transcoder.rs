@@ -149,7 +149,7 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 pub enum LossPolicy {
     /// Permit losses at both phases.
     #[default]
-    #[value(skip)]
+    #[value(hide = true)]
     Allow,
     /// Refuse decode losses only.
     #[value(name = "decode")]
@@ -189,17 +189,6 @@ pub enum DestinationPolicy {
 }
 
 impl DestinationPolicy {
-    /// Resolves CLI destination flags into a destination-specific policy.
-    #[must_use]
-    pub fn new(destination: Option<PathBuf>, overwrite: bool, binary_stdout: bool) -> Self {
-        match destination {
-            Some(path) => Self::File(FileDestination { path, overwrite }),
-            None => Self::Stdout {
-                allow_binary: binary_stdout,
-            },
-        }
-    }
-
     /// Returns the output path used for format inference, if any.
     #[must_use]
     pub(crate) fn path(&self) -> Option<&Path> {

@@ -40,26 +40,8 @@ impl fmt::Display for Column {
 }
 
 /// A capability ladder level from zero through nine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "u8")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LadderLevel(u8);
-
-/// A level outside the capability ladder.
-#[derive(Debug, thiserror::Error)]
-#[error("level {0} is outside 0..=9")]
-pub struct InvalidLadderLevel(u8);
-
-impl TryFrom<u8> for LadderLevel {
-    type Error = InvalidLadderLevel;
-
-    fn try_from(level: u8) -> Result<Self, Self::Error> {
-        if level <= 9 {
-            Ok(Self(level))
-        } else {
-            Err(InvalidLadderLevel(level))
-        }
-    }
-}
 
 impl fmt::Display for LadderLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
