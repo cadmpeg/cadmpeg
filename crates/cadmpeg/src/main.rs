@@ -336,7 +336,7 @@ fn main() -> ExitCode {
         Command::Inspect(inspect::InspectArgs::Summary(args)) => commands::inspect(
             &inputs,
             args.file.path(),
-            args.input_args.input_format,
+            args.input_format,
             args.json,
             FileDestination::optional(args.report, args.force).as_ref(),
             args.limits.limits(),

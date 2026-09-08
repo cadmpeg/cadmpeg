@@ -56,8 +56,25 @@ pub struct SummaryArgs {
     /// Resource-limit profile applied during inspection.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
-    #[command(flatten)]
-    pub input_args: crate::InputArgs,
+    /// Treat the input as this native format.
+    #[arg(long, visible_alias = "from", value_parser = native_input_parser())]
+    pub input_format: Option<&'static cadmpeg_registry::NativeDescriptor>,
+}
+
+fn native_input_parser(
+) -> impl TypedValueParser<Value = &'static cadmpeg_registry::NativeDescriptor> {
+    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().into_iter().filter(
+        |name| {
+            matches!(
+                cadmpeg_registry::forced_input(name),
+                Some(cadmpeg_registry::ForcedInput::Codec(_))
+            )
+        },
+    ))
+    .try_map(|name| match cadmpeg_registry::forced_input(&name) {
+        Some(cadmpeg_registry::ForcedInput::Codec(native)) => Ok(native),
+        _ => Err(format!("unsupported native input format: {name}")),
+    })
 }
 
 impl clap::Args for InspectArgs {
@@ -851,6 +868,15 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
 mod tests {
     use super::*;
     use clap::FromArgMatches;
+
+    #[test]
+    fn inspect_rejects_cadir_at_argument_admission() {
+        use clap::Parser;
+        let error =
+            crate::Cli::try_parse_from(["cadmpeg", "inspect", "missing", "--from", "cadir"])
+                .unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+    }
 
     #[test]
     fn extract_stdout_spellings_have_one_destination() {

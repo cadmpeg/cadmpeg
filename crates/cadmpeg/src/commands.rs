@@ -154,18 +154,20 @@ impl Serialize for DiffReportPayload<'_> {
 pub fn inspect(
     inputs: &InputCatalog,
     path: &Path,
-    forced: Option<ForcedInput>,
+    forced: Option<&'static cadmpeg_registry::NativeDescriptor>,
     json: bool,
     report_path: Option<&FileDestination>,
     limits: cadmpeg_core::decode::ResourceLimits,
 ) -> CommandResult<()> {
-    if matches!(forced, Some(ForcedInput::Cadir)) {
-        return Err(anyhow!("inspect requires a container input, not cadir").into());
-    }
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let Inspected {
         selection, summary, ..
-    } = match resolve_and_inspect_with(inputs, &mut file, forced, &InspectOptions { limits }) {
+    } = match resolve_and_inspect_with(
+        inputs,
+        &mut file,
+        forced.map(ForcedInput::Codec),
+        &InspectOptions { limits },
+    ) {
         Ok(inspected) => inspected,
         Err(InspectError::Io(error)) => {
             return Err(inspect_io_error(path, limits.max_input_bytes, error).into())
