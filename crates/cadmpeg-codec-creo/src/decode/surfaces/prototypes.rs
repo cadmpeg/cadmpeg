@@ -180,27 +180,57 @@ pub(in super::super) fn surface_prototype_frame_bounds(
     ))
 }
 
+#[derive(Clone, Copy)]
+pub(in super::super) enum SupportedPrototype<'a> {
+    Plane(&'a crate::surface::SurfacePrototypeRecord),
+    Cylinder(&'a crate::surface::SurfacePrototypeRecord),
+    Cone(&'a crate::surface::SurfacePrototypeRecord),
+    Torus(&'a crate::surface::SurfacePrototypeRecord),
+    Spline(&'a crate::surface::SurfacePrototypeRecord),
+}
+
+impl<'a> SupportedPrototype<'a> {
+    pub(in super::super) fn record(self) -> &'a crate::surface::SurfacePrototypeRecord {
+        match self {
+            Self::Plane(record)
+            | Self::Cylinder(record)
+            | Self::Cone(record)
+            | Self::Torus(record)
+            | Self::Spline(record) => record,
+        }
+    }
+}
+
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Vec<(
-    &'a crate::surface::SurfacePrototypeRecord,
+    SupportedPrototype<'a>,
     &'a crate::surface::SurfaceRow,
     &'a crate::container::Section,
 )> {
     let mut associations = Vec::new();
     for record in &scan.surfaces.prototype_records {
-        let row_kind = match record.family {
-            crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
-            crate::surface::SurfacePrototypeFamily::Cylinder => {
-                crate::surface::SurfaceKind::Cylinder
-            }
-            crate::surface::SurfacePrototypeFamily::Torus(_) => {
-                crate::surface::SurfaceKind::TorusOrSphere
-            }
-            crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
-            crate::surface::SurfacePrototypeFamily::Spline(_) => {
-                crate::surface::SurfaceKind::Spline
-            }
+        let (prototype, row_kind) = match record.family {
+            crate::surface::SurfacePrototypeFamily::Plane => (
+                SupportedPrototype::Plane(record),
+                crate::surface::SurfaceKind::Plane,
+            ),
+            crate::surface::SurfacePrototypeFamily::Cylinder => (
+                SupportedPrototype::Cylinder(record),
+                crate::surface::SurfaceKind::Cylinder,
+            ),
+            crate::surface::SurfacePrototypeFamily::Cone => (
+                SupportedPrototype::Cone(record),
+                crate::surface::SurfaceKind::Cone,
+            ),
+            crate::surface::SurfacePrototypeFamily::Torus(_) => (
+                SupportedPrototype::Torus(record),
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
+            crate::surface::SurfacePrototypeFamily::Spline(_) => (
+                SupportedPrototype::Spline(record),
+                crate::surface::SurfaceKind::Spline,
+            ),
             _ => continue,
         };
         let Some(section) = scan.framing.sections.iter().find(|section| {
@@ -228,7 +258,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
-        associations.push((record, row, section));
+        associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
     for (_, row, _) in &associations {
@@ -249,9 +279,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         return 0;
     }
     let mut transferred = 0;
-    for (record, row, section) in unique_surface_prototype_associations(scan) {
-        let geometry = match record.family {
-            crate::surface::SurfacePrototypeFamily::Plane => {
+    for (prototype, row, section) in unique_surface_prototype_associations(scan) {
+        let record = prototype.record();
+        let geometry = match prototype {
+            SupportedPrototype::Plane(_) => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
@@ -261,7 +292,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     u_axis: Vector3::new(reference[0], reference[1], reference[2]),
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Cylinder => {
+            SupportedPrototype::Cylinder(_) => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
@@ -277,7 +308,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     radius,
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Torus(_) => {
+            SupportedPrototype::Torus(_) => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
@@ -319,30 +350,29 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     }
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Cone => {
+            SupportedPrototype::Cone(_) => {
                 let Some(frame) = crate::surface::prototype_cone_frame(record) else {
                     continue;
                 };
                 SurfaceGeometry::Cone {
-                    origin: Point3::new(frame.apex[0], frame.apex[1], frame.apex[2]),
-                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    origin: Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
+                    axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                     ref_direction: Vector3::new(
-                        frame.ref_direction[0],
-                        frame.ref_direction[1],
-                        frame.ref_direction[2],
+                        frame.ref_direction()[0],
+                        frame.ref_direction()[1],
+                        frame.ref_direction()[2],
                     ),
                     radius: 0.0,
                     ratio: 1.0,
-                    half_angle: frame.half_angle,
+                    half_angle: frame.half_angle(),
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Spline(_) => {
+            SupportedPrototype::Spline(_) => {
                 let Some(nurbs) = prototype_spline_nurbs(record) else {
                     continue;
                 };
                 SurfaceGeometry::Nurbs(nurbs)
             }
-            _ => unreachable!("prototype family was filtered above"),
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
             .expect("identity grammar");

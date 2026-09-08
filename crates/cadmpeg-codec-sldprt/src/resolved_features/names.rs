@@ -3,16 +3,22 @@
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::products::NonEmptyString;
 
-pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> String {
-    match kind {
+/// A native kind name admitted by the nonempty string owner.
+pub(super) fn checked_nonempty_name(value: impl Into<String>) -> NonEmptyString {
+    NonEmptyString::new(value).expect("native kind name must not be empty")
+}
+
+pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonEmptyString {
+    checked_nonempty_name(match kind {
         FeatureInputOperandKind::D6 => "d6".into(),
         FeatureInputOperandKind::E1 => "e1".into(),
         FeatureInputOperandKind::Native(tag) => {
             let [first, second] = tag.to_le_bytes();
             format!("{first:02x}{second:02x}")
         }
-    }
+    })
 }
 
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {

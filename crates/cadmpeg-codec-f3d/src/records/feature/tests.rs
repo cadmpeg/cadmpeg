@@ -1703,13 +1703,25 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
     let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
         "selection_record_index": 2, "selection_byte_offset": 0,
         "selection_next_record_index": 3, "selection_next_byte_offset": 0,
-        "chain_records": [], "cell_table_record_index": 4, "cell_table_byte_offset": 0,
+        "chain_records": [
+            {"record_index": 3, "byte_offset": 0, "class_tag": "288", "frame_length": 11},
+            {"record_index": 6, "byte_offset": 11, "class_tag": "271", "frame_length": 11}
+        ], "cell_table_record_index": 4, "cell_table_byte_offset": 0,
         "cell_table_class_tag": "325", "cell_table_frame_length": 0,
         "cell_table_paired_class_tag": "257", "cell_table_paired_byte_offset": 0,
         "cell_count": 1, "cell_count_offset": 0, "cell_entries": [entry],
         "trailing_value": 1, "trailing_value_offset": 0, "trailing_zero_offset": 0});
     let record: super::DesignSurfaceTrimOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    for count in [0, 1, 3] {
+        let mut invalid_chain = wire.clone();
+        invalid_chain["chain_records"] = serde_json::Value::Array(
+            std::iter::repeat_n(wire["chain_records"][0].clone(), count).collect(),
+        );
+        assert!(
+            serde_json::from_value::<super::DesignSurfaceTrimOperation>(invalid_chain).is_err()
+        );
+    }
     wire["cell_count"] = 2.into();
     assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire.clone()).is_err());
     wire["cell_count"] = 0.into();

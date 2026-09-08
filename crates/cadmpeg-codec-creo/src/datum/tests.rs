@@ -382,11 +382,11 @@ fn scan_discovers_complete_active_datum_cylinder_carrier() {
     assert_eq!(cylinder.id, 8);
     assert_eq!(cylinder.feature_id, 3);
     assert!(!cylinder.reversed);
-    assert_eq!(cylinder.frame.origin, [-12.5, 4.0, 0.0]);
-    assert_eq!(cylinder.frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(cylinder.frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(cylinder.frame.radius, 0.75);
-    assert_eq!(cylinder.frame.length, Some(34.0));
+    assert_eq!(cylinder.frame.origin(), [-12.5, 4.0, 0.0]);
+    assert_eq!(cylinder.frame.axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder.frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(cylinder.frame.radius(), 0.75);
+    assert_eq!(cylinder.frame.length(), Some(34.0));
 }
 
 #[test]
@@ -477,11 +477,11 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
         };
         assert_eq!(cylinder.id, id);
         assert_eq!(cylinder.reversed, reversed);
-        assert_eq!(cylinder.frame.origin, origin);
-        assert_eq!(cylinder.frame.axis, axis);
-        assert_eq!(cylinder.frame.ref_direction, ref_direction);
-        assert_eq!(cylinder.frame.radius, radius);
-        assert_eq!(cylinder.frame.length, Some(length));
+        assert_eq!(cylinder.frame.origin(), origin);
+        assert_eq!(cylinder.frame.axis(), axis);
+        assert_eq!(cylinder.frame.ref_direction(), ref_direction);
+        assert_eq!(cylinder.frame.radius(), radius);
+        assert_eq!(cylinder.frame.length(), Some(length));
     }
 }
 

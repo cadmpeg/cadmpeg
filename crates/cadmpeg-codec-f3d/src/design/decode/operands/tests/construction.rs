@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::design::decode::operands::parse_loft_legacy_body_carrier;
+use crate::design::decode::operands::{parse_loft_legacy_body_carrier, RecordFrame};
 use crate::records::topology::DesignOperandRole;
 
 #[test]
@@ -103,7 +103,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let paired_at = bytes.len();
     header(&mut bytes, *b"259", 100);
 
-    let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
+    let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("counted Extrude operand group");
     assert_eq!(
@@ -143,9 +143,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut whole_body_bytes = bytes.clone();
     whole_body_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
-    let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
-        .complete()
-        .expect("counted Extrude whole-body group");
+    let whole_body =
+        parse_construction_operand_group(&whole_body_bytes, &scope, 0, &RecordFrame::from(&record))
+            .complete()
+            .expect("counted Extrude whole-body group");
     assert_eq!(whole_body.role(), DesignOperandRole::BODIES_A);
     assert_eq!(
         whole_body.extrude_role(),
@@ -166,9 +167,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     flagged.extend_from_slice(&445u64.to_le_bytes());
     let flagged_count_at = flagged.len();
     flagged.extend_from_slice(&bytes[21..]);
-    let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record)
-        .complete()
-        .expect("operation-flagged counted operand group");
+    let flagged =
+        parse_construction_operand_group(&flagged, &scope, 0, &RecordFrame::from(&record))
+            .complete()
+            .expect("operation-flagged counted operand group");
     assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
     assert_eq!(
         flagged
@@ -184,7 +186,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     start_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
-        parse_construction_operand_group(&start_face_bytes, &scope, 0, &record)
+        parse_construction_operand_group(&start_face_bytes, &scope, 0, &RecordFrame::from(&record))
             .complete()
             .expect("counted Extrude retained role-five group");
     assert_eq!(retained_role_five.extrude_role(), None);
@@ -213,10 +215,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 start_offset: 1042,
             });
     }
-    let mut start_face =
-        parse_construction_operand_group(&start_face_bytes, &from_face_scope, 0, &record)
-            .complete()
-            .expect("counted Extrude start-face group");
+    let mut start_face = parse_construction_operand_group(
+        &start_face_bytes,
+        &from_face_scope,
+        0,
+        &RecordFrame::from(&record),
+    )
+    .complete()
+    .expect("counted Extrude start-face group");
     assert_eq!(start_face.role(), DesignOperandRole::ROLE_0X5);
     assert_eq!(start_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
@@ -257,10 +263,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut to_face_bytes = bytes.clone();
     to_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
-    let mut legacy_to_face =
-        parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
-            .complete()
-            .expect("counted Extrude legacy to-face group");
+    let mut legacy_to_face = parse_construction_operand_group(
+        &to_face_bytes,
+        &to_face_scope,
+        0,
+        &RecordFrame::from(&record),
+    )
+    .complete()
+    .expect("counted Extrude legacy to-face group");
     assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
     assert_eq!(legacy_to_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
@@ -285,9 +295,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     flagless.extend_from_slice(&[0; 6]);
     let flagless_paired_at = flagless.len();
     header(&mut flagless, *b"259", 100);
-    let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record)
-        .complete()
-        .expect("flagless counted operand group");
+    let flagless =
+        parse_construction_operand_group(&flagless, &scope, 0, &RecordFrame::from(&record))
+            .complete()
+            .expect("flagless counted operand group");
     assert_eq!(
         flagless
             .members()
@@ -306,7 +317,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut bombed = bytes.clone();
     bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(matches!(
-        parse_construction_operand_group(&bombed, &scope, 0, &record),
+        parse_construction_operand_group(&bombed, &scope, 0, &RecordFrame::from(&record)),
         ConstructionOperandGroupParse::NotAGroup
     ));
 
@@ -316,7 +327,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let tail_at = truncated.len() - 40;
     truncated[tail_at..].fill(0x5a);
     assert!(matches!(
-        parse_construction_operand_group(&truncated, &scope, 0, &record),
+        parse_construction_operand_group(&truncated, &scope, 0, &RecordFrame::from(&record)),
         ConstructionOperandGroupParse::Unclosed
     ));
 
@@ -353,9 +364,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         class_tag: crate::records::DesignClassTag::try_from("283".to_owned()).unwrap(),
         ..record.clone()
     };
-    let mut auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
-        .complete()
-        .expect("Extrude face group carrying both optional references");
+    let mut auxiliary = parse_construction_operand_group(
+        &auxiliary,
+        &scope,
+        0,
+        &RecordFrame::from(&auxiliary_record),
+    )
+    .complete()
+    .expect("Extrude face group carrying both optional references");
     assert_eq!(
         auxiliary
             .members()
@@ -1284,9 +1300,10 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             record_index: group_record_index,
         };
-        let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
-            .complete()
-            .expect("legacy body construction group");
+        let group =
+            parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+                .complete()
+                .expect("legacy body construction group");
 
         assert_eq!(
             group
@@ -1373,9 +1390,10 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };
-    let mut group = parse_construction_operand_group(&bytes, &scope, 0, &header)
-        .complete()
-        .expect("class-296 two-sided-to-faces construction group");
+    let mut group =
+        parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&header))
+            .complete()
+            .expect("class-296 two-sided-to-faces construction group");
     assert_eq!(group.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
@@ -1390,9 +1408,10 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
 
     let mut wrong_length = scope.clone();
     wrong_length.frame_length = 537;
-    let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &header)
-        .complete()
-        .expect("construction group with otherwise valid frame");
+    let group =
+        parse_construction_operand_group(&bytes, &wrong_length, 0, &RecordFrame::from(&header))
+            .complete()
+            .expect("construction group with otherwise valid frame");
     assert_eq!(group.extrude_role(), None);
 
     let mut wrong_extent = scope;
@@ -1402,9 +1421,10 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         panic!("synthetic class-296 two-sided-to-faces prologue");
     };
     *extent = Some(DesignExtrudeExtent::SymmetricDistance);
-    let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &header)
-        .complete()
-        .expect("construction group with otherwise valid frame");
+    let group =
+        parse_construction_operand_group(&bytes, &wrong_extent, 0, &RecordFrame::from(&header))
+            .complete()
+            .expect("construction group with otherwise valid frame");
     assert_eq!(group.extrude_role(), None);
 }
 

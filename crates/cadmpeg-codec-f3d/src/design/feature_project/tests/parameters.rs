@@ -197,7 +197,10 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     .unwrap();
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
-    let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    let mut owner = parse_parameter_owner(&parameter_owner_frame())
+        .unwrap()
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
     owner.id = "f3d:native:parameter-owner#44".into();
     let scope = DesignParameterScope {
         id: "f3d:native:parameter-scope#12".into(),
@@ -295,7 +298,10 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
     parameter.source_ordinal = 17;
-    let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    let mut owner = parse_parameter_owner(&parameter_owner_frame())
+        .unwrap()
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
     owner.id = "f3d:native:parameter-owner#44".into();
 
     let (features, parameters) =
@@ -485,7 +491,9 @@ fn parameter_expressions_project_feature_dependencies() {
     };
     let owner = |record_index, scope_record_index, parameter_record_index| {
         let mut owner = parse_parameter_owner(&parameter_owner_frame())
-            .expect("generated parameter owner is canonical");
+            .expect("generated parameter owner is canonical")
+            .into_record("Design/BulkStream.dat", 0)
+            .unwrap();
         owner.id = format!("f3d:native:owner#{record_index}");
         owner.record_index = record_index;
         owner.scope_record_index = scope_record_index;

@@ -90,7 +90,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     .expect("declared entity-handle carrier");
 
     assert_eq!(carrier.marker.id, "center");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.center(), [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
     let mut terminal_lane = lane.clone();
@@ -109,7 +109,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     )
     .expect("terminal radial address carrier");
     assert_eq!(terminal_carrier.marker.id, "center");
-    assert_eq!(terminal_carrier.center, [0.010, 0.020]);
+    assert_eq!(terminal_carrier.center(), [0.010, 0.020]);
 
     terminal_lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
     let circular_radial_markers = terminal_lane
@@ -126,7 +126,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     )
     .expect("terminal circular radial address carrier");
     assert_eq!(circular_radial_carrier.marker.id, "center");
-    assert_eq!(circular_radial_carrier.center, [0.010, 0.020]);
+    assert_eq!(circular_radial_carrier.center(), [0.010, 0.020]);
 
     let mut ambiguous_lane = lane.clone();
     ambiguous_lane.sketch_entities.extend([
@@ -243,7 +243,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     )
     .expect("indexed radial point carrier");
     assert_eq!(carrier.marker.id, "center");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.center(), [0.010, 0.020]);
     assert_eq!(carrier.construction, Some(false));
 
     let mut ambiguous_lane = lane.clone();
@@ -356,8 +356,8 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     )
     .expect("indexed circle-dimension pair");
     assert_eq!(carrier.marker.id, "center-1");
-    assert_eq!(carrier.center, [0.010, 0.010]);
-    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.center(), [0.010, 0.010]);
+    assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(false));
 
     let mut first_pair = operand;
@@ -516,8 +516,8 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         )
         .expect("explicit point center identity");
         assert_eq!(carrier.marker.id, "center");
-        assert_eq!(carrier.center, [0.010, 0.020]);
-        assert!(carrier.curve.is_none());
+        assert_eq!(carrier.center(), [0.010, 0.020]);
+        assert!(carrier.curve().is_none());
         assert_eq!(carrier.construction, Some(false));
 
         if strict_point_tag {
@@ -762,8 +762,8 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     )
     .expect("slot handle dimension carrier");
     assert_eq!(carrier.marker.id, "slot");
-    assert_eq!(carrier.center, [0.016, 0.020]);
-    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.center(), [0.016, 0.020]);
+    assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(true));
 
     let mut ambiguous_lane = lane.clone();
@@ -940,8 +940,8 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     )
     .expect("explicit short arc-handle point carrier");
     assert_eq!(carrier.marker.id, "carrier");
-    assert_eq!(carrier.center, [0.01, 0.02]);
-    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.center(), [0.01, 0.02]);
+    assert!(carrier.curve().is_none());
     assert_eq!(carrier.construction, Some(false));
 
     let mut unrelated_lane = lane.clone();
@@ -1050,9 +1050,9 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .expect("unlinked declared entity-handle carrier");
 
         assert_eq!(carrier.marker.id, "circular");
-        assert_eq!(carrier.center, [0.010, 0.020]);
+        assert_eq!(carrier.center(), [0.010, 0.020]);
         assert!(matches!(
-            carrier.curve,
+            carrier.curve(),
             Some(DimensionedCurveNative::Circle {
                 center: [0.010, 0.020]
             })
@@ -1213,9 +1213,9 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     .expect("declared curve child pair");
 
     assert_eq!(carrier.marker.id, "arc");
-    assert_eq!(carrier.center, [0.0, 0.0]);
+    assert_eq!(carrier.center(), [0.0, 0.0]);
     assert!(matches!(
-        carrier.curve,
+        carrier.curve(),
         Some(DimensionedCurveNative::Circle { center: [0.0, 0.0] })
     ));
 

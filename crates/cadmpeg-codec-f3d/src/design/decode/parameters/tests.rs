@@ -604,13 +604,13 @@ fn parameter_owner_requires_its_complete_structural_suffix() {
         parse_parameter_owner(&parameter_owner_frame())
             .expect("owner frame")
             .evaluated_value_offset,
-        40
+        super::FrameRelative(40)
     );
     assert_eq!(
         parse_parameter_owner(&compact_parameter_owner_frame())
             .expect("compact owner frame")
             .evaluated_value_offset,
-        40
+        super::FrameRelative(40)
     );
 }
 
@@ -634,7 +634,7 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
         parse_parameter_owner(&counted_parameter_owner_frame()).expect("counted parameter owner");
     assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value, 6.0);
-    assert_eq!(parsed.evaluated_value_offset, 41);
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.companion_record_index, 46);
 }
@@ -647,15 +647,21 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
         .expect("legacy counted parameter owner with zero scalar marker");
     assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value, 6.0);
-    assert_eq!(parsed.evaluated_value_offset, 41);
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.companion_record_index, 46);
 }
 
 #[test]
 fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
-    let parsed = parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("284"), 0.0)
-        .expect("legacy 68-byte parameter owner");
+    let parsed = parse_legacy_parameter_owner_68(
+        &legacy_parameter_owner_68_frame("284"),
+        crate::records::Located {
+            value: 0.0,
+            offset: 700,
+        },
+    )
+    .expect("legacy 68-byte parameter owner");
     assert_eq!(parsed.frame_length, 68);
     assert_eq!(parsed.class_tag.as_str(), "284");
     assert_eq!(parsed.record_index, 100);
@@ -667,28 +673,50 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.evaluated_value, 0.0);
 
     for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
-        assert!(
-            parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame(class_tag), 1.25)
-                .is_some()
-        );
+        assert!(parse_legacy_parameter_owner_68(
+            &legacy_parameter_owner_68_frame(class_tag),
+            crate::records::Located {
+                value: 1.25,
+                offset: 700
+            }
+        )
+        .is_some());
     }
 }
 
 #[test]
 fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
-    assert!(
-        parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("291"), 1.0).is_none()
-    );
+    assert!(parse_legacy_parameter_owner_68(
+        &legacy_parameter_owner_68_frame("291"),
+        crate::records::Located {
+            value: 1.0,
+            offset: 700
+        }
+    )
+    .is_none());
 
     let mut malformed = legacy_parameter_owner_68_frame("284");
     malformed[55] = 0;
-    assert!(parse_legacy_parameter_owner_68(&malformed, 1.0).is_none());
+    assert!(parse_legacy_parameter_owner_68(
+        &malformed,
+        crate::records::Located {
+            value: 1.0,
+            offset: 700
+        }
+    )
+    .is_none());
 }
 
 #[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
-    let parsed = parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame("284"), 2.5)
-        .expect("legacy 88-byte parameter owner");
+    let parsed = parse_legacy_parameter_owner_88(
+        &legacy_parameter_owner_88_frame("284"),
+        crate::records::Located {
+            value: 2.5,
+            offset: 700,
+        },
+    )
+    .expect("legacy 88-byte parameter owner");
     assert_eq!(parsed.frame_length, 88);
     assert_eq!(parsed.scope_record_index, 77);
     assert_eq!(parsed.local_ordinal, 0);
@@ -699,18 +727,36 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
 
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
-            parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame(class_tag), 2.5)
-                .is_some(),
+            parse_legacy_parameter_owner_88(
+                &legacy_parameter_owner_88_frame(class_tag),
+                crate::records::Located {
+                    value: 2.5,
+                    offset: 700
+                }
+            )
+            .is_some(),
             "class {class_tag} must use the admitted 88-byte owner grammar"
         );
     }
-    assert!(
-        parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame("268"), 2.5).is_none()
-    );
+    assert!(parse_legacy_parameter_owner_88(
+        &legacy_parameter_owner_88_frame("268"),
+        crate::records::Located {
+            value: 2.5,
+            offset: 700
+        }
+    )
+    .is_none());
 
     let mut mismatched = legacy_parameter_owner_88_frame("284");
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
-    assert!(parse_legacy_parameter_owner_88(&mismatched, 2.5).is_none());
+    assert!(parse_legacy_parameter_owner_88(
+        &mismatched,
+        crate::records::Located {
+            value: 2.5,
+            offset: 700
+        }
+    )
+    .is_none());
 }
 
 #[test]
@@ -722,7 +768,7 @@ fn compact_typed_counted_parameter_owner_omits_variant_slot() {
     assert_eq!(parsed.scope_record_index, 12);
     assert_eq!(parsed.local_ordinal, 0);
     assert_eq!(parsed.evaluated_value, 19.0);
-    assert_eq!(parsed.evaluated_value_offset, 41);
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
     assert_eq!(parsed.parameter_record_index, 46);
     assert_eq!(parsed.owned_ordinal, 9);
     assert_eq!(parsed.variant, None);
@@ -737,7 +783,7 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
     let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
     assert_eq!(parsed.frame_length, 99);
     assert_eq!(parsed.evaluated_value, 6.0);
-    assert_eq!(parsed.evaluated_value_offset, 40);
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     assert_eq!(parsed.parameter_record_index, 46);
     assert_eq!(parsed.variant, None);
     assert_eq!(parsed.companion_record_index, 45);
@@ -749,7 +795,7 @@ fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
         .expect("tagged scalar parameter owner");
     assert_eq!(parsed.frame_length, 107);
     assert_eq!(parsed.evaluated_value, 6.0);
-    assert_eq!(parsed.evaluated_value_offset, 44);
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(44));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.variant, None);
     assert_eq!(parsed.companion_record_index, 46);
@@ -761,7 +807,7 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
         .expect("tagged scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 108);
     assert_eq!(parsed.evaluated_value, 0.8);
-    assert_eq!(parsed.evaluated_value_offset, 44);
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(44));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.owned_ordinal, 73);
     assert_eq!(parsed.variant, Some(0));
@@ -1026,4 +1072,37 @@ fn parameter_source_rejects_missing_or_unexpected_owner() {
     assert!(parse_design_parameter(&compact_user).is_none());
     let legacy_user = class_287_parameter_record("User Parameter", "d1");
     assert!(parse_design_parameter(&legacy_user).is_none());
+}
+
+#[test]
+fn parameter_owner_value_offset_is_localized_once() {
+    let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
+    let owner = parsed.into_record("Design/BulkStream.dat", 1000).unwrap();
+    assert_eq!(owner.byte_offset, 1000);
+    assert_eq!(owner.evaluated_value_offset, 1040);
+    assert!(parse_parameter_owner(&parameter_owner_frame())
+        .unwrap()
+        .into_record("Design/BulkStream.dat", u64::MAX)
+        .is_none());
+    for owner in [
+        parse_legacy_parameter_owner_68(
+            &legacy_parameter_owner_68_frame("284"),
+            crate::records::Located {
+                value: 2.5,
+                offset: 700,
+            },
+        )
+        .unwrap(),
+        parse_legacy_parameter_owner_88(
+            &legacy_parameter_owner_88_frame("284"),
+            crate::records::Located {
+                value: 2.5,
+                offset: 700,
+            },
+        )
+        .unwrap(),
+    ] {
+        assert_eq!(owner.evaluated_value_offset, 700);
+    }
 }

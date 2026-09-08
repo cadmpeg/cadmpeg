@@ -1212,7 +1212,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         feature_id: 50,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 1,
         offset: 0,
     });
@@ -1741,7 +1741,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     };
 
     assert!(matches!(
-        revolved_section_circle(&transform, [2.0, 3.0], &axis),
+        revolved_section_circle(&transform, [2.0, 3.0], &axis).map(CurveGeometry::from),
         Some(CurveGeometry::Circle {
             center,
             axis,

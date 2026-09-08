@@ -574,8 +574,10 @@ fn validate_generated_marker_constraint(
         return Ok(());
     }
     let (entity_id, axis) = match &constraint.definition {
-        SketchConstraintDefinition::Horizontal { entity } => (entity, Some(false)),
-        SketchConstraintDefinition::Vertical { entity } => (entity, Some(true)),
+        SketchConstraintDefinition::Horizontal { entity } => {
+            (entity, Some(SketchCoordinateAxis::U))
+        }
+        SketchConstraintDefinition::Vertical { entity } => (entity, Some(SketchCoordinateAxis::V)),
         SketchConstraintDefinition::Fixed { entity } => (entity, None),
         SketchConstraintDefinition::ArcAngle { entity, angle } => {
             if arc_angle_relation_kind(angle.0).is_none() {
@@ -644,10 +646,9 @@ fn validate_generated_marker_constraint(
             constraint.id.as_str()
         )));
     };
-    let delta = if axis {
-        (end.u - start.u).abs()
-    } else {
-        (end.v - start.v).abs()
+    let delta = match axis {
+        SketchCoordinateAxis::U => (end.v - start.v).abs(),
+        SketchCoordinateAxis::V => (end.u - start.u).abs(),
     };
     if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(

@@ -12,7 +12,7 @@ use crate::design::decode::assembly::{
 };
 use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
-    parse_face_operand, ConstructionOperandGroupParse,
+    parse_face_operand, ConstructionOperandGroupParse, RecordFrame,
 };
 use crate::design::decode::sketch::{
     identity_matrix, next_indexed_record_offset, IndexedRecordOffsets,
@@ -1623,8 +1623,7 @@ fn exact_construction_operand_group(
         if after_tag != start + 7 {
             continue;
         }
-        let header = DesignRecordHeader {
-            id: String::new(),
+        let header = RecordFrame {
             record_index,
             class_tag: class_tag.clone().try_into().ok()?,
             byte_offset: u64::try_from(start).ok()?,
@@ -4608,16 +4607,16 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 *selection_record_index,
                 scope.record_index,
             ) {
-                axis_candidates.push((
-                    crate::records::feature::DesignCircularPatternAxis::Inline {
+                axis_candidates.push(CircularPatternAxisCandidate {
+                    axis: crate::records::feature::DesignCircularPatternAxis::Inline {
                         origin,
                         origin_offset: (start + 25) as u64,
                         direction,
                         direction_offset: (start + 49) as u64,
                     },
-                    *record_index,
-                    *selection_record_index,
-                ));
+                    axis_record_index: *record_index,
+                    selection_record_index: *selection_record_index,
+                });
             }
         }
     }
@@ -4631,12 +4630,19 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 *record_index,
                 scope,
             ) {
-                axis_candidates.push((axis, *record_index, selection_record_index));
+                axis_candidates.push(CircularPatternAxisCandidate {
+                    axis,
+                    axis_record_index: *record_index,
+                    selection_record_index,
+                });
             }
         }
     }
-    let (axis, record_index, selection_record_index) =
-        select_circular_pattern_axis(&axis_candidates)?;
+    let CircularPatternAxisCandidate {
+        axis,
+        axis_record_index,
+        selection_record_index,
+    } = select_circular_pattern_axis(&axis_candidates)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
         if native_stream(&owner.id) != native_stream(&scope.id)
             || owner.scope_record_index != scope.record_index
@@ -4706,13 +4712,17 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         axis: axis.clone(),
-        axis_record_index: *record_index,
+        axis_record_index: *axis_record_index,
         selection_record_index: *selection_record_index,
     })
 }
 
-pub(crate) type CircularPatternAxisCandidate =
-    (crate::records::feature::DesignCircularPatternAxis, u32, u32);
+/// Circular pattern axis with its carrier and selection record indices.
+pub(crate) struct CircularPatternAxisCandidate {
+    pub(crate) axis: crate::records::feature::DesignCircularPatternAxis,
+    pub(crate) axis_record_index: u32,
+    pub(crate) selection_record_index: u32,
+}
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
 pub(crate) fn select_circular_pattern_axis(
@@ -4720,9 +4730,9 @@ pub(crate) fn select_circular_pattern_axis(
 ) -> Option<&CircularPatternAxisCandidate> {
     let inline = candidates
         .iter()
-        .filter(|(axis, _, _)| {
+        .filter(|candidate| {
             matches!(
-                axis,
+                candidate.axis,
                 crate::records::feature::DesignCircularPatternAxis::Inline { .. }
             )
         })
@@ -4951,15 +4961,18 @@ pub(super) fn exact_legacy_mirror_scope_count(
         || owner.frame_length != u64::try_from(mirror_441_count::LEN).ok()?
         || owner.parameter_record_index != count_record_index.checked_add(2)?
         || owner.companion_record_index != count_record_index.checked_add(1)?
-        || owner.evaluated_value_offset != u64::try_from(mirror_441_count::COUNT).ok()?
+        || owner.evaluated_value_offset
+            != crate::design::decode::parameters::FrameRelative(
+                u64::try_from(mirror_441_count::COUNT).ok()?,
+            )
     {
         return None;
     }
     Some((
         count_record_index,
-        u64::try_from(*start)
-            .ok()?
-            .checked_add(owner.evaluated_value_offset)?,
+        owner
+            .evaluated_value_offset
+            .absolute(u64::try_from(*start).ok()?)?,
     ))
 }
 
@@ -8668,7 +8681,7 @@ fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
 pub(crate) fn parameter_scope_candidate_headers(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-) -> Vec<DesignRecordHeader> {
+) -> Vec<RecordFrame> {
     records
         .records()
         .flat_map(|(record_index, offsets)| {
@@ -8677,8 +8690,7 @@ pub(crate) fn parameter_scope_candidate_headers(
                 .filter_map(move |at| {
                     let (class_tag, _) =
                         lp_ascii_filtered(bytes, *at, 0..=2000, u8::is_ascii_graphic)?;
-                    Some(DesignRecordHeader {
-                        id: String::new(),
+                    Some(RecordFrame {
                         record_index,
                         class_tag: class_tag.try_into().ok()?,
                         byte_offset: *at as u64,
@@ -8707,15 +8719,25 @@ pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
 ) -> Option<usize> {
-    parameter_scope_previous_history_offset_for_form(kind.as_ref(), tail_length, false)
+    parameter_scope_previous_history_offset_for_form(
+        kind.as_ref(),
+        tail_length,
+        ScopeTailForm::Fixed,
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScopeTailForm {
+    Fixed,
+    Named,
 }
 
 fn parameter_scope_previous_history_offset_for_form(
     kind: &str,
     tail_length: usize,
-    named_tail: bool,
+    tail_form: ScopeTailForm,
 ) -> Option<usize> {
-    if named_tail {
+    if tail_form == ScopeTailForm::Named {
         return None;
     }
     match (kind, tail_length) {
@@ -8756,7 +8778,13 @@ pub(crate) fn parse_parameter_scope(
         };
         let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
         if fixed_tail && parameter_scope_tail_length_is_valid(&kind, tail_length) {
-            candidates.push((at, kind_end, tail_length, kind.clone(), false));
+            candidates.push((
+                at,
+                kind_end,
+                tail_length,
+                kind.clone(),
+                ScopeTailForm::Fixed,
+            ));
         }
         let named_tail = (78..=590).contains(&tail_length)
             && tail_length.is_multiple_of(2)
@@ -8764,13 +8792,18 @@ pub(crate) fn parse_parameter_scope(
             && named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                 .is_some_and(|valid| valid);
         if named_tail {
-            candidates.push((at, kind_end, tail_length, kind, true));
+            candidates.push((at, kind_end, tail_length, kind, ScopeTailForm::Named));
         }
     }
-    if candidates.iter().filter(|candidate| candidate.4).count() == 1 {
-        candidates.retain(|candidate| candidate.4);
+    if candidates
+        .iter()
+        .filter(|candidate| candidate.4 == ScopeTailForm::Named)
+        .count()
+        == 1
+    {
+        candidates.retain(|candidate| candidate.4 == ScopeTailForm::Named);
     }
-    let [(kind_at, kind_end, tail_length, kind, named_tail)] = candidates.as_slice() else {
+    let [(kind_at, kind_end, tail_length, kind, tail_form)] = candidates.as_slice() else {
         return None;
     };
     let kind_text = kind.clone();
@@ -8786,7 +8819,7 @@ pub(crate) fn parse_parameter_scope(
     let previous_history_state_id_offset = match parameter_scope_previous_history_offset_for_form(
         &kind_text,
         *tail_length,
-        *named_tail,
+        *tail_form,
     ) {
         Some(offset) => Some(kind_end.checked_add(offset)?),
         None => None,
