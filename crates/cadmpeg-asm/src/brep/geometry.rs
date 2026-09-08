@@ -523,10 +523,17 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
     definition: &DecodedProceduralSurfaceDefinition,
 ) -> bool {
     match definition {
-        DecodedProceduralSurfaceDefinition::Extrusion { .. }
-        | DecodedProceduralSurfaceDefinition::Helix(_)
+        DecodedProceduralSurfaceDefinition::Extrusion { revision_form, .. }
+        | DecodedProceduralSurfaceDefinition::Sum { revision_form, .. } => {
+            revision_form.as_ref().is_none_or(|form| {
+                matches!(
+                    form.cache,
+                    cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+                )
+            })
+        }
+        DecodedProceduralSurfaceDefinition::Helix(_)
         | DecodedProceduralSurfaceDefinition::Ruled { .. }
-        | DecodedProceduralSurfaceDefinition::Sum { .. }
         | DecodedProceduralSurfaceDefinition::VertexBlend(_)
         | DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
         DecodedProceduralSurfaceDefinition::Sweep(construction) => {

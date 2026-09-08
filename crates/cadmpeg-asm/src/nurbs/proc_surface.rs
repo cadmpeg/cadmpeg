@@ -575,7 +575,6 @@ fn g2_blend_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
@@ -600,7 +599,7 @@ fn g2_blend_spl_sur(
                     tail_extensions,
                 },
             )),
-            cache_fit_tolerance: fit_tolerance,
+            cache_fit_tolerance: None,
         });
     }
     let first = g2_side(&mut cur)?;
@@ -1772,7 +1771,6 @@ fn revision_loft(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let fit_tolerance = cache.fit_tolerance();
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
@@ -1793,7 +1791,7 @@ fn revision_loft(
             mode: 0,
             bridge: Vec::new(),
         }),
-        cache_fit_tolerance: fit_tolerance,
+        cache_fit_tolerance: None,
     })
 }
 
@@ -1926,7 +1924,6 @@ fn revision_compound_loft(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let fit_tolerance = cache.fit_tolerance();
     let asm_extension_present = revision_loft_carries_asm_extension(table);
     let (base_profile, base_path) = revision_cl_scale(&mut cur, table, asm_extension_present)?;
     let entry_count = usize::try_from(cur.take_long()?).ok()?;
@@ -1993,7 +1990,7 @@ fn revision_compound_loft(
                 tail,
             },
         )),
-        cache_fit_tolerance: fit_tolerance,
+        cache_fit_tolerance: None,
     })
 }
 
@@ -2987,7 +2984,7 @@ fn revision_sweep_sur(
         discontinuities,
         tail_flag: discontinuity_flag,
     } = revision_surface_tail(&mut cur)?;
-    let cache_fit_tolerance = cache.fit_tolerance();
+    let cache_fit_tolerance = None;
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
@@ -3051,7 +3048,6 @@ fn taper_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         // The single trailing logical after the shared tail is the record's own
         // orthogonal-sense field, positionally matching the text form's single
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
@@ -3076,7 +3072,7 @@ fn taper_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: fit_tolerance,
+            cache_fit_tolerance: None,
         });
     }
     let support = embedded_surface(&mut cur)?;
@@ -3183,14 +3179,6 @@ pub enum RevisionSurfaceCache {
 }
 
 impl RevisionSurfaceCache {
-    /// Fit tolerance when a solved cache is present.
-    pub(crate) fn fit_tolerance(&self) -> Option<f64> {
-        match self {
-            Self::Solved { fit_tolerance, .. } => Some(*fit_tolerance),
-            Self::Parameterized(_) => None,
-        }
-    }
-
     /// Convert cache metadata to its neutral representation.
     pub(crate) fn into_form(self) -> RevisionCacheForm {
         match self {
@@ -3299,7 +3287,6 @@ fn off_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Offset {
@@ -3321,7 +3308,7 @@ fn off_spl_sur(
                     },
                 ),
             },
-            cache_fit_tolerance: fit_tolerance,
+            cache_fit_tolerance: None,
         });
     }
     let support = embedded_surface(&mut cur)?;
@@ -3386,7 +3373,6 @@ fn rot_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         let angular_interval = match &cache {
             RevisionSurfaceCache::Solved { domains, .. } => domains[1],
@@ -3419,7 +3405,7 @@ fn rot_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: fit_tolerance,
+            cache_fit_tolerance: None,
         });
     }
     let (directrix, directrix_end) = curve_block(span, cur.pos())?;
@@ -3482,7 +3468,6 @@ fn sum_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Sum {
@@ -3505,7 +3490,7 @@ fn sum_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: fit_tolerance,
+            cache_fit_tolerance: None,
         });
     }
     let (first, first_end) = curve_block(span, cur.pos())?;
@@ -3575,7 +3560,6 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         // The two unextended parameter intervals, each an ordered [lo, hi] pair
         // of optional bounds. This subtype serializes them U-then-V; loft wrap
         // ranges sharing `RevisionRanges` serialize V-then-U. Store the
@@ -3610,7 +3594,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     },
                 },
             },
-            cache_fit_tolerance: fit_tolerance,
+            cache_fit_tolerance: None,
         });
     }
     let (_, cache_end) = surface_block(span, cur.pos())?;
@@ -3663,7 +3647,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         for bound in &mut bounds {
             *bound = cur.take_optional_range_value()?.value();
         }
-        cache_fit_tolerance = cache.fit_tolerance();
+        cache_fit_tolerance = None;
         discontinuities = tail_discontinuities.clone();
         discontinuity_flag = tail_flag;
         parameter_ranges = [
@@ -3983,7 +3967,6 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                 discontinuities,
                 tail_flag,
             } = revision_surface_tail(&mut cur)?;
-            let fit_tolerance = cache.fit_tolerance();
             (
                 Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
@@ -3996,7 +3979,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     tail_flag,
                     trailing_flags: Vec::new(),
                 }),
-                fit_tolerance,
+                None,
                 discontinuities,
                 tail_flag,
             )

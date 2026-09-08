@@ -81,14 +81,13 @@ pub(crate) fn cyl_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         (
             directrix,
             interval,
             direction,
             native_position,
-            fit_tolerance,
+            None,
             Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                 revision,
                 support_bounds: [None; 4],
@@ -1111,12 +1110,7 @@ pub(crate) fn var_blend_spl_sur(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let stored_cache_fit_tolerance = cache.fit_tolerance();
-    let cache_fit_tolerance = if shape_prefix == 0 {
-        None
-    } else {
-        stored_cache_fit_tolerance
-    };
+    let cache_fit_tolerance = None;
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let saved = cur.pos();
     let secondary_curve = if cur.take_ident() == Some("null_curve") {
@@ -1495,7 +1489,7 @@ pub(crate) fn full_rb_blend_spl_sur(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let cache_fit_tolerance = cache.fit_tolerance();
+    let cache_fit_tolerance = None;
     let third = if has_third {
         Some(Box::new(rolling_ball_third_side(&mut cur)?))
     } else {
