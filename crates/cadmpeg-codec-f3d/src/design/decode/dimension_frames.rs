@@ -197,7 +197,6 @@ fn decode_standard_recipe_references(
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::Either,
-            true,
         ) else {
             return Vec::new();
         };
@@ -234,7 +233,6 @@ fn decode_paired_recipe_references(
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::Packed,
-            false,
         ) else {
             return Vec::new();
         };
@@ -244,7 +242,6 @@ fn decode_paired_recipe_references(
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::LengthPrefixed,
-            true,
         ) else {
             return Vec::new();
         };
@@ -306,7 +303,6 @@ fn decode_grouped_recipe_references(
                 prefix_offset,
                 at,
                 RecipeReferenceTokenFrame::Packed,
-                false,
             ) else {
                 return Vec::new();
             };
@@ -343,7 +339,6 @@ fn decode_recipe_reference_operand(
     prefix_offset: u64,
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-    terminated: bool,
 ) -> Option<(Vec<crate::records::DesignRecipeReference>, usize)> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
@@ -381,13 +376,14 @@ fn decode_recipe_reference_operand(
         return None;
     }
     let references_end = references_at.checked_add(reference_bytes)?;
-    let next = if terminated {
-        if View::u32_le_at(prefix, references_end) != Some(0) {
-            return None;
+    let next = match token_frame {
+        RecipeReferenceTokenFrame::Packed => references_end,
+        RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
+            if View::u32_le_at(prefix, references_end) != Some(0) {
+                return None;
+            }
+            references_end.checked_add(4)?
         }
-        references_end.checked_add(4)?
-    } else {
-        references_end
     };
     let references = (0..reference_count)
         .map(|reference_ordinal| {
@@ -1476,18 +1472,11 @@ pub fn decode_dimension_presentation_frames(
             .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        for start in indexed_record_offsets(bytes) {
-            let Some(class_tag) = bytes
-                .get(start + 4..start + 7)
-                .and_then(|tag| std::str::from_utf8(tag).ok())
+        for header in indexed_record_offsets(bytes) {
+            let start = header.offset;
+            let Some(primary_type_guid) =
+                presentation_classes.get(&u64::from(header.class_tag.code()))
             else {
-                continue;
-            };
-            let Some(primary_type_guid) = presentation_classes.get(
-                &class_tag
-                    .parse::<u64>()
-                    .expect("indexed dimension presentation class tag is numeric"),
-            ) else {
                 continue;
             };
             let Some(mut frame) = parse_dimension_presentation_frame(
@@ -1787,9 +1776,9 @@ pub(crate) fn companion_owned_interval<'a>(
                 .into_iter()
                 .filter(|parameter| {
                     native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.byte_offset > companion.byte_offset
+                        && parameter.byte_offset() > companion.byte_offset
                 })
-                .filter_map(|parameter| usize::try_from(parameter.byte_offset).ok()),
+                .filter_map(|parameter| usize::try_from(parameter.byte_offset()).ok()),
         )
         .chain(
             scopes

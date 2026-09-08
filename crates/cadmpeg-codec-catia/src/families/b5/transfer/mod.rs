@@ -32,8 +32,8 @@ mod surfaces;
 mod vertices;
 
 use edges::{
-    b5_supports_agree, b5_supports_follow_curve, b5_supports_follow_edge, b5_vertex_point,
-    merge_curve_plan, orient_b5_supports_to_edge,
+    b5_supports_agree, b5_supports_follow_curve, b5_supports_follow_edge, merge_curve_plan,
+    orient_b5_supports_to_edge,
 };
 use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
@@ -175,8 +175,8 @@ pub(crate) fn transfer(
                         .get(&member.pcurve)
                         .is_some_and(|pcurve| pcurve.surface == loop_.surface)
                     || graph.implicit_pcurves.get(&member.pcurve) == Some(&loop_.surface))
-                    && graph.edge_vertices.contains_key(&member.edge)
-            }) && loop_chain_closes(loop_, &graph.edge_vertices)
+                    && graph.vertices.edges().contains_key(&member.edge)
+            }) && loop_chain_closes(loop_, graph.vertices.edges())
         });
         graph.faces.retain(|face| {
             graph.surfaces.contains_key(&face.surface)
@@ -323,7 +323,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         if graph.faces.get(owner)?.surface != loop_.surface {
             return None;
         }
-        if !loop_chain_closes(loop_, &graph.edge_vertices) {
+        if !loop_chain_closes(loop_, graph.vertices.edges()) {
             return None;
         }
         loop_senses.insert(loop_.object_id, loop_.edge_senses());
@@ -349,12 +349,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                             Some((pcurve_geometry, parameter_range, geometry))
                         })
                         .filter(|(_, _, geometry)| {
-                            let endpoints = graph.edge_vertices[&edge_id];
-                            let Some(points) = endpoints
-                                .map(|vertex| b5_vertex_point(graph, vertex))
-                                .into_iter()
-                                .collect::<Option<Vec<_>>>()
-                            else {
+                            let Some(points) = graph.vertices.edge_points(edge_id) else {
                                 return false;
                             };
                             circle_contains_points(geometry, &points)
@@ -399,7 +394,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                 }
                 return None;
             };
-            if pcurve.surface != loop_.surface || !graph.edge_vertices.contains_key(&edge_id) {
+            if pcurve.surface != loop_.surface || !graph.vertices.edges().contains_key(&edge_id) {
                 return None;
             }
             let knots = pcurve_nurbs_knots(pcurve)?;
@@ -442,13 +437,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                 nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
             });
             if let Some(geometry) = lifted {
-                let endpoints = graph.edge_vertices[&edge_id];
-                let (Some(edge_start), Some(edge_end)) = (
-                    b5_vertex_point(graph, endpoints[0]),
-                    b5_vertex_point(graph, endpoints[1]),
-                ) else {
-                    return None;
-                };
+                let [edge_start, edge_end] = graph.vertices.edge_points(edge_id)?;
                 let oriented_plan = if matches!(surface, B5Surface::Plane { .. }) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
                         oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
@@ -486,13 +475,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                     edge_helix_plan.remove(&edge_id);
                 }
             } else {
-                let endpoint_indices = graph.edge_vertices[&edge_id];
-                let (Some(edge_start), Some(edge_end)) = (
-                    b5_vertex_point(graph, endpoint_indices[0]),
-                    b5_vertex_point(graph, endpoint_indices[1]),
-                ) else {
-                    return None;
-                };
+                let [edge_start, edge_end] = graph.vertices.edge_points(edge_id)?;
                 let Some(endpoint_parameters) = edge_pcurve_parameters(graph, edge_id, pcurve_id)
                 else {
                     edge_ids.insert(edge_id);
@@ -534,13 +517,11 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
     let vertex_tolerances =
         transfer_vertex_tolerances(graph, &edge_support_plan, &surface_plan, &pcurve_plan);
     for (&edge, supports) in &mut edge_support_plan {
-        let vertices = graph.edge_vertices[&edge];
-        let [Some(start), Some(end)] = vertices.map(|vertex| b5_vertex_point(graph, vertex)) else {
-            continue;
-        };
+        let vertices = graph.vertices.edges()[&edge];
+        let [start, end] = graph.vertices.edge_points(edge)?;
         let tolerances = vertices.map(|vertex| {
             vertex_tolerances
-                .get(&vertex)
+                .get(&vertex.combined_index(graph.vertices.raw_points().len()))
                 .copied()
                 .unwrap_or(POINT_TOLERANCE)
                 .max(POINT_TOLERANCE)
@@ -556,14 +537,11 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
     let exact_support_edges = edge_support_plan
         .iter()
         .filter_map(|(&edge, supports)| {
-            let vertices = *graph.edge_vertices.get(&edge)?;
-            let endpoints = vertices.map(|vertex| b5_vertex_point(graph, vertex));
-            let [Some(start), Some(end)] = endpoints else {
-                return None;
-            };
+            let vertices = *graph.vertices.edges().get(&edge)?;
+            let [start, end] = graph.vertices.edge_points(edge)?;
             let tolerances = vertices.map(|vertex| {
                 vertex_tolerances
-                    .get(&vertex)
+                    .get(&vertex.combined_index(graph.vertices.raw_points().len()))
                     .copied()
                     .unwrap_or(POINT_TOLERANCE)
                     .max(POINT_TOLERANCE)
@@ -593,7 +571,10 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
 
     let used_vertices: HashSet<usize> = edge_ids
         .iter()
-        .flat_map(|edge| graph.edge_vertices[edge])
+        .flat_map(|edge| {
+            graph.vertices.edges()[edge]
+                .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()))
+        })
         .collect();
 
     Some(TransferPlan {
@@ -623,11 +604,9 @@ pub(crate) fn resolved_surface_geometry(
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
 
-/// Exact neutral geometry and construction of a surface-of-revolution carrier.
+/// Exact construction of a surface-of-revolution carrier.
 #[derive(Clone, PartialEq)]
 pub(crate) struct ResolvedRevolutionSurface {
-    /// Exact NURBS cache of the revolution result.
-    pub(crate) geometry: SurfaceGeometry,
     /// Exact profile curve used as the revolution directrix.
     pub(crate) directrix: NurbsCurve,
     /// Point on the revolution axis.
@@ -642,8 +621,7 @@ pub(crate) struct ResolvedRevolutionSurface {
     pub(crate) parameter_interval: [f64; 2],
 }
 
-/// Resolve a surface-of-revolution carrier while retaining its exact
-/// procedural construction alongside the cache geometry.
+/// Resolve a surface-of-revolution construction with an exact NURBS result.
 pub(crate) fn resolved_revolution_surface(
     graph: &B5Graph,
     surface_id: u32,
@@ -658,11 +636,8 @@ pub(crate) fn resolved_revolution_surface(
     let SurfaceProcedure::Revolution(plan) = procedure? else {
         return None;
     };
-    if !matches!(&geometry, SurfaceGeometry::Nurbs(_)) {
-        return None;
-    }
+    matches!(geometry, SurfaceGeometry::Nurbs(_)).then_some(())?;
     Some(ResolvedRevolutionSurface {
-        geometry,
         directrix: plan.directrix,
         axis_origin: plan.axis_origin,
         axis_direction: plan.axis_direction,
@@ -701,18 +676,22 @@ pub(crate) enum ResolvedPcurveSurface {
 
 /// Lower one resolved object-stream surface to an exact neutral carrier.
 pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPcurveSurface> {
-    surfaces::neutral_analytic_surface(surface)
-        .map(ResolvedPcurveSurface::Geometry)
-        .or_else(|| match surface {
-            B5Surface::RollingBall {
-                carrier_object_id,
-                definition,
-            } => Some(ResolvedPcurveSurface::RollingBall {
-                carrier_object_id: *carrier_object_id,
-                definition: Box::new(definition.clone()),
-            }),
-            _ => None,
-        })
+    match surfaces::surface_carrier(surface) {
+        surfaces::B5SurfaceCarrier::Analytic(geometry) => {
+            Some(ResolvedPcurveSurface::Geometry(geometry))
+        }
+        surfaces::B5SurfaceCarrier::Procedural(surfaces::B5ProceduralSurface::RollingBall {
+            carrier_object_id,
+            definition,
+        }) => Some(ResolvedPcurveSurface::RollingBall {
+            carrier_object_id,
+            definition: Box::new(definition.clone()),
+        }),
+        surfaces::B5SurfaceCarrier::Procedural(
+            surfaces::B5ProceduralSurface::Unresolved
+            | surfaces::B5ProceduralSurface::Revolution { .. },
+        ) => None,
+    }
 }
 
 /// Resolve a pcurve support carrier with the graph context required by exact
@@ -1064,7 +1043,7 @@ fn annotate(
 ) {
     let id = id.to_string();
     let stream = annotations.stream(format!("catia:{stream}"));
-    annotations.note(&id, stream, 0).tag(tag);
+    annotations.note(&id, &stream, 0).tag(tag);
     annotations.exactness(id, exactness);
 }
 

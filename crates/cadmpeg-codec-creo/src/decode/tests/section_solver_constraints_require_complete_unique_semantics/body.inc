@@ -5272,8 +5272,9 @@ offset: 30,
         .into_iter()
         .find(|point| point.point_id == 2)
         .expect("conflicting point record");
-    assert_eq!(conflicting_record.state, "conflicting");
-    assert_eq!([conflicting_record.u, conflicting_record.v], [None; 2]);
+    let conflicting_record = serde_json::to_value(conflicting_record).expect("point record");
+    assert_eq!(conflicting_record["state"], "conflicting");
+    assert_eq!([&conflicting_record["u"], &conflicting_record["v"]], [&serde_json::Value::Null; 2]);
     let mut point_row_type_nine = definition.clone();
     point_row_type_nine
         .segments

@@ -95,10 +95,10 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
     assert_eq!(operation.cell_table_record_index, 817);
     assert_eq!(operation.cell_table_class_tag.as_str(), "325");
     assert_eq!(operation.cell_table_paired_class_tag.as_str(), "257");
-    assert_eq!(operation.cell_count, 2);
+    assert_eq!(operation.cell_count(), 2);
     assert_eq!(
         operation
-            .cell_entries
+            .cell_entries()
             .iter()
             .map(|entry| (entry.record_index, entry.ordinal))
             .collect::<Vec<_>>(),

@@ -355,39 +355,49 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     });
     let mut lane = feature_input_lane("lane", Some("0"));
     lane.sketch_entities = vec![
-        crate::records::SketchInputEntity {
-            id: "line-marker".into(),
-            parent: lane.id.clone(),
-            feature_ref: Some("sketch-native".into()),
-            ordinal: 0,
-            offset: 10,
-            object_index: Some(1),
-            local_id: Some(1),
-            kind: crate::records::SketchInputKind::LineOrCircle,
-            state_value: None,
-            coordinates_m: None,
-            links: None,
+        {
+            let marker_id: String = "line-marker".into();
+            let marker_parent: String = lane.id.clone();
+            let mut constructed_marker = crate::records::SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                0,
+                10,
+                crate::records::SketchInputKind::LineOrCircle,
+            );
+            constructed_marker.feature_ref = Some("sketch-native".into());
+            constructed_marker.object_index = Some(1);
+            constructed_marker.local_id = Some(1);
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = None;
+            constructed_marker.links = None;
+            constructed_marker
         },
-        crate::records::SketchInputEntity {
-            id: "relation-marker".into(),
-            parent: lane.id.clone(),
-            feature_ref: Some("sketch-native".into()),
-            ordinal: 1,
-            offset: 20,
-            object_index: Some(2),
-            local_id: Some(2),
-            kind: crate::records::SketchInputKind::Relation(
-                crate::records::SketchRelationKind::Horizontal,
-            ),
-            state_value: None,
-            coordinates_m: None,
-            links: crate::records::SketchInputLinks::new(
+        {
+            let marker_id: String = "relation-marker".into();
+            let marker_parent: String = lane.id.clone();
+            let mut constructed_marker = crate::records::SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                1,
+                20,
+                crate::records::SketchInputKind::Relation(
+                    crate::records::SketchRelationKind::Horizontal,
+                ),
+            );
+            constructed_marker.feature_ref = Some("sketch-native".into());
+            constructed_marker.object_index = Some(2);
+            constructed_marker.local_id = Some(2);
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = None;
+            constructed_marker.links = crate::records::SketchInputLinks::new(
                 0,
                 vec![crate::records::SketchInputLink {
                     local_id: 1,
                     entity_ref: "line-marker".into(),
                 }],
-            ),
+            );
+            constructed_marker
         },
     ];
 
@@ -1507,7 +1517,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 11,
                 trailing_fields: Vec::new(),
             },

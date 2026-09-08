@@ -29,7 +29,6 @@ pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNo
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`RhinoLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RhinoLossCode {
     /// Container or table scan surfaced a structural diagnostic.
@@ -303,8 +302,18 @@ impl RhinoLossCode {
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
     pub fn kind(self) -> LossKind {
-        LossKind::namespaced("rhino", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
+        cadmpeg_ir::report::NamespacedLossKind::new(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("rhino") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

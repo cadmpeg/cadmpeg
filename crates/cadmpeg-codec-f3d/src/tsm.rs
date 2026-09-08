@@ -394,19 +394,17 @@ fn symmetry_plane(name: &str, values: [f64; 12]) -> Result<SubdPlaneFrame, Codec
     if (values[3] - 1.0).abs() > SYMMETRY_FRAME_EPS
         || values[7].abs() > SYMMETRY_FRAME_EPS
         || values[11].abs() > SYMMETRY_FRAME_EPS
-        || (first_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
-        || (second_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
-        || first_axis.dot(second_axis).abs() > SYMMETRY_FRAME_EPS
     {
         return Err(malformed(
             name,
             "symmetry plane is not a homogeneous orthonormal frame",
         ));
     }
-    Ok(SubdPlaneFrame {
-        origin,
-        first_axis,
-        second_axis,
+    SubdPlaneFrame::new(origin, first_axis, second_axis).map_err(|error| {
+        malformed(
+            name,
+            format!("symmetry plane is not a homogeneous orthonormal frame: {error}"),
+        )
     })
 }
 
@@ -552,12 +550,13 @@ fn grip_block(
                     let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
                         malformed(name, "derived-grip entry names a deleted grip")
                     })?;
-                    Ok(SubdSecondaryGrip {
-                        source_index: u32::try_from(index)
+                    SubdSecondaryGrip::new(
+                        u32::try_from(index)
                             .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
-                        point: point.point,
-                        weight: point.weight,
-                    })
+                        point.point,
+                        point.weight,
+                    )
+                    .map_err(|error| malformed(name, error))
                 })
                 .transpose()
         })
@@ -1304,7 +1303,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     maps,
                 } => (
                     SubdSymmetryKind::Radial {
-                        segments: segments.get(),
+                        segments: *segments,
                         sweep: *sweep,
                         radial_maps: maps.clone(),
                     },
@@ -1313,13 +1312,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     Vec::new(),
                 ),
             };
-            Ok(SubdSymmetry {
-                kind,
-                plane,
-                face_pairs,
-                edge_pairs,
-                vertex_pairs,
-            })
+            SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
+                .map_err(|error| malformed(name, error))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     let edge_knot_intervals_ir = edge_knot_intervals
@@ -1423,7 +1417,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 return Err(malformed(name, "face ring does not close"));
             }
         }
-        faces.push(SubdFace { edges: ring });
+        faces.push(SubdFace::new(ring).map_err(|error| malformed(name, error))?);
     }
 
     let mut crease_incidence =
@@ -1439,17 +1433,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         crease_incidence[vertices[1] as usize] += 1;
     }
     let vertices = (0..live_vertices)
-        .map(|index| SubdVertex {
-            point: vertex_points[&(index as u32)],
-            tag: match crease_incidence[index] {
-                0 => SubdVertexTag::Smooth,
-                1 => SubdVertexTag::Dart,
-                2 => SubdVertexTag::Crease,
-                _ => SubdVertexTag::Corner,
-            },
-            secondary_grips: secondary_layouts[index].clone(),
+        .map(|index| {
+            SubdVertex::new(
+                vertex_points[&(index as u32)],
+                match crease_incidence[index] {
+                    0 => SubdVertexTag::Smooth,
+                    1 => SubdVertexTag::Dart,
+                    2 => SubdVertexTag::Crease,
+                    _ => SubdVertexTag::Corner,
+                },
+                secondary_layouts[index].clone(),
+            )
+            .map_err(|error| malformed(name, error))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let creased_edges = crease_edges
         .iter()
         .filter_map(|slot| edge_ir.get(*slot).copied().flatten())
@@ -1460,19 +1457,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .map(|(index, vertices)| {
             let crease = creased_edges.contains(&(index as u32));
             let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
-            SubdEdge {
+            SubdEdge::new(
                 vertices,
-                sharpness: [sharpness; 2],
-                tag: if crease {
+                [sharpness; 2],
+                if crease {
                     SubdEdgeTag::Crease
                 } else {
                     SubdEdgeTag::Smooth
                 },
-                knot_interval: Some(edge_knot_intervals_ir[index]),
-                sector_coefficients: [0.0, 0.0],
-            }
+                Some(edge_knot_intervals_ir[index]),
+                [0.0, 0.0],
+            )
+            .map_err(|error| malformed(name, error))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let source_key = name
         .rsplit_once('/')
         .map_or(name, |(_, base)| base)
@@ -1482,10 +1480,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         surface: SubdSurface {
             id: SubdId::mint(format!("f3d:tspline:subd#{source_key}")).expect("identity grammar"),
             scheme: SubdScheme::CatmullClark,
-            vertices,
-            edges,
-            faces,
-            symmetries,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
                 object_id: name.into(),
@@ -1495,6 +1489,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 layer: None,
                 instance_path: Vec::new(),
             }),
+            cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
+                .map_err(|error| malformed(name, error))?,
         },
         unknown_record_kinds,
     })
@@ -1581,7 +1577,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let cage = parse_cage(source.as_bytes()).expect("typed metadata");
         assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
-        let layout = cage.surface.vertices[0]
+        let layout = cage.surface.cage.vertices()[0]
             .secondary_grips
             .as_ref()
             .expect("secondary grip layout");
@@ -1602,24 +1598,27 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             }
         ));
 
-        assert_eq!(cage.surface.symmetries.len(), 1);
-        let symmetry = &cage.surface.symmetries[0];
-        assert_eq!(symmetry.kind, cadmpeg_ir::SubdSymmetryKind::Correspondence);
+        assert_eq!(cage.surface.cage.symmetries().len(), 1);
+        let symmetry = &cage.surface.cage.symmetries()[0];
         assert_eq!(
-            symmetry.plane.origin,
+            symmetry.kind(),
+            &cadmpeg_ir::SubdSymmetryKind::Correspondence
+        );
+        assert_eq!(
+            symmetry.plane.origin(),
             cadmpeg_ir::math::Point3::new(0.0, 20.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.first_axis,
+            symmetry.plane.first_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.second_axis,
+            symmetry.plane.second_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert_eq!(symmetry.face_pairs, vec![[0, 0]]);
-        assert_eq!(symmetry.edge_pairs, vec![[0, 0], [1, 2]]);
-        assert_eq!(symmetry.vertex_pairs, vec![[0, 1]]);
+        assert_eq!(symmetry.face_pairs(), vec![[0, 0]]);
+        assert_eq!(symmetry.edge_pairs(), vec![[0, 0], [1, 2]]);
+        assert_eq!(symmetry.vertex_pairs(), vec![[0, 1]]);
     }
 
     #[test]
@@ -1652,7 +1651,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0.1 0 0 1\n0g 0.2 0 0 1\n0g 0.3 0 0 1\n0g 0.4 0 0 1\n0g 0.5 0 0 1\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("rectangular sector grid");
-        let layout = cage.surface.vertices[0]
+        let layout = cage.surface.cage.vertices()[0]
             .secondary_grips
             .as_ref()
             .expect("secondary grip layout");
@@ -1723,11 +1722,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         )
         .expect("knot intervals");
         let expected = [0.5, 0.25, 0.125, 0.0625];
-        for (edge, expected) in cage.surface.edges.iter().zip(expected) {
-            let actual = edge.knot_interval.expect("knot interval");
+        for (edge, expected) in cage.surface.cage.edges().iter().zip(expected) {
+            let actual = edge.knot_interval().expect("knot interval");
             assert!((actual - expected).abs() < EPS_KNOT_INTERVAL);
             assert!(edge
-                .sharpness
+                .sharpness()
                 .iter()
                 .all(|sharpness| (*sharpness - 1.0).abs() < EPS_KNOT_INTERVAL));
         }
@@ -1741,7 +1740,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         let cage = parse_cage(source.as_bytes()).expect("edge-knot mirror");
         assert!(cage.unknown_record_kinds.is_empty());
-        assert_eq!(cage.surface.edges.len(), 4);
+        assert_eq!(cage.surface.cage.edges().len(), 4);
     }
 
     #[test]
@@ -1752,7 +1751,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         let cage = parse_cage(source.as_bytes()).expect("deleted edge-knot slot");
         assert!(cage.unknown_record_kinds.is_empty());
-        assert_eq!(cage.surface.edges.len(), 4);
+        assert_eq!(cage.surface.cage.edges().len(), 4);
     }
 
     #[test]
@@ -1786,32 +1785,32 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
         assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
-        assert_eq!(cage.surface.symmetries.len(), 1);
-        let symmetry = &cage.surface.symmetries[0];
+        assert_eq!(cage.surface.cage.symmetries().len(), 1);
+        let symmetry = &cage.surface.cage.symmetries()[0];
         let cadmpeg_ir::SubdSymmetryKind::Radial {
             segments,
             sweep,
             radial_maps,
-        } = &symmetry.kind
+        } = symmetry.kind()
         else {
             panic!("radial symmetry kind");
         };
-        assert_eq!((*segments, *sweep), (4, 1.0));
+        assert_eq!((segments.get(), *sweep), (4, 1.0));
         assert_eq!(
-            symmetry.plane.origin,
+            symmetry.plane.origin(),
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.first_axis,
+            symmetry.plane.first_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.second_axis,
+            symmetry.plane.second_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert!(symmetry.face_pairs.is_empty());
-        assert!(symmetry.edge_pairs.is_empty());
-        assert!(symmetry.vertex_pairs.is_empty());
+        assert!(symmetry.face_pairs().is_empty());
+        assert!(symmetry.edge_pairs().is_empty());
+        assert!(symmetry.vertex_pairs().is_empty());
         assert_eq!(
             *radial_maps,
             vec![
@@ -1858,7 +1857,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let native = source.replace("105r ef 0 1\n", &replacement);
         let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
         let cadmpeg_ir::SubdSymmetryKind::Radial { radial_maps, .. } =
-            &cage.surface.symmetries[0].kind
+            cage.surface.cage.symmetries()[0].kind()
         else {
             panic!("radial symmetry kind");
         };
@@ -1943,10 +1942,13 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     fn assert_quad(cage: &cadmpeg_ir::subd::SubdSurface) {
-        assert_eq!(cage.vertices.len(), 4);
-        assert_eq!(cage.edges.len(), 4);
-        assert_eq!(cage.faces.len(), 1);
-        assert_eq!(cage.vertices[1].point.x, 10.0);
-        assert!(cage.faces[0].edges.iter().all(|use_| !use_.reversed));
+        assert_eq!(cage.cage.vertices().len(), 4);
+        assert_eq!(cage.cage.edges().len(), 4);
+        assert_eq!(cage.cage.faces().len(), 1);
+        assert_eq!(cage.cage.vertices()[1].point().x, 10.0);
+        assert!(cage.cage.faces()[0]
+            .edges()
+            .iter()
+            .all(|use_| !use_.reversed));
     }
 }

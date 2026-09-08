@@ -88,9 +88,7 @@ pub(in super::super) fn generated_surface_id_for_feature(
             table
                 .entries
                 .iter()
-                .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
-                })
+                .filter(|entry| entry.source_entity_id() == Some(source_entity_id))
                 .filter(|entry| table.surface_ids().contains(&entry.entity_id))
                 .map(|entry| entry.entity_id)
         });
@@ -105,7 +103,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
-    if entry.class_id != 200 || entry.source_entity_id().is_none() {
+    if entry.source_entity_id().is_none() {
         return false;
     }
     if table.surface_ids().contains(&entry.entity_id) {
@@ -117,8 +115,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     table.non_surface_entity_ids().contains(&entry.entity_id)
         && generated_profile_table_shape(table)
         && table.entries.iter().skip(2).any(|candidate| {
-            candidate.class_id == 200
-                && table.surface_ids().contains(&candidate.entity_id)
+            table.surface_ids().contains(&candidate.entity_id)
                 && crate::surface::unique_surface_row(rows, candidate.entity_id).is_some_and(
                     |row| {
                         row.feature_id == feature_id
@@ -159,9 +156,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
             let matching = table
                 .entries
                 .iter()
-                .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
-                })
+                .filter(|entry| entry.source_entity_id() == Some(source_entity_id))
                 .collect::<Vec<_>>();
             let [entry] = matching.as_slice() else {
                 return None;
@@ -223,9 +218,7 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
         || first.class_id != 204
         || second.class_id != 203
         || rest.is_empty()
-        || !rest
-            .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
+        || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
         return false;
     }

@@ -545,11 +545,17 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second_locus = SketchLocus::Entity(second.id().clone());
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_axis_distance_locus(&sketch, &first_locus, &parameter, &entities, true,),
+        unique_profile_axis_distance_locus(
+            &sketch,
+            &first_locus,
+            &parameter,
+            &entities,
+            ProfileAxis::U,
+        ),
         Some(second_locus.clone())
     );
     assert_eq!(
-        unique_profile_axis_distance_pair(&sketch, &parameter, &entities, true),
+        unique_profile_axis_distance_pair(&sketch, &parameter, &entities, ProfileAxis::U),
         Some((first_locus, second_locus))
     );
 
@@ -559,7 +565,7 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
-            true,
+            ProfileAxis::U,
         ),
         None
     );
@@ -1019,7 +1025,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             ],
             &markers,
             &loci,
-            true,
+            ProfileAxis::U,
         ),
         Some(vec![
             SketchLocus::Entity(first_entity.id().clone()),
@@ -1035,7 +1041,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             &[first_entity, second_entity, unrelated, ambiguous],
             &markers,
             &loci,
-            true,
+            ProfileAxis::U,
         ),
         None
     );

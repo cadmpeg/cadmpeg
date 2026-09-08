@@ -1,5 +1,6 @@
 use super::super::*;
 use super::*;
+use crate::records::operand_tag::NativeOperandTag;
 
 #[test]
 fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
@@ -37,7 +38,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(33065),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8129),
             entity_index: 1,
             entity_ref: None,
         }],
@@ -110,7 +111,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(0x8207),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8207),
             entity_index: 0,
             entity_ref: None,
         }],

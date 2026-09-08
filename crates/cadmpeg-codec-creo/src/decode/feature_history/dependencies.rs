@@ -89,7 +89,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 67)
         .flat_map(|table| &table.entries)
-        .filter(|entry| entry.class_id == 200 && entry.source_entity_id() == Some(feature_id))
+        .filter(|entry| entry.source_entity_id() == Some(feature_id))
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     tables
@@ -336,6 +336,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
 ) -> BTreeMap<u32, Vec<u32>> {
     let mut dependencies = BTreeMap::new();
     for (prototype, row, _) in unique_surface_prototype_associations(scan) {
+        let prototype = prototype.record();
         let mut fields = prototype
             .parameters
             .iter()

@@ -266,20 +266,20 @@ fn direct_stream_headers(payload: &[u8]) -> Vec<(usize, StreamHeader)> {
 
 /// Parsed framing fields for one Parasolid stream.
 #[derive(Debug, Clone)]
-pub struct StreamHeader {
+pub(crate) struct StreamHeader {
     /// Human-readable stream description.
-    pub description: String,
+    pub(crate) description: String,
     /// `SCH_<modeller>_<schema>_<format>` schema token.
-    pub schema: String,
+    pub(crate) schema: String,
     /// Byte offset where the class-definition record body begins.
-    pub body_offset: usize,
+    pub(crate) body_offset: usize,
 }
 
 /// Parse a Parasolid header from a buffer containing a leading-window signature.
 ///
 /// Returns `None` when the signature, description, or schema token is missing or
 /// truncated.
-pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
+pub(crate) fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
     let mut view = View::over_retained(payload);
@@ -313,7 +313,7 @@ fn parasolid_offset(payload: &[u8]) -> Option<usize> {
 }
 
 /// Test whether the description identifies a partition or deltas body stream.
-pub fn is_body_stream(header: &StreamHeader) -> bool {
+pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
     let d = header.description.to_ascii_lowercase();
     d.contains("partition") || d.contains("deltas")
 }

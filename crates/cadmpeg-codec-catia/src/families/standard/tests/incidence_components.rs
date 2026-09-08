@@ -203,9 +203,8 @@ fn incidence_components_include_overlapping_quotient_domains() {
         vec![[6, 7], [6, 8]],
     ];
     let edge_faces = [[0, 0], [1, 1], [2, 2]];
-    let quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: [
+    let quotient = MeshQuotient::new(
+        [
             HashSet::from([0, 1]),
             HashSet::from([0, 2]),
             HashSet::from([1, 3]),
@@ -215,8 +214,7 @@ fn incidence_components_include_overlapping_quotient_domains() {
         ]
         .map(Arc::new)
         .to_vec(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    );
 
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
@@ -461,8 +459,8 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     )
     .expect("forced deferred quotient");
 
-    assert_eq!(quotient.union.find(0), quotient.union.find(3));
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    assert_eq!(quotient.find(0), quotient.find(3));
+    assert_eq!(quotient.find(1), quotient.find(2));
 }
 
 #[test]
@@ -496,7 +494,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     )
     .expect("unknown exact direction is deferred");
 
-    assert_ne!(quotient.union.find(0), quotient.union.find(3));
+    assert_ne!(quotient.find(0), quotient.find(3));
 }
 
 #[test]
@@ -517,13 +515,11 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
         },
     )];
     let candidates = vec![vec![[0, 1]], vec![[2, 3]], vec![[1, 2]], vec![[0, 3]]];
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(8),
-        domains: (0..8)
+    let mut quotient = MeshQuotient::new(
+        (0..8)
             .map(|node| Arc::new(HashSet::from([[0, 1, 2, 3, 1, 2, 3, 0][node]])))
             .collect(),
-        members: (0..8).map(|node| vec![node]).collect(),
-    };
+    );
     let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
@@ -534,10 +530,10 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     )
     .expect("deferred gap quotient");
 
-    assert_eq!(quotient.union.find(1), quotient.union.find(4));
-    assert_eq!(quotient.union.find(5), quotient.union.find(2));
-    assert_eq!(quotient.union.find(3), quotient.union.find(6));
-    assert_eq!(quotient.union.find(7), quotient.union.find(0));
+    assert_eq!(quotient.find(1), quotient.find(4));
+    assert_eq!(quotient.find(5), quotient.find(2));
+    assert_eq!(quotient.find(3), quotient.find(6));
+    assert_eq!(quotient.find(7), quotient.find(0));
 }
 
 #[test]
@@ -561,11 +557,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
         },
     ])];
     let candidates = vec![vec![[0, 0]], vec![[0, 0]]];
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
     quotient.merge(0, 1).expect("first closed edge");
     quotient.merge(2, 3).expect("second closed edge");
     let budget = WorkBudget::new(100);
@@ -578,7 +570,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     )
     .expect("structural quotient");
 
-    assert_eq!(quotient.union.find(0), quotient.union.find(2));
+    assert_eq!(quotient.find(0), quotient.find(2));
 }
 
 #[test]
@@ -599,11 +591,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
     ])];
     let candidates = vec![Vec::new(), Vec::new()];
     let broad = Arc::new((0..100).collect::<HashSet<_>>());
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![broad; 4],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![broad; 4]);
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
@@ -639,16 +627,12 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
         },
     ])];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([1])),
-            Arc::new(HashSet::from([1])),
-            Arc::new(HashSet::from([0])),
-        ],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([1])),
+        Arc::new(HashSet::from([1])),
+        Arc::new(HashSet::from([0])),
+    ]);
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
@@ -659,8 +643,8 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
     )
     .expect("supported cycle quotient");
 
-    assert_eq!(quotient.union.find(0), quotient.union.find(3));
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    assert_eq!(quotient.find(0), quotient.find(3));
+    assert_eq!(quotient.find(1), quotient.find(2));
 }
 
 #[test]
@@ -684,11 +668,7 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
         },
     ])];
     let candidates = vec![Vec::new(), Vec::new()];
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0, 1]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
         &domains,
@@ -697,22 +677,20 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     )
     .expect("ordered component quotient");
 
-    assert_eq!(quotient.union.find(0), quotient.union.find(3));
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    assert_eq!(quotient.find(0), quotient.find(3));
+    assert_eq!(quotient.find(1), quotient.find(2));
 }
 
 #[test]
 fn unordered_components_close_cycles_in_the_abstract_quotient() {
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![2, 0, 1])];
     let candidates = vec![Vec::new(); 3];
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: [0, 1, 1, 2, 2, 0]
+    let mut quotient = MeshQuotient::new(
+        [0, 1, 1, 2, 2, 0]
             .into_iter()
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    );
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
         &domains,
@@ -721,9 +699,9 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     )
     .expect("unordered component quotient");
 
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
-    assert_eq!(quotient.union.find(3), quotient.union.find(4));
-    assert_eq!(quotient.union.find(5), quotient.union.find(0));
+    assert_eq!(quotient.find(1), quotient.find(2));
+    assert_eq!(quotient.find(3), quotient.find(4));
+    assert_eq!(quotient.find(5), quotient.find(0));
 }
 
 #[test]
@@ -755,11 +733,7 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
 
 #[test]
 fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
-    let quotient = MeshQuotient {
-        union: UnionFind::new(16),
-        domains: repeated_domain(HashSet::from([0]), 16),
-        members: (0..16).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 16));
     let budget = WorkBudget::new(10_000);
 
     assert!(
@@ -791,13 +765,11 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
         },
     )];
     let candidates = vec![Vec::new(); 4];
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(8),
-        domains: (0..8)
+    let mut quotient = MeshQuotient::new(
+        (0..8)
             .map(|node| Arc::new(HashSet::from([[0, 1, 2, 3, 1, 2, 3, 0][node]])))
             .collect(),
-        members: (0..8).map(|node| vec![node]).collect(),
-    };
+    );
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
         &domains,
@@ -806,10 +778,10 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     )
     .expect("deferred component quotient");
 
-    assert_eq!(quotient.union.find(1), quotient.union.find(4));
-    assert_eq!(quotient.union.find(5), quotient.union.find(2));
-    assert_eq!(quotient.union.find(3), quotient.union.find(6));
-    assert_eq!(quotient.union.find(7), quotient.union.find(0));
+    assert_eq!(quotient.find(1), quotient.find(4));
+    assert_eq!(quotient.find(5), quotient.find(2));
+    assert_eq!(quotient.find(3), quotient.find(6));
+    assert_eq!(quotient.find(7), quotient.find(0));
 }
 
 #[test]
@@ -965,9 +937,8 @@ fn compact_face_quotient_states_accumulate_across_calls() {
 fn compact_face_quotient_state_cap_is_exhausted() {
     const EDGE_COUNT: usize = 14;
     let choices = vec![Vec::new(); EDGE_COUNT];
-    let quotient = MeshQuotient {
-        union: UnionFind::new(EDGE_COUNT * 2),
-        domains: (0..EDGE_COUNT * 2)
+    let quotient = MeshQuotient::new(
+        (0..EDGE_COUNT * 2)
             .map(|node| {
                 Arc::new(if node % 2 == 0 {
                     HashSet::from([0, 1])
@@ -976,8 +947,7 @@ fn compact_face_quotient_state_cap_is_exhausted() {
                 })
             })
             .collect(),
-        members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
-    };
+    );
     let boundary = (0..EDGE_COUNT)
         .map(|edge| MeshBoundaryEdgeCandidate {
             edge,
@@ -1166,14 +1136,9 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
 fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
     let edge_faces = [[0, 0], [1, 1]];
-    let mut union = UnionFind::new(4);
-    union.union(0, 1);
-    union.union(2, 3);
-    let quotient = MeshQuotient {
-        union,
-        domains: (0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect(),
-        members: vec![vec![0, 1], Vec::new(), vec![2, 3], Vec::new()],
-    };
+    let mut quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
+    quotient.merge(0, 1).expect("first closed edge");
+    quotient.merge(2, 3).expect("second closed edge");
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
         &choices,
@@ -1205,15 +1170,8 @@ fn incidence_components_preflight_quotient_impossible_domains() {
     let edge_faces = (0..choices.len())
         .map(|face| [face, face])
         .collect::<Vec<_>>();
-    let mut union = UnionFind::new(choices.len() * 2);
     let mut domains = Vec::with_capacity(choices.len() * 2);
-    let mut members = (0..choices.len() * 2)
-        .map(|node| vec![node])
-        .collect::<Vec<_>>();
     for edge in 0..choices.len() {
-        union.union(edge * 2, edge * 2 + 1);
-        members[edge * 2].push(edge * 2 + 1);
-        members[edge * 2 + 1].clear();
         let points = if edge < BROAD_COMPONENT_COUNT {
             HashSet::from([edge * 2, edge * 2 + 1])
         } else {
@@ -1222,11 +1180,10 @@ fn incidence_components_preflight_quotient_impossible_domains() {
         let points = Arc::new(points);
         domains.extend([points.clone(), points]);
     }
-    let quotient = MeshQuotient {
-        union,
-        domains,
-        members,
-    };
+    let mut quotient = MeshQuotient::new(domains);
+    for edge in 0..choices.len() {
+        quotient.merge(edge * 2, edge * 2 + 1).expect("closed edge");
+    }
     let mut visited = false;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
@@ -1257,11 +1214,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
 fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
     let choices = vec![vec![[0, 0]], vec![[0, 0]]];
     let edge_faces = [[0, 0], [1, 1]];
-    let quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: (0..4).map(|_| Arc::new(HashSet::from([0]))).collect(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0]))).collect());
 
     assert_eq!(
         crate::solve::incidence::component_incidence_pair_solution_outcome(

@@ -53,7 +53,7 @@ pub(super) fn emit_topology(
     pcurves: &BTreeMap<u32, PcurveId>,
     pcurve_supports: &BTreeMap<u32, SurfaceId>,
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     intersection_starts: IntersectionEntityStarts,
@@ -821,7 +821,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
     surfaces: &mut BTreeMap<u32, SurfaceId>,
     curves: &mut BTreeMap<u32, CurveId>,
     pcurves: &BTreeMap<u32, PcurveId>,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
     let unknown = UnknownId::mint(format!("nx:container:parasolid#{stream_index}"))
@@ -876,7 +876,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
 pub(crate) fn annotate_node(
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
     node: &Node,
     tag: &str,
 ) {
@@ -934,7 +934,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     curve: &CurveId,
     curve_index: usize,
     range: Option<[f64; 2]>,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     tolerance: Option<f64>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -1166,7 +1166,7 @@ pub(crate) fn unknown_stream(
     si: usize,
     stream: &Stream,
 ) -> Result<UnknownRecord, CodecError> {
-    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?;
+    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?;
     Ok(unknown_stream_record(si, stream, Some(data)))
 }
 
@@ -1180,11 +1180,7 @@ pub(crate) fn retain_unknown_stream_data(
     unknown: &mut UnknownRecord,
 ) -> Result<(), CodecError> {
     if unknown.data().is_none() {
-        unknown.retain_data(ctx.copy_retained(
-            &stream.inflated,
-            "retain NX unknown stream",
-            None,
-        )?);
+        unknown.retain_data(ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?);
     }
     Ok(())
 }

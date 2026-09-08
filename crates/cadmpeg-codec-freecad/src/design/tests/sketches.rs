@@ -962,3 +962,53 @@ fn neutralizes_line_midpoint_coincidence() {
     ));
     assert_valid_document(result.ir());
 }
+
+#[test]
+fn native_constraint_negative_operands_resolve_to_distinct_builtin_axes() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Type="99" First="-1" FirstPos="0" Second="-2" SecondPos="0"/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("native relation with builtin axes");
+    let constraints = &result.ir().model.sketch_constraints;
+    assert_eq!(constraints.len(), 1);
+    let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { entities, .. } =
+        constraints[0].definition.kind()
+    else {
+        panic!("unknown relation remains native");
+    };
+    assert_eq!(entities.len(), 2);
+    for (entity, suffix, direction) in [
+        (
+            &entities[0],
+            ":reference-horizontal-axis",
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        ),
+        (
+            &entities[1],
+            ":reference-vertical-axis",
+            cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        ),
+    ] {
+        assert!(entity.as_str().ends_with(suffix));
+        let resolved = result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|candidate| candidate.id() == entity)
+            .expect("resolved builtin axis");
+        assert!(matches!(resolved.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::ReferenceLine { origin, direction: actual }
+            if *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0) && *actual == direction));
+    }
+}

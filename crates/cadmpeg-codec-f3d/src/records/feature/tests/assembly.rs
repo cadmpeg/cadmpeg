@@ -165,7 +165,9 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
+        ]
+        .try_into()
+        .unwrap(),
         transform_offset: 22,
     };
     let path = crate::records::feature::DesignAssemblyOperandPath {
@@ -236,7 +238,7 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
                     reference_offset: 33,
                     record_byte_offset: 300,
                     class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-                    transform: frame.transform,
+                    transform: frame.transform.rows(),
                     transform_offset: 325,
                 },
                 limits: Some(limits.clone()),
@@ -403,7 +405,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         assert_eq!(frames[1].reference_record_index, 20);
         assert_eq!(frames[0].transform_offset, 325);
         assert_eq!(
-            frames[0].transform,
+            frames[0].transform.rows(),
             [
                 [1.0, 0.0, 0.0, 1.0],
                 [0.0, 1.0, 0.0, 2.0],

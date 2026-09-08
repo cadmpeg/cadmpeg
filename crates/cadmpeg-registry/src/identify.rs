@@ -20,67 +20,29 @@ use crate::{
 /// then picks.
 pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 
-/// Result of opening an identification candidate at inspection depth.
+/// Identification of one file before semantic decode.
 #[derive(Debug)]
-// The public result exposes a successful summary directly; boxing only to keep
-// enum stack size below a lint threshold would break that API without reducing
-// the summary data an identification owns.
-#[allow(clippy::large_enum_variant)]
-pub enum Inspection {
-    /// The codec classified the container and returned its complete summary.
-    Classified(ContainerSummary),
-    /// The codec recognized the prefix but inspection failed.
-    Failed(CodecError),
-    /// Multiple native codecs tied, so no single codec could inspect.
-    Ambiguous,
-}
-
-/// What cadmpeg makes of one file, before any semantic decode.
-///
-#[derive(Debug)]
-// One identification result retains its inspection inline without a second allocation.
-#[allow(clippy::large_enum_variant)]
 pub enum Identification {
-    /// Neutral CADIR has high-confidence identity and no native container.
+    /// No codec recognized the input.
+    None,
+    /// Neutral CADIR JSON without a native container.
     Cadir,
-    /// Native prefix evidence and its container inspection outcome.
+    /// One native codec and its inspection result.
     Native {
-        /// Stable format id of the candidate codec.
+        /// Stable format id of the selected codec.
         format: FormatId,
         /// Confidence of prefix detection.
         confidence: Confidence,
-        /// The inspection outcome.
-        inspection: Inspection,
+        /// Container summary or typed inspection failure.
+        inspection: Result<Box<ContainerSummary>, CodecError>,
     },
-}
-
-impl Identification {
-    /// Returns the candidate format id.
-    #[must_use]
-    pub const fn format(&self) -> FormatId {
-        match self {
-            Self::Cadir => FormatId::new("cadir"),
-            Self::Native { format, .. } => *format,
-        }
-    }
-
-    /// Returns prefix detection confidence.
-    #[must_use]
-    pub const fn confidence(&self) -> Confidence {
-        match self {
-            Self::Cadir => Confidence::High,
-            Self::Native { confidence, .. } => *confidence,
-        }
-    }
-
-    /// Returns the native container inspection, when applicable.
-    #[must_use]
-    pub const fn inspection(&self) -> Option<&Inspection> {
-        match self {
-            Self::Cadir => None,
-            Self::Native { inspection, .. } => Some(inspection),
-        }
-    }
+    /// Native codecs tied at the strongest confidence.
+    Ambiguous {
+        /// Shared strongest confidence.
+        confidence: Confidence,
+        /// Candidate format ids in detection order.
+        candidates: Vec<FormatId>,
+    },
 }
 
 /// A successfully inspected source: the selected codec's format, how it was
@@ -122,31 +84,11 @@ pub enum InspectError {
     },
 }
 
-/// Detects `source`, retains equal-confidence candidates, and inspects a sole
-/// winner.
-///
-/// Inspection depth, not prefix depth. Dialect classification for the
-/// container formats needs the container back: F3D walks and inflates ZIP
-/// entries, `FreeCAD` parses the decompressed `Document.xml`, CATIA needs the
-/// rebuilt compound container plus a record census. So the sole strongest
-/// candidate is run through `Codec::inspect`, under the
-/// same resource limits an inspection gets and with no *semantic* decode: no
-/// geometry is read and no [`cadmpeg_ir::CadIr`] is built.
-///
-/// CADIR JSON is one skipped-inspection candidate. Empty when no codec
-/// recognized the prefix and it does not begin as CADIR; more than one entry
-/// when detection reports an equal-confidence ambiguity. An entry whose
-/// inspection ran out of budget or failed keeps its format, confidence, and
-/// typed failure: the prefix
-/// evidence and the cause both survive a failed reconstruction.
-///
-/// The `Err` is I/O on `source` itself — reading the prefix, or seeking back
-/// to the start before inspection. A codec's own failure is not an error here;
-/// it is recorded in [`Inspection::Failed`] without erasing its variant.
+/// Identifies a source and inspects a sole native winner under the supplied limits.
 pub fn identify(
     source: &mut dyn ReadSeek,
     options: &InspectOptions,
-) -> std::io::Result<Vec<Identification>> {
+) -> std::io::Result<Identification> {
     let catalog = InputCatalog::with_builtins();
     identify_with(&catalog, source, options)
 }
@@ -159,35 +101,28 @@ pub fn identify_with(
     catalog: &InputCatalog,
     source: &mut dyn ReadSeek,
     options: &InspectOptions,
-) -> std::io::Result<Vec<Identification>> {
+) -> std::io::Result<Identification> {
     let prefix = read_prefix(source, options)?;
     match catalog.detect(&prefix) {
         DetectionOutcome::None if crate::catalog::is_cadir_prefix(&prefix) => {
-            Ok(vec![Identification::Cadir])
+            Ok(Identification::Cadir)
         }
-        DetectionOutcome::None => Ok(Vec::new()),
+        DetectionOutcome::None => Ok(Identification::None),
         DetectionOutcome::Detected { codec, confidence } => {
-            let inspection = match inspect_codec(codec, source, options)? {
-                Ok(summary) => Inspection::Classified(summary),
-                Err(error) => Inspection::Failed(error),
-            };
-            Ok(vec![Identification::Native {
+            let inspection = inspect_codec(codec, source, options)?.map(Box::new);
+            Ok(Identification::Native {
                 format: codec.id(),
                 confidence,
                 inspection,
-            }])
+            })
         }
         DetectionOutcome::Ambiguous {
             confidence,
             candidates,
-        } => Ok(candidates
-            .into_iter()
-            .map(|format| Identification::Native {
-                format,
-                confidence,
-                inspection: Inspection::Ambiguous,
-            })
-            .collect()),
+        } => Ok(Identification::Ambiguous {
+            confidence,
+            candidates,
+        }),
     }
 }
 
@@ -258,7 +193,7 @@ mod tests {
         }
     }
 
-    fn run(bytes: &[u8], options: &InspectOptions) -> Vec<Identification> {
+    fn run(bytes: &[u8], options: &InspectOptions) -> Identification {
         let mut reader = Cursor::new(bytes.to_vec());
         identify(&mut reader, options).expect("a Cursor neither fails to read nor to seek")
     }
@@ -279,9 +214,12 @@ mod tests {
 
         let found = identify(&mut reader, &options).expect("the cap bounds CFB detection");
 
-        assert!(found
-            .iter()
-            .any(|candidate| candidate.format() == FormatId::new("nx")));
+        assert!(match found {
+            Identification::Native { format, .. } => format == FormatId::new("nx"),
+            Identification::Ambiguous { candidates, .. } =>
+                candidates.contains(&FormatId::new("nx")),
+            Identification::None | Identification::Cadir => false,
+        });
     }
 
     #[cfg(feature = "nx")]
@@ -370,13 +308,6 @@ mod tests {
 
         use super::*;
 
-        fn summary(identification: &Identification) -> Option<&ContainerSummary> {
-            match identification.inspection() {
-                Some(Inspection::Classified(summary)) => Some(summary),
-                Some(Inspection::Failed(_) | Inspection::Ambiguous) | None => None,
-            }
-        }
-
         /// One fixture and the dialect its codec classifies.
         struct Case {
             bytes: &'static [u8],
@@ -464,10 +395,15 @@ mod tests {
             );
             for case in cases {
                 let found = run(case.bytes, &inspection());
-                let winner = found
-                    .first()
-                    .unwrap_or_else(|| panic!("{}: no candidate at all", case.format));
-                assert_eq!(winner.format().as_str(), case.format, "{found:?}");
+                let Identification::Native {
+                    format,
+                    confidence,
+                    inspection,
+                } = &found
+                else {
+                    panic!("{}: no native candidate: {found:?}", case.format);
+                };
+                assert_eq!(format.as_str(), case.format, "{found:?}");
                 let catalog = InputCatalog::with_builtins();
                 let resolved = catalog
                     .resolve_source(case.bytes, None)
@@ -475,20 +411,16 @@ mod tests {
                 let crate::ResolvedSource::Native { codec, selection } = resolved else {
                     panic!("{}: resolver did not select a native codec", case.format);
                 };
+                assert_eq!(*format, codec.id(), "{}: resolver winner", case.format);
                 assert_eq!(
-                    winner.format(),
-                    codec.id(),
-                    "{}: resolver winner",
-                    case.format
-                );
-                assert_eq!(
-                    Some(winner.confidence()),
+                    Some(*confidence),
                     selection.confidence(),
                     "{}: resolver confidence",
                     case.format
                 );
-                let summary = summary(winner)
-                    .unwrap_or_else(|| panic!("{}: inspection did not classify", case.format));
+                let summary = inspection
+                    .as_ref()
+                    .unwrap_or_else(|_| panic!("{}: inspection did not classify", case.format));
                 assert_eq!(
                     summary
                         .dialects()
@@ -513,17 +445,18 @@ mod tests {
     #[test]
     fn a_markerless_zip_identifies_as_several_formats_with_no_dialect() {
         let found = run(b"PK\x03\x04 markerless", &inspection());
-        assert!(found.len() > 1, "{found:?}");
-        for identification in &found {
-            assert_eq!(identification.confidence(), Confidence::Low);
-            assert!(matches!(
-                identification.inspection(),
-                Some(Inspection::Ambiguous)
-            ));
-        }
-        let formats = found
+        let Identification::Ambiguous {
+            confidence,
+            candidates,
+        } = &found
+        else {
+            panic!("expected ambiguity: {found:?}");
+        };
+        assert!(candidates.len() > 1, "{found:?}");
+        assert_eq!(*confidence, Confidence::Low);
+        let formats = candidates
             .iter()
-            .map(|identification| identification.format().as_str())
+            .map(|format| format.as_str())
             .collect::<Vec<_>>();
         assert!(
             formats.contains(&"fcstd") && formats.contains(&"f3d"),
@@ -552,12 +485,16 @@ mod tests {
         assert!(bytes.len() > 64);
 
         let found = run(bytes, &starved);
-        let winner = found.first().expect("the prefix still names rhino");
-        assert_eq!(winner.format(), FormatId::new("rhino"));
-        assert_eq!(winner.confidence(), Confidence::High);
-        let Some(Inspection::Failed(error)) = winner.inspection() else {
-            panic!("expected a typed inspection failure: {winner:?}");
+        let Identification::Native {
+            format,
+            confidence,
+            inspection: Err(error),
+        } = &found
+        else {
+            panic!("expected a typed inspection failure: {found:?}");
         };
+        assert_eq!(*format, FormatId::new("rhino"));
+        assert_eq!(*confidence, Confidence::High);
         assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
 
         let catalog = InputCatalog::with_builtins();
@@ -582,8 +519,11 @@ mod tests {
         // The same bytes under the default budget do settle the dialect, so
         // the difference above is the budget and not the fixture.
         assert!(matches!(
-            run(bytes, &inspection())[0].inspection(),
-            Some(Inspection::Classified(_))
+            run(bytes, &inspection()),
+            Identification::Native {
+                inspection: Ok(_),
+                ..
+            }
         ));
     }
 
@@ -594,16 +534,16 @@ mod tests {
             b"\xef\xbb\xbf\t{\"ir_version\": 1}".as_slice(),
         ] {
             let found = run(bytes, &inspection());
-            assert_eq!(found.len(), 1);
-            assert_eq!(found[0].format(), FormatId::new("cadir"));
-            assert_eq!(found[0].confidence(), Confidence::High);
-            assert!(matches!(found[0], Identification::Cadir));
+            assert!(matches!(found, Identification::Cadir));
         }
     }
 
     /// Bytes no codec recognizes produce no candidates at all.
     #[test]
     fn an_unrecognized_prefix_names_nothing() {
-        assert!(run(b"not a CAD file at all\n", &inspection()).is_empty());
+        assert!(matches!(
+            run(b"not a CAD file at all\n", &inspection()),
+            Identification::None
+        ));
     }
 }

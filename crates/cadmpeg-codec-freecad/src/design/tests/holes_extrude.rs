@@ -287,7 +287,7 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
             })
             .is_some_and(|properties| {
                 properties.iter().any(|property| {
-                    property.name == "ThreadSize" && property.raw_xml.contains(raw_value)
+                    property.name == "ThreadSize" && property.xml.text().contains(raw_value)
                 })
             })
     }

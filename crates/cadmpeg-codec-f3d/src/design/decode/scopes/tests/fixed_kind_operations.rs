@@ -673,10 +673,12 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
-    indexed_axis.members = vec![crate::records::Located {
-        value: 900,
-        offset: indexed_axis.members[0].offset,
-    }];
+    indexed_axis
+        .try_set_members(vec![crate::records::Located {
+            value: 900,
+            offset: indexed_axis.members()[0].offset,
+        }])
+        .unwrap();
     indexed_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
         DesignOperandRole::ROLE_0X21,
     );
@@ -747,7 +749,7 @@ pub(super) fn continue_fixed_kind_operations(
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 104,
+        primary_id: std::num::NonZeroU64::new(104).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(1.0, 2.0, 3.0),
@@ -1099,7 +1101,7 @@ pub(super) fn continue_fixed_kind_operations(
     let role_shape = |groups: &[DesignConstructionOperandGroup]| {
         groups
             .iter()
-            .map(|group| (group.role(), group.members.len()))
+            .map(|group| (group.role(), group.members().len()))
             .collect::<Vec<_>>()
     };
     assert!(crate::validate::loft_operand_roles_are_valid(
@@ -1260,16 +1262,32 @@ pub(super) fn continue_fixed_kind_operations(
         &role_shape(&mixed),
     ));
     let mut point = loft_group(0, DesignOperandRole::ROLE_0X5);
-    point.members = vec![10]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    point
+        .try_set_members(
+            vec![10]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     let profile = loft_group(1, DesignOperandRole::ROLE_0X43);
     let mut boundary = loft_group(2, DesignOperandRole::ROLE_0X5);
-    boundary.members = vec![20, 21, 22]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    boundary
+        .try_set_members(
+            vec![20, 21, 22]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
@@ -1486,17 +1504,21 @@ pub(super) fn continue_fixed_kind_operations(
         }
     }
     let mut selected_profile = profile.clone();
-    selected_profile.members = vec![crate::records::Located {
-        value: 2788,
-        offset: selected_profile.members[0].offset,
-    }];
+    selected_profile
+        .try_set_members(vec![crate::records::Located {
+            value: 2788,
+            offset: selected_profile.members()[0].offset,
+        }])
+        .unwrap();
     let mut profile_carrier = profile.clone();
     profile_carrier.id = "stream:sweep-profile-carrier".into();
     profile_carrier.scope_reference_ordinal = 3;
-    profile_carrier.members = vec![crate::records::Located {
-        value: 2795,
-        offset: profile_carrier.members[0].offset,
-    }];
+    profile_carrier
+        .try_set_members(vec![crate::records::Located {
+            value: 2795,
+            offset: profile_carrier.members()[0].offset,
+        }])
+        .unwrap();
     let mut guide_surface = sweep_group(4, DesignOperandRole::FACES);
     guide_surface.id = "stream:sweep-guide-surface".into();
     let entity_selection = crate::records::topology::DesignEntitySelectionOperand {
@@ -1859,7 +1881,7 @@ pub(super) fn continue_fixed_kind_operations(
     ))
     .expect("generated parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
-    parameter.byte_offset = 65;
+    parameter.try_translate_offsets(65).unwrap();
     assert_eq!(
         companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100,),
         Some((58, 65))

@@ -38,12 +38,35 @@ const V5_TEXT_EXTRA: Uuid = Uuid::from_canonical([
     0xd9, 0x04, 0x90, 0xa5, 0xdb, 0x86, 0x49, 0xf8, 0xbd, 0xa1, 0x90, 0x80, 0xb1, 0xf4, 0xe9, 0x76,
 ]);
 
+#[derive(Debug, Clone, Copy)]
+enum AnnotationKind {
+    Leader,
+    Text,
+    Annotation,
+}
+
+impl AnnotationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Leader => "leader",
+            Self::Text => "text",
+            Self::Annotation => "annotation",
+        }
+    }
+}
+
+impl Serialize for AnnotationKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct AnnotationRecord {
     id: String,
     source_offset: u64,
     source_uuid: String,
-    kind: &'static str,
+    kind: AnnotationKind,
     rich_text: String,
     plane_origin: [f64; 3],
     plane_x_axis: [f64; 3],
@@ -502,7 +525,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 id: format!("rhino:document:annotation#{key}"),
                 source_offset: object.range.start as u64,
                 source_uuid: source_uuid.clone(),
-                kind: if leader { "leader" } else { "text" },
+                kind: if leader {
+                    AnnotationKind::Leader
+                } else {
+                    AnnotationKind::Text
+                },
                 rich_text: value.rich_text,
                 plane_origin: value.plane.origin.0,
                 plane_x_axis: value.plane.xaxis.0,
@@ -546,7 +573,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
                 id: format!("rhino:document:annotation#{key}"),
                 source_offset: object.range.start as u64,
                 source_uuid: source_uuid.clone(),
-                kind: if leader { "leader" } else { "text" },
+                kind: if leader {
+                    AnnotationKind::Leader
+                } else {
+                    AnnotationKind::Text
+                },
                 rich_text: value.rich_text,
                 plane_origin: value.plane.origin.0,
                 plane_x_axis: value.plane.xaxis.0,
@@ -595,11 +626,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
             let is_text = object.class_uuid == crate::dimensions::V2_TEXT_OBJECT
                 || (object.class_uuid == crate::dimensions::V2_ANNOTATION && value.base.kind == 7);
             let kind = if is_leader {
-                "leader"
+                AnnotationKind::Leader
             } else if is_text {
-                "text"
+                AnnotationKind::Text
             } else {
-                "annotation"
+                AnnotationKind::Annotation
             };
             let rich_text = crate::dimensions::v2_effective_text(&value.base);
             let leader_points = if is_leader {

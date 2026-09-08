@@ -329,16 +329,22 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 )));
             }
         }
-        LinearUncertainty::Ambiguous { values, unresolved } => {
+        LinearUncertainty::Ambiguous {
+            first,
+            second,
+            rest,
+            unresolved,
+        } => {
             let default_linear = ir.tolerances.linear;
-            let listed = values
+            let listed = [first, second]
                 .iter()
+                .chain(&rest)
                 .map(|value| format!("{value:?}"))
                 .collect::<Vec<_>>()
                 .join(", ");
             losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
-                values.len()
+                2 + rest.len()
             )));
         }
     }
@@ -3453,7 +3459,12 @@ enum LinearUncertainty {
     Empty { unresolved: usize },
     /// Several distinct candidates in millimetres, sorted and without
     /// duplicates, with the number of measures that did not resolve.
-    Ambiguous { values: Vec<f64>, unresolved: usize },
+    Ambiguous {
+        first: f64,
+        second: f64,
+        rest: Vec<f64>,
+        unresolved: usize,
+    },
 }
 
 fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
@@ -3473,15 +3484,16 @@ fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
     }
     candidates.sort_by(f64::total_cmp);
 
-    if candidates.len() > 1 {
-        return LinearUncertainty::Ambiguous {
-            values: candidates,
+    let mut candidates = candidates.into_iter();
+    match (candidates.next(), candidates.next()) {
+        (Some(first), Some(second)) => LinearUncertainty::Ambiguous {
+            first,
+            second,
+            rest: candidates.collect(),
             unresolved,
-        };
-    }
-    match candidates.first() {
-        Some(value) => LinearUncertainty::Value(*value),
-        None => LinearUncertainty::Empty { unresolved },
+        },
+        (Some(value), None) => LinearUncertainty::Value(value),
+        (None, _) => LinearUncertainty::Empty { unresolved },
     }
 }
 
@@ -3780,7 +3792,7 @@ fn curve_parameter_at_point(
         }
         CurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
             basis,
-            transform.try_inverse_affine()?.apply_point(point),
+            transform.try_inverse_affine().ok()?.apply_point(point),
             tolerance,
         ),
         _ => None,

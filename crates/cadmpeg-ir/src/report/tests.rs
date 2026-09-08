@@ -172,12 +172,13 @@ fn integrity_failure_is_a_strict_rejectable_error() {
 
 #[test]
 fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
-    let kind = LossKind::namespaced(
-        "sldprt",
+    let kind: LossKind = NamespacedLossKind::new(
+        LossNamespace::new("sldprt").unwrap(),
         "geometry.pcurve-ambiguous",
         LossTaxonomy::PcurveOmitted,
     )
-    .with_strict_floor(None);
+    .with_strict_floor(None)
+    .into();
     let roundtrip: LossKind = serde_json::from_value(serde_json::to_value(&kind).unwrap()).unwrap();
     assert_eq!(roundtrip.namespace(), "sldprt");
     assert_eq!(roundtrip.local_code(), "geometry.pcurve-ambiguous");
@@ -419,4 +420,15 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
         report
     );
+}
+
+#[test]
+fn namespaced_loss_rejects_reserved_namespace() {
+    assert_eq!(LossNamespace::new("shared"), Err(LossNamespaceError));
+    let namespace = String::from("shared");
+    assert_eq!(LossNamespace::new(&namespace), Err(LossNamespaceError));
+    assert!(serde_json::from_value::<LossKind>(serde_json::json!({
+        "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
+    }))
+    .is_err());
 }

@@ -21,6 +21,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::{self, Container, EntryContent};
 use crate::loss::NxLossCode;
+use crate::native::TypedNative;
 use crate::parasolid::{self, Stream, StreamKind};
 
 mod blend;
@@ -91,7 +92,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
-        report_untransferred_streams(&scan, &mut body, false);
+        report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
@@ -109,7 +110,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
     let mut body = build_container_body(&scan, dialect_losses, notes);
-    report_untransferred_streams(&scan, &mut body, true);
+    report_untransferred_streams(&scan, &mut body, TypedNative::Available);
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
 
@@ -135,7 +136,7 @@ fn decoded(
     })
 }
 
-fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native_available: bool) {
+fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
         body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
@@ -146,7 +147,7 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
     for entry in &scan.container.entries {
         let content = entry.content();
         if content.retains_opaque_payload()
-            && !(typed_native_available
+            && !(typed_native == TypedNative::Available
                 && content == EntryContent::SaveToggleInfo
                 && crate::native::has_complete_saved_toggle_stream(&scan.container))
         {
@@ -238,7 +239,7 @@ fn build_metadata_ir(
             let unknown = unknown_stream(ctx, si, stream)?;
             let source_stream = annotations.stream("nx:container");
             annotations
-                .note(unknown.id(), source_stream, stream.file_offset as u64)
+                .note(unknown.id(), &source_stream, stream.file_offset as u64)
                 .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
@@ -251,7 +252,7 @@ fn build_metadata_ir(
             scan,
             &mut annotations,
             &mut unknowns,
-            false,
+            TypedNative::ContainerOnly,
         )?;
     } else {
         let mut parsed = crate::native::ParsedStreams::parse(scan);
@@ -307,7 +308,7 @@ fn build_container_body(
 
     losses.extend(dialect_losses);
     DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes,

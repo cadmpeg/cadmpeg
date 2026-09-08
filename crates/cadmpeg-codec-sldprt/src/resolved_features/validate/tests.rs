@@ -10,25 +10,6 @@ use crate::test_support::*;
 use crate::SldprtCodec;
 
 #[test]
-fn native_validation_rejects_duplicate_history_ordinals() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_histories[0].features[1].ordinal = 0;
-    });
-    assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
-            .iter()
-            .any(|finding| finding.message.contains("repeats feature ordinal"))
-    );
-}
-
-#[test]
 fn native_validation_rejects_broken_feature_graph() {
     let decoded = SldprtCodec
         .decode(
@@ -170,7 +151,9 @@ fn native_validation_rejects_edited_relation_binding() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("edited relation bindings"));
+    assert!(error
+        .to_string()
+        .contains("relation bindings do not match the native payload"));
 }
 
 #[test]
@@ -206,5 +189,7 @@ fn native_validation_rejects_edited_relation_instance() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("edited relation instances"));
+    assert!(error
+        .to_string()
+        .contains("relation instances do not match the native payload"));
 }

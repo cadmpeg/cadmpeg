@@ -1751,15 +1751,15 @@ fn saved_arc_joins_through_order_table() {
 
 #[test]
 fn placed_extrusion_line_defines_plane() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 5,
-        feature_id: Some(5),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [0.0, 1.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [1.0, 0.0, 0.0],
-        offset: 7,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5,
+        Some(5),
+        [10.0, 20.0, 30.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        7,
+    )
+    .expect("valid section frame");
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],

@@ -156,9 +156,7 @@ pub(crate) fn bind_history_classes(
         let mut declared = lane
             .classes
             .iter()
-            .filter(|class| {
-                native_object_class(&class.name).kind == NativeClassKind::CosmeticThread
-            })
+            .filter(|class| native_object_class(&class.name) == NativeClassKind::CosmeticThread)
             .map(|class| class.name.clone())
             .collect::<Vec<_>>();
         declared.sort();
@@ -228,7 +226,7 @@ pub(crate) fn bind_history_classes(
             .iter()
             .filter_map(|class| {
                 matches!(
-                    native_object_class(&class.name).kind,
+                    native_object_class(&class.name),
                     NativeClassKind::ReferencePlane
                         | NativeClassKind::OriginProfileFeature
                         | NativeClassKind::ProfileFeature
@@ -241,10 +239,10 @@ pub(crate) fn bind_history_classes(
             let [plane, origin, sketch, extrusion] = classes else {
                 continue;
             };
-            if native_object_class(plane).kind == NativeClassKind::ReferencePlane
-                && native_object_class(origin).kind == NativeClassKind::OriginProfileFeature
-                && native_object_class(sketch).kind == NativeClassKind::ProfileFeature
-                && native_object_class(extrusion).kind == NativeClassKind::Extrusion
+            if native_object_class(plane) == NativeClassKind::ReferencePlane
+                && native_object_class(origin) == NativeClassKind::OriginProfileFeature
+                && native_object_class(sketch) == NativeClassKind::ProfileFeature
+                && native_object_class(extrusion) == NativeClassKind::Extrusion
             {
                 native_startups.push([plane, plane, plane, origin, sketch, extrusion]);
             }
@@ -439,7 +437,7 @@ fn legacy_repeated_hole_wizard_classes(
                 && second_sketch.ordinal == operation.ordinal + 2
                 && [first_sketch, second_sketch].into_iter().all(|sketch| {
                     sketch.input_class.as_deref().is_some_and(|class| {
-                        native_object_class(class).kind == NativeClassKind::ProfileFeature
+                        native_object_class(class) == NativeClassKind::ProfileFeature
                     })
                 })
             {
@@ -453,7 +451,7 @@ fn legacy_repeated_hole_wizard_classes(
         let mut declared = lane
             .classes
             .iter()
-            .filter(|class| native_object_class(&class.name).kind == NativeClassKind::HoleWizard)
+            .filter(|class| native_object_class(&class.name) == NativeClassKind::HoleWizard)
             .map(|class| class.name.as_str())
             .collect::<Vec<_>>();
         declared.sort_unstable();

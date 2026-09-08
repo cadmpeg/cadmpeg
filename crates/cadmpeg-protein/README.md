@@ -47,9 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-[`decode`][decode] is the compact form. It returns the valid records and
-returns a `CodecError` for invalid package or page framing, but it does not
-return the record-level rejection list. Both functions preserve serialized
+`decode_detailed` preserves serialized
 record order. `DecodedRecord::ordinal` remains the zero-based position from
 the paged stream, including rejected records.
 
@@ -163,7 +161,6 @@ this crate supports and is not affiliated with, endorsed by, or sponsored by
 any CAD vendor. See the [clean-room and legal policy][legal].
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
-[decode]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/fn.decode.html
 [decode-detailed]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/fn.decode_detailed.html
 [decoded-record]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/struct.DecodedRecord.html
 [docs]: https://docs.rs/cadmpeg-protein

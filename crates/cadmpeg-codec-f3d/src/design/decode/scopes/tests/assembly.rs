@@ -1857,13 +1857,13 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                     DesignAssemblyOperandFrame {
                         reference_record_index: 70,
                         reference_offset: 1,
-                        transform: transforms[0],
+                        transform: transforms[0].try_into().unwrap(),
                         transform_offset: 2,
                     },
                     DesignAssemblyOperandFrame {
                         reference_record_index: 80,
                         reference_offset: 3,
-                        transform: transforms[1],
+                        transform: transforms[1].try_into().unwrap(),
                         transform_offset: 4,
                     },
                 ],
@@ -1887,7 +1887,7 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             neutron_role_offset: 0,
             placement: Some(crate::records::feature::DesignComponentInsertMatrix {
                 scope: crate::records::Located {
-                    value: identity_matrix(),
+                    value: identity_matrix().try_into().unwrap(),
                     offset: 0,
                 },
                 carrier_offset: Some(0),

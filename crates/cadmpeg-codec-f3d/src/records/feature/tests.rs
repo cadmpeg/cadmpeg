@@ -1657,3 +1657,73 @@ fn bend_radius_requires_a_positive_finite_value() {
         }
     }
 }
+
+#[test]
+fn rectangular_pattern_sidecar_rejects_invalid_axis_counts() {
+    for (u_count, v_count, u_extent, v_extent) in [
+        (0, 2, 0.0, 1.0),
+        (2, 0, 1.0, 0.0),
+        (1, 1, 0.0, 0.0),
+        (1, 2, 1.0, 1.0),
+        (2, 1, 0.0, 0.0),
+        (2, 1, 1.0, 1.0),
+        (1, 2, 0.0, 0.0),
+    ] {
+        let wire = serde_json::json!({
+            "u_count": u_count, "v_count": v_count,
+            "u_extent": u_extent, "v_extent": v_extent,
+            "owner_record_indices": [1, 2, 3, 4],
+            "value_offsets": [10, 20, 30, 40]
+        });
+        assert!(
+            serde_json::from_value::<super::DesignRectangularPatternConstruction>(wire).is_err()
+        );
+    }
+}
+
+#[test]
+fn rectangular_pattern_sidecar_preserves_signed_spans() {
+    for (u_count, v_count, u_extent, v_extent) in [(3, 1, -10.0, 0.0), (2, 2, 1.0, -1.0)] {
+        let wire = serde_json::json!({
+            "u_count": u_count, "v_count": v_count,
+            "u_extent": u_extent, "v_extent": v_extent,
+            "owner_record_indices": [1, 2, 3, 4],
+            "value_offsets": [10, 20, 30, 40]
+        });
+        let record: super::DesignRectangularPatternConstruction =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+}
+
+#[test]
+fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
+    let entry = serde_json::json!({"record_index": 4, "record_reference_offset": 0,
+        "ordinal": 1, "ordinal_offset": 0});
+    let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
+        "selection_record_index": 2, "selection_byte_offset": 0,
+        "selection_next_record_index": 3, "selection_next_byte_offset": 0,
+        "chain_records": [
+            {"record_index": 3, "byte_offset": 0, "class_tag": "288", "frame_length": 11},
+            {"record_index": 6, "byte_offset": 11, "class_tag": "271", "frame_length": 11}
+        ], "cell_table_record_index": 4, "cell_table_byte_offset": 0,
+        "cell_table_class_tag": "325", "cell_table_frame_length": 0,
+        "cell_table_paired_class_tag": "257", "cell_table_paired_byte_offset": 0,
+        "cell_count": 1, "cell_count_offset": 0, "cell_entries": [entry],
+        "trailing_value": 1, "trailing_value_offset": 0, "trailing_zero_offset": 0});
+    let record: super::DesignSurfaceTrimOperation = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    for count in [0, 1, 3] {
+        let mut invalid_chain = wire.clone();
+        invalid_chain["chain_records"] =
+            serde_json::Value::Array(vec![wire["chain_records"][0].clone(); count]);
+        assert!(
+            serde_json::from_value::<super::DesignSurfaceTrimOperation>(invalid_chain).is_err()
+        );
+    }
+    wire["cell_count"] = 2.into();
+    assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire.clone()).is_err());
+    wire["cell_count"] = 0.into();
+    wire["cell_entries"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire).is_err());
+}

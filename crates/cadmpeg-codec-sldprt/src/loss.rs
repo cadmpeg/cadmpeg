@@ -20,7 +20,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// string form (via [`SldprtLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SldprtLossCode {
+pub(crate) enum SldprtLossCode {
     /// Active configuration identity does not resolve to exactly one record.
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
@@ -124,7 +124,7 @@ pub enum SldprtLossCode {
 
 impl SldprtLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [SldprtLossCode] = &[
+    pub(crate) const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -174,7 +174,7 @@ impl SldprtLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
@@ -226,13 +226,53 @@ impl SldprtLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream => Severity::Error,
-            _ => Severity::Warning,
+            Self::ConfigActiveIdentityUnresolved
+            | Self::ConfigActivePartitionMismatch
+            | Self::ConfigInferredWithoutNative
+            | Self::ConfigLaneIdentityUnresolved
+            | Self::ConfigAmbiguousPartition
+            | Self::ConfigAmbiguousNaming
+            | Self::ConfigIncoherentBodyRefs
+            | Self::ConfigIncompleteSnapshot
+            | Self::ParameterUnevaluated
+            | Self::ParameterAmbiguousIdentity
+            | Self::PmiDimensionUnbound
+            | Self::PmiSemanticRecordMalformed
+            | Self::PmiSwiftAnnotationUnsupported
+            | Self::HistoryIncompleteReferences
+            | Self::FeatureIncoherentEdges
+            | Self::FeatureIncoherentContent
+            | Self::FeatureUnresolvedOutputScope
+            | Self::FeatureIncoherentOutputs
+            | Self::SketchNativeConstraint
+            | Self::SketchNativeGeometry
+            | Self::SketchRelationUnprojected
+            | Self::SketchRelationMultiplyProjected
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureInputObjectUnbound
+            | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureBodyRetentionUnresolved
+            | Self::GeometryFaceSupportSurfaceUntyped
+            | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPcurveAmbiguous
+            | Self::AppearanceFaceColorUnresolved
+            | Self::AppearanceAssignmentUnresolved
+            | Self::TessellationFaceOwnershipUnresolved
+            | Self::TopologyBodyHierarchyDerived
+            | Self::TopologyFaceOwnerAmbiguous
+            | Self::TopologyFaceUnclaimed
+            | Self::TopologyPcurveCarrierOffSurface
+            | Self::MaterialMetadataNotTransferred
+            | Self::SourceDialectUnverified
+            | Self::KernelDialectUnverified
+            | Self::DialectLayerCollision
+            | Self::SourceDialectDisplaced => Severity::Warning,
         }
     }
 
@@ -260,14 +300,48 @@ impl SldprtLossCode {
             }
             Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            _ => LossTaxonomy::FeatureHistoryRetained,
+            Self::ConfigActiveIdentityUnresolved
+            | Self::ConfigActivePartitionMismatch
+            | Self::ConfigInferredWithoutNative
+            | Self::ConfigLaneIdentityUnresolved
+            | Self::ConfigAmbiguousPartition
+            | Self::ConfigAmbiguousNaming
+            | Self::ConfigIncoherentBodyRefs
+            | Self::ConfigIncompleteSnapshot
+            | Self::ParameterUnevaluated
+            | Self::ParameterAmbiguousIdentity
+            | Self::PmiDimensionUnbound
+            | Self::PmiSemanticRecordMalformed
+            | Self::PmiSwiftAnnotationUnsupported
+            | Self::HistoryIncompleteReferences
+            | Self::FeatureIncoherentEdges
+            | Self::FeatureIncoherentContent
+            | Self::FeatureUnresolvedOutputScope
+            | Self::FeatureIncoherentOutputs
+            | Self::SketchNativeConstraint
+            | Self::SketchNativeGeometry
+            | Self::SketchRelationUnprojected
+            | Self::SketchRelationMultiplyProjected
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureInputObjectUnbound
+            | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("sldprt", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("sldprt") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -275,7 +349,7 @@ impl SldprtLossCode {
     /// The structured code is `sldprt/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -286,6 +360,22 @@ mod tests {
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn all_covers_every_declared_variant() {
+        let source = include_str!("loss.rs");
+        let declaration = source
+            .split_once("pub(crate) enum SldprtLossCode {")
+            .unwrap()
+            .1;
+        let body = declaration.split_once("\n}").unwrap().0;
+        let variant_count = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && line.ends_with(','))
+            .count();
+        assert_eq!(SldprtLossCode::ALL.len(), variant_count);
+    }
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]

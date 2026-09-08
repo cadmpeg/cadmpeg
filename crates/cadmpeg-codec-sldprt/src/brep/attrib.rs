@@ -14,7 +14,7 @@
 //! dictionary, so a deltas body yields no bindings.
 
 use cadmpeg_core::decode::View;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
@@ -41,28 +41,28 @@ const ATOM_LOCAL: usize = 4;
 
 /// One face's producing-feature identity.
 #[derive(Debug, Clone)]
-pub struct RawFaceAtom {
+pub(crate) struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
-    pub face_attr: u16,
-    pub identity: super::PersistentFaceIdentity,
+    pub(crate) face_attr: u16,
+    pub(crate) identity: Option<super::PersistentFaceIdentity>,
 }
 
 /// A persistent identity bound to an emitted face.
 #[derive(Debug, Clone)]
-pub struct FaceAtom {
-    pub face: cadmpeg_ir::ids::FaceId,
-    pub identity: super::PersistentFaceIdentity,
+pub(crate) struct FaceAtom {
+    pub(crate) face: cadmpeg_ir::ids::FaceId,
+    pub(crate) identity: super::PersistentFaceIdentity,
 }
 
 /// One body's last modifying history ordinal.
 #[derive(Debug, Clone)]
-pub struct BodyModifier {
+pub(crate) struct BodyModifier {
     /// Attribute id of the body carrying the attribute.
-    pub body_attr: u16,
+    pub(crate) body_attr: u16,
     /// One-based ordinal in the ordered Keywords modeling-feature records.
-    pub history_ordinal: u32,
+    pub(crate) history_ordinal: u32,
     /// Emitted body identity, resolved once the graph retains its bodies.
-    pub target: Option<String>,
+    pub(crate) target: Option<String>,
 }
 
 /// Start of a record body: the tag, then an optional `0xff` marker.
@@ -79,14 +79,8 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
     buf.get(at) == Some(&0) && buf.get(at + 1).is_some_and(|tag| NODE_TAGS.contains(tag))
 }
 
-/// The stream-local attribute definitions that have a valid `KEY/ATTRIB_DEF`
-/// pairing. `ids` includes withheld conflicts; `names` contains only unique
-/// family names.
-#[derive(Debug, Default)]
-pub(crate) struct DefinitionTable {
-    pub(crate) ids: HashSet<u16>,
-    pub(crate) names: HashMap<u16, String>,
-}
+/// Stream-local attribute definitions with unique names or withheld conflicts.
+pub(crate) type DefinitionTable = HashMap<u16, Option<String>>;
 
 /// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
 fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
@@ -152,20 +146,23 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
 
 /// Resolve the stream-local attribute-definition table.
 pub(crate) fn definition_table(buf: &[u8]) -> DefinitionTable {
-    let candidates = definition_candidates(buf);
-    let ids = candidates.keys().copied().collect();
-    let names = candidates
+    definition_candidates(buf)
         .into_iter()
-        .filter_map(|(node, family)| {
-            family.and_then(|family| String::from_utf8(family).ok().map(|family| (node, family)))
+        .map(|(node, family)| {
+            (
+                node,
+                family.and_then(|family| String::from_utf8(family).ok()),
+            )
         })
-        .collect();
-    DefinitionTable { ids, names }
+        .collect()
 }
 
 /// Map definition-record node ids to their stored family names.
 pub(crate) fn named_definitions(buf: &[u8]) -> HashMap<u16, String> {
-    definition_table(buf).names
+    definition_table(buf)
+        .into_iter()
+        .filter_map(|(node, name)| name.map(|name| (node, name)))
+        .collect()
 }
 
 /// Map definition-record node ids to the two supported native attribute
@@ -283,7 +280,7 @@ fn atom_payload<'a>(
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
-pub fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
+pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == ATOM_ID) {
         return Vec::new();
@@ -314,11 +311,13 @@ pub fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
         };
         let atom = RawFaceAtom {
             face_attr,
-            identity: super::PersistentFaceIdentity {
-                feature_source_id: values[ATOM_FEATURE],
-                local_id: values[ATOM_LOCAL],
-                trailing_fields: values[ATOM_LOCAL + 1..].to_vec(),
-            },
+            identity: super::feature_source::FeatureSourceId::try_from(values[ATOM_FEATURE])
+                .ok()
+                .map(|feature_source_id| super::PersistentFaceIdentity {
+                    feature_source_id,
+                    local_id: values[ATOM_LOCAL],
+                    trailing_fields: values[ATOM_LOCAL + 1..].to_vec(),
+                }),
         };
         match found.entry(face_attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -341,7 +340,7 @@ pub fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
 }
 
 /// Decode every body-level last-modifier binding carried by one stream body.
-pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
+pub(crate) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == LAST_BODY_MODIFIER) {
         return Vec::new();
@@ -462,19 +461,40 @@ mod tests {
     }
 
     #[test]
+    fn atom_source_sentinels_have_no_identity() {
+        for source in [0, u32::MAX] {
+            let atoms = scan(&stream(&[74, source, 1_390_698_820, 0, 3], 333));
+            assert_eq!(atoms.len(), 1);
+            assert_eq!(atoms[0].face_attr, 333);
+            assert!(atoms[0].identity.is_none());
+        }
+    }
+
+    #[test]
     fn instance_binds_face_to_producing_feature() {
         let atoms = scan(&stream(&[74, 75, 1_390_698_820, 0, 3], 333));
         assert_eq!(atoms.len(), 1);
         assert_eq!(atoms[0].face_attr, 333);
-        assert_eq!(atoms[0].identity.feature_source_id, 75);
-        assert_eq!(atoms[0].identity.local_id, 3);
+        assert_eq!(
+            atoms[0]
+                .identity
+                .as_ref()
+                .unwrap()
+                .feature_source_id
+                .value(),
+            75
+        );
+        assert_eq!(atoms[0].identity.as_ref().unwrap().local_id, 3);
     }
 
     #[test]
     fn instance_preserves_optional_persistent_tail() {
         let atoms = scan(&stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333));
         assert_eq!(atoms.len(), 1);
-        assert_eq!(atoms[0].identity.trailing_fields, vec![10, 8]);
+        assert_eq!(
+            atoms[0].identity.as_ref().unwrap().trailing_fields,
+            vec![10, 8]
+        );
     }
 
     #[test]
@@ -496,8 +516,8 @@ mod tests {
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
         assert!(!definitions(&body).contains_key(&16));
         let table = definition_table(&body);
-        assert!(table.ids.contains(&16));
-        assert!(!table.names.contains_key(&16));
+        assert!(table.contains_key(&16));
+        assert!(table.get(&16).is_some_and(Option::is_none));
     }
 
     #[test]

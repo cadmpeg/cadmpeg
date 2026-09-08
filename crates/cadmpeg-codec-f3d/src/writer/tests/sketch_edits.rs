@@ -27,9 +27,11 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected = update_f3d_native(&mut edited, |native| {
         let point = &mut native.sketch_points[0];
-        point.coordinates.u += 12.5;
-        point.coordinates.v -= 7.5;
-        point.coordinates
+        let mut coordinates = point.coordinates();
+        coordinates.u += 12.5;
+        coordinates.v -= 7.5;
+        point.try_set_coordinates(coordinates).unwrap();
+        point.coordinates()
     });
 
     let mut regenerated = Vec::new();
@@ -39,7 +41,7 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        f3d_native(round_trip.ir()).sketch_points[0].coordinates,
+        f3d_native(round_trip.ir()).sketch_points[0].coordinates(),
         expected
     );
 }

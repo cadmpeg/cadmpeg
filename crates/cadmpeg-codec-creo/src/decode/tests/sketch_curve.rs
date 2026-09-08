@@ -28,15 +28,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn sketch_curve_references_require_a_materialized_curve() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 5,
-        feature_id: Some(5),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [0.0, 1.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [1.0, 0.0, 0.0],
-        offset: 7,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5,
+        Some(5),
+        [10.0, 20.0, 30.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        7,
+    )
+    .expect("valid section frame");
     let sketch = SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture");
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
@@ -61,15 +61,15 @@ fn sketch_curve_references_require_a_materialized_curve() {
 
 #[test]
 fn placed_extrusion_arc_defines_cylinder() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 5,
-        feature_id: Some(5),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [0.0, 1.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [1.0, 0.0, 0.0],
-        offset: 7,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5,
+        Some(5),
+        [10.0, 20.0, 30.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        7,
+    )
+    .expect("valid section frame");
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],

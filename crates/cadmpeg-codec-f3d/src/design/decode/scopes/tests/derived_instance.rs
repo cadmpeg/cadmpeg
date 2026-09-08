@@ -35,7 +35,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     assert_eq!(construction.component_guid.as_str(), COMPONENT);
     assert_eq!(construction.occurrence_guid.as_str(), OCCURRENCE);
     assert_eq!(
-        construction.transform,
+        construction.transform.rows(),
         occurrence.transform().as_ref().copied().unwrap().value
     );
     assert_eq!(
@@ -130,7 +130,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
             ordinal: std::num::NonZeroU32::MIN,
             transform: crate::records::Located {
-                value: transform,
+                value: transform.try_into().unwrap(),
                 offset: 209,
             },
         },

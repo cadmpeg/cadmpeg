@@ -24,44 +24,53 @@ pub struct DoubleXarTable {
     /// Offset of the `double_xar` label in the expanded section.
     pub offset: usize,
     /// Entries in stored order, including an explicit terminal null slot.
-    pub entries: Vec<DoubleXarEntry>,
-}
-
-/// One stored slot in a `double_xar` dictionary.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DoubleXarEntry {
-    /// Exact bytes occupying the slot.
-    pub raw: Vec<u8>,
-    /// Structural token family and its scalar value, when defined.
-    pub slot: DoubleXarSlot,
+    pub entries: Vec<DoubleXarSlot>,
 }
 
 /// Defined value forms of a dictionary slot.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DoubleXarSlot {
     StockZero,
     StockOne,
-    Literal(f64),
+    /// A decoded scalar and its source token.
+    Literal {
+        /// Decoded scalar value.
+        value: f64,
+        /// Exact source token bytes.
+        raw: Vec<u8>,
+    },
     TerminalNull,
     RecursivePlaceholder1,
     RecursivePlaceholder3,
 }
 
 impl DoubleXarSlot {
-    pub fn value(self) -> Option<f64> {
+    /// Exact bytes occupying this slot.
+    pub fn raw(&self) -> &[u8] {
+        match self {
+            Self::StockZero => &[0x0b],
+            Self::StockOne => &[0x10],
+            Self::Literal { raw, .. } => raw,
+            Self::TerminalNull => &[0xe0],
+            Self::RecursivePlaceholder1 => &[0xe5, 0x07, 0x23, 0x11, 0x2e],
+            Self::RecursivePlaceholder3 => &[0xe8, 0x26, 0xd6, 0x95],
+        }
+    }
+
+    pub fn value(&self) -> Option<f64> {
         match self {
             Self::StockZero => Some(0.0),
             Self::StockOne => Some(1.0),
-            Self::Literal(value) => Some(value),
+            Self::Literal { value, .. } => Some(*value),
             Self::TerminalNull | Self::RecursivePlaceholder1 | Self::RecursivePlaceholder3 => None,
         }
     }
 
-    pub fn kind(self) -> &'static str {
+    pub fn kind(&self) -> &'static str {
         match self {
             Self::StockZero => "stock_zero",
             Self::StockOne => "stock_one",
-            Self::Literal(_) => "literal",
+            Self::Literal { .. } => "literal",
             Self::TerminalNull => "terminal_null",
             Self::RecursivePlaceholder1 => "recursive_placeholder_1",
             Self::RecursivePlaceholder3 => "recursive_placeholder_3",
@@ -88,7 +97,6 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
         }
         let mut entries = Vec::new();
         for _ in 0..count {
-            let start = cursor;
             let Some(head) = data.get(cursor).copied() else {
                 entries.clear();
                 break;
@@ -104,27 +112,32 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                     (DoubleXarSlot::RecursivePlaceholder3, cursor + 4)
                 }
                 _ => match decode(data, cursor) {
-                    Some((value, end)) => (DoubleXarSlot::Literal(value), end),
+                    Some((value, end)) => {
+                        let Some(raw) = data.get(cursor..end) else {
+                            entries.clear();
+                            break;
+                        };
+                        (
+                            DoubleXarSlot::Literal {
+                                value,
+                                raw: raw.to_vec(),
+                            },
+                            end,
+                        )
+                    }
                     None => {
                         entries.clear();
                         break;
                     }
                 },
             };
-            let Some(raw) = data.get(start..end) else {
-                entries.clear();
-                break;
-            };
-            entries.push(DoubleXarEntry {
-                raw: raw.to_vec(),
-                slot,
-            });
+            entries.push(slot);
             cursor = end;
         }
         if entries.len() == usize::try_from(count).unwrap_or(usize::MAX)
             && entries
                 .last()
-                .is_some_and(|entry| matches!(entry.slot, DoubleXarSlot::TerminalNull))
+                .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
             tables.push(DoubleXarTable { offset, entries });
         }
@@ -2673,13 +2686,22 @@ mod tests {
             panic!("complete dictionary");
         };
         assert_eq!(table.entries.len(), 7);
-        assert_eq!(table.entries[0].slot.value(), Some(1.0));
-        assert_eq!(table.entries[1].slot.kind(), "recursive_placeholder_1");
-        assert_eq!(table.entries[2].slot.value(), Some(0.0));
-        assert_eq!(table.entries[3].slot.kind(), "recursive_placeholder_3");
-        assert_eq!(table.entries[4].slot.value(), Some(3.0));
-        assert_eq!(table.entries[5].slot.value(), Some(0.0));
-        assert_eq!(table.entries[6].slot.kind(), "terminal_null");
+        assert_eq!(
+            table
+                .entries
+                .iter()
+                .flat_map(DoubleXarSlot::raw)
+                .copied()
+                .collect::<Vec<_>>(),
+            data[b"prefix double_xar\0".len() + 2..],
+        );
+        assert_eq!(table.entries[0].value(), Some(1.0));
+        assert_eq!(table.entries[1].kind(), "recursive_placeholder_1");
+        assert_eq!(table.entries[2].value(), Some(0.0));
+        assert_eq!(table.entries[3].kind(), "recursive_placeholder_3");
+        assert_eq!(table.entries[4].value(), Some(3.0));
+        assert_eq!(table.entries[5].value(), Some(0.0));
+        assert_eq!(table.entries[6].kind(), "terminal_null");
     }
 
     #[test]

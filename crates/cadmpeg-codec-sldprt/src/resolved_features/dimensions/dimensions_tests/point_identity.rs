@@ -1,4 +1,5 @@
 use super::super::dimensioned_relation_carrier;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind,
@@ -8,19 +9,24 @@ use std::collections::HashMap;
 
 #[test]
 fn classless_point_identity_requires_exact_reference_and_center_role() {
-    let kind = FeatureInputOperandKind::Native(0x80fe);
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index,
-        local_id,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_80FE);
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = local_id;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -128,20 +134,25 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
 
 #[test]
 fn native_point_identity_rejects_a_declared_radial_marker() {
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index,
-        local_id,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = local_id;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let kind = FeatureInputOperandKind::Native(0x825c);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_825C);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -215,20 +226,25 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
 
 #[test]
 fn native_radial_identity_selects_one_of_equal_radius_pairs() {
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: u32::try_from(offset).unwrap(),
-        offset,
-        object_index,
-        local_id,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = local_id;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let kind = FeatureInputOperandKind::Native(0x825c);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_825C);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -272,18 +288,23 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
             marker("radial-one", 20, Some(1), Some(0), [0.015, 0.020]),
             marker("center-two", 30, Some(4), Some(3), [0.030, 0.040]),
             marker("radial-two", 40, Some(3), Some(0), [0.035, 0.040]),
-            SketchInputEntity {
-                id: "line-carrier".into(),
-                parent: "lane".into(),
-                feature_ref: Some("feature".into()),
-                ordinal: 50,
-                offset: 50,
-                object_index: Some(6),
-                local_id: Some(6),
-                kind: SketchInputKind::LineOrCircle,
-                state_value: Some(1.0),
-                coordinates_m: Some([0.020, 0.020]),
-                links: None,
+            {
+                let marker_id: String = "line-carrier".into();
+                let marker_parent: String = "lane".into();
+                let mut constructed_marker = SketchInputEntity::new(
+                    marker_id,
+                    marker_parent,
+                    50,
+                    50,
+                    SketchInputKind::LineOrCircle,
+                );
+                constructed_marker.feature_ref = Some("feature".into());
+                constructed_marker.object_index = Some(6);
+                constructed_marker.local_id = Some(6);
+                constructed_marker.state_value = Some(1.0);
+                constructed_marker.coordinates_m = Some([0.020, 0.020]);
+                constructed_marker.links = None;
+                constructed_marker
             },
             marker("line-radial", 60, Some(6), Some(0), [0.025, 0.020]),
         ],
@@ -310,5 +331,5 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
     )
     .expect("the radial identity selects its declared center");
     assert_eq!(carrier.marker.id, "center-one");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.center(), [0.010, 0.020]);
 }

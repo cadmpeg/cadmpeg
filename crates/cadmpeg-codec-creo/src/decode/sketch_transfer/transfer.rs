@@ -86,19 +86,19 @@ pub(in super::super) fn transfer_sketches(
         let placement = match transform {
             Some(transform) => cadmpeg_ir::sketches::SketchPlacement::try_resolved(
                 Point3::new(
-                    transform.origin[0],
-                    transform.origin[1],
-                    transform.origin[2],
+                    transform.origin()[0],
+                    transform.origin()[1],
+                    transform.origin()[2],
                 ),
                 Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
                 ),
                 Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
                 ),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,

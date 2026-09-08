@@ -44,7 +44,7 @@ fn resolved_body_binding(
     blob_name: &str,
     body: &str,
 ) -> crate::records::DesignBodyBinding {
-    crate::records::DesignBodyBinding {
+    crate::records::DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
         id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
         stream: stream.into(),
         pair_count: 1,
@@ -56,7 +56,96 @@ fn resolved_body_binding(
         blob_name: blob_name.into(),
         blob_name_offset: asm_key_offset + 32,
         body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
+    })
+    .unwrap()
+}
+
+#[test]
+fn protein_rejections_preserve_valid_records_and_report_notes() {
+    let mut instance = Vec::new();
+    for (schema, guid) in [
+        ("KnownSchema", "first-guid"),
+        ("MissingSchema", "rejected-guid"),
+        ("KnownSchema", "third-guid"),
+    ] {
+        let mut logical = RECORD_MARKER.to_vec();
+        for value in [schema, guid, "base", ""] {
+            super::push_lp(&mut logical, value).unwrap();
+        }
+        if instance.is_empty() {
+            instance.extend_from_slice(&(super::PAGE_SIZE as u32).to_le_bytes());
+            instance.extend_from_slice(&[0; STREAM_HEADER_LEN - 4]);
+        }
+        let body = &logical[RECORD_MARKER.len()..];
+        let mut page = super::TERMINAL_MARKER.to_vec();
+        page.extend_from_slice(&u16::try_from(body.len()).unwrap().to_le_bytes());
+        page.extend_from_slice(&[0; 2]);
+        page.extend_from_slice(body);
+        page.resize(super::PAGE_SIZE, 0);
+        instance.extend_from_slice(&page);
     }
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    archive
+        .start_file("Schemas/KnownSchema.xml", stored)
+        .unwrap();
+    archive
+        .write_all(br#"<Schema><UID val="KnownSchema"/></Schema>"#)
+        .unwrap();
+    archive
+        .start_file("AssetData/InstanceProperties.bin", stored)
+        .unwrap();
+    archive.write_all(&instance).unwrap();
+    let protein = archive.finish().unwrap().into_inner();
+    let edits = ["first-guid", "third-guid"]
+        .into_iter()
+        .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
+        .collect();
+    let mut notes = Vec::new();
+    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    assert_eq!(
+        guids.into_iter().collect::<Vec<_>>(),
+        ["first-guid", "third-guid"]
+    );
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].contains("record 1 rejected") && notes[0].contains("MissingSchema"));
+    let mut patched_archive = zip::ZipArchive::new(Cursor::new(patched)).unwrap();
+    let mut retained = Vec::new();
+    std::io::Read::read_to_end(
+        &mut patched_archive
+            .by_name("AssetData/InstanceProperties.bin")
+            .unwrap(),
+        &mut retained,
+    )
+    .unwrap();
+    assert_eq!(retained, instance);
+
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut archive, stored);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored,
+        )
+        .unwrap();
+    archive.write_all(&protein).unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| appearance.asset_guid.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("first-guid"), Some("third-guid")]
+    );
+    assert!(decoded.report().notes.iter().any(|note| note
+        .contains("ProteinAsset.0.protein record 1 rejected")
+        && note.contains("MissingSchema")));
 }
 
 #[test]
@@ -81,11 +170,11 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     lp(&mut logical, "");
 
     let paged = super::page_logical(&logical).expect("page catalog record");
-    let frames = cadmpeg_protein::record_frames(&paged).expect("frame catalog pages");
+    let frames = cadmpeg_protein::framing::record_frames(&paged).expect("frame catalog pages");
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
-    let decoded = super::decode_definition_catalog_record(&frame.bytes)
+    let decoded = super::decode_definition_catalog_record(frame.bytes())
         .expect("decode framed definition record");
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "Prism-001");
@@ -246,7 +335,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 500,
-        visual_guid: visual_guid.into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         visual_guid_offset: 600,
         physical_token: None,
         visual_preset: None,
@@ -294,7 +383,10 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 500,
-        visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(
+            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
+        )
+        .unwrap(),
         visual_guid_offset: 600,
         physical_token: None,
         visual_preset: None,
@@ -306,14 +398,18 @@ fn presetless_assignment_matches_only_its_visual_guid() {
             .is_none()
     );
 
-    assignment.visual_guid = appearance_guid.into();
+    assignment.visual_guid =
+        crate::records::DesignVisualToken::try_from(appearance_guid.to_owned()).unwrap();
     assert!(
         super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
             .expect("exact visual-token assignment")
             .is_some()
     );
 
-    assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
+    assignment.visual_guid = crate::records::DesignVisualToken::try_from(
+        "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
+    )
+    .unwrap();
     assignment.visual_preset = Some(crate::records::RecordedValue {
         value: "Prism-017".into(),
         offset: None,
@@ -348,9 +444,13 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#revised", revised_token),
     ];
 
-    let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
-        .expect("unique complete visual token")
-        .expect("revised appearance exists");
+    let selected = super::appearance_for_visual_token(
+        &appearances,
+        &crate::records::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
+        None,
+    )
+    .expect("unique complete visual token")
+    .expect("revised appearance exists");
     assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
 
     let duplicates = [
@@ -358,7 +458,11 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
-        super::appearance_for_visual_token(&duplicates, revised_token, None),
+        super::appearance_for_visual_token(
+            &duplicates,
+            &crate::records::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
+            None
+        ),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -386,7 +490,10 @@ fn visual_preset_fallback_requires_one_record() {
     assert!(matches!(
         super::appearance_for_visual_token(
             &appearances,
-            "11111111-2222-3333-4444-555555555555",
+            &crate::records::DesignVisualToken::try_from(
+                "11111111-2222-3333-4444-555555555555".to_owned()
+            )
+            .unwrap(),
             Some("Prism-017"),
         ),
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -710,7 +817,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
-            visual_guid: visual_guid.into(),
+            visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned())
+                .unwrap(),
             color: None,
         }],
     )
@@ -760,7 +868,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
-            visual_guid: visual_guid.into(),
+            visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned())
+                .unwrap(),
             color: None,
         }],
     )
@@ -828,7 +937,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     };
     let assignment = crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
-        visual_guid: visual_guid.into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         color: Some(assignment_color),
     };
 
@@ -866,7 +975,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
     let assignment = |r| crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
-        visual_guid: visual_guid.into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         color: Some(Color {
             r,
             g: 0.25,
@@ -1128,19 +1237,21 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|point| point.persistent_id() == Some(500))
         .cloned()
         .expect("point 500");
-    assert_eq!(point_500.coordinates.u, 12.5);
-    assert_eq!(point_500.coordinates.v, -25.0);
+    assert_eq!(point_500.coordinates().u, 12.5);
+    assert_eq!(point_500.coordinates().v, -25.0);
     let point_600 = f3d_native(result.ir())
         .sketch_points
         .iter()
         .find(|point| point.persistent_id() == Some(600))
         .cloned()
         .expect("point 600");
-    assert_eq!(point_600.coordinates.u, -40.0);
+    assert_eq!(point_600.coordinates().u, -40.0);
     assert_eq!(point_600.entity_genesis(), Some(9));
     assert_eq!(f3d_native(result.ir()).sketch_curve_identities.len(), 2);
     assert_eq!(
-        f3d_native(result.ir()).sketch_curve_identities[0].primary_id,
+        f3d_native(result.ir()).sketch_curve_identities[0]
+            .primary_id
+            .get(),
         440
     );
     assert_eq!(
@@ -1401,7 +1512,7 @@ fn decode_transfers_generated_sketch_curve_link() {
         )
     );
     assert_eq!(link.sketch_curve_id, 113);
-    assert_eq!(link.sense, Some(1));
+    assert_eq!(link.sense.map(i64::from), Some(1));
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
@@ -1421,7 +1532,10 @@ fn a_sketch_link_keeps_the_second_tuple_member_the_source_writes() {
     let link = decoded_sketch_link(SketchLinkForm::Tagged("113 4550 1 0 2 3"))
         .expect("a non-zero second member does not refuse the link");
     assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
-    assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+    assert_eq!(
+        (link.sense.map(i64::from), link.role, link.closure),
+        (Some(1), 2, 3)
+    );
     // The member reaches the full unsigned 64-bit range, so it does not fit the
     // signed reading the other members take.
     let link = decoded_sketch_link(SketchLinkForm::Tagged("113 18446744073709551615 1 0 2 3"))
@@ -1439,7 +1553,10 @@ fn a_sketch_link_decodes_in_every_payload_form() {
     ] {
         let link = decoded_sketch_link(form).expect("integer-form sketch link");
         assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
-        assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+        assert_eq!(
+            (link.sense.map(i64::from), link.role, link.closure),
+            (Some(1), 2, 3)
+        );
     }
     // An integer form spells the unconstrained sense as the signed `-1` of the
     // same 32-bit pattern the tagged field spells as `4294967295`.
@@ -1464,7 +1581,9 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        f3d_native(decoded.ir()).sketch_curve_links[0].sense,
+        f3d_native(decoded.ir()).sketch_curve_links[0]
+            .sense
+            .map(i64::from),
         None,
         "4294967295 is the disabled sense, not a stored one"
     );
@@ -1494,7 +1613,10 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sketch-link round trip");
     let link = &f3d_native(round_trip.ir()).sketch_curve_links[0];
-    assert_eq!((link.sketch_curve_id, link.sense), (113, None));
+    assert_eq!(
+        (link.sketch_curve_id, link.sense.map(i64::from)),
+        (113, None)
+    );
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
@@ -1647,18 +1769,14 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
 #[test]
 fn protein_revision_suffix_distinguishes_visual_record_identity() {
-    assert!(!crate::materials::visual_tokens_match(
-        "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015",
-        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17",
-    ));
-    assert!(crate::materials::visual_tokens_match(
-        "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015",
-        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015",
-    ));
-    assert!(!crate::materials::visual_tokens_match(
-        "not-a-guid_Post2015",
-        "not-a-guid",
-    ));
+    let token = |text: &str| crate::records::DesignVisualToken::try_from(text.to_owned()).unwrap();
+    assert!(
+        !token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015")
+            .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
+    );
+    assert!(token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015")
+        .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
+    assert!(crate::records::DesignVisualToken::try_from("not-a-guid_Post2015".to_owned()).is_err());
 }
 
 #[test]
@@ -1699,8 +1817,14 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     assert_eq!(
         crate::materials::browser_body_appearances(&bytes),
         [
-            (37_251, records[0].1.to_string()),
-            (37_441, records[1].1.to_string()),
+            (
+                37_251,
+                crate::records::DesignVisualToken::try_from(records[0].1.to_string()).unwrap()
+            ),
+            (
+                37_441,
+                crate::records::DesignVisualToken::try_from(records[1].1.to_string()).unwrap()
+            ),
         ]
     );
     assert!(
@@ -1748,7 +1872,7 @@ fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
     let out = crate::materials::face_appearance_assignments(&bytes);
     assert_eq!(out.len(), 2);
     assert_eq!(out[0].face_guid, face_guid);
-    assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(&*out[0].visual_guid, visual_guid);
     assert_eq!(
         out[0].color,
         Some(cadmpeg_ir::topology::Color {
@@ -1863,7 +1987,7 @@ fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
     let out = crate::materials::face_appearance_assignments(&bytes);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].face_guid, face_guid);
-    assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(&*out[0].visual_guid, visual_guid);
     assert_eq!(out[0].color, None);
 
     let mut malformed = bytes;
@@ -1908,7 +2032,7 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \

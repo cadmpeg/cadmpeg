@@ -100,11 +100,7 @@ pub(crate) fn project_loft(
             .and_then(|operation| parse_boolean_op(operation))
             .or_else(|| {
                 matches!(
-                    feature
-                        .input_class
-                        .as_deref()
-                        .map(native_object_class)
-                        .map(|class| class.kind),
+                    feature.input_class.as_deref().map(native_object_class),
                     Some(NativeClassKind::LoftCut)
                 )
                 .then_some(BooleanOp::Cut)
@@ -116,11 +112,7 @@ pub(crate) fn project_loft(
             .get("Closed")
             .map_or(Some(false), |closed| parse_bool(closed))?,
         solid: !matches!(
-            feature
-                .input_class
-                .as_deref()
-                .map(native_object_class)
-                .map(|class| class.kind),
+            feature.input_class.as_deref().map(native_object_class),
             Some(NativeClassKind::SurfaceLoft)
         ),
         ruled: false,
@@ -242,11 +234,7 @@ pub(crate) fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
         .and_then(|value| parse_boolean_op(value))
         .or_else(|| {
             matches!(
-                feature
-                    .input_class
-                    .as_deref()
-                    .map(native_object_class)
-                    .map(|class| class.kind),
+                feature.input_class.as_deref().map(native_object_class),
                 Some(NativeClassKind::SweepCut)
             )
             .then_some(BooleanOp::Cut)

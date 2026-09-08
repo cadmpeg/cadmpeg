@@ -609,29 +609,19 @@ pub(super) fn transfer_section_entities(
         let Some(geometry) = saved_spline_sketch_geometry(spline) else {
             continue;
         };
-        let unique_internal_id = spline
-            .entity_id
-            .is_some_and(|id| unique_saved_ids.contains(&id));
-        let suffix = if unique_internal_id {
-            spline
-                .entity_id
-                .expect("unique saved spline has an internal id")
-                .to_string()
-        } else {
-            format!("offset{}", spline.offset)
-        };
-        let external_id = if unique_internal_id {
+        let unique_internal_id = spline.entity_id.filter(|id| unique_saved_ids.contains(id));
+        let suffix = unique_internal_id
+            .map_or_else(|| format!("offset{}", spline.offset), |id| id.to_string());
+        let external_id = unique_internal_id.and_then(|internal_id| {
             definition.order_table.as_ref().and_then(|order| {
                 saved_section_external_id(
                     order,
                     unique_saved_ids,
                     ambiguous_segment_ids,
-                    spline.entity_id?,
+                    internal_id,
                 )
             })
-        } else {
-            None
-        };
+        });
         let generated = external_id.is_some_and(|external_id| {
             let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) else {
                 return false;

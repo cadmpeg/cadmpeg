@@ -319,12 +319,7 @@ pub(crate) fn feature_family(feature: &Feature, family: &str) -> bool {
 }
 
 pub(crate) fn feature_input_class(feature: &Feature, class: NativeClassKind) -> bool {
-    feature
-        .input_class
-        .as_deref()
-        .map(native_object_class)
-        .map(|class| class.kind)
-        == Some(class)
+    feature.input_class.as_deref().map(native_object_class) == Some(class)
 }
 
 pub(crate) fn is_fillet(feature: &Feature) -> bool {
@@ -402,7 +397,7 @@ pub(crate) fn principal_plane_in_history(
                     && !record.kind.is_empty()
                     && match record.input_class.as_deref() {
                         Some(class) => {
-                            native_object_class(class).kind == NativeClassKind::ReferencePlane
+                            native_object_class(class) == NativeClassKind::ReferencePlane
                         }
                         None => record.properties.is_empty(),
                     }
@@ -417,7 +412,7 @@ pub(crate) fn principal_plane_in_history(
                 || !successor.properties.is_empty()
                 || successor.kind.is_empty()
                 || successor.input_class.as_deref().is_some_and(|class| {
-                    native_object_class(class).kind != NativeClassKind::OriginProfileFeature
+                    native_object_class(class) != NativeClassKind::OriginProfileFeature
                 })
                 || successor.source_id.is_some()
                 || successor.tree_parent.is_some()

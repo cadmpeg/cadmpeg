@@ -160,10 +160,13 @@ impl ActiveFeatureClosureRejection {
 pub(crate) fn active_feature_closure(
     ir: &CadIr,
     bodies: &[BodyId],
-) -> Result<BTreeSet<FeatureId>, ActiveFeatureClosureRejection> {
+) -> Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection> {
     let mut features = BTreeMap::new();
-    for feature in &ir.model.features {
-        if features.insert(feature.id.clone(), feature).is_some() {
+    for (index, feature) in ir.model.features.iter().enumerate() {
+        if features
+            .insert(feature.id.clone(), (index, feature))
+            .is_some()
+        {
             return Err(ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
                 feature: feature.id.clone(),
             });
@@ -171,51 +174,42 @@ pub(crate) fn active_feature_closure(
     }
 
     let active_bodies = bodies.iter().collect::<BTreeSet<_>>();
-    let mut active_features = ir
-        .model
-        .features
+    let mut active_features = features
         .iter()
-        .filter(|feature| {
+        .filter(|(_, (_, feature))| {
             feature
                 .outputs
                 .iter()
                 .any(|output| active_bodies.contains(output))
         })
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
-    let has_neutral_body_writer = active_features.iter().any(|id| {
-        features.get(id).is_some_and(|feature| {
-            !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-        })
+        .map(|(id, &resolved)| (id.clone(), resolved))
+        .collect::<BTreeMap<_, _>>();
+    let has_neutral_body_writer = active_features
+        .values()
+        .any(|(_, feature)| !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. }));
+    let has_native_body_witness = active_features.values().any(|(_, feature)| {
+        matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+            && feature.outputs.len() == active_bodies.len()
+            && feature.outputs.iter().collect::<BTreeSet<_>>() == active_bodies
+            && feature
+                .source_properties
+                .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
     });
-    let has_native_body_witness = active_features.iter().any(|id| {
-        features.get(id).is_some_and(|feature| {
-            matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-                && feature.outputs.len() == active_bodies.len()
-                && feature.outputs.iter().collect::<BTreeSet<_>>() == active_bodies
-                && feature
-                    .source_properties
-                    .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
-        })
-    });
-    let has_retained_history_input = active_features.iter().any(|id| {
-        features.get(id).is_some_and(|feature| {
-            matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-                && feature
-                    .source_properties
-                    .keys()
-                    .any(|key| key.starts_with("segment_body_binding."))
-        })
+    let has_retained_history_input = active_features.values().any(|(_, feature)| {
+        matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+            && feature
+                .source_properties
+                .keys()
+                .any(|key| key.starts_with("segment_body_binding."))
     });
     if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
         return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
     }
     if !has_neutral_body_writer && has_native_body_witness {
         active_features.extend(
-            ir.model
-                .features
+            features
                 .iter()
-                .filter(|feature| {
+                .filter(|(_, (_, feature))| {
                     feature.native_ref.is_some()
                         && feature.source_tag.is_some()
                         && feature
@@ -223,47 +217,50 @@ pub(crate) fn active_feature_closure(
                             .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
                             .is_some_and(|reference| !reference.is_empty())
                 })
-                .map(|feature| feature.id.clone()),
+                .map(|(id, &resolved)| (id.clone(), resolved)),
         );
     }
     if active_features.is_empty() {
         return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
     }
 
-    let mut pending = active_features.iter().cloned().collect::<Vec<_>>();
-    while let Some(feature_id) = pending.pop() {
-        let feature = features
-            .get(&feature_id)
-            .expect("active feature identities originate from the validated feature index");
+    let mut pending = active_features.values().copied().collect::<Vec<_>>();
+    while let Some((_, feature)) = pending.pop() {
         for dependency in &feature.dependencies {
-            let Some(dependency_feature) = features.get(dependency) else {
+            let Some(&(index, dependency_feature)) = features.get(dependency) else {
                 return Err(ActiveFeatureClosureRejection::MissingDependency {
-                    feature: feature_id,
+                    feature: feature.id.clone(),
                     dependency: dependency.clone(),
                 });
             };
             if dependency_feature.ordinal >= feature.ordinal {
                 return Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                    feature: feature_id,
+                    feature: feature.id.clone(),
                     feature_ordinal: feature.ordinal,
                     dependency: dependency.clone(),
                     dependency_ordinal: dependency_feature.ordinal,
                 });
             }
-            if active_features.insert(dependency.clone()) {
-                pending.push(dependency.clone());
+            if active_features
+                .insert(dependency.clone(), (index, dependency_feature))
+                .is_none()
+            {
+                pending.push((index, dependency_feature));
             }
         }
     }
-    if let Some(feature) = active_features
-        .iter()
-        .find(|id| features[*id].suppressed == Some(true))
+    if let Some((_, feature)) = active_features
+        .values()
+        .find(|(_, feature)| feature.suppressed == Some(true))
     {
         return Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature.clone(),
+            feature: feature.id.clone(),
         });
     }
-    Ok(active_features)
+    Ok(active_features
+        .into_iter()
+        .map(|(id, (index, _))| (id, index))
+        .collect())
 }
 
 #[cfg(test)]
@@ -305,6 +302,30 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.features = features;
         (ir, body)
+    }
+
+    #[test]
+    fn active_feature_closure_retains_arena_positions_instead_of_identity_order() {
+        let body = BodyId::mint("test:model:entity#body").unwrap();
+        let earlier = history_feature(
+            "synthetic:test:id#earlier",
+            0,
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            false,
+        );
+        let later = history_feature(
+            "synthetic:test:id#later",
+            1,
+            vec![earlier.id.clone()],
+            vec![body.clone()],
+            BTreeMap::new(),
+            false,
+        );
+        let expected = BTreeMap::from([(earlier.id.clone(), 1), (later.id.clone(), 0)]);
+        let (ir, _) = closure_ir(vec![later, earlier]);
+        assert_eq!(active_feature_closure(&ir, &[body]), Ok(expected));
     }
 
     #[test]
@@ -577,10 +598,13 @@ mod tests {
 
         assert_eq!(
             active_feature_closure(&ir, &[body]),
-            Ok(BTreeSet::from([
-                FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
-                dependency,
-                writer
+            Ok(BTreeMap::from([
+                (
+                    FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
+                    0
+                ),
+                (dependency, 1),
+                (writer, 2)
             ]))
         );
         assert_eq!(

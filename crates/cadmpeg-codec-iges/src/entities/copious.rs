@@ -178,7 +178,7 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        if !presentation_use_flag_valid(entry.form, entry.status.use_flag()) {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
             losses.push(entity_loss(
                 entry,
                 "Type 106 presentation forms require Entity Use Flag 01",
@@ -203,7 +203,6 @@ pub(super) fn project(
                 "iges_copious_tuples",
                 MAX_COPIOUS_TUPLES as u64,
                 u64::try_from(raw_tuple_count).unwrap_or(u64::MAX),
-                None,
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {

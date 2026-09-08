@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     if !ir.model.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
@@ -144,19 +144,22 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     ))
                 }
             };
-            mesh.vertices_mut()
-                .iter_mut()
-                .for_each(|point| *point = transform.apply_point(*point));
-            if let Some(normals) = mesh.normals_mut() {
+            mesh.edit_vertices(|vertices| {
+                for point in vertices {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+            })?;
+            mesh.edit_normals(|normals| {
                 for normal in normals {
                     *normal = transform.apply_vector(*normal);
                 }
-            }
-            if let Some(normals) = mesh.corner_normals_mut() {
-                for normal in normals {
-                    *normal = transform.apply_vector(*normal);
-                }
-            }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+            })?;
         }
     }
     ir.model
@@ -261,7 +264,11 @@ fn transform_surface(
         }
         SurfaceGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = transform.compose(*carrier),
+        } => {
+            *carrier = transform.compose(*carrier).map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+            })?;
+        }
     }
     Ok(())
 }
@@ -325,7 +332,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Composite { .. } => {}
         CurveGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = transform.compose(*carrier),
+        } => {
+            *carrier = transform.compose(*carrier).map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+            })?;
+        }
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "cannot bake a transform into a non-explicit curve".into(),

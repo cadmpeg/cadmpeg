@@ -417,14 +417,12 @@ fn positional_cylinder_carrier(
         }
     }
     let frame = record.positional_cylinder_frame()?;
-    frame
-        .is_valid()
-        .then_some(CarrierEquation::Cylinder(CylinderEquation {
-            origin: frame.origin,
-            axis: frame.axis,
-            ref_direction: frame.ref_direction,
-            radius: frame.radius,
-        }))
+    Some(CarrierEquation::Cylinder(CylinderEquation {
+        origin: frame.origin(),
+        axis: frame.axis(),
+        ref_direction: frame.ref_direction(),
+        radius: frame.radius(),
+    }))
 }
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
@@ -492,13 +490,17 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
     scan.framing
         .sections
         .iter()
-        .filter(|section| section.role == SectionRole::PsbGeometry)
+        .filter(|section| section.role() == SectionRole::PsbGeometry)
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
         .map(|section| {
-            UnknownId::mint(format!("creo:{}:section#{}", section.name, section.offset))
-                .expect("identity grammar")
+            UnknownId::mint(format!(
+                "creo:{}:section#{}",
+                section.name(),
+                section.offset
+            ))
+            .expect("identity grammar")
         })
 }
 

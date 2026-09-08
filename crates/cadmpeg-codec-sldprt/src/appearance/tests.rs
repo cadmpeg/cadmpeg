@@ -153,12 +153,13 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .appearance_bindings
                 .iter()
                 .find(|binding| {
-                    binding.target == AppearanceTarget::Tessellation(tessellation.id.clone())
+                    binding.target == AppearanceTarget::Tessellation(tessellation.id.to_string())
                 })
                 .unwrap();
             let color = colors[&binding.appearance];
             let table_index = tessellation
                 .id
+                .as_str()
                 .rsplit(':')
                 .next()
                 .unwrap()
@@ -200,7 +201,7 @@ fn visual_states_feature_assignment_decodes_identity_and_color() {
 
     let assignments = super::feature_assignments(&container::scan_bytes(&source));
     assert_eq!(assignments.len(), 1);
-    assert_eq!(assignments[0].feature_source_id, 36);
+    assert_eq!(assignments[0].feature_source_id.value(), 36);
     assert_eq!(assignments[0].feature_timestamp, 0x6a81_f0f4);
     assert_eq!(assignments[0].packed_color, 0x0000_ffec);
 }

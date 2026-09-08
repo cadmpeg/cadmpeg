@@ -1,4 +1,5 @@
 use super::{dynamic_relation, length_parameter, line_entity, marker, typed_relation_definition};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperandKind, FeatureInputRelationFamily, SketchInputKind, SketchInputLink,
 };
@@ -211,9 +212,9 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
         ),
     ]);
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(0x837b);
+    relation.operands[0].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B);
     relation.operands[0].entity_ref = Some(arc_marker.id);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(0x8386);
+    relation.operands[1].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
     relation.operands[1].entity_ref = Some(line_marker.id);
 
     assert_eq!(

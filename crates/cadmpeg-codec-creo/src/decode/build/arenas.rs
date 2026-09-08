@@ -765,7 +765,7 @@ pub(in super::super) fn emit_geometry_arenas(
                     state.state_offset >= section.offset
                         && state.state_offset < section.offset.saturating_add(section.length)
                 })
-                .map_or("MdlStatus", |section| section.name.as_str());
+                .map_or("MdlStatus", |section| section.name());
             annotate(
                 annotations,
                 &state.id,

@@ -284,7 +284,7 @@ pub(crate) fn build_geometry_report(
 
     losses.extend_from_slice(dialect_losses);
     DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: notes.to_vec(),
@@ -306,18 +306,18 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             Err(rejection) => (None, Some(rejection.code())),
         };
     let active_features = active_features.filter(|active| {
-        active.iter().any(|id| {
-            ir.model.features.iter().any(|feature| {
-                feature.id == *id
-                    && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-            })
+        active.values().any(|&index| {
+            !matches!(
+                &ir.model.features[index].definition,
+                FeatureDefinition::BaseFeature { .. }
+            )
         })
     });
     let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
     let feature_in_active_scope = |feature: &Feature| {
         active_features
             .as_ref()
-            .is_none_or(|active| active.contains(&feature.id))
+            .is_none_or(|active| active.contains_key(&feature.id))
     };
     let unresolved_suppression_count = ir
         .model
@@ -327,7 +327,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             feature.suppressed.is_none()
                 && active_features
                     .as_ref()
-                    .is_none_or(|active| active.contains(&feature.id))
+                    .is_none_or(|active| active.contains_key(&feature.id))
         })
         .count();
     if unresolved_suppression_count != 0 {

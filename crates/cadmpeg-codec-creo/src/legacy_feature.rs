@@ -42,10 +42,10 @@ pub(crate) struct LegacyFeatureScan {
     pub(crate) rounds: Vec<LegacyRoundFeature>,
 }
 
-type ObjectIndex<'a> = BTreeMap<&'a str, &'a ObjectRecord>;
-type ChildrenIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a ObjectRecord>>;
-type IntegerIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a legacy::IntegerRecord>>;
-type RealIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a legacy::RealRecord>>;
+type ObjectIndex<'a> = BTreeMap<String, &'a ObjectRecord>;
+type ChildrenIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a ObjectRecord>>;
+type IntegerIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>;
+type RealIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::RealRecord>>;
 
 struct Index<'a> {
     objects: ObjectIndex<'a>,
@@ -59,10 +59,10 @@ impl<'a> Index<'a> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
         for object in &persistence.objects {
-            if objects.insert(object.id.as_str(), object).is_some() {
+            if objects.insert(object.id(), object).is_some() {
                 return None;
             }
-            if let Some(parent) = object.parent.as_deref() {
+            if let Some(parent) = object.parent {
                 children
                     .entry((parent, object.name.as_str()))
                     .or_insert_with(Vec::new)
@@ -72,19 +72,19 @@ impl<'a> Index<'a> {
         Some(Self {
             objects,
             children,
-            integers: value_index(&persistence.integer_values),
-            reals: value_index(&persistence.real_values),
+            integers: value_index(&persistence.integer_values.rows),
+            reals: value_index(&persistence.real_values.rows),
         })
     }
 
-    fn children(&self, parent: &str, name: &str) -> Vec<&'a ObjectRecord> {
+    fn children(&self, parent: usize, name: &str) -> Vec<&'a ObjectRecord> {
         self.children
             .get(&(parent, name))
             .cloned()
             .unwrap_or_default()
     }
 
-    fn unique_child(&self, parent: &str, name: &str) -> Option<&ObjectRecord> {
+    fn unique_child(&self, parent: usize, name: &str) -> Option<&ObjectRecord> {
         let children = self.children(parent, name);
         let [child] = children.as_slice() else {
             return None;
@@ -92,35 +92,35 @@ impl<'a> Index<'a> {
         Some(*child)
     }
 
-    fn unique_integer_scalar(&self, parent: &str, name: &str) -> Option<i32> {
+    fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
         let records = self.integers.get(&(parent, name))?;
         let [record] = records.as_slice() else {
             return None;
         };
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 
-    fn unique_real_scalar(&self, parent: &str, name: &str) -> Option<f64> {
+    fn unique_real_scalar(&self, parent: usize, name: &str) -> Option<f64> {
         let records = self.reals.get(&(parent, name))?;
         let [record] = records.as_slice() else {
             return None;
         };
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 }
 
 fn value_index<T>(
     records: &[legacy::ValueRecord<T>],
-) -> BTreeMap<(&str, &str), Vec<&legacy::ValueRecord<T>>> {
+) -> BTreeMap<(usize, &str), Vec<&legacy::ValueRecord<T>>> {
     let mut index = BTreeMap::new();
     for record in records {
-        if let Some(parent) = record.parent.as_deref() {
+        if let Some(parent) = record.parent {
             index
                 .entry((parent, record.name.as_str()))
                 .or_insert_with(Vec::new)
@@ -144,19 +144,19 @@ pub(crate) fn scan(
     let radius_rows = full_data_dimension_rows(&index);
     let mut rounds = BTreeMap::new();
     let mut ambiguous_feature_ids = BTreeSet::new();
-    let mut feature_nodes = index.children(features_root.id.as_str(), "first_feat_ptr");
-    feature_nodes.extend(index.children(features_root.id.as_str(), "next_feat_ptr"));
+    let mut feature_nodes = index.children(features_root.offset, "first_feat_ptr");
+    feature_nodes.extend(index.children(features_root.offset, "next_feat_ptr"));
     for feature in &feature_nodes {
         let Some(feature_id) = index
-            .unique_integer_scalar(&feature.id, "id")
+            .unique_integer_scalar(feature.offset, "id")
             .and_then(|value| u32::try_from(value).ok())
         else {
             continue;
         };
-        let Some(feature_type_object) = index.unique_child(&feature.id, "feat_type_ptr") else {
+        let Some(feature_type_object) = index.unique_child(feature.offset, "feat_type_ptr") else {
             continue;
         };
-        let Some(schema_class) = index.unique_integer_scalar(&feature_type_object.id, "type")
+        let Some(schema_class) = index.unique_integer_scalar(feature_type_object.offset, "type")
         else {
             continue;
         };
@@ -202,7 +202,7 @@ fn unique_root<'a>(index: &'a Index<'a>, name: &str) -> Option<&'a ObjectRecord>
 
 fn full_data_dimension_rows<'a>(index: &'a Index<'a>) -> Option<Vec<&'a ObjectRecord>> {
     let root = unique_root(index, "Sld_FullData")?;
-    let arrays = index.children(root.id.as_str(), "dim_array");
+    let arrays = index.children(root.offset, "dim_array");
     let [array] = arrays.as_slice() else {
         return None;
     };
@@ -219,8 +219,7 @@ fn full_data_dimension_rows<'a>(index: &'a Index<'a>) -> Option<Vec<&'a ObjectRe
         .map(|element_id| {
             seen.insert(element_id.as_str()).then_some(())?;
             let element = index.objects.get(element_id.as_str()).copied()?;
-            (element.parent.as_deref() == Some(array.id.as_str()) && element.name == "dim_array")
-                .then_some(element)
+            (element.parent == Some(array.offset) && element.name == "dim_array").then_some(element)
         })
         .collect()
 }
@@ -233,9 +232,9 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
     let mut values = Vec::new();
     for row in rows {
         let fields = (
-            index.unique_integer_scalar(&row.id, "type"),
-            index.unique_integer_scalar(&row.id, "dim_type"),
-            index.unique_integer_scalar(&row.id, "feat_id"),
+            index.unique_integer_scalar(row.offset, "type"),
+            index.unique_integer_scalar(row.offset, "dim_type"),
+            index.unique_integer_scalar(row.offset, "feat_id"),
         );
         if fields
             != (
@@ -247,10 +246,10 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
             continue;
         }
         found = true;
-        let Some(dimension_data) = index.unique_child(&row.id, "dim_dat_ptr") else {
+        let Some(dimension_data) = index.unique_child(row.offset, "dim_dat_ptr") else {
             return LegacyRoundRadius::Ambiguous;
         };
-        let Some(value) = index.unique_real_scalar(&dimension_data.id, "value") else {
+        let Some(value) = index.unique_real_scalar(dimension_data.offset, "value") else {
             return LegacyRoundRadius::Ambiguous;
         };
         if !value.is_finite() || value <= 0.0 {
@@ -294,16 +293,31 @@ mod tests {
         IntegerPayload, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload, ValueRecord,
     };
 
-    fn object(id: &str, name: &str, parent: Option<&str>, payload: ObjectPayload) -> ObjectRecord {
+    fn fixture_offset(id: &str) -> usize {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        id.hash(&mut hash);
+        hash.finish() as usize
+    }
+    fn object(
+        id: &str,
+        name: &str,
+        parent: Option<&str>,
+        mut payload: ObjectPayload,
+    ) -> ObjectRecord {
+        if let ObjectPayload::Array { elements, .. } = &mut payload {
+            for element in elements {
+                *element = crate::legacy::object_node_id(fixture_offset(element));
+            }
+        }
         ObjectRecord {
-            id: id.to_string(),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: parent.map(str::to_string),
+            parent: parent.map(fixture_offset),
             depth: 0,
             payload,
-            offset: 0,
+            offset: fixture_offset(id),
         }
     }
 
@@ -314,11 +328,11 @@ mod tests {
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            id: format!("{parent}:{name}:{offset}"),
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: IntegerPayload::Scalar { value },
             offset,
@@ -327,11 +341,11 @@ mod tests {
 
     fn real(parent: &str, value: f64, offset: usize) -> crate::legacy::RealRecord {
         ValueRecord {
-            id: format!("{parent}:value:{offset}"),
+            kind: crate::legacy::ValueKind::REAL,
             name: "value".to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: RealPayload::Scalar {
                 value: Real::from_bits(value.to_bits()),
@@ -396,8 +410,14 @@ mod tests {
             },
         ));
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -439,8 +459,8 @@ mod tests {
     #[test]
     fn ignores_non_round_dimension_rows() {
         let mut persistence = persistence(&[2.0]);
-        persistence.integer_values.retain(|record| {
-            !(record.parent.as_deref() == Some("dimension_0") && record.name == "dim_type")
+        persistence.integer_values.rows.retain(|record| {
+            !(record.parent == Some(fixture_offset("dimension_0")) && record.name == "dim_type")
         });
         let result = scan(&persistence, &[]);
         assert_eq!(result.rounds[0].radius, LegacyRoundRadius::NotPresent);
