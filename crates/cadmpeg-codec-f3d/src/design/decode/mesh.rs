@@ -39,7 +39,7 @@ use crate::records::{
 };
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
-    DesignMeshTextureResource, DesignRecordHeader,
+    DesignMeshTextureResource,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -489,13 +489,10 @@ fn nested_record_identity(
 fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
     let mut cursor = at;
     let reference = take_reference(record, &mut cursor)?;
-    if cursor != at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?
-        || reference.segment.is_some()
-        || reference.link_name.is_some()
-    {
+    if cursor != at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? {
         return None;
     }
-    u32::try_from(reference.target?)
+    u32::try_from(reference.local()?.0)
         .ok()
         .filter(|target| *target != 0)
 }
@@ -912,13 +909,13 @@ fn parse_mesh_scope_record(
             .then_some(())?;
         let (body_records, body_list_end) =
             counted_local_record_indices(record, feature_scope::BODY_COUNT)?;
-        let header = DesignRecordHeader {
-            id: String::new(),
-            record_index: identity.record_index(),
-            class_tag: identity.class_tag().clone(),
-            byte_offset: u64::try_from(frame.start).ok()?,
-        };
-        let scope = parse_parameter_scope(bytes, records, &header)?;
+        let scope = parse_parameter_scope(
+            bytes,
+            records,
+            identity.record_index(),
+            identity.class_tag(),
+            u64::try_from(frame.start).ok()?,
+        )?;
         (scope.kind() == crate::records::feature::DesignFeatureKind::BaseMeshFeature
             && scope.byte_offset == u64::try_from(frame.start).ok()?)
         .then_some(())?;
@@ -2828,12 +2825,12 @@ mod tests {
                 resource_guid: None,
                 authored_name: None,
                 groups: Vec::new(),
-                element_code: 4,
                 domain: crate::paramesh::MeshAttributeDomain::Corner,
-                item_size: Some(16),
-                values: (0..80).collect(),
+                elements: crate::paramesh::MeshElements::Float {
+                    width: crate::paramesh::FloatWidth::Quad,
+                    values: (0..80).collect(),
+                },
                 indices: Some(vec![0, 2]),
-                triangle_values: None,
             }],
         };
         let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)

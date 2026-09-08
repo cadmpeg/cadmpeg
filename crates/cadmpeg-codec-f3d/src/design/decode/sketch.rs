@@ -381,11 +381,7 @@ fn decode_sketch_visibility_member(
     let mut cursor = member_at + visibility_member::OWNER_REFERENCE;
     let owner = take_reference(bytes, &mut cursor)?;
     if cursor != member_at + visibility_member::STREAM_ORDINAL
-        || owner.target == Some(0)
-        || owner.target.is_none()
-        || owner.segment.is_some()
-        || owner.link_name.is_some()
-        || owner.inline_type_guid.is_some()
+        || !matches!(owner.local(), Some((target, None)) if target != 0)
     {
         return None;
     }
@@ -1263,7 +1259,7 @@ pub fn decode_sketch_relations(
                 byte_offset: record.byte_offset,
                 state_offset: parsed.state_offset as u32,
                 owner_reference: parsed.owner_reference,
-                owner_entity_id: String::new(),
+                owner_entity_id: None,
                 owner_reference_offset: parsed.owner_reference_offset as u32,
                 auxiliary_references: crate::records::ReferenceRun::located(
                     parsed
@@ -1722,7 +1718,7 @@ fn read_text_reference(
     slot: TextReferenceSlot,
 ) -> Option<Reference> {
     match slot {
-        TextReferenceSlot::Omitted => Some(Reference::default()),
+        TextReferenceSlot::Omitted => Some(Reference::Null),
         TextReferenceSlot::Written => take_reference(payload, cursor),
     }
 }
@@ -1786,7 +1782,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
 /// The record index a reference names, absent when the reference is null.
 fn reference_index(reference: &Reference) -> Option<u32> {
     reference
-        .target
+        .target()
         .and_then(|target| u32::try_from(target).ok())
 }
 
@@ -2313,13 +2309,8 @@ fn take_local_sketch_reference(
     cursor: &mut usize,
 ) -> Option<(u32, Option<String>)> {
     let reference = take_reference(payload, cursor)?;
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
-    }
-    Some((
-        u32::try_from(reference.target?).ok()?,
-        reference.inline_type_guid,
-    ))
+    let (target, inline_type_guid) = reference.into_local()?;
+    Some((u32::try_from(target).ok()?, inline_type_guid))
 }
 
 fn take_same_segment_sketch_reference(payload: &[u8], cursor: &mut usize) -> Option<u32> {
@@ -2921,15 +2912,21 @@ pub(crate) fn bind_sketch_graph(
                 relation.record_index
             ))
         })?;
-        relation.owner_entity_id = sketch_owners
+        let owner = sketch_owners
             .get(&(scope, relation.owner_reference))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Fusion sketch relation {} in {scope} has no owning Design entity {}",
                     relation.record_index, relation.owner_reference,
                 ))
-            })?
-            .to_string();
+            })?;
+        relation.owner_entity_id =
+            Some(cadmpeg_ir::NonEmptyString::new(*owner).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "Fusion sketch relation {} has an empty owner_entity_id",
+                    relation.record_index,
+                ))
+            })?);
         scoped_relations.push((
             scope,
             relation.owner_reference,
@@ -3641,7 +3638,7 @@ fn take_relation_reference(
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
     Some(crate::records::Located {
-        value: u32::try_from(reference.target?).ok()?,
+        value: u32::try_from(reference.target()?).ok()?,
         offset: at + 1,
     })
 }
@@ -3656,7 +3653,7 @@ fn take_auxiliary_relation_reference(
 ) -> Option<bool> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
-    let Some(target) = reference.target else {
+    let Some(target) = reference.target() else {
         return Some(false);
     };
     auxiliary_references.push(crate::records::Located {

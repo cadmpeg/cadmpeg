@@ -2103,10 +2103,7 @@ pub(crate) fn exact_ruled_surface_operation(
     let fixed_reference = |at: usize| {
         let mut cursor = at;
         let reference = take_reference(bytes, &mut cursor)?;
-        (cursor == at.checked_add(11)?
-            && reference.segment.is_none()
-            && reference.link_name.is_none())
-        .then(|| u32::try_from(reference.target?).ok())?
+        (cursor == at.checked_add(11)?).then(|| u32::try_from(reference.local()?.0).ok())?
     };
     let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
     let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;

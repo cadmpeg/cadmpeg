@@ -288,7 +288,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 100,
-        owner_entity_id: String::new(),
+        owner_entity_id: None,
         auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: (vec![SketchRelationMember::from_index(20)])
@@ -315,8 +315,20 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         &mut relations,
     )
     .expect("stream-local sketch graphs bind independently");
-    assert_eq!(relations[0].owner_entity_id, "A_100");
-    assert_eq!(relations[1].owner_entity_id, "B_100");
+    assert_eq!(
+        relations[0]
+            .owner_entity_id
+            .as_ref()
+            .map(cadmpeg_ir::NonEmptyString::as_str),
+        Some("A_100")
+    );
+    assert_eq!(
+        relations[1]
+            .owner_entity_id
+            .as_ref()
+            .map(cadmpeg_ir::NonEmptyString::as_str),
+        Some("B_100")
+    );
 
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =

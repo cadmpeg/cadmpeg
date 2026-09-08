@@ -110,16 +110,70 @@ pub(crate) fn take_lp_utf8(bytes: &[u8], at: &mut usize) -> Option<String> {
 /// One reference member of a Fusion segment record
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)
 /// "**References.**").
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Reference {
-    /// Target entity ID, or `None` for the one-byte null form.
-    pub(crate) target: Option<u64>,
-    /// Target type GUID serialized inline after the entity ID.
-    pub(crate) inline_type_guid: Option<String>,
-    /// Target segment ID when the reference leaves its own segment.
-    pub(crate) segment: Option<u32>,
-    /// `RedirectionsStream.dat` `neutronRole` of a cross-document reference.
-    pub(crate) link_name: Option<String>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Reference {
+    /// The null reference.
+    Null,
+    /// A target in the current segment.
+    Local {
+        target: u64,
+        inline_type_guid: Option<String>,
+    },
+    /// A target in another segment.
+    CrossSegment {
+        target: u64,
+        inline_type_guid: Option<String>,
+        segment: u32,
+    },
+    /// A named target in another document.
+    CrossDocument {
+        target: u64,
+        inline_type_guid: Option<String>,
+        segment: u32,
+        link_name: String,
+    },
+}
+
+impl Reference {
+    /// The target and inline type of a local reference.
+    pub(crate) fn local(&self) -> Option<(u64, Option<&str>)> {
+        match self {
+            Self::Local {
+                target,
+                inline_type_guid,
+            } => Some((*target, inline_type_guid.as_deref())),
+            _ => None,
+        }
+    }
+
+    /// The owned target and inline type of a local reference.
+    pub(crate) fn into_local(self) -> Option<(u64, Option<String>)> {
+        match self {
+            Self::Local {
+                target,
+                inline_type_guid,
+            } => Some((target, inline_type_guid)),
+            _ => None,
+        }
+    }
+
+    /// The target of a non-null reference.
+    pub(crate) fn target(&self) -> Option<u64> {
+        match self {
+            Self::Null => None,
+            Self::Local { target, .. }
+            | Self::CrossSegment { target, .. }
+            | Self::CrossDocument { target, .. } => Some(*target),
+        }
+    }
+
+    /// The link name of a cross-document reference.
+    pub(crate) fn link_name(&self) -> Option<&str> {
+        match self {
+            Self::CrossDocument { link_name, .. } => Some(link_name),
+            _ => None,
+        }
+    }
 }
 
 /// Take one reference, advancing `at` past every byte it owns.
@@ -135,7 +189,7 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     cursor += 1;
     if present == 0 {
         *at = cursor;
-        return Some(Reference::default());
+        return Some(Reference::Null);
     }
     if present != 1 {
         return None;
@@ -154,31 +208,44 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     } else {
         None
     };
-    let mut reference = Reference {
-        target: Some(target),
-        inline_type_guid,
-        ..Reference::default()
-    };
-    match *bytes.get(cursor)? {
+    let reference = match *bytes.get(cursor)? {
         0 => {
             cursor += 1;
             match *bytes.get(cursor)? {
-                0 => cursor += 1,
+                0 => {
+                    cursor += 1;
+                    Reference::Local {
+                        target,
+                        inline_type_guid,
+                    }
+                }
                 1 => {
-                    reference.segment = View::u32_le_at(bytes, cursor + 1);
+                    let segment = View::u32_le_at(bytes, cursor + 1)?;
                     cursor += 5;
+                    Reference::CrossSegment {
+                        target,
+                        inline_type_guid,
+                        segment,
+                    }
                 }
                 _ => return None,
             }
         }
         1 => {
             cursor += 1;
-            reference.segment = View::u32_le_at(bytes, cursor);
+            let segment = View::u32_le_at(bytes, cursor)?;
             cursor += 4;
             let (_asset, end) = lp_utf16_bounded(bytes, cursor, 0..=64)?;
             cursor = end;
             match *bytes.get(cursor)? {
-                1 => cursor += 1,
+                1 => {
+                    cursor += 1;
+                    Reference::CrossSegment {
+                        target,
+                        inline_type_guid,
+                        segment,
+                    }
+                }
                 0 => {
                     cursor += 1;
                     let (guid, end) =
@@ -187,7 +254,6 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
                         return None;
                     }
                     let (link_name, end) = lp_utf16_bounded(bytes, end, 0..=256)?;
-                    reference.link_name = Some(link_name);
                     cursor = end;
                     match *bytes.get(cursor)? {
                         0 => cursor += 1,
@@ -199,12 +265,18 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
                         }
                         _ => return None,
                     }
+                    Reference::CrossDocument {
+                        target,
+                        inline_type_guid,
+                        segment,
+                        link_name,
+                    }
                 }
                 _ => return None,
             }
         }
         _ => return None,
-    }
+    };
     *at = cursor;
     Some(reference)
 }

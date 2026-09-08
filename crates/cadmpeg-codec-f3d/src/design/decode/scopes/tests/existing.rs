@@ -897,8 +897,14 @@ fn work_point_stream(
         class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("WorkPoint scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("WorkPoint scope");
     (bytes, scope, position_at)
 }
 

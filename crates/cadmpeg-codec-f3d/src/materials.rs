@@ -1429,7 +1429,7 @@ fn is_lowercase_guid(value: &str) -> bool {
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    let nodes = crate::design::decode::body::browser_node_entities(bytes);
+    let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {
@@ -1870,21 +1870,15 @@ fn definition_catalog<'a>(
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct DefinitionCatalogRecord {
+struct DefinitionCatalog {
     schema: String,
     asset_id: String,
-    base_asset_id: String,
     category: Option<String>,
-    group: Option<String>,
-    subgroup: Option<String>,
-    description: String,
-    tags: Vec<String>,
-    preview_paths: Vec<String>,
 }
 
 fn merge_definition_catalog_record(
-    definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalogRecord>,
-    definition: DefinitionCatalogRecord,
+    definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalog>,
+    definition: DefinitionCatalog,
 ) {
     let key = (definition.asset_id.clone(), definition.schema.clone());
     match definitions.entry(key) {
@@ -1899,7 +1893,7 @@ fn merge_definition_catalog_record(
     }
 }
 
-fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {
+fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalog, CodecError> {
     let malformed = malformed_definition_catalog_record;
     if !record.starts_with(RECORD_MARKER) {
         return Err(malformed("marker", 0));
@@ -1916,7 +1910,7 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
     position += 1;
     let asset_id = take_lp_utf8(record, &mut position)
         .ok_or_else(|| malformed("asset identifier", position))?;
-    let base_asset_id = take_lp_utf8(record, &mut position)
+    take_lp_utf8(record, &mut position)
         .ok_or_else(|| malformed("base asset identifier", position))?;
     let version =
         View::u32_le_at(record, position).ok_or_else(|| malformed("format version", position))?;
@@ -1929,33 +1923,22 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
     } else {
         None
     };
-    let group = if version >= 1 {
-        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?)
-    } else {
-        None
-    };
-    let subgroup = if version == 3 {
-        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?)
-    } else {
-        None
-    };
-    let description =
-        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
-    let tags = take_catalog_strings(record, &mut position)?;
-    let preview_paths = take_catalog_strings(record, &mut position)?;
+    if version >= 1 {
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?;
+    }
+    if version == 3 {
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?;
+    }
+    take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
+    consume_catalog_strings(record, &mut position)?;
+    consume_catalog_strings(record, &mut position)?;
     if record[position..].iter().any(|byte| *byte != 0) {
         return Err(malformed("trailing padding", position));
     }
-    Ok(DefinitionCatalogRecord {
+    Ok(DefinitionCatalog {
         schema,
         asset_id,
-        base_asset_id,
         category,
-        group,
-        subgroup,
-        description,
-        tags,
-        preview_paths,
     })
 }
 
@@ -1963,23 +1946,17 @@ fn malformed_definition_catalog_record(_field: &str, _position: usize) -> CodecE
     CodecError::Malformed("Protein definition catalog record is malformed".into())
 }
 
-fn take_catalog_strings(record: &[u8], position: &mut usize) -> Result<Vec<String>, CodecError> {
+fn consume_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), CodecError> {
     let count = View::u32_le_at(record, *position)
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     *position += 4;
     let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
-    let mut values = Vec::new();
-    values
-        .try_reserve(count)
-        .map_err(|_| malformed_definition_catalog_record("string capacity", *position))?;
     for _ in 0..count {
-        values.push(
-            take_lp_utf8(record, position)
-                .ok_or_else(|| malformed_definition_catalog_record("string", *position))?,
-        );
+        take_lp_utf8(record, position)
+            .ok_or_else(|| malformed_definition_catalog_record("string", *position))?;
     }
-    Ok(values)
+    Ok(())
 }
 
 pub(crate) fn nested_entry<'a>(

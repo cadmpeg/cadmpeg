@@ -92,8 +92,14 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         class_tag: crate::records::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let mut scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("Combine scope");
+    let mut scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("Combine scope");
     let operation = exact_combine_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("Combine construction");
     assert_eq!(

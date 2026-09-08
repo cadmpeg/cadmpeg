@@ -2578,13 +2578,8 @@ fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
 fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
     let target_at = at.checked_add(1)?;
     let reference = take_reference(bytes, at)?;
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
-    }
-    Some((
-        u32::try_from(reference.target?).ok()?,
-        u64::try_from(target_at).ok()?,
-    ))
+    let (target, _) = reference.local()?;
+    Some((u32::try_from(target).ok()?, u64::try_from(target_at).ok()?))
 }
 
 /// Decode the persistent identity frame named by each construction-operand group.

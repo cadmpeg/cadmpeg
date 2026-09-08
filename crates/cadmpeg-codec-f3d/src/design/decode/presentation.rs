@@ -519,13 +519,11 @@ enum LocalReference {
 
 fn local_reference_value(bytes: &[u8], at: &mut usize) -> Option<LocalReference> {
     let reference = take_reference(bytes, at)?;
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
+    match reference {
+        crate::bytes::Reference::Null => Some(LocalReference::Null),
+        crate::bytes::Reference::Local { target, .. } => Some(LocalReference::Target(target)),
+        _ => None,
     }
-    Some(match reference.target {
-        Some(target) => LocalReference::Target(target),
-        None => LocalReference::Null,
-    })
 }
 
 fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {

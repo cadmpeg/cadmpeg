@@ -2074,7 +2074,6 @@ fn try_decode_text_model(
         parts.push((
             BrepFacts {
                 name: name.clone(),
-                is_smbh: false,
                 uncompressed_len: bytes.len() as u64,
                 kernel: Some(crate::container::KernelFraming::Asm(header)),
                 solved_record_limit: None,
@@ -3484,15 +3483,15 @@ fn mesh_attribute_channels(
 
     let mut channels = Vec::new();
     for attribute in attributes {
-        match (attribute.domain, attribute.item_size, attribute.count()) {
+        match (attribute.domain, attribute.item_size(), attribute.count()) {
             (MeshAttributeDomain::Vertex, Some(item_size), Some(_)) => {
                 channels.push(
                     cadmpeg_ir::tessellation::TessellationChannel::new(
                         cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
                         item_size,
                         attribute.role,
-                        attribute.element_code,
-                        attribute.values.clone(),
+                        attribute.element_code(),
+                        attribute.values().to_vec(),
                     )
                     .expect("vertex mesh attribute payload is well formed"),
                 );
@@ -3507,8 +3506,8 @@ fn mesh_attribute_channels(
                         cadmpeg_ir::tessellation::ChannelAddressing::Corner(selectors),
                         item_size,
                         attribute.role,
-                        attribute.element_code,
-                        attribute.values.clone(),
+                        attribute.element_code(),
+                        attribute.values().to_vec(),
                     )
                     .expect("corner mesh attribute payload is well formed"),
                 );
@@ -3528,8 +3527,8 @@ fn mesh_attribute_channels(
                         cadmpeg_ir::tessellation::ChannelAddressing::Triangle(indices),
                         item_size,
                         attribute.role,
-                        attribute.element_code,
-                        attribute.values.clone(),
+                        attribute.element_code(),
+                        attribute.values().to_vec(),
                     )
                     .expect("triangle mesh attribute payload is well formed"),
                 );

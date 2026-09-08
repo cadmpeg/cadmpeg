@@ -24,9 +24,7 @@ use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
-use super::{
-    merge_definition_catalog_record, DefinitionCatalogRecord, RECORD_MARKER, STREAM_HEADER_LEN,
-};
+use super::{merge_definition_catalog_record, DefinitionCatalog, RECORD_MARKER, STREAM_HEADER_LEN};
 
 fn raw_body_map_pair(
     asm_key_offset: usize,
@@ -119,8 +117,6 @@ fn definition_catalog_version_one_omits_category() {
     assert_eq!(decoded.schema, "PrismOpaqueSchema");
     assert_eq!(decoded.asset_id, "Opaque(246,246,243)");
     assert_eq!(decoded.category, None);
-    assert_eq!(decoded.group.as_deref(), Some("Default"));
-    assert_eq!(decoded.tags, ["materials", "opaque"]);
 }
 
 #[test]
@@ -146,8 +142,8 @@ fn definition_catalog_version_zero_omits_category_and_group() {
     let decoded = super::decode_definition_catalog_record(&logical)
         .expect("decode version-zero definition record");
     assert_eq!(decoded.category, None);
-    assert_eq!(decoded.group, None);
-    assert_eq!(decoded.description, "Unified Bitmap.");
+    assert_eq!(decoded.schema, "UnifiedBitmapSchema");
+    assert_eq!(decoded.asset_id, "Metal-045_metal_pattern_shader");
 }
 
 #[test]
@@ -172,24 +168,17 @@ fn definition_catalog_version_three_adds_subgroup() {
     let decoded = super::decode_definition_catalog_record(&logical)
         .expect("decode version-three definition record");
     assert_eq!(decoded.category.as_deref(), Some("Metal"));
-    assert_eq!(decoded.group.as_deref(), Some("Default"));
-    assert_eq!(decoded.subgroup.as_deref(), Some("Miscellaneous"));
-    assert_eq!(decoded.description, "Generic material.");
+    assert_eq!(decoded.schema, "GenericSchema");
+    assert_eq!(decoded.asset_id, "InvGen-063");
 }
 
 #[test]
 fn definition_catalog_uses_asset_and_schema_identity() {
-    fn definition(asset: &str, category: &str) -> DefinitionCatalogRecord {
-        DefinitionCatalogRecord {
+    fn definition(asset: &str, category: &str) -> DefinitionCatalog {
+        DefinitionCatalog {
             schema: "PrismMetalSchema".into(),
             asset_id: asset.into(),
-            base_asset_id: asset.into(),
             category: Some(category.into()),
-            group: Some("Default".into()),
-            subgroup: None,
-            description: "Steel - satin".into(),
-            tags: vec!["Metal".into(), "Steel".into()],
-            preview_paths: vec!["Mats/PrismMetal/Presets/t_Prism-256.png".into()],
         }
     }
 
@@ -198,10 +187,6 @@ fn definition_catalog_uses_asset_and_schema_identity() {
     merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
     assert_eq!(definitions.len(), 1);
 
-    let mut alternate_description = definition("Prism-256", "Metal/Steel");
-    alternate_description.description = "CCAF1000-E7D9-2CF1-9BA1-B9224CFEBAF6".into();
-    merge_definition_catalog_record(&mut definitions, alternate_description);
-
     merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Stainless"));
     let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
     assert_eq!(definitions[&key].category, None);
@@ -209,11 +194,6 @@ fn definition_catalog_uses_asset_and_schema_identity() {
     let mut second_schema = definition("Prism-256", "Metal/Steel");
     second_schema.schema = "GenericSchema".into();
     merge_definition_catalog_record(&mut definitions, second_schema);
-    assert_eq!(definitions.len(), 2);
-
-    let mut alternate_base = definition("Prism-256", "Metal/Steel");
-    alternate_base.base_asset_id = "another-base".into();
-    merge_definition_catalog_record(&mut definitions, alternate_base);
     assert_eq!(definitions.len(), 2);
 }
 

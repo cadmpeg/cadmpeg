@@ -218,7 +218,13 @@ pub fn decode_parameter_scopes(
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records) {
-            let Some(mut scope) = parse_parameter_scope(bytes, &records, &header) else {
+            let Some(mut scope) = parse_parameter_scope(
+                bytes,
+                &records,
+                header.record_index,
+                &header.class_tag,
+                header.byte_offset,
+            ) else {
                 continue;
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
@@ -1308,12 +1314,8 @@ fn exact_assembly_axial_selector(
     cursor = after_selector_context_id.checked_add(12)?;
     let occurrence_reference_offset = cursor.checked_add(1)?;
     let occurrence = take_reference(bytes, &mut cursor)?;
-    let occurrence_reference = occurrence.target?;
-    if occurrence_reference == 0
-        || occurrence.segment.is_some()
-        || occurrence.link_name.is_some()
-        || View::u32_le_at(bytes, cursor)? != 1
-    {
+    let (occurrence_reference, _) = occurrence.local()?;
+    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -1430,9 +1432,8 @@ pub(crate) fn exact_indexed_header_at(
 fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
     let mut cursor = at;
     let reference = take_reference(bytes, &mut cursor)?;
-    let target = u32::try_from(reference.target?).ok()?;
-    (cursor == at.checked_add(11)? && reference.segment.is_none() && reference.link_name.is_none())
-        .then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
+    let target = u32::try_from(reference.local()?.0).ok()?;
+    (cursor == at.checked_add(11)?).then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
 }
 
 fn exact_single_joint_origin_frame(
@@ -1527,8 +1528,6 @@ pub(crate) fn exact_surface_offset_operation(
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
         support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-            boundary_mode: operation.mode,
-            boundary_mode_offset: operation.mode_offset,
             boundary_record_index: operation.boundary_record_index,
             boundary_reference_record_index: operation.boundary_reference_record_index,
             boundary_reference_offset: operation.boundary_reference_offset,
@@ -7881,7 +7880,7 @@ fn point_data_level(
         let reference_offset = cursor.checked_add(1)?;
         let reference = take_reference(body, &mut cursor)?;
         inputs.push(DesignWorkPointInput {
-            record_index: u32::try_from(reference.target?).ok()?,
+            record_index: u32::try_from(reference.target()?).ok()?,
             reference_offset: u64::try_from(reference_offset).ok()?,
             carrier: None,
         });
@@ -8201,7 +8200,7 @@ fn hole_construction_frame_at(
     for _ in 0..input_count {
         let reference_at = cursor;
         let reference = take_reference(body, &mut cursor)?;
-        let target = u32::try_from(reference.target?).ok()?;
+        let target = u32::try_from(reference.target()?).ok()?;
         input_records.push(crate::records::Located {
             value: target,
             offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
@@ -8279,9 +8278,7 @@ pub(crate) fn exact_combine_operation(
             .get(start + combine_extended::ZERO_RUN_18..start + combine_extended::FORM_MARKER)?
             != [0; 18]
             || bytes.get(start + combine_extended::FORM_MARKER) != Some(&1)
-            || reference.target.is_none_or(|target| target == 0)
-            || reference.segment.is_some()
-            || reference.link_name.is_some()
+            || reference.local().is_none_or(|(target, _)| target == 0)
             || reference_at != start.checked_add(combine_extended::LEN)?
         {
             return None;
@@ -8462,9 +8459,7 @@ fn exact_combine_external_body_identity(
     }
     let mut cursor = start.checked_add(combine_external::NESTED_REFERENCE_MARKER)?;
     let nested = take_reference(bytes, &mut cursor)?;
-    if nested.target != Some(u64::from(record_index.checked_add(3)?))
-        || nested.segment.is_some()
-        || nested.link_name.is_some()
+    if nested.local()?.0 != u64::from(record_index.checked_add(3)?)
         || View::u32_le_at(bytes, cursor)? != 1
     {
         return None;
@@ -8489,12 +8484,8 @@ fn exact_combine_external_body_identity(
     cursor = after_selector_context_id.checked_add(12)?;
     let occurrence_reference_at = cursor.checked_add(1)?;
     let occurrence = take_reference(bytes, &mut cursor)?;
-    let occurrence_reference = occurrence.target?;
-    if occurrence_reference == 0
-        || occurrence.segment.is_some()
-        || occurrence.link_name.is_some()
-        || View::u32_le_at(bytes, cursor)? != 1
-    {
+    let (occurrence_reference, _) = occurrence.local()?;
+    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -8518,10 +8509,7 @@ fn exact_combine_external_body_identity(
     cursor = cursor.checked_add(8)?;
     let take_local = |cursor: &mut usize, expected| {
         let reference = take_reference(bytes, cursor)?;
-        (reference.target == Some(u64::from(expected))
-            && reference.segment.is_none()
-            && reference.link_name.is_none())
-        .then_some(())
+        (reference.local()?.0 == u64::from(expected)).then_some(())
     };
     take_local(&mut cursor, record_index.checked_add(2)?)?;
     if bytes.get(cursor..cursor.checked_add(2)?)? != [0; 2] {
@@ -8748,10 +8736,12 @@ fn parameter_scope_previous_history_offset_for_form(
 pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    header: &DesignRecordHeader,
+    record_index: u32,
+    class_tag: &crate::records::DesignClassTag,
+    byte_offset: u64,
 ) -> Option<DesignParameterScope> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let paired_at = records.first_at_or_after(start.checked_add(11)?, header.record_index)?;
+    let start = usize::try_from(byte_offset).ok()?;
+    let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
@@ -8845,7 +8835,7 @@ pub(crate) fn parse_parameter_scope(
     };
     let surface_stitch_operation =
         if kind == crate::records::feature::DesignFeatureKind::SurfaceStitch {
-            exact_surface_stitch_operation(bytes, records, header.record_index, reference_members)
+            exact_surface_stitch_operation(bytes, records, record_index, reference_members)
         } else {
             None
         };
@@ -8865,7 +8855,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            header.class_tag.as_str(),
+            class_tag.as_str(),
             &paired_class_tag,
             reference_members,
         )
@@ -8897,7 +8887,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            header.class_tag.as_str(),
+            class_tag.as_str(),
             &paired_class_tag,
             *reference_count_at,
             reference_members,
@@ -8952,9 +8942,9 @@ pub(crate) fn parse_parameter_scope(
     };
     let mut scope = DesignParameterScope {
         id: String::new(),
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        record_index: header.record_index,
+        byte_offset,
+        class_tag: class_tag.clone(),
+        record_index,
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
         feature_ordinal,

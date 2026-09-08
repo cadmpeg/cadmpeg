@@ -140,20 +140,76 @@ pub(crate) struct MeshAttribute {
     pub(crate) authored_name: Option<String>,
     /// Face-group key/GUID records carried by repeated field 6 entries.
     pub(crate) groups: Vec<(u32, String)>,
-    /// The registry's element code: the count of `f32` components of one
-    /// element for [`ELEMENT_PAIR`] and [`ELEMENT_QUAD`], and a packed or
-    /// delta-coded form otherwise.
-    pub(crate) element_code: u32,
+    /// The channel's encoded elements.
+    pub(crate) elements: MeshElements,
     /// Which entities the values address.
     pub(crate) domain: MeshAttributeDomain,
-    /// Bytes of one element, when the element code settles the element width.
-    pub(crate) item_size: Option<u32>,
-    /// The value stream, verbatim.
-    pub(crate) values: Vec<u8>,
     /// Explicit corner positions selected by the optional index stream.
     pub(crate) indices: Option<Vec<u32>>,
-    /// Decoded terminal-delta values for a triangle-domain code-7 channel.
-    pub(crate) triangle_values: Option<Vec<u32>>,
+}
+
+/// The width of a floating-point element.
+#[derive(Clone, Copy)]
+pub(crate) enum FloatWidth {
+    /// Two components.
+    Pair,
+    /// Four components.
+    Quad,
+}
+
+/// Encoded elements and their code-specific decoded data.
+pub(crate) enum MeshElements {
+    /// Floating-point elements.
+    Float { width: FloatWidth, values: Vec<u8> },
+    /// Packed directions.
+    PackedDirection { values: Vec<u8> },
+    /// Delta-coded triangle values.
+    TriangleDelta { values: Vec<u8>, decoded: Vec<u32> },
+    /// Elements with an unresolved layout.
+    Opaque { code: u32, values: Vec<u8> },
+}
+
+impl MeshElements {
+    fn item_size(&self) -> Option<u32> {
+        match self {
+            Self::Float {
+                width: FloatWidth::Pair,
+                ..
+            } => Some(8),
+            Self::Float {
+                width: FloatWidth::Quad,
+                ..
+            } => Some(16),
+            Self::PackedDirection { .. } => Some(PACKED_DIRECTION_BYTES),
+            Self::TriangleDelta { .. } => Some(4),
+            Self::Opaque { .. } => None,
+        }
+    }
+
+    fn code(&self) -> u32 {
+        match self {
+            Self::Float {
+                width: FloatWidth::Pair,
+                ..
+            } => ELEMENT_PAIR as u32,
+            Self::Float {
+                width: FloatWidth::Quad,
+                ..
+            } => ELEMENT_QUAD as u32,
+            Self::PackedDirection { .. } => ELEMENT_PACKED_DIRECTION as u32,
+            Self::TriangleDelta { .. } => ELEMENT_TRIANGLE_DELTA as u32,
+            Self::Opaque { code, .. } => *code,
+        }
+    }
+
+    fn values(&self) -> &[u8] {
+        match self {
+            Self::Float { values, .. }
+            | Self::PackedDirection { values }
+            | Self::TriangleDelta { values, .. }
+            | Self::Opaque { values, .. } => values,
+        }
+    }
 }
 
 /// One source face group and its triangle membership.
@@ -165,13 +221,28 @@ pub(crate) struct MeshTriangleGroup {
 }
 
 impl MeshAttribute {
+    /// The encoded element width in bytes.
+    pub(crate) fn item_size(&self) -> Option<u32> {
+        self.elements.item_size()
+    }
+
+    /// The registry element code.
+    pub(crate) fn element_code(&self) -> u32 {
+        self.elements.code()
+    }
+
+    /// The encoded value stream.
+    pub(crate) fn values(&self) -> &[u8] {
+        self.elements.values()
+    }
+
     /// The element count, when the element width is settled.
     pub(crate) fn count(&self) -> Option<u32> {
-        let item_size = usize::try_from(self.item_size?).ok()?;
-        self.values
+        let item_size = usize::try_from(self.item_size()?).ok()?;
+        self.values()
             .len()
             .checked_div(item_size)
-            .filter(|_| self.values.len().is_multiple_of(item_size))
+            .filter(|_| self.values().len().is_multiple_of(item_size))
             .and_then(|count| u32::try_from(count).ok())
     }
 
@@ -236,13 +307,11 @@ fn take_varint(message: &[u8], at: &mut usize) -> Result<u64, CodecError> {
     Err(malformed("paramesh protobuf varint exceeds ten bytes"))
 }
 
-/// One protobuf field value. Fixed-width values are retained only as a wire
-/// shape because the implemented registry fields do not interpret them.
+/// One protobuf field value; fixed32 and fixed64 wire values are skipped.
 enum ProtobufValue<'a> {
     Varint(u64),
     Bytes(&'a [u8]),
-    Fixed64,
-    Fixed32,
+    Skipped,
 }
 
 /// Read every protobuf field in stored order.
@@ -264,7 +333,7 @@ fn protobuf_fields(message: &[u8]) -> Result<Vec<(u64, ProtobufValue<'_>)>, Code
                     .checked_add(8)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed64 field is truncated"))?;
-                fields.push((key >> 3, ProtobufValue::Fixed64));
+                fields.push((key >> 3, ProtobufValue::Skipped));
             }
             2 => {
                 let count = usize::try_from(take_varint(message, &mut at)?)
@@ -281,7 +350,7 @@ fn protobuf_fields(message: &[u8]) -> Result<Vec<(u64, ProtobufValue<'_>)>, Code
                     .checked_add(4)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed32 field is truncated"))?;
-                fields.push((key >> 3, ProtobufValue::Fixed32));
+                fields.push((key >> 3, ProtobufValue::Skipped));
             }
             _ => {
                 return Err(malformed(
@@ -496,16 +565,6 @@ fn registry_channel(
         resource_guid,
         groups,
     })
-}
-
-/// The bytes of one element under an element code, when the code settles it.
-fn element_bytes(element_code: u64) -> Option<u32> {
-    match element_code {
-        ELEMENT_PAIR | ELEMENT_QUAD => u32::try_from(element_code * 4).ok(),
-        ELEMENT_PACKED_DIRECTION => Some(PACKED_DIRECTION_BYTES),
-        ELEMENT_TRIANGLE_DELTA => Some(4),
-        _ => None,
-    }
 }
 
 fn registry_property(entry: &[u8]) -> Result<(String, RegistryProperty), CodecError> {
@@ -888,7 +947,9 @@ enum StreamLayout {
     /// One byte per element.
     Byte,
     /// A fixed number of unpacked f32 components per element.
-    Float(u64),
+    Float2,
+    Float3,
+    Float4,
     /// One octahedrally packed three-component direction per two f32 values.
     PackedDirection,
     /// One u32 value, with every nonterminal word interpreted as an i32 delta.
@@ -899,15 +960,15 @@ enum StreamLayout {
 fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), CodecError> {
     let expected: &[(&str, StreamDescriptorValue)] = match layout {
         StreamLayout::Byte => &[("T", StreamDescriptorValue::Integer(0))],
-        StreamLayout::Float(2) => &[
+        StreamLayout::Float2 => &[
             ("D", StreamDescriptorValue::Integer(2)),
             ("T", StreamDescriptorValue::Integer(3)),
         ],
-        StreamLayout::Float(3) => &[
+        StreamLayout::Float3 => &[
             ("D", StreamDescriptorValue::Integer(3)),
             ("T", StreamDescriptorValue::Integer(3)),
         ],
-        StreamLayout::Float(4) => &[
+        StreamLayout::Float4 => &[
             ("D", StreamDescriptorValue::Integer(4)),
             ("T", StreamDescriptorValue::Integer(3)),
         ],
@@ -920,11 +981,6 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
             ("T", StreamDescriptorValue::Integer(1)),
             ("d", StreamDescriptorValue::Integer(1)),
         ],
-        StreamLayout::Float(_) => {
-            return Err(malformed(
-                "paramesh stream declares an unsupported f32 component count",
-            ));
-        }
     };
     if stream.descriptor.len() != expected.len()
         || expected.iter().any(|(expected_name, expected_value)| {
@@ -945,9 +1001,9 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
 fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
     for layout in [
         StreamLayout::Byte,
-        StreamLayout::Float(2),
-        StreamLayout::Float(3),
-        StreamLayout::Float(4),
+        StreamLayout::Float2,
+        StreamLayout::Float3,
+        StreamLayout::Float4,
         StreamLayout::PackedDirection,
         StreamLayout::TerminalDelta,
     ] {
@@ -1309,10 +1365,15 @@ fn decode_corner_normals(
     vertices: usize,
     triangles: &[[u32; 3]],
 ) -> Result<Vec<[f64; 3]>, CodecError> {
-    let mut channels = attributes.iter().filter(|attribute| {
-        attribute.role == 0 && u64::from(attribute.element_code) == ELEMENT_PACKED_DIRECTION
-    });
-    let Some(attribute) = channels.next() else {
+    let mut channels = attributes
+        .iter()
+        .filter_map(|attribute| match &attribute.elements {
+            MeshElements::PackedDirection { values } if attribute.role == 0 => {
+                Some((attribute, values))
+            }
+            _ => None,
+        });
+    let Some((attribute, values)) = channels.next() else {
         return Ok(Vec::new());
     };
     if channels.next().is_some() {
@@ -1320,22 +1381,13 @@ fn decode_corner_normals(
             "paramesh registry declares more than one corner-normal channel",
         ));
     }
-    if attribute.item_size != Some(PACKED_DIRECTION_BYTES)
-        || !attribute
-            .values
-            .len()
-            .is_multiple_of(PACKED_DIRECTION_BYTES as usize)
-    {
+    if !values.len().is_multiple_of(PACKED_DIRECTION_BYTES as usize) {
         return Err(malformed(
             "paramesh corner-normal channel has no complete packed-direction table",
         ));
     }
-
-    let mut table = Vec::with_capacity(attribute.values.len() / PACKED_DIRECTION_BYTES as usize);
-    for raw in attribute
-        .values
-        .chunks_exact(PACKED_DIRECTION_BYTES as usize)
-    {
+    let mut table = Vec::with_capacity(values.len() / PACKED_DIRECTION_BYTES as usize);
+    for raw in values.chunks_exact(PACKED_DIRECTION_BYTES as usize) {
         table.push(decode_packed_direction([
             View::f32_le_at(raw, 0).expect("packed-direction chunks_exact(8)"),
             View::f32_le_at(raw, 4).expect("packed-direction chunks_exact(8)"),
@@ -1533,7 +1585,7 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     };
     let vertex_stream = named(&registry.vertex_stream)
         .ok_or_else(|| malformed("paramesh registry names no vertex stream"))?;
-    require_layout(vertex_stream, StreamLayout::Float(3))?;
+    require_layout(vertex_stream, StreamLayout::Float3)?;
     let vertices = decode_vertices(&vertex_stream.bytes)?;
     let corner_stream = named(&registry.triangle_stream)
         .ok_or_else(|| malformed("paramesh registry names no triangle stream"))?;
@@ -1617,8 +1669,8 @@ fn registry_attributes(
         let stream = named(registration.streams.values)
             .ok_or_else(|| malformed("paramesh channel declares an absent value stream"))?;
         match registration.streams.element_code {
-            ELEMENT_PAIR => require_layout(stream, StreamLayout::Float(2))?,
-            ELEMENT_QUAD => require_layout(stream, StreamLayout::Float(4))?,
+            ELEMENT_PAIR => require_layout(stream, StreamLayout::Float2)?,
+            ELEMENT_QUAD => require_layout(stream, StreamLayout::Float4)?,
             ELEMENT_PACKED_DIRECTION => {
                 require_layout(stream, StreamLayout::PackedDirection)?;
             }
@@ -1670,15 +1722,33 @@ fn registry_attributes(
             resource_guid: registration.resource_guid,
             authored_name,
             groups: registration.groups,
-            element_code: u32::try_from(registration.streams.element_code)
-                .map_err(|_| malformed("paramesh channel declares an out-of-range element code"))?,
+            elements: match registration.streams.element_code {
+                ELEMENT_PAIR => MeshElements::Float {
+                    width: FloatWidth::Pair,
+                    values: stream.bytes.clone(),
+                },
+                ELEMENT_QUAD => MeshElements::Float {
+                    width: FloatWidth::Quad,
+                    values: stream.bytes.clone(),
+                },
+                ELEMENT_PACKED_DIRECTION => MeshElements::PackedDirection {
+                    values: stream.bytes.clone(),
+                },
+                ELEMENT_TRIANGLE_DELTA => MeshElements::TriangleDelta {
+                    values: stream.bytes.clone(),
+                    decoded: decode_terminal_delta_values(&stream.bytes)?,
+                },
+                code => MeshElements::Opaque {
+                    code: u32::try_from(code).map_err(|_| {
+                        malformed("paramesh channel declares an out-of-range element code")
+                    })?,
+                    values: stream.bytes.clone(),
+                },
+            },
             domain: registration.domain,
-            item_size: element_bytes(registration.streams.element_code),
-            values: stream.bytes.clone(),
             indices: None,
-            triangle_values: None,
         };
-        if attribute.item_size.is_some() && attribute.count().is_none() {
+        if attribute.item_size().is_some() && attribute.count().is_none() {
             return Err(malformed(
                 "paramesh channel value stream ends inside an element",
             ));
@@ -1691,7 +1761,7 @@ fn registry_attributes(
                 corners,
             )?);
         }
-        if attribute.item_size.is_some()
+        if attribute.item_size().is_some()
             && attribute.domain == MeshAttributeDomain::Vertex
             && attribute
                 .count()
@@ -1701,7 +1771,7 @@ fn registry_attributes(
                 "paramesh vertex-channel element count differs from the vertex count",
             ));
         }
-        if attribute.item_size.is_some()
+        if attribute.item_size().is_some()
             && attribute.domain == MeshAttributeDomain::Triangle
             && attribute
                 .count()
@@ -1710,9 +1780,6 @@ fn registry_attributes(
             return Err(malformed(
                 "paramesh triangle-channel element count differs from the triangle count",
             ));
-        }
-        if u64::from(attribute.element_code) == ELEMENT_TRIANGLE_DELTA {
-            attribute.triangle_values = Some(decode_terminal_delta_values(&attribute.values)?);
         }
         attributes.push(attribute);
     }
@@ -1742,11 +1809,16 @@ fn registry_triangle_groups(
     attributes: &[MeshAttribute],
     declared_count: u32,
 ) -> Result<Vec<MeshTriangleGroup>, CodecError> {
-    let mut channels = attributes.iter().filter(|attribute| {
-        attribute.domain == MeshAttributeDomain::Triangle
-            && u64::from(attribute.element_code) == ELEMENT_TRIANGLE_DELTA
-            && attribute.role == 0
-    });
+    let mut channels = attributes
+        .iter()
+        .filter_map(|attribute| match &attribute.elements {
+            MeshElements::TriangleDelta { decoded, .. }
+                if attribute.domain == MeshAttributeDomain::Triangle && attribute.role == 0 =>
+            {
+                Some((attribute, decoded))
+            }
+            _ => None,
+        });
     let channel = channels.next();
     if channels.next().is_some() {
         return Err(malformed(
@@ -1755,7 +1827,7 @@ fn registry_triangle_groups(
     }
     let declared_count = usize::try_from(declared_count)
         .map_err(|_| malformed("paramesh face-group count is out of range"))?;
-    let Some(channel) = channel else {
+    let Some((channel, values)) = channel else {
         if declared_count == 0 {
             return Ok(Vec::new());
         }
@@ -1772,10 +1844,6 @@ fn registry_triangle_groups(
             "paramesh face-group channel contradicts its registry declaration",
         ));
     }
-    let values = channel
-        .triangle_values
-        .as_deref()
-        .ok_or_else(|| malformed("paramesh face-group channel has no decoded values"))?;
     let mut memberships = channel
         .groups
         .iter()
@@ -1827,7 +1895,6 @@ fn registry_texture_ids(attributes: &[MeshAttribute]) -> Result<Option<Vec<u32>>
         ));
     };
     if channel.domain != MeshAttributeDomain::Triangle
-        || u64::from(channel.element_code) != ELEMENT_TRIANGLE_DELTA
         || channel.role != 1
         || channel.resource_guid.is_none()
         || !channel.groups.is_empty()
@@ -1836,11 +1903,12 @@ fn registry_texture_ids(attributes: &[MeshAttribute]) -> Result<Option<Vec<u32>>
             "paramesh tid channel has an invalid registry declaration",
         ));
     }
-    channel
-        .triangle_values
-        .clone()
-        .map(Some)
-        .ok_or_else(|| malformed("paramesh tid channel has no decoded values"))
+    match &channel.elements {
+        MeshElements::TriangleDelta { decoded, .. } => Ok(Some(decoded.clone())),
+        _ => Err(malformed(
+            "paramesh tid channel has an invalid registry declaration",
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -2184,9 +2252,9 @@ mod tests {
         let attribute = &mesh.attributes[0];
         assert_eq!(attribute.domain, MeshAttributeDomain::Vertex);
         assert_eq!(attribute.role, 3);
-        assert_eq!(attribute.item_size, Some(8));
+        assert_eq!(attribute.item_size(), Some(8));
         assert_eq!(attribute.count(), Some(3));
-        assert_eq!(attribute.values, uv);
+        assert_eq!(attribute.values(), uv);
     }
 
     /// A channel that declares an index stream addresses triangle corners, so
@@ -2220,7 +2288,7 @@ mod tests {
         .expect("mesh container");
         let attribute = &mesh.attributes[0];
         assert_eq!(attribute.domain, MeshAttributeDomain::Corner);
-        assert_eq!(attribute.item_size, Some(16));
+        assert_eq!(attribute.item_size(), Some(16));
         assert_eq!(attribute.count(), Some(5));
         assert_eq!(attribute.indices, Some(vec![0, 1]));
     }
@@ -2461,10 +2529,12 @@ mod tests {
         .expect("mesh container");
         let attribute = &mesh.attributes[0];
         assert_eq!(attribute.domain, MeshAttributeDomain::Triangle);
-        assert_eq!(attribute.element_code, 7);
-        assert_eq!(attribute.item_size, Some(4));
+        assert_eq!(attribute.element_code(), 7);
+        assert_eq!(attribute.item_size(), Some(4));
         assert_eq!(attribute.count(), Some(1));
-        assert_eq!(attribute.triangle_values, Some(vec![0]));
+        assert!(
+            matches!(&attribute.elements, MeshElements::TriangleDelta { decoded, .. } if decoded == &[0])
+        );
         assert_eq!(mesh.triangle_groups.len(), 1);
         assert_eq!(mesh.triangle_groups[0].source_id, GROUP);
         assert_eq!(mesh.triangle_groups[0].triangles, [0]);

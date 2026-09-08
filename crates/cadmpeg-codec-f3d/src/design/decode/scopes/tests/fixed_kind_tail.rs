@@ -50,8 +50,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         byte_offset: 0,
     };
 
-    let scope =
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap();
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap();
     assert_eq!(
         scope.kind(),
         crate::records::feature::DesignFeatureKind::Sketch
@@ -86,7 +92,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     )
     .into_iter()
     .filter_map(|header| {
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        parse_parameter_scope(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
     })
     .collect::<Vec<_>>();
     assert_eq!(discovered.len(), 1);
@@ -97,7 +109,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let compact = parse_parameter_scope(
         &compact_tail,
         &IndexedRecordOffsets::build(&compact_tail),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope with compact fixed tail");
     assert_eq!(
@@ -119,9 +133,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         legacy.extend_from_slice(&3u32.to_le_bytes());
         legacy.extend_from_slice(b"261");
         legacy.extend_from_slice(&12u32.to_le_bytes());
-        let decoded =
-            parse_parameter_scope(&legacy, &IndexedRecordOffsets::build(&legacy), &header)
-                .expect("scope with legacy fixed tail");
+        let decoded = parse_parameter_scope(
+            &legacy,
+            &IndexedRecordOffsets::build(&legacy),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("scope with legacy fixed tail");
         assert_eq!(
             decoded.kind(),
             crate::records::feature::DesignFeatureKind::Sketch
@@ -144,7 +163,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let extended = parse_parameter_scope(
         &extended_tail,
         &IndexedRecordOffsets::build(&extended_tail),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope with extended fixed tail");
     assert_eq!(extended.previous_history_state_id, Some(3));
@@ -161,9 +182,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         variant.extend_from_slice(&3u32.to_le_bytes());
         variant.extend_from_slice(b"261");
         variant.extend_from_slice(&12u32.to_le_bytes());
-        let decoded =
-            parse_parameter_scope(&variant, &IndexedRecordOffsets::build(&variant), &header)
-                .expect("scope with extended no-history fixed tail");
+        let decoded = parse_parameter_scope(
+            &variant,
+            &IndexedRecordOffsets::build(&variant),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("scope with extended no-history fixed tail");
         assert_eq!(
             decoded.kind(),
             crate::records::feature::DesignFeatureKind::Sketch
@@ -195,7 +221,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let copy = parse_parameter_scope(
         &copy_scope,
         &IndexedRecordOffsets::build(&copy_scope),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("CopyPasteBodies scope with extended tail");
     assert_eq!(
@@ -292,7 +320,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let generic_scope = parse_parameter_scope(
         &generic_references,
         &IndexedRecordOffsets::build(&generic_references),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("generic-table Sketch scope");
     assert_eq!(
@@ -1760,8 +1790,6 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             distance_offset: (extend_distance_at + 40) as u64,
             distance_record_index: extend_distance_record_index,
             support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-                boundary_mode: 1,
-                boundary_mode_offset: (extend_boundary_at + extend_boundary_tail + 2) as u64,
                 boundary_record_index: extend_boundary_record_index,
                 boundary_reference_record_index: 900,
                 boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
@@ -1961,8 +1989,14 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
             .filter(|header| header.record_index == 1_400)
             .collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
-    let scope = crate::design::decode::scopes::parse_parameter_scope(&bytes, &records, &headers[0])
-        .expect("scope");
+    let scope = crate::design::decode::scopes::parse_parameter_scope(
+        &bytes,
+        &records,
+        headers[0].record_index,
+        &headers[0].class_tag,
+        headers[0].byte_offset,
+    )
+    .expect("scope");
     assert_eq!(
         scope.kind(),
         crate::records::feature::DesignFeatureKind::CopyPasteBodies

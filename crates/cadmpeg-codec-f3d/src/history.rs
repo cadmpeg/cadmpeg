@@ -531,9 +531,7 @@ fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
     .collect()
 }
 
-struct HistoricalRecordArchive {
-    records: HashMap<i64, cadmpeg_asm::sab::Record>,
-}
+type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
 
 fn historical_record_archive(
     states: &[AsmDeltaState],
@@ -608,7 +606,7 @@ fn historical_record_archive(
             }
         }
     }
-    Some(HistoricalRecordArchive { records })
+    Some(records)
 }
 
 fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
@@ -8947,7 +8945,7 @@ fn materialize_record_table(
     }
     let mut records = Vec::with_capacity(state.entity_versions.len());
     for version in &state.entity_versions {
-        let record = archive.records.get(&version.record_ref)?;
+        let record = archive.get(&version.record_ref)?;
         if i64::try_from(record.index).ok() != Some(version.entity_ref) {
             return None;
         }

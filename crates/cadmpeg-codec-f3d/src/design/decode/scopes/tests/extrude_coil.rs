@@ -156,7 +156,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
+        parse_parameter_scope(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .unwrap()
     };
 
     let direct = scope(
@@ -769,7 +776,14 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
             class_tag: crate::records::DesignClassTag::try_from("376".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
+        parse_parameter_scope(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .unwrap()
     };
 
     assert_eq!(
@@ -843,8 +857,14 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
         class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact shifted Extrude scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("compact shifted Extrude scope");
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
     assert_eq!(
         scope.extrude_prologue(),
@@ -918,8 +938,14 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact mixed Extrude scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("compact mixed Extrude scope");
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
     assert_eq!(
         scope
@@ -986,8 +1012,14 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("Coil scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("Coil scope");
     assert_eq!(scope.coil_operation(), Some(DesignExtrudeOperation::Cut));
     assert_eq!(scope.coil_operation_offset(), Some(20));
     assert_eq!(scope.coil_extent(), Some(DesignCoilExtent::HeightPitch));
@@ -1042,8 +1074,14 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact Coil scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("compact Coil scope");
     assert_eq!(
         scope.coil_operation(),
         Some(DesignExtrudeOperation::NewBody)
@@ -1072,17 +1110,28 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         ] {
             bytes[92..96].copy_from_slice(&placement_code.to_le_bytes());
             bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
-            let parsed =
-                parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-                    .expect("compact Coil scope");
+            let parsed = parse_parameter_scope(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                header.record_index,
+                &header.class_tag,
+                header.byte_offset,
+            )
+            .expect("compact Coil scope");
             assert_eq!(parsed.coil_section(), Some(section));
             assert_eq!(parsed.coil_section_placement(), Some(placement));
         }
     }
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    let unsupported = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("unsupported Coil operation remains a native scope");
+    let unsupported = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("unsupported Coil operation remains a native scope");
     assert!(unsupported.coil_operation().is_none());
 }
 
@@ -1159,8 +1208,14 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-415 scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-415 scope envelope")
     };
 
     for (reference_members, frame_length, operation) in [
@@ -1309,8 +1364,14 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
             class_tag: crate::records::DesignClassTag::try_from("415".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-415 one-sided scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-415 one-sided scope envelope")
     };
 
     let to_face = parse(&make_bytes(true, &TO_FACE_REFERENCES));
@@ -1416,8 +1477,14 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact Coil new-body scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("compact Coil new-body scope");
     assert_eq!(scope.frame_length, 442);
     assert_eq!(
         scope.kind(),
@@ -1501,8 +1568,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("shifted reference-aware Extrude scope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("shifted reference-aware Extrude scope")
     };
 
     for (class_tag, primary_class, paired_class) in [
@@ -1538,12 +1611,9 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let invalid_scope = parse_parameter_scope(
         &invalid_class_397,
         &IndexedRecordOffsets::build(&invalid_class_397),
-        &DesignRecordHeader {
-            id: "generated:scope-header#class-397-variant".into(),
-            record_index: RECORD_INDEX,
-            class_tag: crate::records::DesignClassTag::try_from("397".to_owned()).unwrap(),
-            byte_offset: 0,
-        },
+        RECORD_INDEX,
+        &crate::records::DesignClassTag::try_from("397".to_owned()).unwrap(),
+        0,
     )
     .expect("class-397 scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
@@ -1559,7 +1629,9 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let invalid_scope = parse_parameter_scope(
         &invalid_tail,
         &IndexedRecordOffsets::build(&invalid_tail),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
@@ -1569,12 +1641,9 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let invalid_scope = parse_parameter_scope(
         &invalid_class,
         &IndexedRecordOffsets::build(&invalid_class),
-        &DesignRecordHeader {
-            id: "generated:scope-header#0".into(),
-            record_index: RECORD_INDEX,
-            class_tag: crate::records::DesignClassTag::try_from("349".to_owned()).unwrap(),
-            byte_offset: 0,
-        },
+        RECORD_INDEX,
+        &crate::records::DesignClassTag::try_from("349".to_owned()).unwrap(),
+        0,
     )
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
@@ -1591,7 +1660,9 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let nonzero_scope = parse_parameter_scope(
         &nonzero_start,
         &IndexedRecordOffsets::build(&nonzero_start),
-        &nonzero_header,
+        nonzero_header.record_index,
+        &nonzero_header.class_tag,
+        nonzero_header.byte_offset,
     )
     .expect("nonzero-start shifted reference-aware Extrude scope");
     assert_eq!(nonzero_scope.byte_offset, prefix_length as u64);
@@ -1696,8 +1767,14 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("shifted reference-aware class-323 Extrude scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("shifted reference-aware class-323 Extrude scope");
     assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
     assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
     assert_eq!(
@@ -1729,7 +1806,9 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     let invalid_scope = parse_parameter_scope(
         &invalid_trailing_reference,
         &IndexedRecordOffsets::build(&invalid_trailing_reference),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
@@ -1739,7 +1818,9 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     let invalid_scope = parse_parameter_scope(
         &invalid_class,
         &IndexedRecordOffsets::build(&invalid_class),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
@@ -1834,8 +1915,14 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("shifted reference-aware symmetric Extrude scope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("shifted reference-aware symmetric Extrude scope")
     };
     let scope = parse(&bytes);
     assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
@@ -1933,8 +2020,14 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             class_tag: crate::records::DesignClassTag::try_from("345".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-            .expect("long Coil scope")
+        parse_parameter_scope(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("long Coil scope")
     };
 
     let boolean = scope(450, 1);

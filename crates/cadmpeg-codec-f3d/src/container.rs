@@ -161,8 +161,6 @@ impl KernelFraming {
 pub struct BrepFacts {
     /// Entry name.
     pub name: String,
-    /// Whether the archive entry has the `.smbh` extension.
-    pub is_smbh: bool,
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
     /// Parsed ASM or ACIS framing, when either header matched.
@@ -419,7 +417,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
             breps.push(BrepFacts {
                 name: name.clone(),
-                is_smbh: role == ContainerRole::BrepSmbh,
                 uncompressed_len: uncompressed_size,
                 kernel,
                 solved_record_limit,

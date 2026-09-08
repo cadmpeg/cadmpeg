@@ -29,7 +29,7 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
-    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+    AsmHistoricalTransition, AsmHistory,
 };
 use crate::records::dimension_locus_arenas::{
     DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
@@ -179,7 +179,7 @@ struct FlatAsmHistory<'a> {
     record_table_binding_budget_exceeded: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     projection_finalized: bool,
-    states: &'a [AsmDeltaState],
+    states: EmptyList,
 }
 
 impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
@@ -191,7 +191,7 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
             history_entry_count: history.history_entry_count(),
             record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
             projection_finalized: history.projection_finalized,
-            states: &[],
+            states: EmptyList,
         }
     }
 }
@@ -212,8 +212,8 @@ struct FlatAsmDeltaState<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     partner_ref: Option<i64>,
     owner_ref: i64,
-    bulletin_boards: &'a [AsmBulletinBoard],
-    records: &'a [AsmHistoryRecord],
+    bulletin_boards: EmptyList,
+    records: EmptyList,
     #[serde(skip_serializing_if = "slice_is_empty")]
     entity_versions: &'a [AsmEntityVersion],
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -238,8 +238,8 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
             node_index: state.node_index,
             partner_ref: state.partner_ref,
             owner_ref: state.owner_ref,
-            bulletin_boards: &[],
-            records: &[],
+            bulletin_boards: EmptyList,
+            records: EmptyList,
             entity_versions: &state.entity_versions,
             record_table_complete: state.record_table_complete(),
             topology: state.topology(),
@@ -255,7 +255,7 @@ struct FlatAsmBulletinBoard<'a> {
     byte_offset: u64,
     owner_ref: i64,
     number: i64,
-    changes: &'a [crate::history_records::AsmEntityChange],
+    changes: EmptyList,
 }
 
 impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
@@ -266,8 +266,18 @@ impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
             byte_offset: board.byte_offset,
             owner_ref: board.owner_ref,
             number: board.number,
-            changes: &[],
+            changes: EmptyList,
         }
+    }
+}
+
+/// A nested collection the flat projection always emits empty.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct EmptyList;
+
+impl Serialize for EmptyList {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(std::iter::empty::<()>())
     }
 }
 

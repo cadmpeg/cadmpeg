@@ -165,37 +165,32 @@ pub fn decode_component_naming_spaces(
             let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
                 continue;
             };
-            let (Some(component_record_index), Some(inline_type_guid)) =
-                (reference.target, reference.inline_type_guid.as_deref())
-            else {
+            let Some((component_record_index, Some(inline_type_guid))) = reference.local() else {
                 continue;
             };
-            if reference.segment.is_some()
-                || reference.link_name.is_some()
-                || !meta.types.iter().any(|design_type| {
-                    design_type.module == COMPONENT_MODULE
-                        && design_type
-                            .base_type_guid
-                            .as_ref()
-                            .and_then(|field| {
-                                field
-                                    .value
-                                    .as_ref()
-                                    .map(crate::records::DesignRelaxedGuidText::as_str)
-                            })
-                            .is_some_and(|base| {
-                                base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                            })
-                        && design_type
-                            .type_guid
-                            .as_str()
-                            .eq_ignore_ascii_case(inline_type_guid)
-                        && design_type
-                            .entities
-                            .values()
-                            .any(|registered| *registered == component_record_index)
-                })
-            {
+            if !meta.types.iter().any(|design_type| {
+                design_type.module == COMPONENT_MODULE
+                    && design_type
+                        .base_type_guid
+                        .as_ref()
+                        .and_then(|field| {
+                            field
+                                .value
+                                .as_ref()
+                                .map(crate::records::DesignRelaxedGuidText::as_str)
+                        })
+                        .is_some_and(|base| {
+                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        })
+                    && design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(inline_type_guid)
+                    && design_type
+                        .entities
+                        .values()
+                        .any(|registered| *registered == component_record_index)
+            }) {
                 continue;
             }
             let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
@@ -462,11 +457,8 @@ fn local_reference(
     reference: &Reference,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Option<u64> {
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
-    }
-    let target = reference.target?;
-    if let Some(inline_type_guid) = &reference.inline_type_guid {
+    let (target, inline_type_guid) = reference.local()?;
+    if let Some(inline_type_guid) = inline_type_guid {
         let registered_type_guids = type_guids_by_entity.get(&target)?;
         if !registered_type_guids
             .iter()

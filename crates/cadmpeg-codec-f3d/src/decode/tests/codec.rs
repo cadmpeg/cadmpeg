@@ -593,7 +593,10 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
     let f3d = synthetic_f3d(false);
     with_scan(&f3d, |scan| {
         let fallback = container::select_fallback_brep(scan).unwrap();
-        assert!(!fallback.is_smbh);
+        assert_eq!(
+            fallback.name,
+            "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
+        );
         assert!(container::select_history_brep(scan).is_none());
         assert!(container::legacy_design_model_breps(scan).is_none());
         let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);

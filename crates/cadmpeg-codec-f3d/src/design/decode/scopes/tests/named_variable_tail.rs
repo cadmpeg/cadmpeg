@@ -55,8 +55,14 @@ fn parameter_scope_parses_named_variable_tail() {
         class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("named variable-tail scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("named variable-tail scope");
     assert_eq!(
         scope.kind(),
         crate::records::feature::DesignFeatureKind::Draft

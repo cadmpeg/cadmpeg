@@ -52,8 +52,13 @@ impl TopLevelManifest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AssetManifestHeader {
     base_name: String,
-    asset_type: String,
-    fusion_subtype: Option<String>,
+    kind: AssetKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AssetKind {
+    Design { fusion_subtype: Option<String> },
+    Other { asset_type: String },
 }
 
 struct Cursor<'a> {
@@ -413,7 +418,12 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 ),
             ));
         }
-        if header.asset_type == DESIGN_ASSET_TYPE && header.fusion_subtype.is_none() {
+        if matches!(
+            header.kind,
+            AssetKind::Design {
+                fusion_subtype: None
+            }
+        ) {
             design_folders.push(folder.to_owned());
         }
     }
@@ -444,9 +454,9 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
             format!("invalid asset type {asset_type:?}"),
         ));
     }
-    let fusion_subtype = if asset_type == DESIGN_ASSET_TYPE {
+    let kind = if asset_type == DESIGN_ASSET_TYPE {
         let revision = cursor.u32("Fusion asset manifest revision")?;
-        match revision {
+        let fusion_subtype = match revision {
             0 => {
                 parse_revision_zero_design_asset(&mut cursor)?;
                 cursor.finish("revision-0 Fusion asset manifest")?;
@@ -465,15 +475,12 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
                     ),
                 )
             })?,
-        }
+        };
+        AssetKind::Design { fusion_subtype }
     } else {
-        None
+        AssetKind::Other { asset_type }
     };
-    Ok(AssetManifestHeader {
-        base_name,
-        asset_type,
-        fusion_subtype,
-    })
+    Ok(AssetManifestHeader { base_name, kind })
 }
 
 fn parse_capability_registry(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
