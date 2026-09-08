@@ -2292,24 +2292,24 @@ fn bind_relation_geometry_operands(
             f64,
         ) = match relation.family {
             FeatureInputRelationFamily::PointPointDistance => |relation, entities, target| {
-                bind_dynamic_point_relation(relation, entities, target, None)
+                bind_dynamic_point_relation(relation, entities, target, None);
             },
             FeatureInputRelationFamily::PointPointHorizontalDistance => {
                 |relation, entities, target| {
-                    bind_dynamic_point_relation(relation, entities, target, Some(true))
+                    bind_dynamic_point_relation(relation, entities, target, Some(true));
                 }
             }
             FeatureInputRelationFamily::PointPointVerticalDistance => {
                 |relation, entities, target| {
-                    bind_dynamic_point_relation(relation, entities, target, Some(false))
+                    bind_dynamic_point_relation(relation, entities, target, Some(false));
                 }
             }
             FeatureInputRelationFamily::PointLineDistance => bind_dynamic_point_line_relation,
             FeatureInputRelationFamily::LineLineDistance => |relation, entities, target| {
-                bind_dynamic_line_relation(relation, entities, target, false)
+                bind_dynamic_line_relation(relation, entities, target, false);
             },
             FeatureInputRelationFamily::Angle => |relation, entities, target| {
-                bind_dynamic_line_relation(relation, entities, target, true)
+                bind_dynamic_line_relation(relation, entities, target, true);
             },
             FeatureInputRelationFamily::CircleDiameter => continue,
         };
