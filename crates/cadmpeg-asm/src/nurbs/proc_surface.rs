@@ -3704,9 +3704,6 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{TSplineSubtransform, TSplineSurfaceConstruction};
 
-    let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
-    let span = toks::subtype_span(toks, start)?;
-    let mut cur = Cur::at(span, 2);
     enum Layout {
         Legacy {
             cache_fit_tolerance: f64,
@@ -3714,8 +3711,12 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuity_flag: bool,
             parameter_ranges: [[f64; 2]; 2],
         },
-        Revision(cadmpeg_ir::geometry::RevisionSurfaceForm),
+        Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm>),
     }
+
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
     let (layout, type_code);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
@@ -3733,7 +3734,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             *bound = cur.take_optional_range_value()?.value();
         }
         type_code = cur.take_enum()?;
-        layout = Layout::Revision(cadmpeg_ir::geometry::RevisionSurfaceForm {
+        layout = Layout::Revision(Box::new(cadmpeg_ir::geometry::RevisionSurfaceForm {
             revision,
             support_bounds: bounds,
             reference_endpoints: [None; 2],
@@ -3743,7 +3744,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuities: tail_discontinuities,
             tail_flag,
             trailing_flags: Vec::new(),
-        });
+        }));
     } else {
         let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
@@ -3832,7 +3833,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     trailing_value,
                     discontinuities: form.discontinuities.clone(),
                     discontinuity_flag: form.tail_flag,
-                    revision_form: Some(form),
+                    revision_form: Some(*form),
                 }),
             ))
         }
