@@ -3450,7 +3450,7 @@ mod relation_geometry_tests {
             entity_ref: None,
         };
         let relation = FeatureInputRelationInstance {
-            id: "relation".into(),
+            id: "synthetic:test:relation#point-line".into(),
             parent: LANE.into(),
             ordinal: 0,
             offset: 650,
