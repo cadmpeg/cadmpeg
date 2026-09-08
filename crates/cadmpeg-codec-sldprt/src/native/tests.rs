@@ -175,16 +175,17 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             },
         ],
     );
-    for scalar in &mut native.feature_input_lanes[0].scalars {
-        for operand in &mut scalar.operands {
-            operand.entity_ref = None;
-        }
+    let lane = &mut native.feature_input_lanes[0];
+    for (index, local_id) in [(1, 7u32), (2, 8u32)] {
+        let offset = lane.sketch_entities[index].offset() as usize + 88;
+        lane.native_payload[offset..offset + 4].copy_from_slice(&local_id.to_le_bytes());
     }
-    for relation in &mut native.feature_input_lanes[0].relation_instances {
-        for operand in &mut relation.operands {
-            operand.entity_ref = None;
-        }
-    }
+    let expected = crate::native::lanes::expected_lanes(&native).remove(0).1;
+    let lane = &mut native.feature_input_lanes[0];
+    lane.scalars = expected.scalars;
+    lane.relation_bindings = expected.relation_bindings;
+    lane.relation_instances = expected.relation_instances;
+    lane.references = expected.references;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();

@@ -181,7 +181,9 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     )
     .unwrap_err();
     assert!(
-        error.to_string().contains("omits marker at offset"),
+        error
+            .to_string()
+            .contains("expects entity ordinal 1, found 2"),
         "{error}"
     );
 }
