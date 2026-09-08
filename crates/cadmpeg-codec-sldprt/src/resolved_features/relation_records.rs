@@ -1753,18 +1753,9 @@ pub(super) fn relation_signature(
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
-    if family == CircleDiameter {
-        return matches!(
-            operands,
-            [operand]
-                if matches!(operand.kind, Native(_))
-        );
-    }
-    let [first, second] = operands else {
-        return false;
-    };
-    match family {
-        PointPointDistance => {
+    match (family, operands) {
+        (CircleDiameter, [operand]) => matches!(operand.kind, Native(_)),
+        (PointPointDistance, [first, second]) => {
             (first.kind == D6 && second.kind == D6)
                 || (first.kind == Native(0x81b2) && second.kind == Native(0x81b2))
                 || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
@@ -1777,29 +1768,29 @@ pub(super) fn relation_signature(
                 || (first.kind == Native(0x8100) && second.kind == Native(0x8100))
                 || (first.kind == Native(0x820f) && second.kind == Native(0x820f))
         }
-        LineLineDistance => {
+        (LineLineDistance, [first, second]) => {
             (first.kind == E1 && second.kind == E1)
                 || (first.kind == Native(0x8386) && second.kind == Native(0x8386))
                 || (first.kind == Native(0x810f) && second.kind == Native(0x810f))
                 || (first.kind == Native(0xbc87) && second.kind == Native(0xbc87))
                 || (first.kind == Native(0x81e7) && second.kind == Native(0x81e7))
         }
-        PointLineDistance => {
+        (PointLineDistance, [first, second]) => {
             (first.kind == D6 && second.kind == E1)
                 || (first.kind == Native(0x837b) && second.kind == Native(0x8386))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc87))
                 || (first.kind == Native(0x81dd) && second.kind == Native(0x81e7))
         }
-        PointPointHorizontalDistance | PointPointVerticalDistance => {
+        (PointPointHorizontalDistance | PointPointVerticalDistance, [first, second]) => {
             (first.kind == Native(0x8152) && second.kind == Native(0x8152))
                 || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
                 || (first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb))
         }
-        Angle => {
+        (Angle, [first, second]) => {
             (first.kind == Native(0x8dda) && second.kind == Native(0x8dda))
                 || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
         }
-        CircleDiameter => unreachable!("handled as a unary relation"),
+        _ => false,
     }
 }
 
@@ -1831,8 +1822,9 @@ fn dynamic_relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
-    !matches!(family, FeatureInputRelationFamily::CircleDiameter)
-        && matches!(
+    match family {
+        FeatureInputRelationFamily::CircleDiameter => false,
+        _ => matches!(
             operands,
             [
                 FeatureInputOperand {
@@ -1844,7 +1836,8 @@ fn dynamic_relation_signature(
                     ..
                 }
             ]
-        )
+        ),
+    }
 }
 
 /// Returns whether a relation uses a lane-local operand tag whose meaning is
@@ -2310,6 +2303,33 @@ fn bind_relation_geometry_operands(
                 .iter()
                 .all(|operand| operand.entity_ref.is_none()))
     }) {
+        let bind: fn(
+            &mut FeatureInputRelationInstance,
+            &[&crate::records::SketchInputEntity],
+            f64,
+        ) = match relation.family {
+            FeatureInputRelationFamily::PointPointDistance => |relation, entities, target| {
+                bind_dynamic_point_relation(relation, entities, target, None)
+            },
+            FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                |relation, entities, target| {
+                    bind_dynamic_point_relation(relation, entities, target, Some(true))
+                }
+            }
+            FeatureInputRelationFamily::PointPointVerticalDistance => {
+                |relation, entities, target| {
+                    bind_dynamic_point_relation(relation, entities, target, Some(false))
+                }
+            }
+            FeatureInputRelationFamily::PointLineDistance => bind_dynamic_point_line_relation,
+            FeatureInputRelationFamily::LineLineDistance => |relation, entities, target| {
+                bind_dynamic_line_relation(relation, entities, target, false)
+            },
+            FeatureInputRelationFamily::Angle => |relation, entities, target| {
+                bind_dynamic_line_relation(relation, entities, target, true)
+            },
+            FeatureInputRelationFamily::CircleDiameter => continue,
+        };
         let dynamic = relation_uses_dynamic_operands(relation);
         let Some(target) = relation_target_value(relation, lane) else {
             if dynamic {
@@ -2327,29 +2347,7 @@ fn bind_relation_geometry_operands(
             continue;
         }
         let entities = feature_entities(lane, relation.feature_ref.as_str());
-        match relation.family {
-            FeatureInputRelationFamily::PointPointDistance => {
-                bind_dynamic_point_relation(relation, &entities, target, None);
-            }
-            FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                bind_dynamic_point_relation(relation, &entities, target, Some(true));
-            }
-            FeatureInputRelationFamily::PointPointVerticalDistance => {
-                bind_dynamic_point_relation(relation, &entities, target, Some(false));
-            }
-            FeatureInputRelationFamily::PointLineDistance => {
-                bind_dynamic_point_line_relation(relation, &entities, target);
-            }
-            FeatureInputRelationFamily::LineLineDistance => {
-                bind_dynamic_line_relation(relation, &entities, target, false);
-            }
-            FeatureInputRelationFamily::Angle => {
-                bind_dynamic_line_relation(relation, &entities, target, true);
-            }
-            FeatureInputRelationFamily::CircleDiameter => {
-                unreachable!("circle dimensions do not use dynamic two-cell relation operands")
-            }
-        }
+        bind(relation, &entities, target);
     }
 }
 
