@@ -263,7 +263,7 @@ impl Census {
     fn primary_byte_len(&self, start: usize, end: usize) -> usize {
         let limit = self
             .terminal_null_references
-            .map_or(end, |tail| tail.offset());
+            .map_or(end, tails::TerminalNullReferences::offset);
         end.min(limit) - start.min(limit)
     }
 
