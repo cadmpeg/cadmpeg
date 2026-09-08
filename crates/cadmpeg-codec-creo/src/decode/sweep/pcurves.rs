@@ -315,7 +315,7 @@ pub(in super::super) fn revolution_face_sense(
         [-tangent[1], tangent[0]]
     };
     let outward = normalized(std::array::from_fn(|index| {
-        outward[0] * transform.u_axis[index] + outward[1] * transform.v_axis[index]
+        outward[0] * transform.u_axis()[index] + outward[1] * transform.v_axis()[index]
     }))?;
     let model_point = section_point_in_model(transform, point);
     let pcurve = if is_nurbs {

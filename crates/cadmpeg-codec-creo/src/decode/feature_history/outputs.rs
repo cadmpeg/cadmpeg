@@ -573,7 +573,7 @@ pub(in super::super) fn feature_parameters(
                 &mut parameters,
                 "sweep_direction",
                 transform
-                    .normal
+                    .normal()
                     .iter()
                     .map(f64::to_string)
                     .collect::<Vec<_>>()
