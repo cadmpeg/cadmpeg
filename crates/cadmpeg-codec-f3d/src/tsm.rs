@@ -32,7 +32,7 @@ struct HalfEdge {
     previous: HalfEdgeId,
     mate: HalfEdgeId,
     vertex: usize,
-    face: i64,
+    face: Option<usize>,
 }
 
 impl HalfEdgeId {
@@ -73,18 +73,24 @@ fn compact_half_edges(
             .flatten()
             .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))
     };
-    let half_edges = dense
-        .into_iter()
-        .map(|half| {
-            Ok(HalfEdge {
-                next: remap(half.next)?,
-                previous: remap(half.previous)?,
-                mate: remap(half.mate)?,
-                vertex: half.vertex,
-                face: half.face,
+    let half_edges =
+        dense
+            .into_iter()
+            .map(|half| {
+                Ok(HalfEdge {
+                    next: remap(half.next)?,
+                    previous: remap(half.previous)?,
+                    mate: remap(half.mate)?,
+                    vertex: half.vertex,
+                    face: match half.face {
+                        -1 => None,
+                        face => Some(usize::try_from(face).map_err(|_| {
+                            malformed(name, "half-edge face is negative or overflows")
+                        })?),
+                    },
+                })
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            .collect::<Result<Vec<_>, CodecError>>()?;
     for root in face_roots.iter_mut().flatten() {
         *root = remap(*root)?.index();
     }
@@ -476,21 +482,18 @@ fn build_fan(
                 "vertex half-edge fan leaves its terminal vertex",
             ));
         }
-        let face = match half.face {
-            -1 => None,
-            face if face >= 0 && face_live.get(face as usize).copied().unwrap_or(false) => {
-                Some(face as usize)
-            }
-            _ => {
-                return Err(malformed(
-                    name,
-                    "vertex half-edge fan names an invalid face",
-                ))
-            }
-        };
+        if half
+            .face
+            .is_some_and(|face| !face_live.get(face).copied().unwrap_or(false))
+        {
+            return Err(malformed(
+                name,
+                "vertex half-edge fan names an invalid face",
+            ));
+        }
         fan.push(FanSlot::Slot {
             half_edge: current.index(),
-            face,
+            face: half.face,
         });
 
         let next = &half_edges[half.next.index()];
@@ -1408,7 +1411,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         let mut current = start_id;
         loop {
             let half = &half_edges[current.index()];
-            if half.face != face_slot as i64 {
+            if half.face != Some(face_slot) {
                 return Err(malformed(name, "face ring carries a different face index"));
             }
             let (edge, reversed) = edge_by_half[current.index()]
