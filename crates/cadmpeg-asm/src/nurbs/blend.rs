@@ -28,9 +28,9 @@ use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
-    RollingBallSupportSurface, SurfaceGeometry, VariableBlendCache,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs, RollingBallSide,
+    RollingBallSideExtension, RollingBallSupportCurve, RollingBallSupportSurface, SurfaceGeometry,
+    VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
