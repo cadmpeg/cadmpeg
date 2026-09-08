@@ -35,16 +35,6 @@ fn parse_token<T: Clone>(table: &[(&'static str, T)], raw: &str) -> Option<T> {
         .map(|(_, value)| value.clone())
 }
 
-/// Canonical native spelling for a closed token table. Callers use this helper
-/// only when every value is represented by the table.
-fn format_token<T: PartialEq>(table: &[(&'static str, T)], value: &T) -> &'static str {
-    table
-        .iter()
-        .find(|(_, candidate)| candidate == value)
-        .map(|(token, _)| *token)
-        .expect("token table covers every variant")
-}
-
 /// Parse a filled-surface continuity order from its native token.
 pub(crate) fn parse_surface_continuity(raw: &str) -> Option<SurfaceContinuity> {
     parse_token(SURFACE_CONTINUITY_TOKENS, raw)
@@ -52,7 +42,11 @@ pub(crate) fn parse_surface_continuity(raw: &str) -> Option<SurfaceContinuity> {
 
 /// Canonical native token for a filled-surface continuity order.
 pub(crate) fn surface_continuity_token(value: SurfaceContinuity) -> &'static str {
-    format_token(SURFACE_CONTINUITY_TOKENS, &value)
+    match value {
+        SurfaceContinuity::Contact => "Contact",
+        SurfaceContinuity::Tangent => "Tangent",
+        SurfaceContinuity::Curvature => "Curvature",
+    }
 }
 
 /// Parse a trim-surface keep region from its native token.
