@@ -1342,7 +1342,6 @@ fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
             record.frame_offset += section.offset;
             record.offset += section.offset;
             record.body_offset += section.offset;
-            record.end += section.offset;
             record
         }));
     }
