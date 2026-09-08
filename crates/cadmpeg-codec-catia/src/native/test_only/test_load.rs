@@ -559,7 +559,6 @@ impl CatiaNative {
         )?;
         validate_zero_entity_endpoint_locus_candidates(
             &zero_entity_endpoint_locus_candidates,
-            &zero_entity_endpoint_pair_candidates,
             &zero_entity_support_runs,
         )?;
         let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
