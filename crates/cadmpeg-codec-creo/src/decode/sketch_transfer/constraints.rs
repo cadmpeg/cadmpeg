@@ -2220,7 +2220,8 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("creo:model:sketch#angle-difference").unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#angle-difference").expect("valid test fixture");
         let constraints =
             section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch);
         assert_eq!(constraints.len(), 1);
@@ -2290,7 +2291,8 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("creo:model:sketch#scalar-equality").unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#scalar-equality").expect("valid test fixture");
         let constraints =
             section_equation_function_five_scalar_equality_constraints(&definition, &sketch);
         assert_eq!(constraints.len(), 1);
@@ -2351,8 +2353,10 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("synthetic:test:id#synthetic:test:dimension-relation").unwrap();
-        let missing = SketchEntityId::mint("synthetic:test:dimension-relation#missing").unwrap();
+        let sketch = SketchId::mint("synthetic:test:id#synthetic:test:dimension-relation")
+            .expect("valid test fixture");
+        let missing = SketchEntityId::mint("synthetic:test:dimension-relation#missing")
+            .expect("valid test fixture");
         let mut constraint = SketchConstraintDefinitionInput::Distance {
             entities: vec![missing],
             parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
@@ -2376,8 +2380,8 @@ mod tests {
             } if native_kind == "creo:relation:0" && entities.is_empty()
         ));
 
-        let emitted_entity =
-            SketchEntityId::mint("synthetic:test:dimension-relation#emitted").unwrap();
+        let emitted_entity = SketchEntityId::mint("synthetic:test:dimension-relation#emitted")
+            .expect("valid test fixture");
         let mut missing_parameter = SketchConstraintDefinitionInput::Distance {
             entities: vec![emitted_entity.clone()],
             parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")

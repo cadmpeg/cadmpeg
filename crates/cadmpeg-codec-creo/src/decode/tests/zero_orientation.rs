@@ -122,7 +122,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     };
     let profiles = resolved_profile_chains(
         &definition,
-        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
@@ -145,7 +145,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     assert!(resolved_profile_chains(
         &incomplete,
-        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     )
     .is_empty());
@@ -159,7 +159,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
     assert!(resolved_profile_chains(
         &definition,
-        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32]),
     )
     .is_empty());
@@ -197,7 +197,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .retain(|row| row.external_id != 13);
     let profiles = resolved_profile_chains(
         &incomplete_trim_graph,
-        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
@@ -250,7 +250,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let arc_profile = resolved_profile_chains(
         &arcs,
-        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10, 11]),
     );
     assert_eq!(arc_profile.len(), 1);
@@ -290,7 +290,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let segment_profile = resolved_profile_chains(
         &segment_graph,
-        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10, 11, 12, 13, 20]),
     );
     assert_eq!(segment_profile.len(), 1);
@@ -306,7 +306,7 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
             start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
             end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
         })
-        .unwrap()
+        .expect("valid test fixture")
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),

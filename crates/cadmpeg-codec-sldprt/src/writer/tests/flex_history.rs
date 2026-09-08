@@ -894,7 +894,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: None,
         });
         ir.model.sketch_entities.push(SketchEntity::new(

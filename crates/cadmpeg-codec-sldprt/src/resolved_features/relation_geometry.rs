@@ -2969,7 +2969,7 @@ mod relation_geometry_tests {
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("lane#test".into()),
         }];
         let mut entities = Vec::new();
@@ -3254,7 +3254,7 @@ mod relation_geometry_tests {
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some(LANE.into()),
         }];
         let mut entities = Vec::new();

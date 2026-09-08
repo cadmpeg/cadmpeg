@@ -1258,7 +1258,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let feature = Feature {

@@ -66,7 +66,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         "nx:feature-history:sketch-entity#coordinate-pair-section-9-0000000000"
     );
     assert!(cadmpeg_ir::ids::is_valid_identity(
-        &ir.model.sketch_entities[0].id().as_str()
+        ir.model.sketch_entities[0].id().as_str()
     ));
     assert_eq!(
         ir.model.sketch_entities[0].native_ref.as_deref(),

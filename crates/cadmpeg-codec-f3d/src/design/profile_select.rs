@@ -202,9 +202,8 @@ pub(crate) fn bind_sweep_sketch_selections(
                         && placement.entity_id.suffix() == profile_operand.entity_id.suffix()
                 });
                 if let (Some(placement), None) = (candidates.next(), candidates.next()) {
-                    let sketch = match neutral_sketch_id(placement) {
-                        Some(id) => id,
-                        None => continue,
+                    let Some(sketch) = neutral_sketch_id(placement) else {
+                        continue;
                     };
                     if sketches.iter().any(|candidate| candidate.id == sketch) {
                         *section =
@@ -1709,10 +1708,10 @@ fn resolved_selection_member_points(
         || neutral_sketch_record_id(&sketch.id, *record_index),
         |persistent_id| neutral_sketch_point_id(&sketch.id, persistent_id),
     )?;
-    let SketchGeometryDefinition::Point { position } = (&entities
+    let SketchGeometryDefinition::Point { position } = entities
         .iter()
         .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
-        .geometry)
+        .geometry
         .definition()
     else {
         return None;
@@ -2307,9 +2306,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let [placement] = matches.as_slice() else {
             continue;
         };
-        let spatial_sketch_id = match neutral_spatial_sketch_id(placement) {
-            Some(id) => id,
-            None => continue,
+        let Some(spatial_sketch_id) = neutral_spatial_sketch_id(placement) else {
+            continue;
         };
         let resolved = if let Some(spatial_sketch) = resolution
             .spatial_sketches
@@ -2328,9 +2326,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     },
                 )
         } else {
-            let sketch = match neutral_sketch_id(placement) {
-                Some(id) => id,
-                None => continue,
+            let Some(sketch) = neutral_sketch_id(placement) else {
+                continue;
             };
             if !resolution
                 .sketches
@@ -2387,9 +2384,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         if matching_placements.next().is_some() {
             continue;
         }
-        let spatial_sketch_id = match neutral_spatial_sketch_id(placement) {
-            Some(id) => id,
-            None => continue,
+        let Some(spatial_sketch_id) = neutral_spatial_sketch_id(placement) else {
+            continue;
         };
         let Some(spatial_sketch) = resolution
             .spatial_sketches
@@ -2412,13 +2408,12 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         if geometry_matches.next().is_some() {
             continue;
         }
-        let entity = match neutral_spatial_sketch_curve_id(
+        let Some(entity) = neutral_spatial_sketch_curve_id(
             &spatial_sketch_id,
             curve.primary_id,
             curve.secondary_id,
-        ) {
-            Some(id) => id,
-            None => continue,
+        ) else {
+            continue;
         };
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);
         resolved_profiles.insert(

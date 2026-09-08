@@ -609,15 +609,13 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         while end_angle <= start_angle {
             end_angle += std::f64::consts::TAU;
         }
-        return Some(
-            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-                center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-                radius: Length(radius),
-                start_angle: Angle(start_angle),
-                end_angle: Angle(end_angle),
-            })
-            .ok()?,
-        );
+        return SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+            radius: Length(radius),
+            start_angle: Angle(start_angle),
+            end_angle: Angle(end_angle),
+        })
+        .ok();
     } else {
         let scale = start
             .iter()
@@ -638,13 +636,11 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         };
         orientation_matches.then_some(())?;
     }
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    })
+    .ok()
 }
 
 pub(crate) fn section_point_in_model(
@@ -859,7 +855,7 @@ mod tests {
                     start: Point2::new(0.0, 4.0),
                     end: Point2::new(7.0, 4.0),
                 })
-                .unwrap()
+                .expect("valid test fixture")
             )
         );
 

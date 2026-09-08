@@ -116,11 +116,10 @@ fn project_brep(
         else {
             continue;
         };
-        let sketch_id = match SketchId::mint(format!(
+        let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
-        )) {
-            Ok(id) => id,
-            Err(_) => continue,
+        )) else {
+            continue;
         };
         let Ok(placement) =
             cadmpeg_ir::sketches::SketchPlacement::try_resolved(*origin, *normal, *u_axis)
@@ -149,10 +148,10 @@ fn project_brep(
                 let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
                     id.clone()
                 } else {
-                    let id = match SketchEntityId::mint(format!(
+                    let Ok(id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
-                    )) { Ok(id) => id, Err(_) => continue };
+                    )) else { continue };
                     let Some(geometry) =
                         project_edge(edge, &vertices, &points, &curves, *origin, *u_axis, v_axis)
                     else {
@@ -207,16 +206,15 @@ fn project_brep(
             let Some(position) = points.get(&vertex.point) else {
                 continue;
             };
-            let id = match SketchEntityId::mint(format!(
+            let Ok(id) = SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                 edge_entities.len()
                     + entities
                         .iter()
                         .filter(|entity| entity.sketch == sketch_id)
                         .count()
-            )) {
-                Ok(id) => id,
-                Err(_) => continue,
+            )) else {
+                continue;
             };
             let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: project_point(*position, *origin, *u_axis, v_axis),

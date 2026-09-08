@@ -2525,13 +2525,11 @@ pub fn bind_sketch_feature_geometry(
         let [placement] = matching.as_slice() else {
             continue;
         };
-        let planar = match neutral_sketch_id(placement) {
-            Some(id) => id,
-            None => continue,
+        let Some(planar) = neutral_sketch_id(placement) else {
+            continue;
         };
-        let spatial = match neutral_spatial_sketch_id(placement) {
-            Some(id) => id,
-            None => continue,
+        let Some(spatial) = neutral_spatial_sketch_id(placement) else {
+            continue;
         };
         let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
         let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);

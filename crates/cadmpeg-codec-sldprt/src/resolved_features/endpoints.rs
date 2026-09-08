@@ -5070,15 +5070,13 @@ pub(super) fn minor_arc_geometry(
     if sweep <= SKETCH_ANGLE_TOLERANCE {
         return None;
     }
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center,
-            radius: Length(radius),
-            start_angle: Angle(start_angle),
-            end_angle: Angle(end_angle),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center,
+        radius: Length(radius),
+        start_angle: Angle(start_angle),
+        end_angle: Angle(end_angle),
+    })
+    .ok()
 }
 
 pub(super) fn legacy_coordinate_roster_selected_axis_endpoint_indices(

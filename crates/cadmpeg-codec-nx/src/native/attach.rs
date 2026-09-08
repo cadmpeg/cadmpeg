@@ -3999,7 +3999,7 @@ fn attach_sketch_graph(
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some(label.id.clone()),
         });
         return Some(sketch_id);
@@ -4177,7 +4177,7 @@ fn attach_sketch_graph(
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some(label.id.clone()),
     });
     Some(sketch_id)

@@ -1193,12 +1193,12 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1299,12 +1299,12 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1754,12 +1754,12 @@ mod tests {
     #[test]
     fn binds_a_constraint_to_an_exact_native_sketch_entity() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
-        let entity_id =
-            SketchEntityId::mint("synthetic:test:sketch-entity#source".to_string()).unwrap();
+        let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#source".to_string())
+            .expect("valid test fixture");
         ir.model.sketch_entities.push(
             SketchEntity::new(
                 entity_id.clone(),
-                SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
+                SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
                 SketchGeometry::native("2DPoint".to_string()),
             )
             .with_native_ref(Some("source-record".to_string())),
@@ -1781,8 +1781,10 @@ mod tests {
         for suffix in ["first", "second"] {
             ir.model.sketch_entities.push(
                 SketchEntity::new(
-                    SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}")).unwrap(),
-                    SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
+                    SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}"))
+                        .expect("valid test fixture"),
+                    SketchId::mint("synthetic:test:sketch#0".to_string())
+                        .expect("valid test fixture"),
                     SketchGeometry::native("2DPoint".to_string()),
                 )
                 .with_native_ref(Some("source-record".to_string())),
@@ -1805,8 +1807,9 @@ mod tests {
         ir.model.sketch_entities.push(
             SketchEntity::new(
                 SketchEntityId::mint("synthetic:test:other-sketch-entity#source".to_string())
-                    .unwrap(),
-                SketchId::mint("synthetic:test:other-sketch#0".to_string()).unwrap(),
+                    .expect("valid test fixture"),
+                SketchId::mint("synthetic:test:other-sketch#0".to_string())
+                    .expect("valid test fixture"),
                 SketchGeometry::native("2DPoint".to_string()),
             )
             .with_native_ref(Some("source-record".to_string())),

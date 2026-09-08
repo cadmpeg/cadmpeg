@@ -188,7 +188,7 @@ pub fn project_sketch_design(
                     ),
                 )
                 .ok()?,
-                profiles: Default::default(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(placement.id.clone()),
             })
         })
@@ -593,7 +593,7 @@ pub fn project_spatial_sketch_design(
                         .ok()?,
                     })
                     .ok()?,
-                    _ => return None,
+                    SketchCurveGeometry::Arc { .. } => return None,
                 }
             };
             let sketch = neutral_spatial_sketch_id(placement)?;

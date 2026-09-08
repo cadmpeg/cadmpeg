@@ -60,8 +60,9 @@ fn generated_side_table() -> crate::feature::FeatureEntityTable {
 }
 
 fn sketch() -> Sketch {
-    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).unwrap();
-    let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#7:11".to_string()).unwrap();
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).expect("valid test fixture");
+    let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#7:11".to_string())
+        .expect("valid test fixture");
     Sketch {
         id: sketch_id,
         name: None,
@@ -72,7 +73,7 @@ fn sketch() -> Sketch {
             entity,
             reversed: false,
         }]])
-        .unwrap(),
+        .expect("valid test fixture"),
         native_ref: None,
     }
 }
@@ -99,7 +100,7 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
     duplicate_profile
         .profiles
         .edit(|profiles| profiles[0].push(repeated_use))
-        .unwrap();
+        .expect("valid test fixture");
     assert!(!sketch_profiles_cover_generated_extrusion_sides(
         &scan,
         &definition,
@@ -166,11 +167,11 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         .edit(|profiles| {
             profiles[0].push(SketchEntityUse {
                 entity: SketchEntityId::mint("creo:featdefs:sketch_entity#7:13".to_string())
-                    .unwrap(),
+                    .expect("valid test fixture"),
                 reversed: false,
-            })
+            });
         })
-        .unwrap();
+        .expect("valid test fixture");
 
     assert!(sketch_profiles_cover_generated_extrusion_sides(
         &scan,

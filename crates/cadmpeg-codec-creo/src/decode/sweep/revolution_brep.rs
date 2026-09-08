@@ -75,9 +75,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         ) else {
             continue;
         };
-        let sketch_id = match model_sketch_id(scan, definition) {
-            Some(id) => id,
-            None => continue,
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
         };
         let Some(mut profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
             continue;

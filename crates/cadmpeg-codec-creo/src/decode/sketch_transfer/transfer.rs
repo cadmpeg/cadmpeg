@@ -104,9 +104,8 @@ pub(in super::super) fn transfer_sketches(
             .map_err(cadmpeg_core::CodecError::malformed)?,
             None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         };
-        let sketch_id = match model_sketch_id(scan, definition) {
-            Some(id) => id,
-            None => continue,
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
         };
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
@@ -466,9 +465,8 @@ pub(in super::super) fn transfer_sketches(
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (external_id, offset) in solver_only_section_entities(definition) {
-            let id = match sketch_entity_id(&sketch_id, external_id) {
-                Some(id) => id,
-                None => continue,
+            let Some(id) = sketch_entity_id(&sketch_id, external_id) else {
+                continue;
             };
             if entities.iter().any(|entity| entity.id() == &id) {
                 continue;

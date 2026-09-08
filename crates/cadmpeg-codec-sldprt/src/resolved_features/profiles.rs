@@ -447,12 +447,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let sketch_id = match SketchId::mint(format!(
+            let Ok(sketch_id) = SketchId::mint(format!(
                 "sldprt:model:sketch#compact:{lane_key}:{}",
                 native_feature.ordinal
-            )) {
-                Ok(id) => id,
-                Err(_) => continue,
+            )) else {
+                continue;
             };
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
@@ -472,7 +471,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     Ok(placement) => placement,
                     Err(_) => continue,
                 },
-                profiles: Default::default(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
@@ -512,12 +511,11 @@ pub(crate) fn project_compact_sketch_profiles(
                     let end = corners[(index + 1) % corners.len()];
                     let start_marker = corner_markers[index];
                     let end_marker = corner_markers[(index + 1) % corner_markers.len()];
-                    let entity_id = match SketchEntityId::mint(format!(
+                    let Ok(entity_id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                         native_feature.ordinal
-                    )) {
-                        Ok(id) => id,
-                        Err(_) => continue,
+                    )) else {
+                        continue;
                     };
                     let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: *start,
@@ -641,12 +639,11 @@ pub(crate) fn project_compact_sketch_profiles(
                         let end = corners[(index + 1) % corners.len()];
                         let start_marker = corner_markers[index];
                         let end_marker = corner_markers[(index + 1) % corner_markers.len()];
-                        let entity_id = match SketchEntityId::mint(format!(
+                        let Ok(entity_id) = SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                             native_feature.ordinal
-                        )) {
-                            Ok(id) => id,
-                            Err(_) => continue,
+                        )) else {
+                            continue;
                         };
                         let Ok(geometry) =
                             SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -709,12 +706,11 @@ pub(crate) fn project_compact_sketch_profiles(
             let mut profile = Vec::with_capacity(points.len());
             for (index, (marker, start)) in points.iter().enumerate() {
                 let end = points[(index + 1) % points.len()].1;
-                let entity_id = match SketchEntityId::mint(format!(
+                let Ok(entity_id) = SketchEntityId::mint(format!(
                     "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                     native_feature.ordinal
-                )) {
-                    Ok(id) => id,
-                    Err(_) => continue,
+                )) else {
+                    continue;
                 };
                 let Ok(geometry) =
                     SketchGeometry::try_from(SketchGeometryDefinition::Line { start: *start, end })
@@ -890,12 +886,11 @@ pub(crate) fn project_marker_backed_sketches(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let sketch_id = match SketchId::mint(format!(
+            let Ok(sketch_id) = SketchId::mint(format!(
                 "sldprt:model:sketch#markers:{lane_key}:{}",
                 native_feature.ordinal
-            )) {
-                Ok(id) => id,
-                Err(_) => continue,
+            )) else {
+                continue;
             };
             let markers = object_markers
                 .iter()
@@ -947,7 +942,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 }
                                 None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
                             },
-                            profiles: Default::default(),
+                            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
@@ -995,7 +990,7 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                     None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
                 },
-                profiles: Default::default(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
@@ -1361,12 +1356,10 @@ pub(crate) fn project_marker_backed_sketches(
                                         )
                                         .is_some()
                                     {
-                                        return Some(
-                                            SketchGeometry::try_from(
-                                                SketchGeometryDefinition::Line { start, end },
-                                            )
-                                            .ok()?,
-                                        );
+                                        return SketchGeometry::try_from(
+                                            SketchGeometryDefinition::Line { start, end },
+                                        )
+                                        .ok();
                                     }
                                     if let Some([u, v]) = legacy_marker104_arc_center(
                                         &lane.native_payload,
@@ -2019,12 +2012,11 @@ pub(crate) fn project_sketch_block_profiles(
                     .id
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
-                let sketch_id = match SketchId::mint(format!(
+                let Ok(sketch_id) = SketchId::mint(format!(
                     "sldprt:model:sketch#block-profile:{lane_key}:{}",
                     native_profile.ordinal
-                )) {
-                    Ok(id) => id,
-                    Err(_) => continue,
+                )) else {
+                    continue;
                 };
                 let Some(assembled) = assemble_sketch_block_profile(&SketchBlockProfileInput {
                     sketch_id: &sketch_id,
@@ -2453,12 +2445,11 @@ fn project_detached_legacy_config_sketches(
                 .get(native_ref)
                 .copied()
                 .unwrap_or(detached_frame);
-            let sketch_id = match SketchId::mint(format!(
+            let Ok(sketch_id) = SketchId::mint(format!(
                 "sldprt:model:sketch#legacy-config:{lane_key}:{}",
                 native_feature.ordinal
-            )) {
-                Ok(id) => id,
-                Err(_) => continue,
+            )) else {
+                continue;
             };
             let sketch = Sketch {
                 id: sketch_id.clone(),
@@ -2471,7 +2462,7 @@ fn project_detached_legacy_config_sketches(
                     Ok(placement) => placement,
                     Err(_) => continue,
                 },
-                profiles: Default::default(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
@@ -2853,7 +2844,7 @@ mod detached_legacy_sketch_tests {
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("lane".into()),
         }
     }

@@ -486,9 +486,8 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         else {
             continue;
         };
-        let sketch_id = match model_sketch_id(scan, definition) {
-            Some(id) => id,
-            None => continue,
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
         };
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {

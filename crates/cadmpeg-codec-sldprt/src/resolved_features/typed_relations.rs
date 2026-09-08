@@ -421,8 +421,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         SketchCoordinateAxis::U
                     },
                 )
-                .map(|relation| SketchConstraintDefinitionInput::SameCoordinate { relation })
-                .unwrap_or_else(|_| native())
+                .map_or_else(
+                    |_| native(),
+                    |relation| SketchConstraintDefinitionInput::SameCoordinate { relation },
+                )
             } else {
                 return Some(native());
             }
@@ -668,8 +670,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     SketchCoordinateAxis::U
                 },
             )
-            .map(|relation| SketchConstraintDefinitionInput::SameCoordinate { relation })
-            .unwrap_or_else(|_| native())
+            .map_or_else(
+                |_| native(),
+                |relation| SketchConstraintDefinitionInput::SameCoordinate { relation },
+            )
         }
         AtIntersection => {
             if sketch_entities.is_empty() {
@@ -1495,8 +1499,7 @@ fn typed_axis_relation_is_inactive(
     match definition {
         SketchConstraintDefinitionInput::Horizontal { entity: id }
         | SketchConstraintDefinitionInput::Vertical { entity: id } => {
-            let SketchGeometryDefinition::Line { start, end } =
-                (&entity(id)?.geometry).definition()
+            let SketchGeometryDefinition::Line { start, end } = entity(id)?.geometry.definition()
             else {
                 return Some(true);
             };

@@ -482,7 +482,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
             Vector3::new(0.0, 0.0, -1.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
 
@@ -648,7 +648,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
             Vector3::new(0.0, 0.0, -1.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
 
@@ -729,7 +729,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
             Vector3::new(0.0, 0.0, -1.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
 

@@ -3412,12 +3412,11 @@ pub(crate) fn project_bore_backed_position_sketches(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let sketch_id = match SketchId::mint(format!(
+        let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#bore:{lane_key}:{}",
             position.ordinal
-        )) {
-            Ok(id) => id,
-            Err(_) => continue,
+        )) else {
+            continue;
         };
         let v_axis = normal.cross(*u_axis);
         let Some(projected_entities) = axes
@@ -3453,7 +3452,7 @@ pub(crate) fn project_bore_backed_position_sketches(
                     Ok(placement) => placement,
                     Err(_) => continue,
                 },
-                profiles: Default::default(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             },
             entities: projected_entities,

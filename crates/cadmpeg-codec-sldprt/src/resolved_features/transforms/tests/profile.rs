@@ -863,7 +863,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     }];
     let parameter = |ordinal: u32, diameter: f64| DesignParameter {

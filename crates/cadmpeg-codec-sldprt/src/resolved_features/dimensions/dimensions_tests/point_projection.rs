@@ -129,7 +129,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     );
 
     assert!(
-        matches!((entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+        matches!((entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
             Some(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length(2.0)
@@ -147,7 +147,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&classless_lane),
     );
     assert!(
-        matches!((classless_entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+        matches!((classless_entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
             Some(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length(2.0)
@@ -170,7 +170,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&object_index_lane),
     );
     assert!(
-        matches!((object_index_entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+        matches!((object_index_entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
             Some(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length(2.0)

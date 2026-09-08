@@ -593,7 +593,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     };
     let entities = [SketchEntity::new(
@@ -790,7 +790,7 @@ fn unique_unindexed_point_locus_is_projected() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     };
     let mut features = vec![hole, sketch_feature];

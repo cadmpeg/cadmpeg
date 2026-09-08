@@ -43,13 +43,11 @@ pub(crate) fn section_line_geometry(
         .fold(1.0, f64::max);
     (((end[0] - start[0]) / scale).hypot((end[1] - start[1]) / scale) > EPS_POINT_NONZERO)
         .then_some(())?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    })
+    .ok()
 }
 
 pub(crate) fn section_point_geometry(
@@ -60,12 +58,10 @@ pub(crate) fn section_point_geometry(
         return None;
     };
     let position = points.get(&point)?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: cadmpeg_ir::math::Point2::new(position[0], position[1]),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+        position: cadmpeg_ir::math::Point2::new(position[0], position[1]),
+    })
+    .ok()
 }
 
 pub(crate) fn section_arc_geometry(
@@ -94,15 +90,13 @@ pub(crate) fn section_arc_geometry(
     while end <= start {
         end += std::f64::consts::TAU;
     }
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
-            radius: Length(first_radius),
-            start_angle: Angle(start),
-            end_angle: Angle(end),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
+        radius: Length(first_radius),
+        start_angle: Angle(start),
+        end_angle: Angle(end),
+    })
+    .ok()
 }
 
 pub(crate) fn section_circle_geometry(
@@ -112,13 +106,11 @@ pub(crate) fn section_circle_geometry(
 ) -> Option<SketchGeometry> {
     let center = points.get(&segment.center_id)?;
     let radius = *radii.get(&segment.radius_ref)?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-            center: Point2::new(center[0], center[1]),
-            radius: Length(radius),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(center[0], center[1]),
+        radius: Length(radius),
+    })
+    .ok()
 }
 
 pub(crate) fn section_point_row_geometry(
@@ -126,12 +118,10 @@ pub(crate) fn section_point_row_geometry(
     segment: &crate::feature::FeaturePointSegment,
 ) -> Option<SketchGeometry> {
     let point = points.get(&segment.point_id)?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: Point2::new(point[0], point[1]),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+        position: Point2::new(point[0], point[1]),
+    })
+    .ok()
 }
 
 pub(crate) fn section_centered_line_geometry(
@@ -151,13 +141,11 @@ pub(crate) fn section_centered_line_geometry(
     ((start[0] + end[0] - 2.0 * center[0]).hypot(start[1] + end[1] - 2.0 * center[1])
         <= EPS_RADIUS_AGREEMENT * scale)
         .then_some(())?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(start[0], start[1]),
-            end: Point2::new(end[0], end[1]),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(start[0], start[1]),
+        end: Point2::new(end[0], end[1]),
+    })
+    .ok()
 }
 
 pub(crate) fn section_reference_line_geometry(
@@ -176,13 +164,11 @@ pub(crate) fn section_reference_line_geometry(
         .fold(1.0, f64::max);
     let direction = [end[0] - start[0], end[1] - start[1]];
     (direction[0].hypot(direction[1]) > EPS_POINT_NONZERO * scale).then_some(())?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
-            origin: Point2::new(start[0], start[1]),
-            direction: Point2::new(direction[0], direction[1]),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+        origin: Point2::new(start[0], start[1]),
+        direction: Point2::new(direction[0], direction[1]),
+    })
+    .ok()
 }
 
 pub(crate) fn resolved_section_reference_line_geometry(
@@ -322,13 +308,11 @@ pub(crate) fn saved_section_line_geometry(
     let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
         return None;
     };
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: cadmpeg_ir::math::Point2::new(start_u, start_v),
-            end: cadmpeg_ir::math::Point2::new(end_u, end_v),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: cadmpeg_ir::math::Point2::new(start_u, start_v),
+        end: cadmpeg_ir::math::Point2::new(end_u, end_v),
+    })
+    .ok()
 }
 
 pub(crate) fn saved_section_arc_record<'a>(
@@ -438,15 +422,13 @@ pub(crate) fn saved_section_arc_geometry(
     while end <= start {
         end += std::f64::consts::TAU;
     }
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length(radius),
-            start_angle: Angle(start),
-            end_angle: Angle(end),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+        radius: Length(radius),
+        start_angle: Angle(start),
+        end_angle: Angle(end),
+    })
+    .ok()
 }
 
 pub(crate) fn saved_section_segment_point_coordinates(

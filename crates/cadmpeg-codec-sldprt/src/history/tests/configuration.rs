@@ -294,7 +294,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     });
     ir.model.sketch_entities.push(

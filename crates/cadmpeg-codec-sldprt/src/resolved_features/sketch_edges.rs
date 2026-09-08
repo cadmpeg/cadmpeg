@@ -52,12 +52,11 @@ pub(super) fn project_endpoint_constraints(
         if distinct_entities.len() < 2 {
             continue;
         }
-        let id = match SketchConstraintId::mint(format!(
+        let Ok(id) = SketchConstraintId::mint(format!(
             "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
             constraints.len()
-        )) {
-            Ok(id) => id,
-            Err(_) => continue,
+        )) else {
+            continue;
         };
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::CoincidentLoci { loci },
@@ -111,8 +110,7 @@ pub(super) fn project_edge(
         u_axis,
         v_axis,
     );
-    let line =
-        || Some(SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok()?);
+    let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     let tolerance = edge
         .tolerance
         .unwrap_or(EPS_SKETCH_EDGES_PROJECT_EDGE_E9)

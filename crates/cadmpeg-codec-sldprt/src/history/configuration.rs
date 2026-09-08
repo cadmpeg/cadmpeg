@@ -480,14 +480,13 @@ pub(crate) fn project_configuration_sketch_states(
             .collect::<HashMap<_, _>>();
         for feature in &mut features {
             if let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition {
-                let expected = match cadmpeg_ir::sketches::SpatialSketchId::mint(
+                let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(
                     feature
                         .id
                         .as_str()
                         .replacen(":model:feature#", ":model:spatial-sketch#", 1),
-                ) {
-                    Ok(id) => id,
-                    Err(_) => continue,
+                ) else {
+                    continue;
                 };
                 if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
                     *sketch = Some(expected);
