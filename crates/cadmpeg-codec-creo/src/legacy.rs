@@ -125,7 +125,7 @@ impl<T> NumericPayload<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValueRecord<T> {
     /// Native value identity family.
-    pub kind: ValueKind,
+    pub kind: ValueKind<T>,
     /// Declared attribute name.
     pub name: String,
     /// Scope-local declaration identifier.
@@ -1022,7 +1022,7 @@ fn scalar_string_records(
     data: &[u8],
     scopes: &[Scope],
     type_code: LegacyTypeCode,
-    identity_kind: ValueKind,
+    identity_kind: ValueKind<StringValue>,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
 ) -> TypedValues<ScalarStringRecord> {
@@ -1151,7 +1151,7 @@ fn string_records(
                 }
             };
             records.push(ValueRecord {
-                kind: ValueKind::String,
+                kind: ValueKind::STRING,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
@@ -1169,7 +1169,7 @@ fn numeric_records<T>(
     data: &[u8],
     scopes: &[Scope],
     type_code: LegacyTypeCode,
-    identity_kind: ValueKind,
+    identity_kind: ValueKind<NumericPayload<T>>,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
 ) -> TypedValues<NumericRecord<T>> {
@@ -1387,7 +1387,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::NullableString,
-        ValueKind::Type3,
+        ValueKind::TYPE3,
         NullToken::RepresentsNull,
         &parents,
     );
@@ -1395,7 +1395,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::ByteString,
-        ValueKind::Type4,
+        ValueKind::TYPE4,
         NullToken::RepresentsBytes,
         &parents,
     );
@@ -1403,7 +1403,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Real,
-        ValueKind::Real,
+        ValueKind::REAL,
         compact_real,
         &parents,
     );
@@ -1411,7 +1411,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Integer,
-        ValueKind::Integer,
+        ValueKind::INTEGER,
         signed_integer,
         &parents,
     );
@@ -1419,7 +1419,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned5,
-        ValueKind::Type5,
+        ValueKind::TYPE5,
         unsigned_integer,
         &parents,
     );
@@ -1427,7 +1427,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Real6,
-        ValueKind::Type6,
+        ValueKind::TYPE6,
         compact_real,
         &parents,
     );
@@ -1435,7 +1435,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned7,
-        ValueKind::Type7,
+        ValueKind::TYPE7,
         unsigned_integer,
         &parents,
     );
@@ -1443,7 +1443,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned9,
-        ValueKind::Type9,
+        ValueKind::TYPE9,
         unsigned_integer,
         &parents,
     );
@@ -1451,7 +1451,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned11,
-        ValueKind::Type11,
+        ValueKind::TYPE11,
         unsigned_integer,
         &parents,
     );
@@ -1519,45 +1519,90 @@ impl Serialize for ObjectRecord {
     }
 }
 
-/// Native identity family for a legacy value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValueKind {
-    /// integer value.
-    Integer,
-    /// real value.
-    Real,
-    /// string value.
-    String,
-    /// Type-3 value.
-    Type3,
-    /// Type-4 value.
-    Type4,
-    /// Type-5 value.
-    Type5,
-    /// Type-6 value.
-    Type6,
-    /// Type-7 value.
-    Type7,
-    /// Type-9 value.
-    Type9,
-    /// Type-11 value.
-    Type11,
+/// Native identity family bound to its legacy payload type.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ValueKind<T> {
+    token: &'static str,
+    payload: std::marker::PhantomData<fn() -> T>,
 }
-impl ValueKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Integer => "integer",
-            Self::Real => "real",
-            Self::String => "string",
-            Self::Type3 => "type_3",
-            Self::Type4 => "type_4",
-            Self::Type5 => "type_5",
-            Self::Type6 => "type_6",
-            Self::Type7 => "type_7",
-            Self::Type9 => "type_9",
-            Self::Type11 => "type_11",
-        }
+
+impl<T> Copy for ValueKind<T> {}
+
+impl<T> Clone for ValueKind<T> {
+    fn clone(&self) -> Self {
+        *self
     }
+}
+
+impl<T> ValueKind<T> {
+    fn as_str(self) -> &'static str {
+        self.token
+    }
+}
+
+impl ValueKind<NumericPayload<i32>> {
+    /// Identity token for integer values.
+    pub const INTEGER: Self = Self {
+        token: "integer",
+        payload: std::marker::PhantomData,
+    };
+}
+
+impl ValueKind<NumericPayload<Real>> {
+    /// Identity token for real values.
+    pub const REAL: Self = Self {
+        token: "real",
+        payload: std::marker::PhantomData,
+    };
+    /// Identity token for type_6 values.
+    pub const TYPE6: Self = Self {
+        token: "type_6",
+        payload: std::marker::PhantomData,
+    };
+}
+
+impl ValueKind<NumericPayload<u32>> {
+    /// Identity token for type_5 values.
+    pub const TYPE5: Self = Self {
+        token: "type_5",
+        payload: std::marker::PhantomData,
+    };
+    /// Identity token for type_7 values.
+    pub const TYPE7: Self = Self {
+        token: "type_7",
+        payload: std::marker::PhantomData,
+    };
+    /// Identity token for type_9 values.
+    pub const TYPE9: Self = Self {
+        token: "type_9",
+        payload: std::marker::PhantomData,
+    };
+    /// Identity token for type_11 values.
+    pub const TYPE11: Self = Self {
+        token: "type_11",
+        payload: std::marker::PhantomData,
+    };
+}
+
+impl ValueKind<StringPayload> {
+    /// Identity token for string values.
+    pub const STRING: Self = Self {
+        token: "string",
+        payload: std::marker::PhantomData,
+    };
+}
+
+impl ValueKind<StringValue> {
+    /// Identity token for type_3 values.
+    pub const TYPE3: Self = Self {
+        token: "type_3",
+        payload: std::marker::PhantomData,
+    };
+    /// Identity token for type_4 values.
+    pub const TYPE4: Self = Self {
+        token: "type_4",
+        payload: std::marker::PhantomData,
+    };
 }
 
 #[cfg(test)]

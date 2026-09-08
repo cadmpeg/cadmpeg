@@ -834,7 +834,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             })
             .collect();
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -990,7 +990,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         )];
         if with_angle {
             real_values.push(ValueRecord {
-                kind: crate::legacy::ValueKind::Real,
+                kind: crate::legacy::ValueKind::REAL,
                 name: "half_angle".to_string(),
                 attribute_id: 0,
                 scope_offset: 0,
@@ -1018,7 +1018,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     fn real_scalar(parent: &str, name: &str, value: f64, offset: usize) -> RealRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1327,7 +1327,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Integer,
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1345,7 +1345,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| Real::from_bits(value.to_bits()));
         let runs = values.map(|value| RealRun { count: 1, value }).collect();
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: "crv_pnt_arr".to_string(),
             attribute_id: 0,
             scope_offset: 0,

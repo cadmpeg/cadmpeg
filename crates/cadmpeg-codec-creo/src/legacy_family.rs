@@ -593,7 +593,7 @@ mod tests {
 
     fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::Integer,
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -606,7 +606,7 @@ mod tests {
 
     fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -621,7 +621,7 @@ mod tests {
 
     fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::String,
+            kind: crate::legacy::ValueKind::STRING,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
