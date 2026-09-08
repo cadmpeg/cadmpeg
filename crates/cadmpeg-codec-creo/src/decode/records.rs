@@ -1588,31 +1588,22 @@ fn serialize_surface_named_value<S: serde::Serializer>(
             Vec::new(),
             Vec::new(),
         ),
-        crate::surface::SurfaceNamedValue::ScalarArray {
-            dimensions,
-            count,
-            values,
-            tokens,
-        } => (
+        crate::surface::SurfaceNamedValue::ScalarArray(array) => (
             "scalar_array",
             Vec::new(),
-            Some(*dimensions),
-            Some(*count),
-            values.clone(),
-            tokens.clone().unwrap_or_default(),
+            Some(array.dimensions()),
+            Some(array.count()),
+            array.values().to_vec(),
+            array.tokens().unwrap_or_default().to_vec(),
             Vec::new(),
         ),
-        crate::surface::SurfaceNamedValue::CountedScalarArray {
-            count,
-            values,
-            tokens,
-        } => (
+        crate::surface::SurfaceNamedValue::CountedScalarArray(array) => (
             "counted_scalar_array",
             Vec::new(),
             None,
-            Some(*count),
-            values.clone(),
-            tokens.clone(),
+            Some(array.count()),
+            array.values().to_vec(),
+            array.tokens().to_vec(),
             Vec::new(),
         ),
         crate::surface::SurfaceNamedValue::ScalarSequence(values) => (

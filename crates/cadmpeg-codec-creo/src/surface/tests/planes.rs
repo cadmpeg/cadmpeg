@@ -1047,25 +1047,28 @@ fn named_local_system_expands_row_lane_zero_forms() {
             &body,
             &scalar::ScalarCache::default(),
         ),
-        SurfaceNamedValue::ScalarArray {
-            dimensions: 4,
-            count: 3,
-            values: vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(1.0),
-                Some(-0.5),
-                Some(0.0),
-                Some(1.0),
-            ],
-            tokens: None,
-        }
+        SurfaceNamedValue::ScalarArray(
+            crate::surface::arrays::DimensionedScalars::try_new(
+                4,
+                3,
+                vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(-0.5),
+                    Some(0.0),
+                    Some(1.0),
+                ],
+                None
+            )
+            .expect("valid scalar array")
+        )
     );
 }
 
@@ -1093,25 +1096,28 @@ fn named_local_system_decodes_terminal_zero_slot() {
 
     assert_eq!(
         records[0].field("local_sys").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 4,
-            count: 3,
-            values: vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(15.0),
-                Some(0.0),
-            ],
-            tokens: None,
-        })
+        Some(&SurfaceNamedValue::ScalarArray(
+            crate::surface::arrays::DimensionedScalars::try_new(
+                4,
+                3,
+                vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(15.0),
+                    Some(0.0),
+                ],
+                None
+            )
+            .expect("valid scalar array")
+        ))
     );
 }
 
@@ -1181,11 +1187,12 @@ fn named_local_system_uses_the_signed_coordinate_dict_lane() {
         \x7a\xeb\xb6\x28\xd0\x03\x82\x18\
         \x48\x66\x80\x48\x08\x00\x2f\x44\x00";
     let records = named_prototype_records(payload);
-    let SurfaceNamedValue::ScalarArray { values, .. } =
+    let SurfaceNamedValue::ScalarArray(array) =
         &records[0].field("local_sys").expect("local system").value
     else {
         panic!("scalar local system");
     };
+    let values = array.values();
 
     assert_eq!(values[0], Some(0.997_523_383_819_597_8));
     assert_eq!(values[1], Some(0.070_335_614_969_227_37));
@@ -1197,7 +1204,7 @@ fn named_local_system_uses_the_signed_coordinate_dict_lane() {
 #[test]
 fn named_local_system_decodes_positive_compact_half_coordinate() {
     let body = [0xf9, 0x04, 0x03, 0x0e];
-    let SurfaceNamedValue::ScalarArray { values, .. } = named_surface_value(
+    let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
         &SurfacePrototypeFamily::Plane,
         "local_sys",
         &body,
@@ -1205,6 +1212,7 @@ fn named_local_system_decodes_positive_compact_half_coordinate() {
     ) else {
         panic!("scalar local system");
     };
+    let values = array.values();
 
     assert_eq!(values[0], Some(0.5));
 }
@@ -1213,20 +1221,17 @@ fn named_local_system_decodes_positive_compact_half_coordinate() {
 fn dimensioned_scalar_arrays_decode_compact_extents() {
     let mut body = vec![0xf9, 0x80, 0x88, 0x03];
     body.extend([0x0f; 136 * 3]);
-    let SurfaceNamedValue::ScalarArray {
-        dimensions,
-        count,
-        values,
-        ..
-    } = named_surface_value(
+    let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
         &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
         "i_points",
         &body,
         &scalar::ScalarCache::default(),
-    )
-    else {
+    ) else {
         panic!("dimensioned scalar array");
     };
+    let dimensions = array.dimensions();
+    let count = array.count();
+    let values = array.values();
 
     assert_eq!(dimensions, 136);
     assert_eq!(count, 3);
@@ -1245,18 +1250,21 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
 
     assert_eq!(
         records[0].field("i_pnts").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 1,
-            count: 3,
-            values: vec![
-                Some(f64::from_be_bytes([
-                    0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
-                ])),
-                Some(1.0),
-                Some(0.0),
-            ],
-            tokens: Some(vec![negative.to_vec(), vec![0xe4], vec![0x0f]]),
-        })
+        Some(&SurfaceNamedValue::ScalarArray(
+            crate::surface::arrays::DimensionedScalars::try_new(
+                1,
+                3,
+                vec![
+                    Some(f64::from_be_bytes([
+                        0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                    ])),
+                    Some(1.0),
+                    Some(0.0),
+                ],
+                Some(vec![negative.to_vec(), vec![0xe4], vec![0x0f]])
+            )
+            .expect("valid scalar array")
+        ))
     );
 }
 
@@ -1271,8 +1279,8 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
 
     assert!(matches!(
         prototype.field("i_pnts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. })
-            if values == &[
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.values() == &[
                 Some(f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6])),
                 Some(1.0),
                 Some(1.0),
@@ -1280,8 +1288,8 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
     ));
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. })
-            if values == &[
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.values() == &[
                 Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0])),
                 Some(1.0),
                 Some(1.0),
@@ -1300,8 +1308,8 @@ fn interpolation_point_dict_token_does_not_consume_following_world_coordinate() 
 
     assert!(matches!(
         records[0].field("i_pnts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. })
-            if values == &[
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.values() == &[
                 Some(f64::from_be_bytes([0x3f, 0xe6, 1, 2, 3, 4, 5, 6])),
                 Some(f64::from_be_bytes([0x40, 0x40, 1, 2, 3, 4, 5, 6])),
                 Some(1.0),
@@ -1326,12 +1334,7 @@ fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
     assert!(prototype.field("id").is_none());
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray {
-            dimensions: 1,
-            count: 3,
-            values,
-            ..
-        }) if values == &[Some(1.0), Some(1.0), Some(1.0)]
+        Some(SurfaceNamedValue::ScalarArray(array)) if array.dimensions() == 1 && array.count() == 3 && array.values() == &[Some(1.0), Some(1.0), Some(1.0)]
     ));
 }
 
