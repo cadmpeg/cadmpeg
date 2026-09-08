@@ -805,7 +805,7 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
         assert_eq!(state.state_offset + 1, state.offset);
         assert_eq!(state.stored_name().as_deref(), Some(expected_name));
     }
-    assert_eq!(states[3].identifier_keyword(), Some("ID"));
+    assert_eq!(states[3].name.identifier_keyword(), Some("ID"));
 
     let current_operations = operations(payload);
     let [current] = current_operations.as_slice() else {
@@ -814,8 +814,8 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
     assert_eq!(current.kind.as_str(), "Extrude");
     assert!(!current.display_name_stored());
     assert_eq!(current.stored_name(), None);
-    assert_eq!(current.stored_name_bytes(), None);
-    assert_eq!(current.identifier_keyword(), None);
+    assert_eq!(current.name.stored_name_bytes(), None);
+    assert_eq!(current.name.identifier_keyword(), None);
     assert_eq!(current.stored_name_prefix(), None);
     assert!(current.display_state_conflict);
 }
