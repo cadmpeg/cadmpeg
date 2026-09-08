@@ -1800,8 +1800,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         }
         let (entities, parameter) = match &constraint.definition {
             Definition::Disabled => (Vec::new(), None),
+            Definition::Polygon { polygon } => (polygon.entities().to_vec(), None),
             Definition::Coincident { entities }
-            | Definition::Polygon { entities }
             | Definition::SplineGroup { entities }
             | Definition::Distance {
                 entities,
@@ -1870,8 +1870,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             Definition::CoincidentLoci { loci } => {
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
-            Definition::SameCoordinate { first, second, .. }
-            | Definition::TangentLoci { first, second } => (
+            Definition::SameCoordinate { relation } => (
+                vec![
+                    locus_entity(relation.first()).clone(),
+                    locus_entity(relation.second()).clone(),
+                ],
+                None,
+            ),
+            Definition::TangentLoci { first, second } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
@@ -2060,27 +2066,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
-        if let Definition::Polygon { entities } = &constraint.definition {
-            let distinct = entities.iter().collect::<HashSet<_>>();
-            if entities.len() < 3 || distinct.len() != entities.len() {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: "polygon constraint requires at least three distinct members".into(),
-                    entity: Some(constraint.id.as_str().to_owned()),
-                });
-            }
-        }
-        if let Definition::SameCoordinate { first, second, .. } = &constraint.definition {
-            if first == second {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: "axis-alignment constraint requires two distinct loci".into(),
-                    entity: Some(constraint.id.as_str().to_owned()),
-                });
-            }
-        }
         for entity in entities {
             if !sketch_entities.contains(entity.as_str()) {
                 ref_error(

@@ -229,13 +229,16 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             {
                 if first != second {
                     return Some(SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis: if kind == Horizontal {
-                            SketchCoordinateAxis::V
-                        } else {
-                            SketchCoordinateAxis::U
-                        },
+                        relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                            first,
+                            second,
+                            if kind == Horizontal {
+                                SketchCoordinateAxis::V
+                            } else {
+                                SketchCoordinateAxis::U
+                            },
+                        )
+                        .ok()?,
                     });
                 }
             }
@@ -252,13 +255,16 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     loci_by_marker,
                 ) {
                     return Some(SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis: if kind == Horizontal {
-                            SketchCoordinateAxis::V
-                        } else {
-                            SketchCoordinateAxis::U
-                        },
+                        relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                            first,
+                            second,
+                            if kind == Horizontal {
+                                SketchCoordinateAxis::V
+                            } else {
+                                SketchCoordinateAxis::U
+                            },
+                        )
+                        .ok()?,
                     });
                 }
             }
@@ -283,13 +289,16 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         {
                             if let [first, second] = loci.as_slice() {
                                 return Some(SketchConstraintDefinition::SameCoordinate {
-                                    first: first.clone(),
-                                    second: second.clone(),
-                                    axis: if kind == Horizontal {
-                                        SketchCoordinateAxis::V
-                                    } else {
-                                        SketchCoordinateAxis::U
-                                    },
+                                    relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                        first.clone(),
+                                        second.clone(),
+                                        if kind == Horizontal {
+                                            SketchCoordinateAxis::V
+                                        } else {
+                                            SketchCoordinateAxis::U
+                                        },
+                                    )
+                                    .ok()?,
                                 });
                             }
                         }
@@ -400,15 +409,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 let [first, second] = loci.as_slice() else {
                     return Some(native());
                 };
-                SketchConstraintDefinition::SameCoordinate {
-                    first: first.clone(),
-                    second: second.clone(),
-                    axis: if kind == Horizontal {
+                cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    first.clone(),
+                    second.clone(),
+                    if kind == Horizontal {
                         SketchCoordinateAxis::V
                     } else {
                         SketchCoordinateAxis::U
                     },
-                }
+                )
+                .map(|relation| SketchConstraintDefinition::SameCoordinate { relation })
+                .unwrap_or_else(|_| native())
             } else {
                 return Some(native());
             }
@@ -651,15 +662,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let [first, second] = loci.as_slice() else {
                 return Some(native());
             };
-            SketchConstraintDefinition::SameCoordinate {
-                first: first.clone(),
-                second: second.clone(),
-                axis: if kind == HorizontalPoints {
+            cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                first.clone(),
+                second.clone(),
+                if kind == HorizontalPoints {
                     SketchCoordinateAxis::V
                 } else {
                     SketchCoordinateAxis::U
                 },
-            }
+            )
+            .map(|relation| SketchConstraintDefinition::SameCoordinate { relation })
+            .unwrap_or_else(|_| native())
         }
         AtIntersection => {
             if sketch_entities.is_empty() {
@@ -1482,11 +1495,10 @@ fn typed_axis_relation_is_inactive(
                 },
             )
         }
-        SketchConstraintDefinition::SameCoordinate {
-            first,
-            second,
-            axis,
-        } => {
+        SketchConstraintDefinition::SameCoordinate { relation } => {
+            let first = relation.first();
+            let second = relation.second();
+            let axis = relation.axis();
             let first = profile_locus_point(first, sketch_entities)?;
             let second = profile_locus_point(second, sketch_entities)?;
             Some(match axis {

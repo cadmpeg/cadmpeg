@@ -320,11 +320,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert_eq!(
         typed_marker_relation_definition(&horizontal_points, &markers, &joins),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-            second: cadmpeg_ir::sketches::SketchLocus::End(
-                SketchEntityId::mint("synthetic:test:id#second").unwrap()
-            ),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                cadmpeg_ir::sketches::SketchLocus::End(
+                    SketchEntityId::mint("synthetic:test:id#second").unwrap()
+                ),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
     let mut legacy_horizontal_points = marker("legacy-horizontal-points", None);
@@ -337,11 +340,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert_eq!(
         typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-            second: cadmpeg_ir::sketches::SketchLocus::End(
-                SketchEntityId::mint("synthetic:test:id#second").unwrap()
-            ),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                cadmpeg_ir::sketches::SketchLocus::End(
+                    SketchEntityId::mint("synthetic:test:id#second").unwrap()
+                ),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
     let mut entity_marker = marker("entity-marker", Some([0.01, 0.01]));

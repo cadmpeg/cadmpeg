@@ -454,9 +454,12 @@ fn encoder_writes_source_less_curved_sketches() {
         (
             "horizontal-points",
             SketchConstraintDefinition::SameCoordinate {
-                first: SketchLocus::Entity(entity_ids[13].clone()),
-                second: SketchLocus::Entity(entity_ids[14].clone()),
-                axis: SketchCoordinateAxis::V,
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(entity_ids[13].clone()),
+                    SketchLocus::Entity(entity_ids[14].clone()),
+                    SketchCoordinateAxis::V,
+                )
+                .unwrap(),
             },
         ),
         (
@@ -497,9 +500,12 @@ fn encoder_writes_source_less_curved_sketches() {
         (
             "vertical-points",
             SketchConstraintDefinition::SameCoordinate {
-                first: SketchLocus::Entity(entity_ids[13].clone()),
-                second: SketchLocus::Entity(entity_ids[15].clone()),
-                axis: SketchCoordinateAxis::U,
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(entity_ids[13].clone()),
+                    SketchLocus::Entity(entity_ids[15].clone()),
+                    SketchCoordinateAxis::U,
+                )
+                .unwrap(),
             },
         ),
     ] {
@@ -749,23 +755,19 @@ fn encoder_writes_source_less_curved_sketches() {
             .sketch_constraints
             .iter()
             .any(|constraint| {
-                matches!(
-                    (&constraint.definition, definition),
+                match (&constraint.definition, definition) {
                     (
-                        SketchConstraintDefinition::SameCoordinate {
-                            axis: SketchCoordinateAxis::V,
-                            ..
-                        },
-                        "horizontal_points"
-                    ) | (
-                        SketchConstraintDefinition::SameCoordinate {
-                            axis: SketchCoordinateAxis::U,
-                            ..
-                        },
-                        "vertical_points"
-                    ) | (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
-                        | (SketchConstraintDefinition::Tangent { .. }, "tangent")
-                )
+                        SketchConstraintDefinition::SameCoordinate { relation },
+                        "horizontal_points",
+                    ) => relation.axis() == SketchCoordinateAxis::V,
+                    (
+                        SketchConstraintDefinition::SameCoordinate { relation },
+                        "vertical_points",
+                    ) => relation.axis() == SketchCoordinateAxis::U,
+                    (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
+                    | (SketchConstraintDefinition::Tangent { .. }, "tangent") => true,
+                    _ => false,
+                }
             }));
     }
     assert_eq!(

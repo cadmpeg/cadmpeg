@@ -51,11 +51,10 @@ pub(super) fn generated_marker_relations(
                 .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
                 .unwrap_or_default()
         }
-        SketchConstraintDefinition::SameCoordinate {
-            first,
-            second,
-            axis,
-        } => {
+        SketchConstraintDefinition::SameCoordinate { relation } => {
+            let first = relation.first();
+            let second = relation.second();
+            let axis = relation.axis();
             vec![GeneratedMarkerRelation::Loci(
                 match axis {
                     SketchCoordinateAxis::U => SketchRelationKind::VerticalPoints,

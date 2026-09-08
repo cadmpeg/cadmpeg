@@ -4061,9 +4061,12 @@ pub(crate) fn exact_atomic_constraint(
                     .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
         {
             Some(Definition::SameCoordinate {
-                first: SketchLocus::Entity(entities[0].id().clone()),
-                second: SketchLocus::Entity(entities[1].id().clone()),
-                axis: SketchCoordinateAxis::V,
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(entities[0].id().clone()),
+                    SketchLocus::Entity(entities[1].id().clone()),
+                    SketchCoordinateAxis::V,
+                )
+                .ok()?,
             })
         }
         SketchConstraintKind::Vertical
@@ -4081,9 +4084,12 @@ pub(crate) fn exact_atomic_constraint(
                     .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
         {
             Some(Definition::SameCoordinate {
-                first: SketchLocus::Entity(entities[0].id().clone()),
-                second: SketchLocus::Entity(entities[1].id().clone()),
-                axis: SketchCoordinateAxis::U,
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(entities[0].id().clone()),
+                    SketchLocus::Entity(entities[1].id().clone()),
+                    SketchCoordinateAxis::U,
+                )
+                .ok()?,
             })
         }
         SketchConstraintKind::Tangent => {
@@ -4106,7 +4112,10 @@ pub(crate) fn exact_atomic_constraint(
                     == entities.len() =>
         {
             Some(Definition::Polygon {
-                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
+                polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(
+                    entities.iter().map(|entity| entity.id().clone()).collect(),
+                )
+                .ok()?,
             })
         }
         SketchConstraintKind::SplineGroup

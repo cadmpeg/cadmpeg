@@ -670,17 +670,11 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::V,
-            ..
-        })
+        Some(SketchConstraintDefinition::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::U,
-            ..
-        })
+        Some(SketchConstraintDefinition::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
     assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
     assert!(matches!(

@@ -901,13 +901,16 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     assert_eq!(
         constraints[0].0.definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
-            ),
-            second: SketchLocus::End(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
-            ),
-            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+                ),
+                SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+                ),
+                cadmpeg_ir::sketches::SketchCoordinateAxis::V
+            )
+            .unwrap()
         }
     );
 
@@ -935,13 +938,16 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     assert_eq!(
         function_two_constraints[0].0.definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
-            ),
-            second: SketchLocus::End(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
-            ),
-            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+                ),
+                SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+                ),
+                cadmpeg_ir::sketches::SketchCoordinateAxis::U
+            )
+            .unwrap()
         }
     );
 
