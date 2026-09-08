@@ -362,7 +362,7 @@ fn nested_member_address_is_inspect_replayable() {
         },
     );
     assert_eq!(address.path(), "root/GuiDocument.xml@120");
-    assert_eq!(address.steps[1].kind, AddressStepKind::ExpandedMember);
+    assert_eq!(address.steps[1].kind, AddressStepKind::Member);
     let commands = address.inspect_commands("part.FCStd");
     assert_eq!(
         commands,
