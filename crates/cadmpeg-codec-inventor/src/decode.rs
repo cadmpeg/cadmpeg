@@ -46,16 +46,23 @@ use crate::native::{
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{
     DatabaseState, DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState,
 };
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let container = InventorContainer::open(ctx, root)?;
+    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+}
+
+fn decode_container<'a>(
+    ctx: &DecodeContext<'a>,
+    container: &InventorContainer<'a>,
+) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
-    let recovery = DialectRecovery::of(&container);
+    let recovery = DialectRecovery::of(container);
     let matched = recovery.classify();
     let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier);
     // The kernel layer, classified from the carrier's own header. Non-primary:
@@ -64,7 +71,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .iter()
         .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         .cloned();
-    let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
+    let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
@@ -313,6 +320,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map_err(CodecError::malformed)?;
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
+    let mut structural_issues = Vec::new();
     let ufrx = match &container.ufrx {
         UfrxState::Absent => UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
@@ -342,8 +350,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .model_states
                 .iter()
                 .enumerate()
-                .map(|(ordinal, state)| {
-                    UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
+                .filter_map(|(ordinal, state)| {
+                    let admitted = UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
                         id: format!("inventor:ufrx:model-state#{ordinal}"),
                         ordinal: ordinal as u32,
                         prefix: state.prefix,
@@ -364,16 +372,20 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                             .collect(),
                         suffix_len: state.suffix.window().len() as u64,
                         suffix_sha256: sha256_hex(state.suffix.window()),
-                    })
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-model-state-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(CodecError::malformed)?;
+                .collect::<Vec<_>>();
             let references = document
                 .references
                 .iter()
                 .enumerate()
-                .map(|(ordinal, reference)| {
-                    ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
+                .filter_map(|(ordinal, reference)| {
+                    let admitted = ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
                         id: format!("inventor:ufrx:external-reference#{ordinal}"),
                         ordinal: ordinal as u32,
                         path: reference.path.clone(),
@@ -388,16 +400,20 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         occurrence_count: reference.occurrence_count,
                         version: reference.version,
                         flags: reference.flags,
-                    })
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-external-reference-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(CodecError::malformed)?;
+                .collect::<Vec<_>>();
             let embedded = document
                 .embedded_references
                 .iter()
                 .enumerate()
-                .map(|(ordinal, reference)| {
-                    EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
+                .filter_map(|(ordinal, reference)| {
+                    let admitted = EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
                         id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
                         ordinal: ordinal as u32,
                         value_0: reference.value_0,
@@ -413,16 +429,20 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         state_values: reference.state_values,
                         record_len: reference.source.window().len() as u64,
                         record_sha256: sha256_hex(reference.source.window()),
-                    })
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-embedded-reference-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(CodecError::malformed)?;
+                .collect::<Vec<_>>();
             let occurrences = document
                 .occurrences
                 .iter()
                 .enumerate()
-                .map(|(ordinal, occurrence)| {
-                    UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
+                .filter_map(|(ordinal, occurrence)| {
+                    let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
                         id: format!("inventor:ufrx:occurrence#{ordinal}"),
                         ordinal: ordinal as u32,
                         end_string_flag: occurrence.end_string_flag,
@@ -433,10 +453,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         header_padding_words: occurrence.header_padding_words,
                         record_len: occurrence.source.window().len() as u64,
                         record_sha256: sha256_hex(occurrence.source.window()),
-                    })
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-occurrence-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(CodecError::malformed)?;
+                .collect::<Vec<_>>();
             UfrxRecord::ParsedPrefix {
                 id: "inventor:ufrx:state#root".into(),
                 directory_id: document.stream.directory_id(),
@@ -444,10 +468,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 section_versions: document.section_versions.clone(),
                 original_file_name: document.original_file_name.clone(),
                 caption: document.caption.clone(),
-                representation: document
-                    .representation
-                    .as_ref()
-                    .map(|state| {
+                representation: document.representation.as_ref().and_then(|state| {
+                    let admitted =
                         UfrxRepresentationRecord::try_from(UfrxRepresentationRecordWire {
                             prefix: state.prefix,
                             active_representation: state
@@ -461,10 +483,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                             secondary_active_lod_state: state.secondary_active_lod_state,
                             active_model_state: state.active_model_state.clone(),
                             active_model_state_state: state.active_model_state_state,
-                        })
-                    })
-                    .transpose()
-                    .map_err(CodecError::malformed)?,
+                        });
+                    admit_ufrx_record(admitted, "ufrx-representation", &mut structural_issues)
+                }),
                 model_states,
                 external_references: references,
                 embedded_references: embedded,
@@ -474,6 +495,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             }
         }
     };
+    let ufrx_issue_count = structural_issues.len();
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -585,7 +607,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .collect(),
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
-    let mut structural_issues = Vec::new();
     if let ParsedState::Unavailable(detail) = &container.rse.registry {
         structural_issues.push(structural_issue("segment_registry", detail));
     }
@@ -860,31 +881,33 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let assembly_placements = assembly_inventory
         .placements
         .iter()
-        .map(|placement| {
-            AssemblyPlacementRecord::try_from(AssemblyPlacementRecordWire {
-                id: format!(
-                    "inventor:assembly:placement#{}-{}",
-                    placement.segment_token, placement.record_ordinal
-                ),
-                segment_token: placement.segment_token.clone(),
-                record_ordinal: placement.record_ordinal,
-                header_id: placement.header_id,
-                owner_reference: placement.owner_reference,
-                attribute_reference: placement.attribute_reference,
-                state: placement.state,
-                transform_prefix: placement.transform_prefix,
-                transform: placement.transform,
-                branch: placement.branch,
-                graphics_state: placement.graphics_state,
-                occurrence_id: placement.occurrence_id,
-                graphics_index: placement.graphics_index,
-                object_reference: placement.object_reference,
-                suffix_len: placement.suffix.window().len() as u64,
-                suffix_sha256: sha256_hex(placement.suffix.window()),
-            })
+        .filter_map(|placement| {
+            admit_assembly_placement(
+                AssemblyPlacementRecordWire {
+                    id: format!(
+                        "inventor:assembly:placement#{}-{}",
+                        placement.segment_token, placement.record_ordinal
+                    ),
+                    segment_token: placement.segment_token.clone(),
+                    record_ordinal: placement.record_ordinal,
+                    header_id: placement.header_id,
+                    owner_reference: placement.owner_reference,
+                    attribute_reference: placement.attribute_reference,
+                    state: placement.state,
+                    transform_prefix: placement.transform_prefix,
+                    transform: placement.transform,
+                    branch: placement.branch,
+                    graphics_state: placement.graphics_state,
+                    occurrence_id: placement.occurrence_id,
+                    graphics_index: placement.graphics_index,
+                    object_reference: placement.object_reference,
+                    suffix_len: placement.suffix.window().len() as u64,
+                    suffix_sha256: sha256_hex(placement.suffix.window()),
+                },
+                &mut assembly_inventory.issues,
+            )
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(CodecError::malformed)?;
+        .collect::<Vec<_>>();
     let pm_app_default_styles = presentation_inventory
         .default_styles
         .iter()
@@ -1390,6 +1413,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 )),
             );
         }
+        if ufrx_issue_count != 0 {
+            losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
+                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
+            )));
+        }
         match &container.ufrx {
             UfrxState::Malformed { .. } => losses.push(
                 InventorLossCode::UfrxTableMalformed
@@ -1739,6 +1767,34 @@ fn apply_kernel_header(
     source
         .attributes
         .insert("kernel_family".into(), family.label().into());
+}
+
+fn admit_ufrx_record<T>(
+    admitted: Result<T, String>,
+    scope: &str,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Option<T> {
+    admitted
+        .inspect_err(|detail| issues.push(structural_issue(scope, detail)))
+        .ok()
+}
+
+fn admit_assembly_placement(
+    wire: AssemblyPlacementRecordWire,
+    issues: &mut Vec<RecordIssue>,
+) -> Option<AssemblyPlacementRecord> {
+    let segment_token = wire.segment_token.clone();
+    let record_ordinal = wire.record_ordinal;
+    AssemblyPlacementRecord::try_from(wire)
+        .inspect_err(|detail| {
+            issues.push(RecordIssue {
+                family: RecordIssueFamily::Assembly,
+                segment_token,
+                record_ordinal,
+                detail: detail.clone(),
+            });
+        })
+        .ok()
 }
 
 fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {
