@@ -51,13 +51,16 @@ pub(crate) fn transfer(
                 id: crate::native::native_id("annotation", &object.name),
                 object: object.id.clone(),
                 kind,
-                text: owned
+                text: schema
+                    .text
                     .iter()
-                    .filter(|property| schema.text.contains(&property.name.as_str()))
-                    .filter_map(|property| {
-                        schema
-                            .text_type
-                            .and_then(|type_name| strict_text_values(property, type_name).ok())
+                    .flat_map(|carrier| {
+                        owned
+                            .iter()
+                            .filter(move |property| property.name == carrier.property)
+                            .filter_map(move |property| {
+                                strict_text_values(property, carrier.type_name).ok()
+                            })
                     })
                     .flatten()
                     .collect(),
@@ -141,9 +144,10 @@ pub(crate) fn transfer_neutral(
             text: record.text.clone(),
             references,
             value: None,
-            format: match schema.format {
-                Some(name) => string_property(&owned, name, "App::PropertyString")?,
-                None => None,
+            format: if schema.has_format_spec {
+                string_property(&owned, "FormatSpec", "App::PropertyString")?
+            } else {
+                None
             },
             position: annotation_position(&owned, schema.position)?,
             parameters: record.parameters.clone(),
@@ -165,10 +169,15 @@ pub(crate) fn is_annotation_type(type_name: &str) -> bool {
 #[derive(Clone)]
 struct AnnotationSchema {
     kind: SemanticAnnotationKind,
-    text: &'static [&'static str],
-    text_type: Option<&'static str>,
-    format: Option<&'static str>,
+    text: Option<TextCarrier>,
+    has_format_spec: bool,
     position: PositionCarrier,
+}
+
+#[derive(Clone, Copy)]
+struct TextCarrier {
+    property: &'static str,
+    type_name: &'static str,
 }
 
 #[derive(Clone, Copy)]
@@ -195,9 +204,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
     match runtime_type {
         AnnotationRuntimeType::Annotation => AnnotationSchema {
             kind: Kind::Text,
-            text: &["LabelText"],
-            text_type: Some("App::PropertyStringList"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "LabelText",
+                type_name: "App::PropertyStringList",
+            }),
+            has_format_spec: false,
             position: PositionCarrier::Vector {
                 name: "Position",
                 type_name: "App::PropertyVector",
@@ -205,9 +216,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         },
         AnnotationRuntimeType::AnnotationLabel => AnnotationSchema {
             kind: Kind::Text,
-            text: &["LabelText"],
-            text_type: Some("App::PropertyStringList"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "LabelText",
+                type_name: "App::PropertyStringList",
+            }),
+            has_format_spec: false,
             position: PositionCarrier::Vector {
                 name: "TextPosition",
                 type_name: "App::PropertyVector",
@@ -216,9 +229,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         AnnotationRuntimeType::DrawViewAnnotation
         | AnnotationRuntimeType::DrawViewAnnotationPython => AnnotationSchema {
             kind: Kind::Text,
-            text: &["Text"],
-            text_type: Some("App::PropertyStringList"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "Text",
+                type_name: "App::PropertyStringList",
+            }),
+            has_format_spec: false,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -228,9 +243,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         AnnotationRuntimeType::DrawRichAnno | AnnotationRuntimeType::DrawRichAnnoPython => {
             AnnotationSchema {
                 kind: Kind::Text,
-                text: &["AnnoText"],
-                text_type: Some("App::PropertyString"),
-                format: None,
+                text: Some(TextCarrier {
+                    property: "AnnoText",
+                    type_name: "App::PropertyString",
+                }),
+                has_format_spec: false,
                 position: PositionCarrier::Coordinates {
                     x_name: "X",
                     y_name: "Y",
@@ -242,9 +259,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         | AnnotationRuntimeType::DrawViewDimExtent
         | AnnotationRuntimeType::LandmarkDimension => AnnotationSchema {
             kind: Kind::Dimension,
-            text: &["FormatSpec"],
-            text_type: Some("App::PropertyString"),
-            format: Some("FormatSpec"),
+            text: Some(TextCarrier {
+                property: "FormatSpec",
+                type_name: "App::PropertyString",
+            }),
+            has_format_spec: true,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -253,9 +272,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         },
         AnnotationRuntimeType::DrawViewBalloon => AnnotationSchema {
             kind: Kind::Balloon,
-            text: &["Text"],
-            text_type: Some("App::PropertyString"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "Text",
+                type_name: "App::PropertyString",
+            }),
+            has_format_spec: false,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -265,9 +286,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         AnnotationRuntimeType::DrawLeaderLine | AnnotationRuntimeType::DrawLeaderLinePython => {
             AnnotationSchema {
                 kind: Kind::Leader,
-                text: &[],
-                text_type: None,
-                format: None,
+                text: None,
+                has_format_spec: false,
                 position: PositionCarrier::Coordinates {
                     x_name: "X",
                     y_name: "Y",
@@ -280,9 +300,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         | AnnotationRuntimeType::DrawWeldSymbol
         | AnnotationRuntimeType::DrawWeldSymbolPython => AnnotationSchema {
             kind: Kind::Symbol,
-            text: &["TailText"],
-            text_type: Some("App::PropertyString"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "TailText",
+                type_name: "App::PropertyString",
+            }),
+            has_format_spec: false,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -417,14 +439,11 @@ fn validate_text_carriers(
     properties: &[&PropertyRecord],
     schema: &AnnotationSchema,
 ) -> Result<(), CodecError> {
-    let Some(type_name) = schema.text_type else {
+    let Some(carrier) = &schema.text else {
         return Ok(());
     };
-    for name in schema.text {
-        let Some(property) = typed_property(properties, name, &[type_name])? else {
-            continue;
-        };
-        strict_text_values(property, type_name)?;
+    if let Some(property) = typed_property(properties, carrier.property, &[carrier.type_name])? {
+        strict_text_values(property, carrier.type_name)?;
     }
     Ok(())
 }
