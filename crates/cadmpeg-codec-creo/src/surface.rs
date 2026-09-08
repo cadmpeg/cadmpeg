@@ -3145,8 +3145,18 @@ fn named_surface_value(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> SurfaceNamedValue {
+    parsed_named_surface_value(family, name, body, cache)
+        .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()))
+}
+
+fn parsed_named_surface_value(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<SurfaceNamedValue> {
     if body.is_empty() {
-        return SurfaceNamedValue::Empty;
+        return Some(SurfaceNamedValue::Empty);
     }
     let radius_field = matches!(name, "radius" | "radius1" | "radius2");
     let parameter_bound_field = matches!(name, "par_v_0" | "par_v_1");
@@ -3163,16 +3173,16 @@ fn named_surface_value(
             | "data_type"
     );
     if scalar_field && body == [0x18] {
-        return SurfaceNamedValue::ScalarSequence(vec![0.0]);
+        return Some(SurfaceNamedValue::ScalarSequence(vec![0.0]));
     }
     if name == "flip" {
         if body.first() == Some(&0xf1) {
             let (value, end) = compact_int(body, 1);
             if end > 1 && end == body.len() {
-                return SurfaceNamedValue::CompactInt(value);
+                return Some(SurfaceNamedValue::CompactInt(value));
             }
         }
-        return SurfaceNamedValue::Opaque(body.to_vec());
+        return None;
     }
     if name == "offset_type" {
         let (value, separator) = compact_int(body, 0);
@@ -3182,15 +3192,13 @@ fn named_surface_value(
                     .get(separator..)
                     .is_some_and(|rest| rest.starts_with(&[0xf1, psb::token::ENTITY_REF]))
             {
-                let Ok((reference, end)) = psb::reference_id(body, reference_start) else {
-                    return SurfaceNamedValue::Opaque(body.to_vec());
-                };
+                let (reference, end) = psb::reference_id(body, reference_start).ok()?;
                 if reference != 0 && end == body.len() {
-                    return SurfaceNamedValue::CompactInt(value);
+                    return Some(SurfaceNamedValue::CompactInt(value));
                 }
             }
         }
-        return SurfaceNamedValue::Opaque(body.to_vec());
+        return None;
     }
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
@@ -3200,9 +3208,9 @@ fn named_surface_value(
                 if let Ok((start_id, next)) = psb::reference_id(body, cursor + 1) {
                     if body.get(next) == Some(&psb::token::ARRAY_CLOSE) {
                         if let Some(end_id) = start_id.checked_add(count) {
-                            return SurfaceNamedValue::ContiguousEntityReferences(
+                            return Some(SurfaceNamedValue::ContiguousEntityReferences(
                                 (start_id..end_id).collect(),
-                            );
+                            ));
                         }
                     }
                 }
@@ -3210,12 +3218,9 @@ fn named_surface_value(
             if matches!(name, "u_params" | "v_params") {
                 // Each declared slot is at least a one-byte scalar token in the
                 // value bytes, so the count cannot exceed the remaining bytes.
-                let Some(mut array) =
+                let mut array =
                     bounded_len(u64::from(count), 1, body.len().saturating_sub(values_start))
-                        .and_then(|_| arrays::CountedScalars::empty(count))
-                else {
-                    return SurfaceNamedValue::Opaque(body.to_vec());
-                };
+                        .and_then(|_| arrays::CountedScalars::empty(count))?;
                 let slots = named_spline_scalar_slots(
                     family,
                     name,
@@ -3223,8 +3228,8 @@ fn named_surface_value(
                     array.values().len(),
                     cache,
                 );
-                array.fill_tokens(slots);
-                return SurfaceNamedValue::CountedScalarArray(array);
+                array.fill_tokens(slots)?;
+                return Some(SurfaceNamedValue::CountedScalarArray(array));
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3237,32 +3242,27 @@ fn named_surface_value(
             }
             if values.len() == usize::try_from(count).unwrap_or(usize::MAX) && cursor == body.len()
             {
-                return SurfaceNamedValue::CompactIntArray(values);
+                return Some(SurfaceNamedValue::CompactIntArray(values));
             }
             if name == "parent_feats"
                 && values.len() == usize::try_from(count).unwrap_or(usize::MAX)
                 && parent_feature_array_trailer(&body[cursor..])
             {
-                return SurfaceNamedValue::CompactIntArray(values);
+                return Some(SurfaceNamedValue::CompactIntArray(values));
             }
             if name == "params" {
                 let remaining = body.len().saturating_sub(values_start);
-                let Some(mut array) = usize::try_from(count)
+                let mut array = usize::try_from(count)
                     .ok()
                     .filter(|count| *count <= remaining.saturating_mul(3))
-                    .and_then(|_| arrays::CountedScalars::empty(count))
-                else {
-                    return SurfaceNamedValue::Opaque(body.to_vec());
-                };
-                let Some(slots) = counted_parameter_scalar_slots(
+                    .and_then(|_| arrays::CountedScalars::empty(count))?;
+                let slots = counted_parameter_scalar_slots(
                     &body[values_start..],
                     array.values().len(),
                     cache,
-                ) else {
-                    return SurfaceNamedValue::Opaque(body.to_vec());
-                };
-                array.fill_tokens(slots);
-                return SurfaceNamedValue::CountedScalarArray(array);
+                )?;
+                array.fill_tokens(slots)?;
+                return Some(SurfaceNamedValue::CountedScalarArray(array));
             }
         }
     }
@@ -3274,7 +3274,7 @@ fn named_surface_value(
                 .ok()
                 .and_then(|count| dimensions.checked_mul(count))
         });
-        let Some(mut array) = slot_count
+        let mut array = slot_count
             .filter(|slot_count| {
                 dimensions_end > 1
                     && values_start > dimensions_end
@@ -3285,10 +3285,7 @@ fn named_surface_value(
                             .saturating_mul(2)
                             .max(12)
             })
-            .and_then(|_| arrays::DimensionedScalars::empty(dimensions, count))
-        else {
-            return SurfaceNamedValue::Opaque(body.to_vec());
-        };
+            .and_then(|_| arrays::DimensionedScalars::empty(dimensions, count))?;
         let slot_count = array.values().len();
         let spline_slots = matches!(
             name,
@@ -3302,25 +3299,22 @@ fn named_surface_value(
         )
         .then(|| named_spline_scalar_slots(family, name, &body[values_start..], slot_count, cache));
         if let Some(slots) = spline_slots {
-            array.fill_tokens(slots);
+            array.fill_tokens(slots)?;
         } else if name == "local_sys" {
-            let Some(values) =
-                sequential_named_local_system_slots(&body[values_start..], slot_count, cache)
-            else {
-                return SurfaceNamedValue::Opaque(body.to_vec());
-            };
-            array.fill_values(values);
+            let values =
+                sequential_named_local_system_slots(&body[values_start..], slot_count, cache)?;
+            array.fill_values(values)?;
         } else {
-            array.fill_values(scalar_slots(&body[values_start..], slot_count, cache));
+            array.fill_values(scalar_slots(&body[values_start..], slot_count, cache))?;
         }
-        return SurfaceNamedValue::ScalarArray(array);
+        return Some(SurfaceNamedValue::ScalarArray(array));
     }
     if compact_integer_field {
         let (value, end) = compact_int(body, 0);
         if end == body.len() && end != 0 {
-            return SurfaceNamedValue::CompactInt(value);
+            return Some(SurfaceNamedValue::CompactInt(value));
         }
-        return SurfaceNamedValue::Opaque(body.to_vec());
+        return None;
     }
     let mut values = Vec::new();
     let mut cursor = 0;
@@ -3349,13 +3343,13 @@ fn named_surface_value(
         cursor = next;
     }
     if !values.is_empty() {
-        return SurfaceNamedValue::ScalarSequence(values);
+        return Some(SurfaceNamedValue::ScalarSequence(values));
     }
     let (value, end) = compact_int(body, 0);
     if !scalar_field && end == body.len() && end != 0 {
-        SurfaceNamedValue::CompactInt(value)
+        Some(SurfaceNamedValue::CompactInt(value))
     } else {
-        SurfaceNamedValue::Opaque(body.to_vec())
+        None
     }
 }
 
