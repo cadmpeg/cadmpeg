@@ -120,10 +120,13 @@ pub(crate) fn transfer(
                     })
                     .unwrap_or_default(),
                 claim_child,
-                copy_on_change,
-                copy_on_change_source,
-                copy_on_change_group,
-                copy_on_change_touched,
+                copy_on_change: crate::native::CopyOnChange::from_wire(
+                    copy_on_change,
+                    copy_on_change_source,
+                    copy_on_change_group,
+                    copy_on_change_touched,
+                )
+                .map_err(malformed)?,
                 scale,
                 element_objects,
             }),
@@ -300,26 +303,12 @@ pub(crate) fn transfer_neutral(
                 .unwrap_or([1.0; 3]);
             let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale = std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
-            let copy_on_change = match record.copy_on_change() {
-                Some(policy) => Some(CopyOnChange {
-                    policy: copy_on_change_policy(policy),
-                    source: record.copy_on_change_source().map(definition_id),
-                    group: record.copy_on_change_group().map(definition_id),
-                    touched: record.copy_on_change_touched(),
-                }),
-                None if record.copy_on_change_source().is_none()
-                    && record.copy_on_change_group().is_none()
-                    && record.copy_on_change_touched().is_none() =>
-                {
-                    None
-                }
-                None => {
-                    return Err(CodecError::malformed(format_args!(
-                        "App::Link {} has copy-on-change payload without a policy",
-                        record.object
-                    )));
-                }
-            };
+            let copy_on_change = record.copy_on_change().map(|policy| CopyOnChange {
+                policy: copy_on_change_policy(policy),
+                source: record.copy_on_change_source().map(definition_id),
+                group: record.copy_on_change_group().map(definition_id),
+                touched: record.copy_on_change_touched(),
+            });
             occurrences.push(Occurrence {
                 id: OccurrenceId::mint(crate::native::model_id(
                     "occurrence",

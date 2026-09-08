@@ -47,6 +47,27 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn copy_on_change_payload_requires_policy_on_wire() {
+        for (field, value) in [
+            ("copy_on_change_source", serde_json::json!("source")),
+            ("copy_on_change_group", serde_json::json!("group")),
+            ("copy_on_change_touched", serde_json::json!(false)),
+        ] {
+            let mut wire = serde_json::json!({
+                "id": "link", "object": "object", "kind": "occurrence",
+                "members": [], "element_transforms": [], "element_scales": [],
+                "linked_subelements": [], "element_visibility": [], "element_objects": []
+            });
+            wire[field] = value;
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = serde_json::json!("Owned");
+            let admitted =
+                serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
+        }
+    }
+
+    #[test]
     fn element_map_nodes_require_root_on_wire() {
         assert!(serde_json::from_str::<super::ElementMapNodes>("[]")
             .unwrap_err()
@@ -540,18 +561,45 @@ pub struct LinkOccurrence {
     pub linked_subelements: Vec<String>,
     /// Whether the link claims its prototype as a tree child.
     pub claim_child: Option<bool>,
-    /// Persisted copy-on-change policy name or numeric code.
-    pub copy_on_change: Option<String>,
-    /// Original object tracked by copy-on-change.
-    pub copy_on_change_source: Option<String>,
-    /// Internal ownership group for copy-on-change copies.
-    pub copy_on_change_group: Option<String>,
-    /// Whether the tracked source has changed.
-    pub copy_on_change_touched: Option<bool>,
+    /// Copy-on-change policy and its payload.
+    pub copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
     pub scale: Option<[f64; 3]>,
     /// Explicit per-element application objects in array order.
     pub element_objects: Vec<String>,
+}
+
+/// Copy-on-change policy and its dependent payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CopyOnChange {
+    /// Persisted policy name or numeric code.
+    pub policy: String,
+    /// Original tracked object.
+    pub source: Option<String>,
+    /// Internal ownership group.
+    pub group: Option<String>,
+    /// Whether the tracked source changed.
+    pub touched: Option<bool>,
+}
+
+impl CopyOnChange {
+    pub(crate) fn from_wire(
+        policy: Option<String>,
+        source: Option<String>,
+        group: Option<String>,
+        touched: Option<bool>,
+    ) -> Result<Option<Self>, String> {
+        match policy {
+            Some(policy) => Ok(Some(Self {
+                policy,
+                source,
+                group,
+                touched,
+            })),
+            None if source.is_none() && group.is_none() && touched.is_none() => Ok(None),
+            None => Err("copy_on_change payload requires copy_on_change policy".to_owned()),
+        }
+    }
 }
 
 impl ProductNodeRecord {
@@ -656,25 +704,29 @@ impl ProductNodeRecord {
     /// Persisted copy-on-change policy name or numeric code.
     pub fn copy_on_change(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .map(|copy| copy.policy.as_str())
     }
 
     /// Original object tracked by copy-on-change.
     pub fn copy_on_change_source(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_source.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.source.as_deref())
     }
 
     /// Internal ownership group for copy-on-change copies.
     pub fn copy_on_change_group(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_group.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.group.as_deref())
     }
 
     /// Whether the tracked source has changed.
     pub fn copy_on_change_touched(&self) -> Option<bool> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_touched)
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.touched)
     }
 
     /// Base scale vector applied to every occurrence element.
@@ -818,10 +870,12 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                 element_scales: wire.element_scales,
                 linked_subelements: wire.linked_subelements,
                 claim_child: wire.claim_child,
-                copy_on_change: wire.copy_on_change,
-                copy_on_change_source: wire.copy_on_change_source,
-                copy_on_change_group: wire.copy_on_change_group,
-                copy_on_change_touched: wire.copy_on_change_touched,
+                copy_on_change: CopyOnChange::from_wire(
+                    wire.copy_on_change,
+                    wire.copy_on_change_source,
+                    wire.copy_on_change_group,
+                    wire.copy_on_change_touched,
+                )?,
                 scale: wire.scale,
                 element_objects: wire.element_objects,
             }),
