@@ -164,7 +164,7 @@ pub(super) struct CreoFeatureEntityReferenceRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureEntityTableRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: Option<u32>,
+    pub(super) owner_feature_id: u32,
     pub(super) table_class_id: u32,
     pub(super) entry_ids: Vec<u32>,
     pub(super) entries: Vec<CreoFeatureEntityTableEntryRecord>,
@@ -755,7 +755,7 @@ pub(super) fn feature_entity_table_records(
         .iter()
         .map(|table| CreoFeatureEntityTableRecord {
             id: format!("creo:allfeatur:entity_table#{}", table.offset),
-            owner_feature_id: Some(table.feature_id),
+            owner_feature_id: table.feature_id,
             table_class_id: table.table_class_id,
             entry_ids: table.entry_ids(),
             entries: table
