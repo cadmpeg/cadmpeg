@@ -398,12 +398,6 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
     let mut instance_count = 0usize;
     for feature in objects {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
-        if !matches!(
-            kind,
-            NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
-        ) {
-            return false;
-        }
         let Some(source) = feature
             .source_id
             .as_deref()
@@ -431,7 +425,7 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
                 };
                 referenced_definitions.insert(definition);
             }
-            _ => unreachable!(),
+            _ => return false,
         }
     }
     if let Some(Some(children)) = explicit_children.as_ref() {
