@@ -1455,8 +1455,14 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         let plane: DesignWorkPlaneConstruction =
             serde_json::from_value(plane_wire.clone()).expect("three-point plane");
         assert_eq!(
-            serde_json::to_value(plane).expect("serialize plane"),
+            serde_json::to_value(&plane).expect("serialize plane"),
             plane_wire
+        );
+        let mut wrong_kind = plane_wire.clone();
+        wrong_kind["kind"] = "two_point".into();
+        assert!(
+            serde_json::from_value::<DesignWorkPlaneConstruction>(wrong_kind).is_err(),
+            "unknown work-plane construction kind"
         );
     }
     for (state, slot) in [(Some(4), None), (None, Some(0)), (Some(4), Some(-1))] {

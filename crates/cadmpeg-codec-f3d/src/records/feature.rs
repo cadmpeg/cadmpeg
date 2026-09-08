@@ -4483,6 +4483,12 @@ pub struct DesignWorkPlaneConstruction {
     pub inputs: Box<[DesignVertexRecipe; 3]>,
 }
 
+/// Wire form of [`DesignWorkPlaneConstruction`].
+///
+/// The single variant is deliberate. It stamps `"kind": "three_point"` into
+/// the native JSON, keeping room for the other `WorkPlane` constructions
+/// Fusion authors, and — unlike an internally tagged struct, which ignores
+/// the tag field — it rejects any other `kind` on deserialization.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
