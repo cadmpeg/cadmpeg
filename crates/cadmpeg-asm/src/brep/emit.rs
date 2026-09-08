@@ -376,18 +376,21 @@ fn emit_carrier_surface(
                 format,
             ),
         };
-        if let Ok(procedural) = ProceduralSurface::try_new(
+        let mut surface = ProceduralSurface::new(
             ProceduralSurfaceId::mint(format!("{format}:brep:procedural_surface#{i}"))
                 .expect("valid owning format and numeric record index"),
             definition,
-            procedural.cache_fit_tolerance,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
-        ) {
-            out.procedural_surfaces.push((
-                SurfaceId::mint(id(format, i)).expect("identity grammar"),
-                procedural,
-            ));
+        );
+        if let Some(tolerance) = procedural.cache_fit_tolerance {
+            if surface.set_cache_fit_tolerance(Some(tolerance)).is_err() {
+                return;
+            }
         }
+        out.procedural_surfaces.push((
+            SurfaceId::mint(id(format, i)).expect("identity grammar"),
+            surface,
+        ));
     } else if cached_unknown_procedural_surfaces.contains(&i) {
         out.procedural_surfaces.push((
             SurfaceId::mint(id(format, i)).expect("identity grammar"),

@@ -158,10 +158,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
-        assert!(
-            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
-                < f64::EPSILON * 10.0
-        );
+        assert_eq!(decoded.cache_fit_tolerance, None);
         let DecodedProceduralSurfaceDefinition::Deformable(construction) = decoded.definition
         else {
             panic!("expected deformable surface");
