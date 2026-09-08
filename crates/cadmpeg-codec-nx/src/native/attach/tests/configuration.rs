@@ -975,20 +975,21 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
 
 #[test]
 fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
-    assert!(matches!(
-        super::non_boolean_feature_definition_with_parameters(
-            "Multi Instance Output",
-            &[],
-            None,
-            None,
-            super::HoleProjection::default(),
-            std::collections::BTreeMap::default(),
-        ),
-        cadmpeg_ir::features::FeatureDefinition::Pattern {
-            seeds,
-            pattern: cadmpeg_ir::features::PatternKind::Unresolved,
-        } if seeds.is_empty()
-    ));
+    assert!(
+        matches!(&(super::non_boolean_feature_definition_with_parameters(
+                "Multi Instance Output",
+                &[],
+                None,
+                None,
+                super::HoleProjection::default(),
+                std::collections::BTreeMap::default(),
+            )),
+            cadmpeg_ir::features::FeatureDefinition::Pattern {
+                seeds,
+                pattern: admitted_pattern,
+            } if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved if seeds.is_empty())
+        )
+    );
 }
 
 #[test]

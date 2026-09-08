@@ -1355,15 +1355,15 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
     for (wire, expected) in [
         (
             serde_json::json!({"kind": "unresolved"}),
-            PatternKind::Unresolved,
+            PatternKind::UNRESOLVED,
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "linear"}),
-            PatternKind::UnresolvedLinear,
+            PatternKind::UNRESOLVED_LINEAR,
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "mirror"}),
-            PatternKind::UnresolvedMirror,
+            PatternKind::UNRESOLVED_MIRROR,
         ),
     ] {
         assert_eq!(
@@ -2787,3 +2787,6 @@ fn resolved_plane_serde_checks_used_geometry_and_preserves_ignored_legacy_geomet
         DatumPlaneReference::Face(FaceSelection::Native("face:retained".into()))
     );
 }
+
+mod edge_treatments;
+mod patterns;

@@ -600,8 +600,8 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 };
                 assert!(seeds.is_empty());
                 assert!(matches!(
-                    pattern,
-                    cadmpeg_ir::features::PatternKind::UnresolvedCircular
+                    (pattern).definition(),
+                    cadmpeg_ir::features::PatternTransform::UnresolvedCircular
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),
@@ -1294,7 +1294,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::UnresolvedCircular,
+            pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_CIRCULAR,
         },
         native_ref: Some("pattern-feature".to_string()),
     });

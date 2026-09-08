@@ -190,7 +190,7 @@ fn decode_reports_unresolved_feature_output_scope() {
 
 #[test]
 fn decode_dispatches_typed_features_by_xml_family() {
-    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, HoleKind, Length, RadiusSpec};
+    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, HoleKind, RadiusSpec};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -270,7 +270,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
             panic!("constant fillet");
         };
-        *radius = Length::new(2.5).unwrap();
+        *radius = cadmpeg_ir::features::PositiveLength::new(2.5).unwrap();
         ir.model.features[2]
             .source_properties
             .insert("Algorithm".into(), "FaceBlend".into());

@@ -1463,7 +1463,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
+            pattern: PatternKind::UNRESOLVED,
         },
         native_ref: None,
     });
@@ -1495,7 +1495,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
+            pattern: PatternKind::UNRESOLVED,
         },
         native_ref: None,
     };
@@ -1590,7 +1590,7 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
+            pattern: PatternKind::UNRESOLVED,
         },
         native_ref: None,
     };

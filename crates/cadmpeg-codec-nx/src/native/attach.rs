@@ -5238,7 +5238,7 @@ fn blend_feature_definition(
                     RadiusSpec::Unresolved
                 }
             },
-            |radii| match Length::new(radii[0]) {
+            |radii| match cadmpeg_ir::features::PositiveLength::new(radii[0]) {
                 Some(radius) => RadiusSpec::Constant { radius },
                 None => RadiusSpec::UnresolvedConstant,
             },
@@ -6364,7 +6364,7 @@ fn non_boolean_feature_definition_with_parameters(
         | "IDENTICAL INSTANCE OUTPUT"
         | "Instance Feature" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
+            pattern: PatternKind::UNRESOLVED,
         },
         "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => FeatureDefinition::SectionShape {
             first: BodySelection::Unresolved,

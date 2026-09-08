@@ -14,7 +14,7 @@ use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
 };
 use cadmpeg_ir::features::{
-    BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
+    BodySelection, FaceSelection, FeatureDefinition, PatternSeed, PatternTransform,
 };
 
 const EPS_SPACING: f64 = 1.0e-12;
@@ -84,12 +84,12 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
         panic!("rectangular pattern definition");
     };
     assert_eq!(seeds, vec![expected_seed]);
-    let PatternKind::Linear {
+    let PatternTransform::Linear {
         direction,
         spacing,
         count,
         second,
-    } = pattern
+    } = pattern.definition().clone()
     else {
         panic!("linear rectangular pattern");
     };

@@ -432,7 +432,7 @@ pub(in super::super) fn schema_feature_definition(
         let mut observed_radii = round_observed_radii(scan, feature_id);
         observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
         let radius = round_constant_radius(scan, ir, feature_id)
-            .and_then(Length::new)
+            .and_then(cadmpeg_ir::features::PositiveLength::new)
             .map_or_else(
                 || {
                     if differing_positive_lengths(&observed_radii) {
@@ -458,7 +458,7 @@ pub(in super::super) fn schema_feature_definition(
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
                 spec: chamfer_constant_distance(scan, ir, feature_id)
-                    .and_then(Length::new)
+                    .and_then(cadmpeg_ir::features::PositiveLength::new)
                     .map_or_else(
                         || ChamferSpec::Unresolved,
                         |distance| ChamferSpec::Distance { distance },

@@ -12,7 +12,9 @@ use crate::records::{
     FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed, PatternTransform,
+};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -206,7 +208,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::UnresolvedMirror,
+            pattern: PatternKind::UNRESOLVED_MIRROR,
         },
         native_ref: Some("mirror-native".into()),
     };
@@ -278,10 +280,11 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
-    assert!(matches!(
-        feature.definition,
+    assert!(matches!(&(feature.definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Mirror {
+            pattern: admitted_pattern,
+            ..
+        } if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
                 plane_origin: Point3 {
                     x: 13.0,
                     y: 2.0,
@@ -292,14 +295,12 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
                     y: 0.0,
                     z: 1.0
                 },
-            },
-            ..
-        }
+            })
     ));
 
     feature.definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::UnresolvedMirror,
+        pattern: PatternKind::UNRESOLVED_MIRROR,
     };
     let mut nonmirror_history = history.clone();
     nonmirror_history.features[0].input_class = Some("moCirPattern_c".into());
@@ -318,12 +319,11 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
-    assert!(matches!(
-        feature.definition,
+    assert!(matches!(&(feature.definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::UnresolvedMirror,
+            pattern: admitted_pattern,
             ..
-        }
+        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedMirror)
     ));
 
     let mut second_face = face.clone();
@@ -354,12 +354,11 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         &[face, second_face],
         std::slice::from_ref(&surface),
     );
-    assert!(matches!(
-        feature.definition,
+    assert!(matches!(&(feature.definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::UnresolvedMirror,
+            pattern: admitted_pattern,
             ..
-        }
+        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedMirror)
     ));
 }
 
@@ -470,7 +469,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
-                pattern: PatternKind::UnresolvedCircular,
+                pattern: PatternKind::UNRESOLVED_CIRCULAR,
             },
             native_ref: Some("pattern-native".into()),
         },
@@ -487,7 +486,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
-                pattern: PatternKind::Unresolved,
+                pattern: PatternKind::UNRESOLVED,
             },
             native_ref: Some("seed-native".into()),
         },
@@ -506,8 +505,8 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Pattern { seeds, pattern: PatternKind::UnresolvedCircular }
-            if seeds == &[PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))]
+        FeatureDefinition::Pattern { seeds, pattern: admitted_pattern }
+            if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedCircular if seeds == &[PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))])
     ));
 }
 
@@ -609,7 +608,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
             seeds: vec![PatternSeed::Feature(
                 FeatureId::mint("seed").expect("identity grammar"),
             )],
-            pattern: PatternKind::UnresolvedCircular,
+            pattern: PatternKind::UNRESOLVED_CIRCULAR,
         },
         native_ref: Some("pattern-native".into()),
     }];
@@ -619,17 +618,17 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Circular {
+            pattern: admitted_pattern,
+            ..
+        } if matches!(admitted_pattern.definition(), PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
                 angle,
                 count,
-            },
-            ..
-        } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
+            } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
             && angle.get() == std::f64::consts::FRAC_PI_2
-            && *count == 4
+            && *count == 4)
     ));
 }
 

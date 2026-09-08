@@ -839,7 +839,7 @@ fn native_operation_definition(
         },
         "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::UnresolvedCircular,
+            pattern: PatternKind::UNRESOLVED_CIRCULAR,
         },
         "Sweep_ThickThin1" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),

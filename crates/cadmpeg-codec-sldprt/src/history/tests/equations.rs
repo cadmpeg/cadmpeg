@@ -816,7 +816,7 @@ fn decode_preserves_configuration_local_parameter_values() {
         panic!("configuration fillet state");
     };
     groups[0].radius = RadiusSpec::Constant {
-        radius: Length::new(75.0).unwrap(),
+        radius: cadmpeg_ir::features::PositiveLength::new(75.0).unwrap(),
     };
 
     let mut conflicting = edited.clone();

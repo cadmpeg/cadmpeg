@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, Length,
-    ParameterValue, PatternKind,
+    ParameterValue, PatternTransform,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -290,12 +290,11 @@ pub(crate) fn parse_neutral_parameter_literal(
             FeatureDefinition::Chamfer { groups, .. }
                 if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
         ),
-        "D3" => matches!(
-            feature.definition,
+        "D3" => matches!(&(feature.definition),
             FeatureDefinition::Pattern {
-                pattern: PatternKind::Linear { .. } | PatternKind::CurveDriven { .. },
+                pattern: admitted_pattern,
                 ..
-            }
+            } if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::CurveDriven { .. })
         ),
         _ => false,
     };

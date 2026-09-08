@@ -9,7 +9,6 @@ use cadmpeg_ir::features::{
     BodySelection, BooleanOp, EdgeSelection, FaceSelection, FeatureId, FeatureTreeNodeRole,
     PathRef, ProfileRef, VertexSelection,
 };
-use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, HashMap};
 
 pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
@@ -242,29 +241,5 @@ pub(super) fn path_source(
                 .join(","),
         ),
         PathRef::Edges(_) | PathRef::Curves(_) => None,
-    }
-}
-
-pub(super) fn require_direction(
-    direction: Vector3,
-    feature: &FeatureId,
-    role: &str,
-) -> Result<(), CodecError> {
-    if direction.norm().is_finite() && direction.norm() > 0.0 {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT feature {feature} has a degenerate {role}"
-        )))
-    }
-}
-
-pub(super) fn require_count(count: u32, feature: &FeatureId) -> Result<(), CodecError> {
-    if count > 0 {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT feature {feature} has a zero pattern count"
-        )))
     }
 }

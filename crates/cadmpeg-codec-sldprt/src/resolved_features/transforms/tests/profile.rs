@@ -145,7 +145,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
             groups: vec![cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant {
-                    radius: Length::new(1.0).unwrap(),
+                    radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
                 },
                 tangency_weight: None,
             }],

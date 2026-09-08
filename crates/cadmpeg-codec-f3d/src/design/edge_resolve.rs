@@ -2327,7 +2327,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
     let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match &group.law {
         crate::records::feature::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0)
             .then_some(RadiusSpec::Constant {
-                radius: Length::new(radius.value * 10.0)?,
+                radius: cadmpeg_ir::features::PositiveLength::new(radius.value * 10.0)?,
             }),
         crate::records::feature::DesignFixedFilletLaw::Variable {
             start,
@@ -2349,7 +2349,9 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 parameter: 1.0,
                 radius: Length::new(end.value * 10.0)?,
             });
-            Some(RadiusSpec::Variable { points })
+            Some(RadiusSpec::Variable {
+                points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+            })
         }
     };
     let mut scope_groups = construction_groups

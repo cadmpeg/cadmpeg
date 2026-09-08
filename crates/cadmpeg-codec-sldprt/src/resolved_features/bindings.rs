@@ -29,7 +29,9 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
+use cadmpeg_ir::features::{
+    Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed, PatternTransform,
+};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
@@ -195,11 +197,11 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 let (needs_seed, needs_axis) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern {
-                        seeds,
-                        pattern: PatternKind::UnresolvedCircular,
-                        ..
-                    } => (seeds.is_empty(), true),
+                    FeatureDefinition::Pattern { seeds, pattern }
+                        if matches!(pattern.definition(), PatternTransform::UnresolvedCircular) =>
+                    {
+                        (seeds.is_empty(), true)
+                    }
                     FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
                     _ => continue,
                 };
@@ -274,12 +276,11 @@ pub(crate) fn bind_pattern_inputs(
                 };
                 let object_start = usize::try_from(starts[start_index].0).ok();
                 let end = pattern_object_end();
-                if matches!(
-                    model_features[model_index].definition,
+                if matches!(&(model_features[model_index].definition),
                     FeatureDefinition::Pattern {
-                        pattern: PatternKind::UnresolvedLinear,
+                        pattern: admitted_pattern,
                         ..
-                    }
+                    } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
@@ -289,20 +290,26 @@ pub(crate) fn bind_pattern_inputs(
                         if let FeatureDefinition::Pattern { pattern, .. } =
                             &mut model_features[model_index].definition
                         {
-                            *pattern = PatternKind::Linear {
+                            *pattern = PatternKind::new(PatternTransform::Linear {
                                 direction: None,
                                 spacing,
                                 count,
                                 second: None,
-                            };
+                            })
+                            .map_err(|message| {
+                                cadmpeg_core::CodecError::Malformed(message.into())
+                            })?;
                         }
                     }
                 }
                 let (needs_seed, needs_direction) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern {
-                        seeds,
-                        pattern: PatternKind::Linear { direction, .. },
-                    } => (seeds.is_empty(), direction.is_none()),
+                    FeatureDefinition::Pattern { seeds, pattern } => {
+                        let PatternTransform::Linear { direction, .. } = pattern.definition()
+                        else {
+                            continue;
+                        };
+                        (seeds.is_empty(), direction.is_none())
+                    }
                     _ => continue,
                 };
                 if !needs_seed && !needs_direction {
@@ -407,11 +414,12 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             let (needs_seed, needs_path) = match &model_features[model_index].definition {
-                FeatureDefinition::Pattern {
-                    seeds,
-                    pattern: PatternKind::CurveDriven { path, .. },
-                    ..
-                } => (seeds.is_empty(), path.is_none()),
+                FeatureDefinition::Pattern { seeds, pattern } => {
+                    let PatternTransform::CurveDriven { path, .. } = pattern.definition() else {
+                        continue;
+                    };
+                    (seeds.is_empty(), path.is_none())
+                }
                 _ => continue,
             };
             if needs_seed {
@@ -485,13 +493,11 @@ pub(crate) fn bind_pattern_inputs(
         if !model_features[index].dependencies.contains(dependency) {
             model_features[index].dependencies.push(dependency.clone());
         }
-        if let FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven { path: slot, .. },
-            ..
-        } = &mut model_features[index].definition
-        {
-            if slot.is_none() {
-                *slot = Some(path.clone());
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
+            if let Some(slot) = pattern.curve_path_mut() {
+                if slot.is_none() {
+                    *slot = Some(path.clone());
+                }
             }
         }
     }
@@ -503,22 +509,21 @@ pub(crate) fn bind_pattern_inputs(
         }
     }
     for (index, candidates) in linear_directions_by_pattern {
-        if let FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
+        let native = model_features[index]
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_features.iter().find(|feature| feature.id == native));
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
+            let mut transform = pattern.definition().clone();
+            let PatternTransform::Linear {
                 direction, second, ..
-            },
-            ..
-        } = &mut model_features[index].definition
-        {
+            } = &mut transform
+            else {
+                continue;
+            };
             match candidates.as_slice() {
                 [first] if direction.is_none() => *direction = Some(*first),
                 [first, second_direction] => {
-                    let native = model_features[index]
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| {
-                            history_features.iter().find(|feature| feature.id == native)
-                        });
                     let secondary = native.and_then(|feature| {
                         Some(cadmpeg_ir::features::LinearPatternDirection {
                             direction: *second_direction,
@@ -535,6 +540,8 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 _ => {}
             }
+            *pattern = PatternKind::new(transform)
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
     }
     let mut mirror_planes_by_pattern = HashMap::<usize, Vec<_>>::new();
@@ -550,10 +557,11 @@ pub(crate) fn bind_pattern_inputs(
         };
         if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
             if pattern.is_unresolved() {
-                *pattern = PatternKind::Mirror {
+                *pattern = PatternKind::new(PatternTransform::Mirror {
                     plane_origin: *origin,
                     plane_normal: *normal,
-                };
+                })
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
             }
         }
     }
@@ -616,12 +624,13 @@ pub(crate) fn bind_pattern_inputs(
         else {
             continue;
         };
-        if let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::UnresolvedCircular,
-            ..
-        } = &mut model_features[index].definition
+        if let FeatureDefinition::Pattern { pattern: slot, .. } =
+            &mut model_features[index].definition
         {
-            *slot = PatternKind::Circular {
+            if !matches!(slot.definition(), PatternTransform::UnresolvedCircular) {
+                continue;
+            }
+            *slot = PatternKind::new(PatternTransform::Circular {
                 axis_origin: *axis_origin,
                 axis_dir: *axis_dir,
                 angle: Angle::new(angle).ok_or_else(|| {
@@ -630,7 +639,8 @@ pub(crate) fn bind_pattern_inputs(
                     )
                 })?,
                 count,
-            };
+            })
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
     }
 
@@ -734,10 +744,12 @@ pub(crate) fn bind_mirror_surface_planes(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        *pattern = PatternKind::Mirror {
+        if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
             plane_origin: *origin,
             plane_normal: *normal,
-        };
+        }) {
+            *pattern = admitted;
+        }
     }
 }
 

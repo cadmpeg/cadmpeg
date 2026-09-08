@@ -2568,7 +2568,7 @@ mod tests {
                 groups: vec![ChamferGroup {
                     edges: EdgeSelection::All,
                     spec: ChamferSpec::Distance {
-                        distance: Length::new(0.25).unwrap(),
+                        distance: cadmpeg_ir::features::PositiveLength::new(0.25).unwrap(),
                     },
                 }],
                 flip_direction: false,
@@ -2582,7 +2582,7 @@ mod tests {
                 groups: vec![FilletGroup {
                     edges: EdgeSelection::All,
                     radius: RadiusSpec::Constant {
-                        radius: Length::new(0.2).unwrap(),
+                        radius: cadmpeg_ir::features::PositiveLength::new(0.2).unwrap(),
                     },
                     tangency_weight: Some(cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()),
                 }],
@@ -2607,7 +2607,7 @@ mod tests {
                 groups: vec![ChamferGroup {
                     edges: EdgeSelection::Unresolved,
                     spec: ChamferSpec::Distance {
-                        distance: Length::new(0.25).unwrap(),
+                        distance: cadmpeg_ir::features::PositiveLength::new(0.25).unwrap(),
                     },
                 }],
                 flip_direction: false,
@@ -2639,7 +2639,7 @@ mod tests {
                 first_faces: first.clone(),
                 second_faces: second.clone(),
                 radius: RadiusSpec::Constant {
-                    radius: Length::new(0.2).unwrap(),
+                    radius: cadmpeg_ir::features::PositiveLength::new(0.2).unwrap(),
                 },
             },
             FeatureDefinition::OffsetSurface {

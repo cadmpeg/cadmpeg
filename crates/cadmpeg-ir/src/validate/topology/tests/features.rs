@@ -13,50 +13,6 @@ use crate::CadIr;
 use super::*;
 
 #[test]
-fn zero_count_composite_stage_is_compositionally_invalid() {
-    let stages = [
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Linear {
-                direction: None,
-                spacing: Length::new(1.0).unwrap(),
-                count: 1,
-                second: None,
-            }),
-            combination: PatternStageCombination::Initialize,
-        },
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Scale {
-                center: crate::features::PatternScaleCenter::FirstSeedCentroid,
-                final_factor: 2.0,
-                count: 0,
-            }),
-            combination: PatternStageCombination::AlignedSlices,
-        },
-    ];
-    assert!(!composite_composition_is_valid(&stages));
-}
-
-#[test]
-fn unresolved_composite_count_can_feed_a_cartesian_stage() {
-    let stages = [
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Unresolved),
-            combination: PatternStageCombination::Initialize,
-        },
-        crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Linear {
-                direction: None,
-                spacing: Length::new(1.0).unwrap(),
-                count: 2,
-                second: None,
-            }),
-            combination: PatternStageCombination::CartesianProduct,
-        },
-    ];
-    assert!(composite_composition_is_valid(&stages));
-}
-
-#[test]
 fn historical_body_overlap_ignores_set_ordering_form() {
     use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
 
@@ -876,7 +832,7 @@ fn body_combine_requires_exactly_one_resolved_target() {
 #[test]
 fn feature_operand_roles_must_be_disjoint() {
     use crate::features::{
-        BodySelection, BodyTrimSide, FaceSelection, Feature, FeatureDefinition, FeatureId, Length,
+        BodySelection, BodyTrimSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
         RadiusSpec,
     };
 
@@ -889,7 +845,7 @@ fn feature_operand_roles_must_be_disjoint() {
             first_faces: FaceSelection::Faces(vec![face.clone()]),
             second_faces: FaceSelection::Faces(vec![face]),
             radius: RadiusSpec::Constant {
-                radius: Length::new(1.0).unwrap(),
+                radius: crate::features::PositiveLength::new(1.0).unwrap(),
             },
         },
         FeatureDefinition::TrimBodies {
@@ -948,7 +904,9 @@ fn feature_operand_roles_must_be_disjoint() {
 
 #[test]
 fn pattern_feature_seeds_must_be_declared_dependencies() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed, PatternTransform,
+    };
 
     let mut ir = unit_cube();
     let seed = FeatureId::mint("synthetic:test:feature#pattern-seed").expect("identity grammar");
@@ -982,10 +940,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
-            pattern: PatternKind::Mirror {
+            pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: Point3::new(0.0, 0.0, 0.0),
                 plane_normal: Vector3::new(1.0, 0.0, 0.0),
-            },
+            })
+            .unwrap(),
         },
         native_ref: None,
     });
@@ -1011,7 +970,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
         DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
         ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef, Length,
-        LinearTermination, PatternKind, PatternSeed, ProfileRef,
+        LinearTermination, PatternKind, PatternSeed, PatternTransform, ProfileRef,
     };
     use std::collections::{BTreeMap, HashSet};
 
@@ -1071,10 +1030,11 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             3,
             FeatureDefinition::Pattern {
                 seeds: vec![PatternSeed::Feature(source.clone())],
-                pattern: PatternKind::Mirror {
+                pattern: PatternKind::new(PatternTransform::Mirror {
                     plane_origin: Point3::new(0.0, 0.0, 0.0),
                     plane_normal: Vector3::new(1.0, 0.0, 0.0),
-                },
+                })
+                .unwrap(),
             },
         ),
         feature(

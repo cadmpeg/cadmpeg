@@ -73,7 +73,9 @@ fn empty_subtype_requires_established_count_semantics() {
 fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, Length, PatternKind, PatternTransform,
+    };
 
     let feature = Feature {
         id: FeatureId::mint("pattern").expect("identity grammar"),
@@ -88,12 +90,13 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Linear {
+            pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
                 spacing: Length::new(10.0).unwrap(),
                 count: 2,
                 second: None,
-            },
+            })
+            .unwrap(),
         },
         native_ref: None,
     };

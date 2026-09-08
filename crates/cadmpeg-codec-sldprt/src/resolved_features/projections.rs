@@ -831,7 +831,12 @@ fn variable_fillet_radius_groups<'a>(
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            return Some(vec![(RadiusSpec::Variable { points }, selections)]);
+            return Some(vec![(
+                RadiusSpec::Variable {
+                    points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+                },
+                selections,
+            )]);
         }
     }
 
@@ -953,7 +958,12 @@ fn variable_fillet_radius_groups<'a>(
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        return Some(vec![(RadiusSpec::Variable { points }, selections)]);
+        return Some(vec![(
+            RadiusSpec::Variable {
+                points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+            },
+            selections,
+        )]);
     }
     if control_names.len() != parameter_names.len()
         || !parameter_names
@@ -1021,7 +1031,7 @@ fn variable_fillet_radius_groups<'a>(
         .map(|((first, second), selections)| {
             Some((
                 RadiusSpec::Variable {
-                    points: vec![
+                    points: cadmpeg_ir::features::VariableRadii::new(vec![
                         VariableRadius {
                             parameter: 0.0,
                             radius: Length::new(f64::from_bits(first))?,
@@ -1030,7 +1040,8 @@ fn variable_fillet_radius_groups<'a>(
                             parameter: 1.0,
                             radius: Length::new(f64::from_bits(second))?,
                         },
-                    ],
+                    ])
+                    .ok()?,
                 },
                 selections,
             ))

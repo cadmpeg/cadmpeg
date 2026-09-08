@@ -2,14 +2,12 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::math::Vector3;
 use crate::validate::validate_neutral;
 
 #[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
-        EdgeSelection, Feature, FeatureDefinition, FeatureId, FilletGroup, HoleKind, Length,
-        LinearTermination, PatternKind, RadiusSpec, VariableRadius,
+        Feature, FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination,
     };
 
     let definitions = vec![
@@ -18,24 +16,6 @@ fn feature_operation_geometry_is_validated() {
             cages: vec![
                 crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
             ],
-        },
-        FeatureDefinition::Fillet {
-            groups: vec![FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Variable {
-                    points: vec![
-                        VariableRadius {
-                            parameter: 0.5,
-                            radius: Length::new(2.0).unwrap(),
-                        },
-                        VariableRadius {
-                            parameter: 0.25,
-                            radius: Length::new(-1.0).unwrap(),
-                        },
-                    ],
-                },
-                tangency_weight: None,
-            }],
         },
         FeatureDefinition::Hole {
             profile: None,
@@ -95,57 +75,12 @@ fn feature_operation_geometry_is_validated() {
                 context: None,
             },
         },
-        FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Linear {
-                direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-                spacing: Length::new(-1.0).unwrap(),
-                count: 0,
-                second: None,
-            },
-        },
-        FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::CurveDriven {
-                path: None,
-                spacing: Length::ZERO,
-                count: 0,
-            },
-        },
-        FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Composite {
-                stages: vec![
-                    crate::features::PatternStage {
-                        pattern: Box::new(PatternKind::Linear {
-                            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-                            spacing: Length::new(1.0).unwrap(),
-                            count: 3,
-                            second: None,
-                        }),
-                        combination: crate::features::PatternStageCombination::Initialize,
-                    },
-                    crate::features::PatternStage {
-                        pattern: Box::new(PatternKind::Scale {
-                            center: crate::features::PatternScaleCenter::FirstSeedCentroid,
-                            final_factor: 2.0,
-                            count: 2,
-                        }),
-                        combination: crate::features::PatternStageCombination::AlignedSlices,
-                    },
-                ],
-            },
-        },
     ];
     let expected = [
         "references missing Form control cage `synthetic:test:subd#missing`",
-        "fillet radius is invalid",
         "hole geometry is invalid",
         "composite curve is empty",
         "binder construction is invalid",
-        "pattern geometry is invalid",
-        "pattern geometry is invalid",
-        "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {

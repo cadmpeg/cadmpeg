@@ -10,9 +10,11 @@ use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn semantic_writer_round_trips_all_pattern_forms() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PatternKind};
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PatternKind, PatternTransform};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -35,30 +37,32 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Pattern {
             seeds,
-            pattern: PatternKind::Linear {
+            pattern: admitted_pattern,
+        } if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                 direction: Some(Vector3 { x: 1.0, y: 0.0, z: 0.0 }),
                 spacing: actual_spacing,
                 count: 3,
                 second: None,
-            },
-        } if (seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0
+            } if (seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0)
     ));
     assert!(matches!(
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Circular {
+            pattern: admitted_pattern,
+            ..
+        } if matches!(admitted_pattern.definition(), PatternTransform::Circular {
                 axis_origin: Point3 { x: 0.0, y: 0.0, z: 0.0 },
                 axis_dir: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
                 angle: value,
                 count: 4,
-            },
-            ..
-        } if (value.get() - std::f64::consts::TAU).abs() < 1.0e-12
+            } if (value.get() - std::f64::consts::TAU).abs() < EPS_PATTERN_ANGLE)
     ));
     assert!(matches!(
         &decoded.ir().model.features[3].definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Mirror {
+            pattern: admitted_pattern,
+            ..
+        } if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
                 plane_origin: Point3 {
                     x: 5.0,
                     y: 0.0,
@@ -69,58 +73,62 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                     y: 0.0,
                     z: 0.0
                 },
-            },
-            ..
-        }
+            })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Pattern {
-            pattern:
-                PatternKind::Linear {
-                    direction,
-                    spacing,
-                    count,
-                    second: _,
-                },
-            ..
-        } = &mut ir_edit.model.features[1].definition
+        let FeatureDefinition::Pattern { pattern, .. } = &mut ir_edit.model.features[1].definition
         else {
             panic!("linear pattern");
+        };
+        let mut transform = pattern.definition().clone();
+        let PatternTransform::Linear {
+            direction,
+            spacing,
+            count,
+            ..
+        } = &mut transform
+        else {
+            panic!("pattern form");
         };
         *direction = Some(Vector3::new(0.0, 1.0, 0.0));
         *spacing = Length::new(12.0).unwrap();
         *count = 5;
-        let FeatureDefinition::Pattern {
-            pattern:
-                PatternKind::Circular {
-                    axis_origin,
-                    angle,
-                    count,
-                    ..
-                },
-            ..
-        } = &mut ir_edit.model.features[2].definition
+        *pattern = PatternKind::new(transform).unwrap();
+        let FeatureDefinition::Pattern { pattern, .. } = &mut ir_edit.model.features[2].definition
         else {
             panic!("circular pattern");
+        };
+        let mut transform = pattern.definition().clone();
+        let PatternTransform::Circular {
+            axis_origin,
+            angle,
+            count,
+            ..
+        } = &mut transform
+        else {
+            panic!("pattern form");
         };
         *axis_origin = Point3::new(1.0, 2.0, 3.0);
         *angle = Angle::new(std::f64::consts::PI).unwrap();
         *count = 6;
-        let FeatureDefinition::Pattern {
-            pattern:
-                PatternKind::Mirror {
-                    plane_origin,
-                    plane_normal,
-                },
-            ..
-        } = &mut ir_edit.model.features[3].definition
+        *pattern = PatternKind::new(transform).unwrap();
+        let FeatureDefinition::Pattern { pattern, .. } = &mut ir_edit.model.features[3].definition
         else {
             panic!("mirror pattern");
         };
+        let mut transform = pattern.definition().clone();
+        let PatternTransform::Mirror {
+            plane_origin,
+            plane_normal,
+        } = &mut transform
+        else {
+            panic!("pattern form");
+        };
         *plane_origin = Point3::new(2.0, 0.0, 0.0);
         *plane_normal = Vector3::new(0.0, 1.0, 0.0);
+        *pattern = PatternKind::new(transform).unwrap();
     }
 
     let mut inconsistent = decoded.ir().clone();
@@ -159,7 +167,9 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, PatternKind};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, ParameterValue, PatternKind, PatternTransform,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -175,12 +185,12 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
-            pattern: PatternKind::CurveDriven {
+            pattern: admitted_pattern,
+        } if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven {
                 path: None,
                 spacing: actual_spacing,
                 count: 16,
-            },
-        } if (seeds.is_empty()) && actual_spacing.get() == 397.6
+            } if (seeds.is_empty()) && actual_spacing.get() == 397.6)
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -193,15 +203,17 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven { spacing, count, .. },
-            ..
-        } = &mut ir_edit.model.features[0].definition
+        let FeatureDefinition::Pattern { pattern, .. } = &mut ir_edit.model.features[0].definition
         else {
             panic!("curve-driven pattern");
         };
+        let mut transform = pattern.definition().clone();
+        let PatternTransform::CurveDriven { spacing, count, .. } = &mut transform else {
+            panic!("pattern form");
+        };
         *spacing = Length::new(250.0).unwrap();
         *count = 8;
+        *pattern = PatternKind::new(transform).unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -222,22 +234,23 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
     assert!(!native.parameters.contains_key("Count"));
     assert!(!native.properties.contains_key("Seeds"));
     assert!(!native.properties.contains_key("Path"));
-    assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+    assert!(matches!(&(regenerated.ir().model.features[0].definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven {
+            pattern: admitted_pattern,
+            ..
+        } if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven {
                 path: None,
                 spacing: actual_spacing,
                 count: 8,
-            },
-            ..
-        } if actual_spacing.get() == 250.0
+            } if actual_spacing.get() == 250.0)
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, PatternKind};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, ParameterValue, PatternKind, PatternTransform,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -258,13 +271,13 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
-            pattern: PatternKind::Linear {
+            pattern: admitted_pattern,
+        } if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                 direction: None,
                 spacing: actual_spacing,
                 count: 15,
                 second: None,
-            },
-        } if (seeds.is_empty()) && actual_spacing.get() == 2.54
+            } if (seeds.is_empty()) && actual_spacing.get() == 2.54)
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -277,15 +290,17 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear { spacing, count, .. },
-            ..
-        } = &mut ir_edit.model.features[0].definition
+        let FeatureDefinition::Pattern { pattern, .. } = &mut ir_edit.model.features[0].definition
         else {
             panic!("localized linear pattern");
         };
+        let mut transform = pattern.definition().clone();
+        let PatternTransform::Linear { spacing, count, .. } = &mut transform else {
+            panic!("pattern form");
+        };
         *spacing = Length::new(3.5).unwrap();
         *count = 12;
+        *pattern = PatternKind::new(transform).unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -307,17 +322,16 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     assert!(!native.parameters.contains_key("Spacing"));
     assert!(!native.properties.contains_key("Seeds"));
     assert!(!native.properties.contains_key("Direction"));
-    assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+    assert!(matches!(&(regenerated.ir().model.features[0].definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
+            pattern: admitted_pattern,
+            ..
+        } if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                 direction: None,
                 spacing: actual_spacing,
                 count: 12,
                 second: None,
-            },
-            ..
-        } if actual_spacing.get() == 3.5
+            } if actual_spacing.get() == 3.5)
     ));
 }
 
@@ -427,7 +441,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
 
 #[test]
 fn semantic_writer_retains_unresolved_native_pattern_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternTransform};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -449,8 +463,8 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
-            pattern: PatternKind::UnresolvedLinear,
-        } if seeds.is_empty()
+            pattern: admitted_pattern,
+        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear if seeds.is_empty())
     ));
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
@@ -470,18 +484,17 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
     assert!(!native.properties.contains_key("Direction"));
     assert!(!native.parameters.contains_key("Count"));
     assert!(!native.parameters.contains_key("Spacing"));
-    assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+    assert!(matches!(&(regenerated.ir().model.features[0].definition),
         FeatureDefinition::Pattern {
-            pattern: PatternKind::UnresolvedLinear,
+            pattern: admitted_pattern,
             ..
-        }
+        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_generic_pattern_type() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind, PatternTransform};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -495,15 +508,17 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear { spacing, count, .. },
-            ..
-        } = &mut ir_edit.model.features[1].definition
+        let FeatureDefinition::Pattern { pattern, .. } = &mut ir_edit.model.features[1].definition
         else {
             panic!("generic linear pattern");
         };
+        let mut transform = pattern.definition().clone();
+        let PatternTransform::Linear { spacing, count, .. } = &mut transform else {
+            panic!("pattern form");
+        };
         *spacing = Length::new(6.0).unwrap();
         *count = 3;
+        *pattern = PatternKind::new(transform).unwrap();
     }
 
     let mut encoded = Vec::new();

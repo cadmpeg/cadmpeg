@@ -9,7 +9,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::VertexSelection;
 use cadmpeg_ir::features::{
     AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
-    PatternKind, SurfaceBoundary,
+    PatternKind, PatternTransform, SurfaceBoundary,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
@@ -102,33 +102,29 @@ pub(in super::super) fn surface_boundary_has_unresolved_operands(
 }
 
 pub(in super::super) fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
-    match pattern {
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => true,
-        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
-            direction.is_none()
-        }
-        PatternKind::CurveDriven { path, .. } => {
+    match pattern.definition() {
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite => true,
+        PatternTransform::Linear { direction, .. }
+        | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
+        PatternTransform::CurveDriven { path, .. } => {
             path.as_ref().is_none_or(path_has_unresolved_operands)
         }
-        PatternKind::Scale { center, .. } => {
+        PatternTransform::Scale { center, .. } => {
             matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
         }
-        PatternKind::Composite { stages } => {
-            stages.is_empty()
-                || stages
-                    .iter()
-                    .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern))
-        }
-        PatternKind::Circular { .. }
-        | PatternKind::CircularAngles { .. }
-        | PatternKind::Mirror { .. } => false,
-        PatternKind::MirrorReference { .. } => true,
+        PatternTransform::Composite { stages } => stages
+            .iter()
+            .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern)),
+        PatternTransform::Circular { .. }
+        | PatternTransform::CircularAngles { .. }
+        | PatternTransform::Mirror { .. } => false,
+        PatternTransform::MirrorReference { .. } => true,
     }
 }
 

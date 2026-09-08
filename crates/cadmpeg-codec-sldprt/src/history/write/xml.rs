@@ -2,7 +2,7 @@
 //! Native XML tag and operation-kind helpers for write.
 
 use cadmpeg_ir::features::{
-    BodyRetentionMode, FeatureDefinition, PatternKind, SweepMode, UnresolvedFamily,
+    BodyRetentionMode, FeatureDefinition, PatternTransform, SweepMode, UnresolvedFamily,
 };
 
 use crate::history::classify::extrude_op;
@@ -101,10 +101,11 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::MirrorShape { .. } => "Mirror",
         FeatureDefinition::ProjectOnSurface { .. } => "ProjectOnSurface",
         FeatureDefinition::Hole { .. } => "Hole",
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::Mirror { .. },
-            ..
-        } => "Mirror",
+        FeatureDefinition::Pattern { pattern, .. }
+            if matches!(pattern.definition(), PatternTransform::Mirror { .. }) =>
+        {
+            "Mirror"
+        }
         FeatureDefinition::Pattern { .. } => "Pattern",
         FeatureDefinition::PostProcess { .. } => "Feature",
         FeatureDefinition::PointGeometry { .. } => "Point",

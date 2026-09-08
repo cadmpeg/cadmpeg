@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
     DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
-    ParameterId, ParameterValue, PatternKind, PatternSeed,
+    ParameterId, ParameterValue, PatternKind, PatternSeed, PatternTransform,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -233,10 +233,11 @@ fn active_configuration_inherits_late_feature_resolutions() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: vec![seed.clone()],
-            pattern: PatternKind::Mirror {
+            pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: Point3::new(1.0, 2.0, 3.0),
                 plane_normal: Vector3::new(0.0, 0.0, 1.0),
-            },
+            })
+            .unwrap(),
         },
         native_ref: None,
     });
@@ -296,7 +297,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                     dependencies: Vec::new(),
                     definition: FeatureDefinition::Pattern {
                         seeds: vec![seed],
-                        pattern: PatternKind::Unresolved,
+                        pattern: PatternKind::UNRESOLVED,
                     },
                 },
             ),
@@ -331,13 +332,14 @@ fn active_configuration_inherits_late_feature_resolutions() {
 
     sync_active_configuration_resolutions(&mut ir);
 
-    assert!(matches!(
-        ir.model.configurations[0].feature_states[&feature_id].definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::Mirror { .. },
-            ..
-        }
-    ));
+    assert!(
+        matches!(&(ir.model.configurations[0].feature_states[&feature_id].definition),
+            FeatureDefinition::Pattern {
+                pattern: admitted_pattern,
+                ..
+            } if matches!(admitted_pattern.definition(), PatternTransform::Mirror { .. })
+        )
+    );
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&hole_id].definition,
         FeatureDefinition::Hole {

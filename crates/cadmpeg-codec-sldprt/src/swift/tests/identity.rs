@@ -7,7 +7,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
     let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
     let pattern_definition = FeatureDefinition::Pattern {
         seeds: vec![PatternSeed::Feature(seed.clone())],
-        pattern: PatternKind::Unresolved,
+        pattern: PatternKind::UNRESOLVED,
     };
     let features = vec![
         neutral_feature(

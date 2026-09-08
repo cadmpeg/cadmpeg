@@ -93,7 +93,7 @@ pub(in super::super) fn named_feature_definition(
     if kind == "Mirror" {
         return Some(IrFeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::UnresolvedMirror,
+            pattern: PatternKind::UNRESOLVED_MIRROR,
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {

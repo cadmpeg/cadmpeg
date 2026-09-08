@@ -2128,22 +2128,6 @@ pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::fe
     .then_some(cadmpeg_ir::features::Angle::new(parameter.evaluated_value)?)
 }
 
-pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
-    use cadmpeg_ir::features::ChamferSpec;
-
-    match spec {
-        ChamferSpec::Distance { distance } => distance.get() > 0.0,
-        ChamferSpec::TwoDistances { first, second } => first.get() > 0.0 && second.get() > 0.0,
-        ChamferSpec::DistanceAngle { distance, angle } => {
-            distance.get() > 0.0 && angle.get() > 0.0 && angle.get() < std::f64::consts::PI
-        }
-        ChamferSpec::Unresolved
-        | ChamferSpec::UnresolvedDistance
-        | ChamferSpec::UnresolvedTwoDistances
-        | ChamferSpec::UnresolvedDistanceAngle => false,
-    }
-}
-
 /// Length scale from a placement's stored origin to the neutral length unit.
 /// The 201/329-byte frames store the origin in the neutral unit directly; the
 /// `EntityGenesis`-flavor 213/341-byte frames and the member-run head record

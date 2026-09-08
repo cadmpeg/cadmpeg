@@ -699,9 +699,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
 
 #[test]
 fn semantic_writer_preserves_absent_feature_selections() {
-    use cadmpeg_ir::features::{
-        ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, Length,
-    };
+    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -752,7 +750,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
             panic!("typed chamfer");
         };
         groups[0].spec = ChamferSpec::Distance {
-            distance: Length::new(2.5).unwrap(),
+            distance: cadmpeg_ir::features::PositiveLength::new(2.5).unwrap(),
         };
         let FeatureDefinition::Shell { thickness, .. } = &mut ir_edit.model.features[1].definition
         else {
