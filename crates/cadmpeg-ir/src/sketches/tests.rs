@@ -1110,7 +1110,7 @@ fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
     assert_eq!(wire["directions"][1]["count"], 1);
     assert_eq!(
         wire["directions"][0]["spacing_parameter"],
-        "test:parameter#spacing"
+        "test:test:parameter#spacing"
     );
     assert!(wire["directions"][0].get("span_parameter").is_none());
     assert_eq!(wire["instances"][0]["indices"], serde_json::json!([0, 0]));
@@ -1197,7 +1197,7 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
         }),
     };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["parameter"], "test:parameter#offset");
+    assert_eq!(wire["parameter"], "test:test:parameter#offset");
     assert_eq!(wire["parameter_factor"], -1.0);
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
