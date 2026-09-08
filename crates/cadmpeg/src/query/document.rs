@@ -21,12 +21,19 @@ pub(crate) struct Arena {
     pub records: Vec<Value>,
 }
 
+/// A record location constructed by the document index.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) struct RecordRef {
+    arena: usize,
+    rec: usize,
+}
+
 /// Indexed CADIR document: arenas, addressable names, and id lookup.
 #[derive(Debug, Clone)]
 pub(crate) struct CadirDocument {
     arenas: Vec<Arena>,
-    /// Exact id → every `(arena_index, record_index)` that carries it.
-    by_id: BTreeMap<String, Vec<(usize, usize)>>,
+    /// Exact ID to each record location that carries it.
+    by_id: BTreeMap<String, Vec<RecordRef>>,
 }
 
 impl CadirDocument {
@@ -76,11 +83,14 @@ impl CadirDocument {
             }
         }
 
-        let mut by_id: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+        let mut by_id: BTreeMap<String, Vec<RecordRef>> = BTreeMap::new();
         for (ai, arena) in arenas.iter().enumerate() {
             for (ri, rec) in arena.records.iter().enumerate() {
                 if let Some(id) = record_id(rec) {
-                    by_id.entry(id.to_owned()).or_default().push((ai, ri));
+                    by_id
+                        .entry(id.to_owned())
+                        .or_default()
+                        .push(RecordRef { arena: ai, rec: ri });
                 }
             }
         }
@@ -92,7 +102,7 @@ impl CadirDocument {
         &self.arenas
     }
 
-    pub(crate) fn id_locations(&self, id: &str) -> Option<&[(usize, usize)]> {
+    pub(crate) fn id_locations(&self, id: &str) -> Option<&[RecordRef]> {
         self.by_id.get(id).map(Vec::as_slice)
     }
 
@@ -110,76 +120,91 @@ impl CadirDocument {
             .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
     }
 
-    pub(crate) fn arena_index(&self, target: &ArenaTarget) -> Result<usize> {
-        self.arenas
-            .iter()
-            .position(|arena| &arena.target == target)
-            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
-    }
-
     pub(crate) fn all_ids(&self) -> std::collections::BTreeSet<String> {
         self.by_id.keys().cloned().collect()
     }
 
-    pub(crate) fn locator(&self, arena: usize, rec: usize) -> String {
-        let arena = &self.arenas[arena];
-        match record_id(&arena.records[rec]) {
+    /// Returns each record with its indexed location.
+    pub(crate) fn records(&self) -> impl Iterator<Item = (RecordRef, &Value)> {
+        self.arenas.iter().enumerate().flat_map(|(ai, arena)| {
+            arena
+                .records
+                .iter()
+                .enumerate()
+                .map(move |(ri, record)| (RecordRef { arena: ai, rec: ri }, record))
+        })
+    }
+
+    /// Returns the record at an indexed location.
+    pub(crate) fn record(&self, location: RecordRef) -> &Value {
+        &self.arenas[location.arena].records[location.rec]
+    }
+
+    pub(crate) fn locator(&self, location: RecordRef) -> String {
+        let arena = &self.arenas[location.arena];
+        match record_id(self.record(location)) {
             Some(id) => format!("{}#{id}", arena.target.dotted()),
-            None => format!("{}#{rec}", arena.target.dotted()),
+            None => format!("{}#{}", arena.target.dotted(), location.rec),
         }
+    }
+
+    /// Selects indexed records by first-N, exact ID, or unique ID suffix.
+    pub(crate) fn select_records(
+        &self,
+        target: &ArenaTarget,
+        ids: &[String],
+        head: Option<usize>,
+    ) -> Result<(Vec<RecordRef>, Vec<String>)> {
+        let (ai, arena) = self
+            .arenas
+            .iter()
+            .enumerate()
+            .find(|(_, arena)| &arena.target == target)
+            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))?;
+        if ids.is_empty() {
+            let end = head.unwrap_or(1).min(arena.records.len());
+            return Ok((
+                (0..end).map(|rec| RecordRef { arena: ai, rec }).collect(),
+                Vec::new(),
+            ));
+        }
+
+        let indexed: Vec<(Option<&str>, RecordRef)> = arena
+            .records
+            .iter()
+            .enumerate()
+            .map(|(rec, value)| (record_id(value), RecordRef { arena: ai, rec }))
+            .collect();
+        let all_ids: Vec<String> = indexed
+            .iter()
+            .filter_map(|(id, _)| id.map(str::to_owned))
+            .collect();
+
+        let mut records = Vec::new();
+        let mut errors = Vec::new();
+        for request in ids {
+            match resolve_one(request, indexed.iter().copied()) {
+                Ok(record) => records.push(record),
+                Err(ResolveError::Ambiguous(matches)) => {
+                    errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
+                }
+                Err(ResolveError::Missing) => {
+                    errors.push(miss_id_message(
+                        &arena.target.dotted(),
+                        request,
+                        arena.records.len() as u64,
+                        &all_ids,
+                    ));
+                }
+            }
+        }
+        Ok((records, errors))
     }
 }
 
 /// Top-level JSON-string `id`, if present.
 pub(crate) fn record_id(record: &Value) -> Option<&str> {
     record.get("id").and_then(Value::as_str)
-}
-
-/// Selects start records the same way `query item` does.
-///
-/// Missing or ambiguous IDs go into the error list; the caller emits any
-/// resolved records and then fails if that list is not empty.
-pub(crate) fn select_records(
-    arena: &Arena,
-    ids: &[String],
-    head: Option<usize>,
-) -> (Vec<usize>, Vec<String>) {
-    if ids.is_empty() {
-        let n = head.unwrap_or(1);
-        let end = n.min(arena.records.len());
-        return ((0..end).collect(), Vec::new());
-    }
-
-    let indexed: Vec<(Option<&str>, usize)> = arena
-        .records
-        .iter()
-        .enumerate()
-        .map(|(i, rec)| (record_id(rec), i))
-        .collect();
-    let all_ids: Vec<String> = indexed
-        .iter()
-        .filter_map(|(id, _)| id.map(str::to_owned))
-        .collect();
-
-    let mut indices = Vec::new();
-    let mut errors = Vec::new();
-    for request in ids {
-        match resolve_one(request, indexed.iter().copied()) {
-            Ok(i) => indices.push(i),
-            Err(ResolveError::Ambiguous(matches)) => {
-                errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
-            }
-            Err(ResolveError::Missing) => {
-                errors.push(miss_id_message(
-                    &arena.target.dotted(),
-                    request,
-                    arena.records.len() as u64,
-                    &all_ids,
-                ));
-            }
-        }
-    }
-    (indices, errors)
 }
 
 /// Failure to select one record by ID.
@@ -261,10 +286,10 @@ mod tests {
         assert!(names.contains(&"model.empty".to_owned()));
         assert!(names.contains(&"native.rhino.unknowns".to_owned()));
         assert!(!names.iter().any(|n| n.contains("null")));
-        let (ai, ri) = doc.by_id["f1"][0];
-        assert_eq!(doc.arenas[ai].target.dotted(), "model.faces");
-        assert_eq!(ri, 0);
-        assert_eq!(doc.locator(ai, ri), "model.faces#f1");
+        let location = doc.by_id["f1"][0];
+        assert_eq!(doc.arenas[location.arena].target.dotted(), "model.faces");
+        assert_eq!(location.rec, 0);
+        assert_eq!(doc.locator(location), "model.faces#f1");
     }
 
     #[test]
@@ -288,18 +313,26 @@ mod tests {
                 {"id": "other:coedge#802"}
             ]}
         }));
-        let arena = doc
-            .require_arena(&ArenaTarget::parse("faces").unwrap())
+        let target = ArenaTarget::parse("faces").unwrap();
+        let (idx, err) = doc.select_records(&target, &[], Some(2)).unwrap();
+        assert_eq!(
+            idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert!(err.is_empty());
+
+        let (idx, err) = doc
+            .select_records(&target, &["face#2".to_owned()], None)
             .unwrap();
-        let (idx, err) = select_records(arena, &[], Some(2));
-        assert_eq!(idx, vec![0, 1]);
+        assert_eq!(
+            idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
+            vec![1]
+        );
         assert!(err.is_empty());
 
-        let (idx, err) = select_records(arena, &["face#2".to_owned()], None);
-        assert_eq!(idx, vec![1]);
-        assert!(err.is_empty());
-
-        let (_, err) = select_records(arena, &["#802".to_owned()], None);
+        let (_, err) = doc
+            .select_records(&target, &["#802".to_owned()], None)
+            .unwrap();
         assert_eq!(err.len(), 1);
         assert!(err[0].contains("ambiguous"));
     }
