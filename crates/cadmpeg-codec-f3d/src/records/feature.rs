@@ -6082,6 +6082,10 @@ pub struct DesignSurfaceTrimCellEntry {
 
 /// Exact auxiliary carrier of a `SurfaceTrim` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignSurfaceTrimOperationWire",
+    into = "DesignSurfaceTrimOperationWire"
+)]
 pub struct DesignSurfaceTrimOperation {
     /// Globally unique deterministic identifier for this native carrier.
     pub id: String,
@@ -6109,8 +6113,47 @@ pub struct DesignSurfaceTrimOperation {
     pub cell_table_paired_class_tag: DesignClassTag,
     /// Byte offset of the cell-table paired header.
     pub cell_table_paired_byte_offset: u64,
+    /// Byte offset of the cell-table count.
+    pub cell_count_offset: u64,
+    /// Ordered cell-table entries.
+    cell_entries: Vec<DesignSurfaceTrimCellEntry>,
+    /// Total number of cells in the operation's partition.
+    pub trailing_value: u32,
+    /// Byte offset of `trailing_value`.
+    pub trailing_value_offset: u64,
+    /// Byte offset of the zero value after `trailing_value`.
+    pub trailing_zero_offset: u64,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DesignSurfaceTrimOperationWire {
+    /// Globally unique deterministic identifier for this native carrier.
+    pub id: String,
+    /// Owning `SurfaceTrim` parameter-scope record index.
+    pub scope_record_index: u32,
+    /// Indexed entity-selection record that starts the trimming tool chain.
+    pub selection_record_index: u32,
+    /// Byte offset of the entity-selection record.
+    pub selection_byte_offset: u64,
+    /// Indexed record immediately following the entity-selection frame.
+    pub selection_next_record_index: u32,
+    /// Byte offset of the record immediately following the entity-selection frame.
+    pub selection_next_byte_offset: u64,
+    /// Two indexed records between the entity selection and the cell table.
+    pub chain_records: Vec<DesignSurfaceTrimChainRecord>,
+    /// Indexed record carrying the counted BRep-cell table.
+    pub cell_table_record_index: u32,
+    /// Byte offset of the cell-table primary header.
+    pub cell_table_byte_offset: u64,
+    /// Dynamic class tag of the cell-table primary frame.
+    pub cell_table_class_tag: DesignClassTag,
+    /// Bytes from the cell-table primary header to its paired header.
+    pub cell_table_frame_length: u64,
+    /// Dynamic class tag of the cell-table paired frame.
+    pub cell_table_paired_class_tag: DesignClassTag,
+    /// Byte offset of the cell-table paired header.
+    pub cell_table_paired_byte_offset: u64,
     /// Count of entries in the cell table.
-    pub cell_count: u32,
+    pub cell_count: usize,
     /// Byte offset of the cell-table count.
     pub cell_count_offset: u64,
     /// Ordered cell-table entries.
@@ -6121,6 +6164,70 @@ pub struct DesignSurfaceTrimOperation {
     pub trailing_value_offset: u64,
     /// Byte offset of the zero value after `trailing_value`.
     pub trailing_zero_offset: u64,
+}
+impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
+    type Error = &'static str;
+    fn try_from(wire: DesignSurfaceTrimOperationWire) -> Result<Self, Self::Error> {
+        if wire.cell_entries.is_empty() {
+            return Err("cell_entries must not be empty");
+        }
+        if wire.cell_count != wire.cell_entries.len() {
+            return Err("cell_count disagrees with cell_entries");
+        }
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            selection_record_index: wire.selection_record_index,
+            selection_byte_offset: wire.selection_byte_offset,
+            selection_next_record_index: wire.selection_next_record_index,
+            selection_next_byte_offset: wire.selection_next_byte_offset,
+            chain_records: wire.chain_records,
+            cell_table_record_index: wire.cell_table_record_index,
+            cell_table_byte_offset: wire.cell_table_byte_offset,
+            cell_table_class_tag: wire.cell_table_class_tag,
+            cell_table_frame_length: wire.cell_table_frame_length,
+            cell_table_paired_class_tag: wire.cell_table_paired_class_tag,
+            cell_table_paired_byte_offset: wire.cell_table_paired_byte_offset,
+            cell_count_offset: wire.cell_count_offset,
+            cell_entries: wire.cell_entries,
+            trailing_value: wire.trailing_value,
+            trailing_value_offset: wire.trailing_value_offset,
+            trailing_zero_offset: wire.trailing_zero_offset,
+        })
+    }
+}
+impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
+    fn from(value: DesignSurfaceTrimOperation) -> Self {
+        Self {
+            cell_count: value.cell_count(),
+            id: value.id,
+            scope_record_index: value.scope_record_index,
+            selection_record_index: value.selection_record_index,
+            selection_byte_offset: value.selection_byte_offset,
+            selection_next_record_index: value.selection_next_record_index,
+            selection_next_byte_offset: value.selection_next_byte_offset,
+            chain_records: value.chain_records,
+            cell_table_record_index: value.cell_table_record_index,
+            cell_table_byte_offset: value.cell_table_byte_offset,
+            cell_table_class_tag: value.cell_table_class_tag,
+            cell_table_frame_length: value.cell_table_frame_length,
+            cell_table_paired_class_tag: value.cell_table_paired_class_tag,
+            cell_table_paired_byte_offset: value.cell_table_paired_byte_offset,
+            cell_count_offset: value.cell_count_offset,
+            cell_entries: value.cell_entries,
+            trailing_value: value.trailing_value,
+            trailing_value_offset: value.trailing_value_offset,
+            trailing_zero_offset: value.trailing_zero_offset,
+        }
+    }
+}
+impl DesignSurfaceTrimOperation {
+    pub(crate) fn cell_count(&self) -> usize {
+        self.cell_entries.len()
+    }
+    pub(crate) fn cell_entries(&self) -> &[DesignSurfaceTrimCellEntry] {
+        &self.cell_entries
+    }
 }
 
 /// Direction law encoded by a `SurfaceRuled` operation.

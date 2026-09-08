@@ -1695,3 +1695,24 @@ fn rectangular_pattern_sidecar_preserves_signed_spans() {
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
     }
 }
+
+#[test]
+fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
+    let entry = serde_json::json!({"record_index": 4, "record_reference_offset": 0,
+        "ordinal": 1, "ordinal_offset": 0});
+    let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
+        "selection_record_index": 2, "selection_byte_offset": 0,
+        "selection_next_record_index": 3, "selection_next_byte_offset": 0,
+        "chain_records": [], "cell_table_record_index": 4, "cell_table_byte_offset": 0,
+        "cell_table_class_tag": "325", "cell_table_frame_length": 0,
+        "cell_table_paired_class_tag": "257", "cell_table_paired_byte_offset": 0,
+        "cell_count": 1, "cell_count_offset": 0, "cell_entries": [entry],
+        "trailing_value": 1, "trailing_value_offset": 0, "trailing_zero_offset": 0});
+    let record: super::DesignSurfaceTrimOperation = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    wire["cell_count"] = 2.into();
+    assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire.clone()).is_err());
+    wire["cell_count"] = 0.into();
+    wire["cell_entries"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire).is_err());
+}

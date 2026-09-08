@@ -7490,7 +7490,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
         };
         let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
             operation
-                .cell_entries
+                .cell_entries()
                 .iter()
                 .map(|entry| entry.ordinal)
                 .collect(),
