@@ -35,7 +35,12 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
         && design_type
             .base_type_guid
             .as_ref()
-            .map(|field| field.value.as_str())
+            .and_then(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map(crate::records::DesignRelaxedGuidText::as_str)
+            })
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -101,7 +106,12 @@ pub fn decode_component_naming_spaces(
                     && design_type
                         .base_type_guid
                         .as_ref()
-                        .map(|field| field.value.as_str())
+                        .and_then(|field| {
+                            field
+                                .value
+                                .as_ref()
+                                .map(crate::records::DesignRelaxedGuidText::as_str)
+                        })
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
@@ -167,7 +177,12 @@ pub fn decode_component_naming_spaces(
                         && design_type
                             .base_type_guid
                             .as_ref()
-                            .map(|field| field.value.as_str())
+                            .and_then(|field| {
+                                field
+                                    .value
+                                    .as_ref()
+                                    .map(crate::records::DesignRelaxedGuidText::as_str)
+                            })
                             .is_some_and(|base| {
                                 base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                             })

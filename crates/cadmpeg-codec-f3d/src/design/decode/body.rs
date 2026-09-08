@@ -483,7 +483,12 @@ pub(crate) fn snapshot_body_map_records(
             || !design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -689,7 +694,12 @@ fn body_map_records(
             || !design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -1255,7 +1265,7 @@ mod tests {
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
-                value: value.to_owned(),
+                value: Some(value.to_owned().try_into().expect("base GUID")),
                 offset: Some(0),
             }),
             version,
@@ -1323,7 +1333,12 @@ mod tests {
                         .expect("type GUID"),
                     type_guid_offset: 0,
                     base_type_guid: Some(crate::records::RecordedValue {
-                        value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                        value: Some(
+                            crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                                .to_owned()
+                                .try_into()
+                                .expect("base GUID"),
+                        ),
                         offset: Some(0),
                     }),
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,

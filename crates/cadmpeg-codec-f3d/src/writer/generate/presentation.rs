@@ -34,7 +34,7 @@ impl From<&SegmentType> for GeneratedDesignType {
             base_type_guid: value
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.clone()),
+                .and_then(|field| field.value.as_ref().map(|guid| guid.as_str().to_owned())),
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
@@ -340,7 +340,12 @@ mod tests {
                 .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                value: Some(
+                    crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: Some(0),
             }),
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
@@ -365,7 +370,12 @@ mod tests {
                 .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into(),
+                value: Some(
+                    crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: Some(0),
             }),
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,

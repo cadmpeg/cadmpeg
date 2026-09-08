@@ -281,7 +281,12 @@ fn decode_sketch_visibilities_in_stream(
                 .design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -333,7 +338,12 @@ fn decode_sketch_visibilities_in_stream(
                     && member_type
                         .base_type_guid
                         .as_ref()
-                        .map(|field| field.value.as_str())
+                        .and_then(|field| {
+                            field
+                                .value
+                                .as_ref()
+                                .map(crate::records::DesignRelaxedGuidText::as_str)
+                        })
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
                         })

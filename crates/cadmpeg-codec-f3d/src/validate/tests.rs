@@ -145,7 +145,12 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         type_guid_offset: 4,
         base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
             .then(|| crate::records::RecordedValue {
-                value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID.into(),
+                value: Some(
+                    crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: Some(8),
             }),
         version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {

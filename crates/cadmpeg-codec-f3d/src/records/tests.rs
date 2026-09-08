@@ -166,6 +166,10 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
             wire.push_str(suffix);
             let parsed: crate::records::SegmentType =
                 serde_json::from_str(&wire).expect("base GUID");
+            assert_eq!(
+                parsed.base_type_guid.as_ref().unwrap().value.is_none(),
+                value == "\"\""
+            );
             assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
         }
     }
@@ -1703,4 +1707,11 @@ fn segment_type_guid_preserves_relaxed_text_and_rejects_invalid_text() {
             assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), wire);
         }
     }
+}
+
+#[test]
+fn segment_base_guid_rejects_invalid_text() {
+    let wire = r#"{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"base_type_guid":"invalid","version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}"#;
+    let error = serde_json::from_str::<crate::records::SegmentType>(wire).unwrap_err();
+    assert!(error.to_string().contains("base_type_guid"));
 }

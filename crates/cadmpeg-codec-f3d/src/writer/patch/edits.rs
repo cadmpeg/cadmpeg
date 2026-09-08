@@ -1546,14 +1546,22 @@ pub(crate) fn validate_design_type_edits(
             let before_base = before
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .map(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map_or("", crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .ok_or_else(|| {
                     CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
                 })?;
             let after_field = after.base_type_guid.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
             })?;
-            let after_base = after_field.value.as_str();
+            let after_base = after_field
+                .value
+                .as_ref()
+                .map_or("", crate::records::DesignRelaxedGuidText::as_str);
             validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
                 after_field.offset.ok_or_else(|| {

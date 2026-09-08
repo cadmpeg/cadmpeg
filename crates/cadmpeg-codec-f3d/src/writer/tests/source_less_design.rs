@@ -53,7 +53,12 @@ fn generated_source_less_writes_design_type_metastream() {
                 .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: "11111111-2222-3333-4444-555555555555".into(),
+                value: Some(
+                    "11111111-2222-3333-4444-555555555555"
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: None,
             }),
             version: 9,
@@ -70,7 +75,12 @@ fn generated_source_less_writes_design_type_metastream() {
                 .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: "11111111-2222-3333-4444-555555555555".into(),
+                value: Some(
+                    "11111111-2222-3333-4444-555555555555"
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: None,
             }),
             version: 11,
@@ -96,7 +106,12 @@ fn generated_source_less_writes_design_type_metastream() {
         .contains("Design type module name is GUID-shaped"));
     f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
         Some(crate::records::RecordedValue {
-            value: "22222222-3333-4444-5555-666666666666".into(),
+            value: Some(
+                "22222222-3333-4444-5555-666666666666"
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
+            ),
             offset: None,
         });
     let error = F3dCodec
@@ -130,10 +145,10 @@ fn generated_source_less_writes_design_type_metastream() {
         .expect("sketch-module type");
     assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), [277]);
     assert_eq!(
-        sketch
-            .base_type_guid
+        sketch.base_type_guid.as_ref().and_then(|field| field
+            .value
             .as_ref()
-            .map(|field| field.value.as_str()),
+            .map(crate::records::DesignRelaxedGuidText::as_str)),
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(sketch.version, 9);

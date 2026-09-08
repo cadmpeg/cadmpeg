@@ -2538,10 +2538,9 @@ pub struct SegmentType {
     pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
-    /// GUID of this type's base type; `None` for a root type, whose stored base
-    /// GUID is the empty string.
+    /// Base GUID field and location; its value is `None` for an explicit empty root GUID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_type_guid: Option<RecordedValue<String>>,
+    pub base_type_guid: Option<RecordedValue<Option<DesignRelaxedGuidText>>>,
     /// Record version of this type.
     pub version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
@@ -2609,7 +2608,17 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
                 "entity_ids/entity_id_offsets",
             )?,
             base_type_guid: RecordedValue::from_wire(
-                wire.base_type_guid,
+                wire.base_type_guid
+                    .map(|guid| {
+                        if guid.is_empty() {
+                            Ok(None)
+                        } else {
+                            DesignRelaxedGuidText::try_from(guid)
+                                .map(Some)
+                                .map_err(|error| format!("base_type_guid: {error}"))
+                        }
+                    })
+                    .transpose()?,
                 wire.base_type_guid_offset,
                 "base_type_guid",
             )?,
@@ -2631,7 +2640,9 @@ impl From<SegmentType> for SegmentTypeWire {
             entity_ids,
             entity_id_offsets,
             base_type_guid_offset: value.base_type_guid.as_ref().and_then(|field| field.offset),
-            base_type_guid: value.base_type_guid.map(|field| field.value),
+            base_type_guid: value
+                .base_type_guid
+                .map(|field| field.value.map(String::from).unwrap_or_default()),
         }
     }
 }
