@@ -3556,7 +3556,7 @@ pub struct DesignRevolveConstruction {
     /// Byte offset of the operation u32.
     pub operation_offset: u64,
     /// Positive angular travel in radians.
-    pub angle: f64,
+    pub angle: DesignPositiveScalar,
     /// Referenced angular-travel scalar record.
     pub angle_record_index: u32,
     /// Byte offset of the angular-travel scalar.
@@ -3591,7 +3591,7 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
         Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: value.angle,
+            angle: value.angle.get(),
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle_record_index: value.opposite_angle.map(|located| located.value),
@@ -3606,7 +3606,8 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
         Ok(Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: value.angle,
+            angle: DesignPositiveScalar::new(value.angle)
+                .ok_or("angle must be positive and finite")?,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle: match (
@@ -4181,7 +4182,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignDraftOperation {
     /// Signed draft angle in radians.
-    pub angle: f64,
+    pub angle: DesignFiniteScalar,
     /// Referenced draft-angle scalar record.
     pub angle_record_index: u32,
     /// Byte offset of the draft-angle scalar.
@@ -5967,7 +5968,7 @@ pub struct DesignJointOriginReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
-    pub gap_tolerance: f64,
+    pub gap_tolerance: DesignPositiveScalar,
     /// Byte offset of `gap_tolerance`.
     pub gap_tolerance_offset: u64,
     /// Indexed tolerance-record identity.
@@ -6369,7 +6370,7 @@ pub struct DesignSurfacePatchBoundary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignBaseFlangeOperation {
     /// Positive sheet thickness in centimetres.
-    pub thickness: f64,
+    pub thickness: DesignPositiveScalar,
     /// Byte offset of `thickness`.
     pub thickness_offset: u64,
     /// Counted sketch-profile operand group.
@@ -7949,17 +7950,62 @@ impl DesignEdgeFlangeEdge {
     }
 }
 
-/// Positive finite inside bend radius in source centimetres.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignBendRadius(f64);
+/// A positive finite source scalar.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct DesignPositiveScalar(f64);
 
-impl DesignBendRadius {
+impl DesignPositiveScalar {
+    /// Admit a positive finite scalar.
     pub fn new(value: f64) -> Option<Self> {
         (value.is_finite() && value > 0.0).then_some(Self(value))
     }
 
+    /// The source scalar value.
     pub fn get(self) -> f64 {
         self.0
+    }
+}
+
+impl TryFrom<f64> for DesignPositiveScalar {
+    type Error = &'static str;
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("scalar must be positive and finite")
+    }
+}
+
+impl From<DesignPositiveScalar> for f64 {
+    fn from(value: DesignPositiveScalar) -> Self {
+        value.get()
+    }
+}
+
+/// A finite source scalar with unrestricted sign.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct DesignFiniteScalar(f64);
+
+impl DesignFiniteScalar {
+    /// Admit a finite scalar.
+    pub fn new(value: f64) -> Option<Self> {
+        value.is_finite().then_some(Self(value))
+    }
+    /// The source scalar value.
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for DesignFiniteScalar {
+    type Error = &'static str;
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("scalar must be finite")
+    }
+}
+
+impl From<DesignFiniteScalar> for f64 {
+    fn from(value: DesignFiniteScalar) -> Self {
+        value.get()
     }
 }
 
@@ -7985,7 +8031,7 @@ pub struct DesignEdgeFlangeOperation {
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: DesignBendRadius,
+    pub bend_radius: DesignPositiveScalar,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
     /// Face pair the flange height is measured from.
@@ -8049,7 +8095,7 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             angle_owner_record_index: wire.angle_owner_record_index,
             auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignBendRadius::new(wire.bend_radius)
+            bend_radius: DesignPositiveScalar::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
             height_datum: wire.height_datum,
@@ -8158,7 +8204,7 @@ pub struct DesignHemOperation {
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: DesignBendRadius,
+    pub bend_radius: DesignPositiveScalar,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
 }
@@ -8213,7 +8259,7 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
             aggregate_operand_record_index: wire.aggregate_operand_record_index,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignBendRadius::new(wire.bend_radius)
+            bend_radius: DesignPositiveScalar::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
         })

@@ -1175,7 +1175,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &mut stitch_scope.payload
     {
         *slot = Some(DesignSurfaceStitchOperation {
-            gap_tolerance: 0.01,
+            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 40,
             tolerance_record_index: 300,
             settings_record_index: 301,

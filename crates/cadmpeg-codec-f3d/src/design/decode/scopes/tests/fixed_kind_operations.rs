@@ -38,7 +38,7 @@ pub(super) fn continue_fixed_kind_operations(
     draft_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
     let expected = Some(DesignDraftOperation {
-        angle: 0.4,
+        angle: crate::records::feature::DesignFiniteScalar::new(0.4).unwrap(),
         angle_record_index: 175,
         angle_offset: (draft_start + 40) as u64,
         opposite_angle_record_index: 176,
@@ -389,7 +389,7 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::feature::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (revolve_start + 25) as u64,
-                angle: 3.5,
+                angle: crate::records::feature::DesignPositiveScalar::new(3.5).unwrap(),
                 angle_record_index: 1_779,
                 angle_offset: (revolve_scalar_start + 40) as u64,
                 opposite_angle: Some(crate::records::Located {
@@ -447,7 +447,8 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::feature::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (indexed_revolve_start + 21) as u64,
-                angle: std::f64::consts::TAU,
+                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
+                    .unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: 45,
                 opposite_angle: None,
@@ -501,7 +502,8 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::feature::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (class403_start + 21) as u64,
-                angle: std::f64::consts::TAU,
+                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
+                    .unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: (class403_start + 40) as u64,
                 opposite_angle: None,
@@ -571,7 +573,8 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::feature::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: std::f64::consts::TAU,
+                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
+                    .unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,
@@ -604,7 +607,8 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::feature::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: std::f64::consts::TAU,
+                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
+                    .unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,
@@ -635,7 +639,8 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::feature::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: std::f64::consts::TAU,
+                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
+                    .unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,

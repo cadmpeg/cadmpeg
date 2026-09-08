@@ -2922,8 +2922,8 @@ fn project_draft(
                             plane: Some(neutral_feature_id(neutral_plane)),
                         }),
                     },
-                    angle: Some(Angle(construction.angle)),
-                    outward: Some(draft_outward(construction.angle)),
+                    angle: Some(Angle(construction.angle.get())),
+                    outward: Some(draft_outward(construction.angle.get())),
                 });
             }
             let neutral_plane = selected_historical_face_selection(
@@ -2938,8 +2938,8 @@ fn project_draft(
                     plane: neutral_plane,
                     pull: None,
                 },
-                angle: Some(Angle(construction.angle)),
-                outward: Some(draft_outward(construction.angle)),
+                angle: Some(Angle(construction.angle.get())),
+                outward: Some(draft_outward(construction.angle.get())),
             })
         }
         [neutral_plane] if member_of_scope(neutral_plane) => Some(FeatureDefinition::Draft {
@@ -2948,8 +2948,8 @@ fn project_draft(
                 plane: project_draft_face_selection(scope, neutral_plane, face_operands, histories),
                 pull: None,
             },
-            angle: Some(Angle(construction.angle)),
-            outward: Some(draft_outward(construction.angle)),
+            angle: Some(Angle(construction.angle.get())),
+            outward: Some(draft_outward(construction.angle.get())),
         }),
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
             let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
@@ -2985,8 +2985,8 @@ fn project_draft(
                         plane: Some(neutral_feature_id(pull_plane)),
                     },
                 },
-                angle: Some(Angle(construction.angle)),
-                outward: Some(draft_outward(construction.angle)),
+                angle: Some(Angle(construction.angle.get())),
+                outward: Some(draft_outward(construction.angle.get())),
             })
         }
         _ => None,
@@ -3462,7 +3462,7 @@ fn project_base_flange(
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
         profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
-        thickness: Length(operation.thickness * 10.0),
+        thickness: Length(operation.thickness.get() * 10.0),
         side: SheetMetalThicknessSide::Forward,
     })
 }
@@ -3905,7 +3905,7 @@ pub(crate) fn project_surface_stitch(
         faces: FaceSelection::Native(scope.id.clone()),
         merge_entities: Some(true),
         create_solid: Some(true),
-        gap_tolerance: Some(Length(operation.gap_tolerance * 10.0)),
+        gap_tolerance: Some(Length(operation.gap_tolerance.get() * 10.0)),
     })
 }
 
@@ -5710,7 +5710,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
             axis,
             Some(RevolveExtent::OneSided {
                 termination: AngularTermination::Angle {
-                    angle: Angle(*angle),
+                    angle: Angle(angle.get()),
                 },
             }),
             None,

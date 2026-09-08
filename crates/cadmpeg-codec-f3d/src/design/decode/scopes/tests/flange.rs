@@ -56,7 +56,7 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
             &[256, 259, 263, 266],
         )
         .expect("fixed BaseFlange operation");
-    assert_eq!(operation.thickness, 0.25);
+    assert_eq!(operation.thickness.get(), 0.25);
     assert_eq!(operation.thickness_offset, 123);
     assert_eq!(operation.profile_group_record_index, 256);
     assert_eq!(operation.profile_record_index, 259);

@@ -2082,10 +2082,7 @@ pub(crate) fn exact_surface_stitch_operation(
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
         return None;
     }
-    let gap_tolerance = scalar.value;
-    if !gap_tolerance.is_finite() || gap_tolerance <= 0.0 {
-        return None;
-    }
+    let gap_tolerance = crate::records::feature::DesignPositiveScalar::new(scalar.value)?;
     Some(DesignSurfaceStitchOperation {
         gap_tolerance,
         gap_tolerance_offset: scalar.value_offset,
@@ -2121,10 +2118,8 @@ pub(crate) fn exact_base_flange_operation(
     {
         return None;
     }
-    let thickness = View::f64_le_at(bytes, start + 123)?;
-    if !thickness.is_finite() || thickness <= 0.0 {
-        return None;
-    }
+    let thickness =
+        crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(bytes, start + 123)?)?;
     Some(DesignBaseFlangeOperation {
         thickness,
         thickness_offset: u64::try_from(start + 123).ok()?,
@@ -2605,7 +2600,7 @@ fn legacy_edge_flange_operation_at(
         &mut unclaimed,
     )?;
     let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -2748,7 +2743,7 @@ fn edge_flange_operation_at(
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -2851,7 +2846,7 @@ fn edge_flange_to_object_operation_at(
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -3145,7 +3140,7 @@ fn hem_gap_length_operation_at(
     let length_owner_record_index = slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
 
     let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -3217,7 +3212,7 @@ fn hem_radius_angle_operation_at(
     let angle_owner_record_index = slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -3284,7 +3279,7 @@ fn hem_gap_length_radius_operation_at(
     let length_owner_record_index = slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;

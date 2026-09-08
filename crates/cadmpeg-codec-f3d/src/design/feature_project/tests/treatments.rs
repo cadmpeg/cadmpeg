@@ -634,7 +634,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![101, 111, 102, 112]);
     if let crate::records::feature::DesignScopePayload::Draft(slot) = &mut scope.payload {
         *slot = Some(DesignDraftOperation {
-            angle: -0.25,
+            angle: crate::records::feature::DesignFiniteScalar::new(-0.25).unwrap(),
             angle_record_index: 90,
             angle_offset: 0,
             opposite_angle_record_index: 91,
