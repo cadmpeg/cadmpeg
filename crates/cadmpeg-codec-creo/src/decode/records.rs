@@ -1503,16 +1503,118 @@ pub(super) struct CreoSurfacePrototypeRecord {
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceNamedParameterRecord {
     pub(super) name: String,
-    pub(super) value_kind: &'static str,
-    pub(super) compact_values: Vec<u32>,
-    pub(super) scalar_dimensions: Option<u32>,
-    pub(super) scalar_count: Option<u32>,
-    pub(super) scalar_values: Vec<Option<f64>>,
-    pub(super) scalar_tokens: Vec<Vec<u8>>,
-    pub(super) opaque: Vec<u8>,
+    #[serde(flatten, serialize_with = "serialize_surface_named_value")]
+    pub(super) value: crate::surface::SurfaceNamedValue,
     pub(super) body: Vec<u8>,
     pub(super) offset: usize,
     pub(super) value_offset: usize,
+}
+
+fn serialize_surface_named_value<S: serde::Serializer>(
+    value: &crate::surface::SurfaceNamedValue,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let (
+        value_kind,
+        compact_values,
+        scalar_dimensions,
+        scalar_count,
+        scalar_values,
+        scalar_tokens,
+        opaque,
+    ) = match value {
+        crate::surface::SurfaceNamedValue::Empty => (
+            "empty",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CompactInt(value) => (
+            "compact_int",
+            vec![*value],
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
+            "compact_int_array",
+            values.clone(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ContiguousEntityReferences(entity_ids) => (
+            "contiguous_entity_references",
+            entity_ids.clone(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarArray {
+            dimensions,
+            count,
+            values,
+            tokens,
+        } => (
+            "scalar_array",
+            Vec::new(),
+            Some(*dimensions),
+            Some(*count),
+            values.clone(),
+            tokens.clone().unwrap_or_default(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CountedScalarArray {
+            count,
+            values,
+            tokens,
+        } => (
+            "counted_scalar_array",
+            Vec::new(),
+            None,
+            Some(*count),
+            values.clone(),
+            tokens.clone(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
+            "scalar_sequence",
+            Vec::new(),
+            None,
+            None,
+            values.iter().copied().map(Some).collect(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::Opaque(value) => (
+            "opaque",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            value.clone(),
+        ),
+    };
+    let mut map = serializer.serialize_map(Some(7))?;
+    map.serialize_entry("value_kind", &value_kind)?;
+    map.serialize_entry("compact_values", &compact_values)?;
+    map.serialize_entry("scalar_dimensions", &scalar_dimensions)?;
+    map.serialize_entry("scalar_count", &scalar_count)?;
+    map.serialize_entry("scalar_values", &scalar_values)?;
+    map.serialize_entry("scalar_tokens", &scalar_tokens)?;
+    map.serialize_entry("opaque", &opaque)?;
+    map.end()
 }
 
 #[derive(Serialize)]
