@@ -609,7 +609,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         panic!("expected a retained coordinate-function offset law");
     };
     assert_eq!(function.as_str(), "iges:model:curve#D3");
-    assert_eq!(*coordinate, 2);
+    assert_eq!(coordinate.get(), 2);
     assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
     assert_eq!(*function_parameter_offset, 0.0);
     assert_eq!(*function_parameter_scale, 0.1);

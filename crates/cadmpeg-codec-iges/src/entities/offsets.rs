@@ -602,7 +602,9 @@ pub(super) fn project(
                 let Some(coordinate_index) = record
                     .integer(4)
                     .and_then(|value| u8::try_from(value).ok())
-                    .filter(|value| matches!(value, 1..=3))
+                    .and_then(|value| {
+                        cadmpeg_ir::geometry::CurveOffsetCoordinate::try_new(value).ok()
+                    })
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -725,7 +727,8 @@ pub(super) fn project(
                         controls.clear();
                         break;
                     };
-                    let Some(distance) = coordinate(function_control, coordinate_index) else {
+                    let Some(distance) = coordinate(function_control, coordinate_index.get())
+                    else {
                         controls.clear();
                         break;
                     };
@@ -756,7 +759,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let Some(distance) = coordinate(function_start, coordinate_index) else {
+                let Some(distance) = coordinate(function_start, coordinate_index.get()) else {
                     losses.push(entity_loss(entry, "offset function coordinate is invalid"));
                     continue;
                 };
