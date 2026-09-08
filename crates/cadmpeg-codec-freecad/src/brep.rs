@@ -4771,7 +4771,8 @@ pub(crate) fn append_text_curve(
                         parameter_range,
                         sense: true,
                     },
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             basis_geometry
         }
@@ -4796,7 +4797,8 @@ pub(crate) fn append_text_curve(
                         },
                         range: None,
                     },
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             CurveGeometry::Unknown { record: None }
         }

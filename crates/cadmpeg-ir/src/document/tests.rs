@@ -216,7 +216,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     ir.model
         .add_procedural_curve(
             curve.clone(),
-            ProceduralCurve::new(curve_construction, ProceduralCurveDefinition::Exact),
+            ProceduralCurve::new(curve_construction, ProceduralCurveDefinition::Exact).unwrap(),
         )
         .unwrap();
 

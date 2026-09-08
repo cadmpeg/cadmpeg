@@ -434,7 +434,7 @@ pub(super) fn finish_feature_transfers(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::Coverage,
-) -> (usize, usize) {
+) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     link_feature_sketch_history(scan, ir);
     reconcile_feature_links(scan, ir, &prototype_feature_dependencies);
@@ -448,7 +448,7 @@ pub(super) fn finish_feature_transfers(
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, ir, annotations);
     let transferred_curve_expression_parameter_count =
-        transfer_curve_expression_features(scan, ir, annotations, &dimension_parameters);
+        transfer_curve_expression_features(scan, ir, annotations, &dimension_parameters)?;
     {
         let active_expressions = scan
             .curves
@@ -668,7 +668,7 @@ pub(super) fn finish_feature_transfers(
         );
     }
     close_sketch_constraint_parameter_references(ir);
-    (feature_result_topology_count, feature_result_edge_count)
+    Ok((feature_result_topology_count, feature_result_edge_count))
 }
 
 #[cfg(test)]

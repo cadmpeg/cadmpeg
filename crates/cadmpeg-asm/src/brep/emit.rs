@@ -2819,7 +2819,12 @@ fn emit_carrier_curve(
             definition,
             procedural.cache_fit_tolerance,
         )
-        .map_err(|_| "procedural curve cache_fit_tolerance is invalid")?;
+        .map_err(|error| match error {
+            cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
+            cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
+                "procedural curve cache_fit_tolerance is invalid"
+            }
+        })?;
 
         out.procedural_curves.push((
             CurveId::mint(id(format, i)).expect("identity grammar"),
@@ -2832,7 +2837,13 @@ fn emit_carrier_curve(
                 ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                     .expect("valid owning format and numeric record index"),
                 definition,
-            ),
+            )
+            .map_err(|error| match error {
+                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
+                cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
+                    "procedural curve cache_fit_tolerance is invalid"
+                }
+            })?,
         ));
     }
     Ok(())

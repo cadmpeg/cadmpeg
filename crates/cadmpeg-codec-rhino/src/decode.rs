@@ -4661,10 +4661,11 @@ fn stage_curve_tree(
             .draft
             .exactness(procedure_id.to_string(), Exactness::Derived);
         staged.links.push(procedure_id.to_string());
-        let _attached = staged
-            .draft
-            .model_mut()
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
+        let _attached = staged.draft.model_mut().add_procedural_curve(
+            id.clone(),
+            ProceduralCurve::new(procedure_id, definition)
+                .map_err(|error| crate::curves::error(0, &error.to_string()))?,
+        );
     }
     Ok(id)
 }
@@ -5113,9 +5114,10 @@ fn commit_curve_tree(
                 .try_into()
                 .expect("valid identity")
         };
-        let _attached = ir
-            .model
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
+        let _attached = ir.model.add_procedural_curve(
+            id.clone(),
+            ProceduralCurve::new(procedure_id, definition).map_err(|error| error.to_string())?,
+        );
     }
     Ok(id)
 }

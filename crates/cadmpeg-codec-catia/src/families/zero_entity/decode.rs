@@ -429,10 +429,11 @@ fn transfer_closed_wire_loops(
                                             .find(|candidate| {
                                                 candidate.id == source_procedural.construction_id
                                             })
-                                            .map(|candidate| {
-                                                candidate.replace_definition(definition.clone());
+                                            .is_some_and(|candidate| {
+                                                candidate
+                                                    .replace_definition(definition.clone())
+                                                    .is_ok()
                                             })
-                                            .is_some()
                                     } else {
                                         ir.model
                                             .curves
@@ -786,7 +787,7 @@ pub(crate) fn try_decode_zero_entity(
             });
             ir.model
                 .procedural_curves
-                .push(ProceduralCurve::new(construction_id, definition));
+                .push(ProceduralCurve::new(construction_id, definition).ok()?);
             support_curve_ids.insert(support.record_ordinal, curve_id);
             transferred_support_curves += 1;
         }
@@ -1361,7 +1362,7 @@ mod tests {
         ir.model
             .add_procedural_curve(
                 curve_id.clone(),
-                ProceduralCurve::new(construction_id.clone(), definition.clone()),
+                ProceduralCurve::new(construction_id.clone(), definition.clone()).unwrap(),
             )
             .unwrap();
         let support_runs = vec![

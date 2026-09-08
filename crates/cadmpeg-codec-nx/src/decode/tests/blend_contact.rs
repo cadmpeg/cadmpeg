@@ -1024,7 +1024,8 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     let source_pcurve = test_pcurve(
@@ -1414,7 +1415,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     );
                 })
                 .unwrap()
-        });
+        })
+        .unwrap();
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
         .expect("complete rolling-ball frame has an exact derivative");
@@ -1519,7 +1521,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
@@ -1567,7 +1570,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .replace_definition(ProceduralCurveDefinition::Unknown {
             native_kind: None,
             record: None,
-        });
+        })
+        .unwrap();
     assert_eq!(
         blend_boundary_parameter_from_support_spine(
             &ir,

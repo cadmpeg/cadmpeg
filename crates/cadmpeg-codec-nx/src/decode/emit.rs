@@ -339,7 +339,8 @@ pub(super) fn emit_topology(
                                 tail: None,
                             },
                         },
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 );
                 curve = Some(carrier);
                 param_range = None;

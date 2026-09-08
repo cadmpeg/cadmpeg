@@ -1066,3 +1066,5 @@ mod loft_scale_prefix;
 mod helix_payloads;
 
 mod procedural_surface_payloads;
+
+mod procedural_curve_payloads;

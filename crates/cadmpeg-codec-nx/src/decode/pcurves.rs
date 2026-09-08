@@ -221,33 +221,39 @@ impl IntersectionIncidenceIndex {
                 let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
                     continue;
                 };
-                procedural.edit_definition(|definition| {
-                    let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                        return;
-                    };
-                    let missing = context
-                        .sides()
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(index, side)| side.surface.is_none().then_some(index))
-                        .collect::<Vec<_>>();
-                    if missing.len() != 1 {
-                        return;
-                    }
-                    let candidates = incident
-                        .iter()
-                        .filter(|surface| {
-                            !context
-                                .sides()
-                                .iter()
-                                .any(|side| side.surface.as_ref() == Some(surface))
-                        })
-                        .collect::<Vec<_>>();
-                    let [surface] = candidates.as_slice() else {
-                        return;
-                    };
-                    context.set_surface(missing[0], Some((*surface).clone()));
-                });
+                if procedural
+                    .edit_definition(|definition| {
+                        let ProceduralCurveDefinition::Intersection { context, .. } = definition
+                        else {
+                            return;
+                        };
+                        let missing = context
+                            .sides()
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(index, side)| side.surface.is_none().then_some(index))
+                            .collect::<Vec<_>>();
+                        if missing.len() != 1 {
+                            return;
+                        }
+                        let candidates = incident
+                            .iter()
+                            .filter(|surface| {
+                                !context
+                                    .sides()
+                                    .iter()
+                                    .any(|side| side.surface.as_ref() == Some(surface))
+                            })
+                            .collect::<Vec<_>>();
+                        let [surface] = candidates.as_slice() else {
+                            return;
+                        };
+                        context.set_surface(missing[0], Some((*surface).clone()));
+                    })
+                    .is_err()
+                {
+                    continue;
+                }
             }
         }
     }
@@ -261,39 +267,45 @@ impl IntersectionIncidenceIndex {
                 let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
                     continue;
                 };
-                procedural.edit_definition(|definition| {
-                    let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                        return;
-                    };
-                    for index in 0..context.sides().len() {
-                        let side = &context.sides()[index];
-                        if side.pcurve.is_some() {
-                            continue;
+                if procedural
+                    .edit_definition(|definition| {
+                        let ProceduralCurveDefinition::Intersection { context, .. } = definition
+                        else {
+                            return;
+                        };
+                        for index in 0..context.sides().len() {
+                            let side = &context.sides()[index];
+                            if side.pcurve.is_some() {
+                                continue;
+                            }
+                            let Some(surface) = &side.surface else {
+                                continue;
+                            };
+                            let Some([pcurve]) = self
+                                .incident_pcurves
+                                .get(&(curve.clone(), surface.clone()))
+                                .map(Vec::as_slice)
+                            else {
+                                continue;
+                            };
+                            let Some(carrier_index) = self.pcurves_by_id.get(pcurve) else {
+                                continue;
+                            };
+                            let Some(geometry) = ir
+                                .model
+                                .pcurves
+                                .get(*carrier_index)
+                                .map(|carrier| carrier.geometry.clone())
+                            else {
+                                continue;
+                            };
+                            context.set_unmapped_pcurve(index, Some(geometry));
                         }
-                        let Some(surface) = &side.surface else {
-                            continue;
-                        };
-                        let Some([pcurve]) = self
-                            .incident_pcurves
-                            .get(&(curve.clone(), surface.clone()))
-                            .map(Vec::as_slice)
-                        else {
-                            continue;
-                        };
-                        let Some(carrier_index) = self.pcurves_by_id.get(pcurve) else {
-                            continue;
-                        };
-                        let Some(geometry) = ir
-                            .model
-                            .pcurves
-                            .get(*carrier_index)
-                            .map(|carrier| carrier.geometry.clone())
-                        else {
-                            continue;
-                        };
-                        context.set_unmapped_pcurve(index, Some(geometry));
-                    }
-                });
+                    })
+                    .is_err()
+                {
+                    continue;
+                }
             }
         }
     }
@@ -576,7 +588,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         else {
             continue;
         };
-        let range = procedural.edit_definition(|definition| {
+        let Ok(range) = procedural.edit_definition(|definition| {
             let ProceduralCurveDefinition::TolerantIntersection {
                 parameterization: slot,
                 ..
@@ -590,7 +602,9 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let range = parameterization.parameter_range();
             *slot = Some(parameterization);
             Some(range)
-        });
+        }) else {
+            continue;
+        };
         let Some(range) = range else {
             continue;
         };
@@ -1202,7 +1216,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
-        let completed = procedural.edit_definition(|definition| {
+        let Ok(completed) = procedural.edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 return false;
             };
@@ -1217,7 +1231,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             } else {
                 false
             }
-        });
+        }) else {
+            continue;
+        };
         if completed && cache_backed {
             procedural.raise_cache_fit_tolerance(tolerance);
         }
@@ -1490,7 +1506,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
-        let completed = procedural.edit_definition(|definition| match definition {
+        let Ok(completed) = procedural.edit_definition(|definition| match definition {
             ProceduralCurveDefinition::Intersection { context, .. }
                 if context.sides().iter().all(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
@@ -1512,7 +1528,9 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 true
             }
             _ => false,
-        });
+        }) else {
+            continue;
+        };
         if !completed {
             continue;
         }
@@ -3425,6 +3443,15 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         let procedural_id =
             ProceduralCurveId::mint(format!("{prefix}:tolerant-intersection#{xmt}"))
                 .expect("identity grammar");
+        let Ok(procedural) = ProceduralCurve::new(
+            procedural_id.clone(),
+            ProceduralCurveDefinition::TolerantIntersection {
+                construction: admitted_intersection,
+                parameterization: None,
+            },
+        ) else {
+            continue;
+        };
         let Some(edge) = ir
             .model
             .edges
@@ -3453,16 +3480,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             },
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
-            curve_id,
-            ProceduralCurve::new(
-                procedural_id,
-                ProceduralCurveDefinition::TolerantIntersection {
-                    construction: admitted_intersection,
-                    parameterization: None,
-                },
-            ),
-        );
+        let _attached = ir.model.add_procedural_curve(curve_id, procedural);
     }
 }
 
@@ -3733,7 +3751,8 @@ mod tests {
                         .unwrap(),
                         discontinuity_flag: false,
                     },
-                ),
+                )
+                .unwrap(),
             )
             .unwrap();
         ir.model.coedges.push(Coedge {

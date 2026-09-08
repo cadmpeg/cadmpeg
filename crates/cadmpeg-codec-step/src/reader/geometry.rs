@@ -913,6 +913,21 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             };
             let curve_index = CurveIndex(ir.model.curves.len());
             let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+            let procedural = match ProceduralCurve::new(
+                ProceduralCurveId::mint(ids::construction("curve_replica", id))
+                    .expect("identity grammar"),
+                ProceduralCurveDefinition::Replica {
+                    source: CurveId::mint(ids::data("curve", parent_step))
+                        .expect("identity grammar"),
+                    transform,
+                },
+            ) {
+                Ok(procedural) => procedural,
+                Err(error) => {
+                    warnings.push(format!("curve construction #{id}: {error}"));
+                    continue;
+                }
+            };
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Transformed {
@@ -921,18 +936,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            let _attached = ir.model.add_procedural_curve(
-                curve,
-                ProceduralCurve::new(
-                    ProceduralCurveId::mint(ids::construction("curve_replica", id))
-                        .expect("identity grammar"),
-                    ProceduralCurveDefinition::Replica {
-                        source: CurveId::mint(ids::data("curve", parent_step))
-                            .expect("identity grammar"),
-                        transform,
-                    },
-                ),
-            );
+            let _attached = ir.model.add_procedural_curve(curve, procedural);
             carrier_index.curves.insert(id, curve_index);
             if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
                 curve_parameter_offsets.insert(id, offset);
@@ -1004,13 +1008,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
-            let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                id: curve.clone(),
-                geometry,
-                source_object: None,
-            });
-            if let Ok(procedural) = ProceduralCurve::try_new(
+            let procedural = match ProceduralCurve::try_new(
                 ProceduralCurveId::mint(ids::construction("trimmed_curve", id))
                     .expect("identity grammar"),
                 ProceduralCurveDefinition::Subset {
@@ -1020,8 +1018,21 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 Some(0.0),
             ) {
-                let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
-            }
+                Ok(procedural) => procedural,
+                Err(error) => {
+                    warnings.push(format!("TRIMMED_CURVE #{id}: {error}"));
+                    continue;
+                }
+            };
+            let curve_index = CurveIndex(ir.model.curves.len());
+            ir.model.curves.push(Curve {
+                id: curve.clone(),
+                geometry,
+                source_object: None,
+            });
+
+            let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
+
             carrier_index.curves.insert(id, curve_index);
             if parameter_offset != 0.0 {
                 curve_parameter_offsets.insert(id, parameter_offset);
@@ -1119,24 +1130,28 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         };
         let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
         let curve_index = CurveIndex(ir.model.curves.len());
+        let procedural = match ProceduralCurve::new(
+            ProceduralCurveId::mint(ids::construction("offset_curve", id))
+                .expect("identity grammar"),
+            ProceduralCurveDefinition::SpatialOffset {
+                source,
+                distance: distance * unit_scales.length([id]),
+                reference_direction,
+                self_intersect,
+            },
+        ) {
+            Ok(procedural) => procedural,
+            Err(error) => {
+                warnings.push(format!("curve construction #{id}: {error}"));
+                continue;
+            }
+        };
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry,
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
-            curve.clone(),
-            ProceduralCurve::new(
-                ProceduralCurveId::mint(ids::construction("offset_curve", id))
-                    .expect("identity grammar"),
-                ProceduralCurveDefinition::SpatialOffset {
-                    source,
-                    distance: distance * unit_scales.length([id]),
-                    reference_direction,
-                    self_intersect,
-                },
-            ),
-        );
+        let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
         carrier_index.curves.insert(id, curve_index);
         if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
             curve_parameter_offsets.insert(id, offset);

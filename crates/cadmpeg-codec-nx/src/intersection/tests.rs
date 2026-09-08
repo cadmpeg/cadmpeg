@@ -66,7 +66,8 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     complete_intersection_supports_from_edge_incidence(&mut ir);

@@ -536,7 +536,8 @@ mod consolidated_revolution_binding_tests {
                         .unwrap(),
                         discontinuity_flag: false,
                     },
-                ),
+                )
+                .unwrap(),
             )
             .expect("attach construction to its fixture carrier");
 
@@ -1024,7 +1025,8 @@ pub(crate) fn emit_standard_extrusion_definition(
                             parameter_range: source_parameter_range,
                         }),
                     },
-                ),
+                )
+                .ok()?,
             );
         }
     }
@@ -8199,23 +8201,23 @@ pub(crate) fn build_standard_edge_curve(
                 annotations
                     .derived(&procedural_id, "curve")
                     .derived(&procedural_id, "definition");
-                let _attached = ir.model.add_procedural_curve(
-                    id.clone(),
-                    ProceduralCurve::new(
-                        procedural_id,
-                        ProceduralCurveDefinition::Intersection {
-                            context: match IntcurveSupportContext::try_new(
-                                sides,
-                                ordered_range(curve_parameter_range),
-                                std::array::from_fn(|_| Vec::new()),
-                            ) {
-                                Ok(context) => context,
-                                Err(_) => return (None, None),
-                            },
-                            discontinuity_flag: false,
+                let Ok(procedural) = ProceduralCurve::new(
+                    procedural_id,
+                    ProceduralCurveDefinition::Intersection {
+                        context: match IntcurveSupportContext::try_new(
+                            sides,
+                            ordered_range(curve_parameter_range),
+                            std::array::from_fn(|_| Vec::new()),
+                        ) {
+                            Ok(context) => context,
+                            Err(_) => return (None, None),
                         },
-                    ),
-                );
+                        discontinuity_flag: false,
+                    },
+                ) else {
+                    return (None, None);
+                };
+                let _attached = ir.model.add_procedural_curve(id.clone(), procedural);
                 param_range = Some(curve_parameter_range);
             }
         }

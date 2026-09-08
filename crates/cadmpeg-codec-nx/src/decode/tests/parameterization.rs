@@ -732,7 +732,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let source_stream = annotations.stream("nx:test");
@@ -839,20 +840,23 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
-        ir.model.procedural_curves[0].edit_definition(|definition| {
-            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-                definition
-            else {
-                panic!("typed intersection");
-            };
-            context
-                .edit(|context_sides, _, _| {
-                    for side in &mut (*context_sides) {
-                        side.pcurve = None;
-                    }
-                })
-                .unwrap()
-        });
+        ir.model.procedural_curves[0]
+            .edit_definition(|definition| {
+                let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                    context, ..
+                } = definition
+                else {
+                    panic!("typed intersection");
+                };
+                context
+                    .edit(|context_sides, _, _| {
+                        for side in &mut (*context_sides) {
+                            side.pcurve = None;
+                        }
+                    })
+                    .unwrap()
+            })
+            .unwrap();
     }
     let pending = vec![(
         procedural_id,
@@ -893,18 +897,20 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
-        ir.model.procedural_curves[0].edit_definition(|definition| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                panic!("typed intersection");
-            };
-            context
-                .edit(|context_sides, _, _| {
-                    for side in &mut (*context_sides) {
-                        side.pcurve = None;
-                    }
-                })
-                .unwrap()
-        });
+        ir.model.procedural_curves[0]
+            .edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    panic!("typed intersection");
+                };
+                context
+                    .edit(|context_sides, _, _| {
+                        for side in &mut (*context_sides) {
+                            side.pcurve = None;
+                        }
+                    })
+                    .unwrap()
+            })
+            .unwrap();
     }
     let pending = vec![(
         procedural_id,
@@ -1007,7 +1013,8 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     let parameters = [Point2::new(0.2, 0.3), Point2::new(0.7, 0.8)];
@@ -1174,7 +1181,8 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
     let points = vec![
         Point3::new(0.0, 0.0, 0.0),
@@ -1334,34 +1342,38 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .expect("identity grammar");
     let mut dependent = result.ir().model.procedural_curves[0].clone();
     dependent.id = dependent_id.clone();
-    dependent.edit_definition(|definition| {
-        let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-            unreachable!()
-        };
-        context
-            .edit(|context_sides, _, _| {
-                (*context_sides)[0].surface = Some(blend);
-                (*context_sides)[0].pcurve = None;
-                (*context_sides)[1].surface = None;
-                (*context_sides)[1].pcurve = None;
-            })
-            .unwrap()
-    });
-    {
-        let mut ir = result.ir_mut();
-        ir.model.procedural_curves.insert(0, dependent);
-        ir.model.procedural_curves[1].edit_definition(|definition| {
+    dependent
+        .edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
             context
                 .edit(|context_sides, _, _| {
-                    for side in &mut (*context_sides) {
-                        side.pcurve = None;
-                    }
+                    (*context_sides)[0].surface = Some(blend);
+                    (*context_sides)[0].pcurve = None;
+                    (*context_sides)[1].surface = None;
+                    (*context_sides)[1].pcurve = None;
                 })
                 .unwrap()
-        });
+        })
+        .unwrap();
+    {
+        let mut ir = result.ir_mut();
+        ir.model.procedural_curves.insert(0, dependent);
+        ir.model.procedural_curves[1]
+            .edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    unreachable!()
+                };
+                context
+                    .edit(|context_sides, _, _| {
+                        for side in &mut (*context_sides) {
+                            side.pcurve = None;
+                        }
+                    })
+                    .unwrap()
+            })
+            .unwrap();
     }
     let pending = vec![
         (
@@ -1420,16 +1432,18 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         .expect("identity grammar");
     failed.id = failed_id.clone();
     for procedural in [&mut successful, &mut failed] {
-        procedural.edit_definition(|definition| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                panic!("typed intersection");
-            };
-            context
-                .edit(|context_sides, _, _| {
-                    (*context_sides)[0].pcurve = None;
-                })
-                .unwrap()
-        });
+        procedural
+            .edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    panic!("typed intersection");
+                };
+                context
+                    .edit(|context_sides, _, _| {
+                        (*context_sides)[0].pcurve = None;
+                    })
+                    .unwrap()
+            })
+            .unwrap();
     }
     {
         let mut ir = result.ir_mut();
@@ -1538,29 +1552,31 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
-        ir.model.procedural_curves[0].edit_definition(|definition| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                panic!("typed intersection");
-            };
-            context
-                .edit(|context_sides, _, _| {
-                    let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
-                        panic!("NURBS support lane");
-                    };
-                    let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
-                        panic!("NURBS support lane");
-                    };
-                    nurbs
-                        .edit_control_points(|points| {
-                            points[1] = Point2::new(
-                                crate::decode::MISSING_TOLERANCE,
-                                crate::decode::MISSING_TOLERANCE,
-                            );
-                        })
-                        .unwrap();
-                })
-                .unwrap()
-        });
+        ir.model.procedural_curves[0]
+            .edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    panic!("typed intersection");
+                };
+                context
+                    .edit(|context_sides, _, _| {
+                        let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
+                            panic!("NURBS support lane");
+                        };
+                        let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                            panic!("NURBS support lane");
+                        };
+                        nurbs
+                            .edit_control_points(|points| {
+                                points[1] = Point2::new(
+                                    crate::decode::MISSING_TOLERANCE,
+                                    crate::decode::MISSING_TOLERANCE,
+                                );
+                            })
+                            .unwrap();
+                    })
+                    .unwrap()
+            })
+            .unwrap();
     }
     let pending = vec![(
         procedural_id,
@@ -1607,28 +1623,30 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
-        ir.model.procedural_curves[0].edit_definition(|definition| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                panic!("typed intersection");
-            };
-            context
-                .edit(|context_sides, _, _| {
-                    let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
-                        panic!("NURBS support lane");
-                    };
-                    let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
-                        panic!("NURBS support lane");
-                    };
-                    nurbs
-                        .edit_control_points(|points| {
-                            for point in points {
-                                point.u += 100.0;
-                            }
-                        })
-                        .unwrap();
-                })
-                .unwrap()
-        });
+        ir.model.procedural_curves[0]
+            .edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    panic!("typed intersection");
+                };
+                context
+                    .edit(|context_sides, _, _| {
+                        let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
+                            panic!("NURBS support lane");
+                        };
+                        let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                            panic!("NURBS support lane");
+                        };
+                        nurbs
+                            .edit_control_points(|points| {
+                                for point in points {
+                                    point.u += 100.0;
+                                }
+                            })
+                            .unwrap();
+                    })
+                    .unwrap()
+            })
+            .unwrap();
     }
     let pending = vec![(
         procedural_id,
@@ -1746,7 +1764,8 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     assert!(parameterization_equivalent_surfaces(

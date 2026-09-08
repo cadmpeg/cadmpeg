@@ -11538,7 +11538,7 @@ mod curve_offset_range_wire {
 }
 
 /// Neutral semantics for a procedural curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
@@ -11750,6 +11750,140 @@ pub enum ProceduralCurveDefinition {
     },
 }
 
+#[derive(Deserialize)]
+#[serde(
+    remote = "ProceduralCurveDefinition",
+    tag = "kind",
+    rename_all = "snake_case"
+)]
+enum ProceduralCurveDefinitionWire {
+    Exact,
+    Law {
+        context: IntcurveSupportContext,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version: Option<LawCurveVersionForm>,
+        extension: i64,
+        primary: LawFormula,
+        additional: Vec<LawFormula>,
+    },
+    Compound(CompoundCurveConstruction),
+    Helix(HelixCurveConstruction),
+    Intersection {
+        context: IntcurveSupportContext,
+        discontinuity_flag: bool,
+    },
+    TolerantIntersection {
+        #[serde(flatten)]
+        construction: TolerantIntersectionConstruction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameterization: Option<TolerantIntersectionParameterization>,
+    },
+    ThreeSurfaceIntersection {
+        context: IntcurveSupportContext,
+        selector: i64,
+        third: IntcurveSupportSide,
+    },
+    SurfaceCurve {
+        #[serde(flatten)]
+        family: SurfaceCurveFamily,
+    },
+    Silhouette {
+        context: IntcurveSupportContext,
+        silhouette: SilhouetteKind,
+        cast_surface: SurfaceId,
+        light_direction: Vector3,
+    },
+    SurfaceOffset {
+        context: IntcurveSupportContext,
+        discontinuity_flag: bool,
+        base_u_range: [f64; 2],
+        base_v_range: [f64; 2],
+        base: CurveId,
+        base_range: [f64; 2],
+        #[serde(default)]
+        base_endpoints: [Option<f64>; 2],
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_first: Option<CacheFirstCurveForm>,
+        distance: f64,
+        shift: f64,
+        scale: f64,
+    },
+    Spring {
+        #[serde(flatten, with = "spring_layout_wire")]
+        layout: SpringLayout,
+        direction: i64,
+    },
+    Deformable {
+        context: IntcurveSupportContext,
+        cache_first: CacheFirstCurveForm,
+        source: DeformableCurveSource,
+        source_parameter_range: [Option<f64>; 2],
+        data: DeformableCurveData,
+    },
+    Projection {
+        context: IntcurveSupportContext,
+        discontinuity_flag: bool,
+        source: CurveId,
+        tail: ProjectionTail,
+    },
+    Offset {
+        source: CurveId,
+        distance: f64,
+        #[serde(flatten)]
+        side: OffsetSide,
+        #[serde(flatten, with = "curve_offset_range_wire")]
+        range: Option<CurveOffsetRange>,
+    },
+    SpatialOffset {
+        source: CurveId,
+        distance: f64,
+        reference_direction: Vector3,
+        self_intersect: Option<bool>,
+    },
+    TwoSidedOffset {
+        context: IntcurveSupportContext,
+        discontinuity_flag: bool,
+        offsets: [f64; 2],
+    },
+    VectorOffset {
+        source: CurveId,
+        parameter_range: [f64; 2],
+        offset: Vector3,
+        #[serde(flatten, with = "vector_offset_roles_wire")]
+        roles: VectorOffsetRoles,
+    },
+    Subset {
+        source: CurveId,
+        parameter_range: [f64; 2],
+        #[serde(default = "default_true")]
+        sense: bool,
+    },
+    Replica {
+        source: CurveId,
+        transform: Transform,
+    },
+    BlendSpine {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_surface: Option<SurfaceId>,
+    },
+    Unknown {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_kind: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<UnknownId>,
+    },
+}
+
+impl<'de> Deserialize<'de> for ProceduralCurveDefinition {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let definition = ProceduralCurveDefinitionWire::deserialize(deserializer)?;
+        definition
+            .validate_payload()
+            .map_err(serde::de::Error::custom)?;
+        Ok(definition)
+    }
+}
+
 /// Codes attached to the fixed native vector-offset role labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VectorOffsetRoles {
@@ -11798,7 +11932,297 @@ mod vector_offset_roles_wire {
     }
 }
 
+const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
+const EPS_OFFSET_PLANE_NORMAL: f64 = 1.0e-10;
+
 impl ProceduralCurveDefinition {
+    fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
+        if let ProceduralCurveDefinition::Offset {
+            distance,
+            side,
+            range,
+            ..
+        } = self
+        {
+            let side_valid = match side {
+                crate::geometry::OffsetSide::PlaneNormal(normal) => {
+                    normal.x.is_finite()
+                        && normal.y.is_finite()
+                        && normal.z.is_finite()
+                        && (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
+                }
+                crate::geometry::OffsetSide::Direction { direction, .. } => {
+                    direction.x.is_finite()
+                        && direction.y.is_finite()
+                        && direction.z.is_finite()
+                        && direction.norm() > 0.0
+                }
+            };
+            let range_valid = range.as_ref().is_none_or(|range| {
+                let parameter_range = match range {
+                    crate::geometry::CurveOffsetRange::Uniform { parameter_range }
+                    | crate::geometry::CurveOffsetRange::Variable {
+                        parameter_range, ..
+                    } => parameter_range,
+                };
+                parameter_range.iter().all(|value| value.is_finite())
+                    && parameter_range[0] < parameter_range[1]
+            });
+            let law_valid = match range {
+                Some(crate::geometry::CurveOffsetRange::Variable { distance_law, .. }) => {
+                    match distance_law {
+                        crate::geometry::CurveOffsetDistanceLaw::Linear {
+                            distances,
+                            control_range,
+                            ..
+                        } => {
+                            distances.iter().all(|value| value.is_finite())
+                                && control_range.iter().all(|value| value.is_finite())
+                                && control_range[0] < control_range[1]
+                        }
+                        crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                            function_parameter_offset,
+                            function_parameter_scale,
+                            ..
+                        } => {
+                            function_parameter_offset.is_finite()
+                                && function_parameter_scale.is_finite()
+                                && *function_parameter_scale != 0.0
+                        }
+                    }
+                }
+                _ => true,
+            };
+            if !distance.is_finite() || !side_valid || !range_valid || !law_valid {
+                return Err(ProceduralGeometryError::Payload(
+                    "curve offset distance, side, range, or law is invalid",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::SpatialOffset {
+            distance,
+            reference_direction,
+            ..
+        } = self
+        {
+            if !distance.is_finite()
+                || ![
+                    reference_direction.x,
+                    reference_direction.y,
+                    reference_direction.z,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                || (reference_direction.norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION
+            {
+                return Err(ProceduralGeometryError::Payload(
+                    "invalid spatial curve offset",
+                ));
+            }
+        }
+        if let ProceduralCurveDefinition::Deformable {
+            source_parameter_range,
+            data,
+            ..
+        } = self
+        {
+            let finite_vector = |vector: &crate::math::Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let payload_finite = match data {
+                crate::geometry::DeformableCurveData::VectorField {
+                    vectors,
+                    parameter_pairs,
+                } => {
+                    vectors.iter().all(finite_vector)
+                        && parameter_pairs
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
+                crate::geometry::DeformableCurveData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    parameters,
+                    trailing_parameter,
+                    ..
+                } => {
+                    leading_vectors.iter().all(finite_vector)
+                        && leading_parameter.is_finite()
+                        && [trailing_point.x, trailing_point.y, trailing_point.z]
+                            .into_iter()
+                            .all(f64::is_finite)
+                        && trailing_vectors.iter().all(finite_vector)
+                        && frame_parameter.is_finite()
+                        && parameters.iter().all(|value| value.is_finite())
+                        && trailing_parameter.is_finite()
+                }
+            };
+            let range_valid = source_parameter_range
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite());
+            if !payload_finite || !range_valid {
+                return Err(ProceduralGeometryError::Payload(
+                    "deformable curve payload is not finite",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::Spring { layout, .. } = self {
+            let context = layout.support_context();
+            let inline_ranges_finite = match layout {
+                crate::geometry::SpringLayout::ContextFirst {
+                    supports,
+                    first_pcurve,
+                    ..
+                } => {
+                    supports.iter().all(|support| match support {
+                        crate::geometry::SpringSupport::Surface(_) => true,
+                        crate::geometry::SpringSupport::Ranges(ranges) => {
+                            ranges.iter().all(|range| {
+                                range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                            })
+                        }
+                    }) && match first_pcurve {
+                        crate::geometry::SpringPcurve::Pcurve(_) => true,
+                        crate::geometry::SpringPcurve::Range(range) => {
+                            range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                        }
+                    }
+                }
+                crate::geometry::SpringLayout::CacheFirst { .. } => true,
+            };
+            if context.is_err() || !inline_ranges_finite {
+                return Err(ProceduralGeometryError::Payload(
+                    "spring context or null-support ranges are invalid",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::SurfaceOffset {
+            base_u_range,
+            base_v_range,
+            base_range,
+            distance,
+            shift,
+            scale,
+            ..
+        } = self
+        {
+            let ranges = [base_u_range, base_v_range, base_range];
+            if ranges
+                .iter()
+                .any(|range| !range.iter().all(|value| value.is_finite()) || range[0] > range[1])
+                || !distance.is_finite()
+                || !shift.is_finite()
+                || !scale.is_finite()
+            {
+                return Err(ProceduralGeometryError::Payload(
+                    "surface-offset fields are not finite and ordered",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::Silhouette {
+            silhouette,
+            light_direction,
+            ..
+        } = self
+        {
+            let draft_finite = match silhouette {
+                crate::geometry::SilhouetteKind::Taper { draft_factor } => draft_factor.is_finite(),
+                _ => true,
+            };
+            if !light_direction.x.is_finite()
+                || !light_direction.y.is_finite()
+                || !light_direction.z.is_finite()
+                || light_direction.norm() <= f64::EPSILON
+                || !draft_finite
+            {
+                return Err(ProceduralGeometryError::Payload(
+                    "silhouette fields are not finite or the light direction is degenerate",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } = self {
+            if third
+                .pcurve
+                .as_ref()
+                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+                && context.parameter_range()[0] == context.parameter_range()[1]
+            {
+                return Err(ProceduralGeometryError::Payload(
+                    "three-surface intersection context is not finite and ordered",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::Projection { tail, .. } = self {
+            let tail_finite = match tail {
+                crate::geometry::ProjectionTail::EarlyClose { .. } => true,
+                crate::geometry::ProjectionTail::Ranged {
+                    parameter_range, ..
+                } => {
+                    parameter_range.iter().all(|value| value.is_finite())
+                        && parameter_range[0] <= parameter_range[1]
+                }
+            };
+            if !tail_finite {
+                return Err(ProceduralGeometryError::Payload(
+                    "projection fields are not finite and ordered",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::TwoSidedOffset { offsets, .. } = self {
+            let finite = offsets.iter().all(|value| value.is_finite());
+            if !finite {
+                return Err(ProceduralGeometryError::Payload(
+                    "two-sided offset fields are not finite and ordered",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::Subset {
+            parameter_range, ..
+        } = self
+        {
+            if !parameter_range.iter().all(|value| value.is_finite())
+                || parameter_range[0] > parameter_range[1]
+            {
+                return Err(ProceduralGeometryError::Payload(
+                    "subset-curve range is not finite and ordered",
+                ));
+            }
+            return Ok(());
+        }
+        if let ProceduralCurveDefinition::VectorOffset {
+            parameter_range,
+            offset,
+            ..
+        } = self
+        {
+            if !parameter_range.iter().all(|value| value.is_finite())
+                || parameter_range[0] > parameter_range[1]
+                || !offset.x.is_finite()
+                || !offset.y.is_finite()
+                || !offset.z.is_finite()
+            {
+                return Err(ProceduralGeometryError::Payload(
+                    "vector-offset fields are not finite and ordered",
+                ));
+            }
+            return Ok(());
+        }
+        Ok(())
+    }
+
     fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache(),
@@ -11830,13 +12254,11 @@ impl ProceduralCurveDefinition {
 
 impl ProceduralCurve {
     /// Build a procedural curve without a legacy top-level cache.
-    #[must_use]
-    pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
-        Self {
-            id,
-            definition,
-            legacy_cache_fit_tolerance: None,
-        }
+    pub fn new(
+        id: ProceduralCurveId,
+        definition: ProceduralCurveDefinition,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Self::try_new(id, definition, None)
     }
 
     /// Build a procedural curve and reconcile the legacy top-level cache
@@ -11845,7 +12267,8 @@ impl ProceduralCurve {
         id: ProceduralCurveId,
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
-    ) -> Result<Self, CacheFitToleranceError> {
+    ) -> Result<Self, ProceduralGeometryError> {
+        definition.validate_payload()?;
         let legacy_cache_fit_tolerance =
             reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
         Ok(Self {
@@ -11863,11 +12286,16 @@ impl ProceduralCurve {
 
     /// Replace the construction definition and discard a legacy cache value
     /// when the new definition owns a revision cache.
-    pub fn replace_definition(&mut self, definition: ProceduralCurveDefinition) {
-        if definition.revision_cache().is_some() {
-            self.legacy_cache_fit_tolerance = None;
-        }
-        self.definition = definition;
+    pub fn replace_definition(
+        &mut self,
+        definition: ProceduralCurveDefinition,
+    ) -> Result<(), ProceduralGeometryError> {
+        let tolerance = if definition.revision_cache().is_some() {
+            None
+        } else {
+            self.legacy_cache_fit_tolerance.map(FitTolerance::get)
+        };
+        self.try_replace_definition(definition, tolerance)
     }
 
     /// Replace the definition and effective cache-fit tolerance atomically.
@@ -11875,7 +12303,8 @@ impl ProceduralCurve {
         &mut self,
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
+    ) -> Result<(), ProceduralGeometryError> {
+        definition.validate_payload()?;
         let legacy_cache_fit_tolerance =
             reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
         self.definition = definition;
@@ -11888,12 +12317,11 @@ impl ProceduralCurve {
     pub fn edit_definition<R>(
         &mut self,
         edit: impl FnOnce(&mut ProceduralCurveDefinition) -> R,
-    ) -> R {
-        let result = edit(&mut self.definition);
-        if self.definition.revision_cache().is_some() {
-            self.legacy_cache_fit_tolerance = None;
-        }
-        result
+    ) -> Result<R, ProceduralGeometryError> {
+        let mut definition = self.definition.clone();
+        let result = edit(&mut definition);
+        self.replace_definition(definition)?;
+        Ok(result)
     }
 
     /// Effective fit tolerance of the solved cache.

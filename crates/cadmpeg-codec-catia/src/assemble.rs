@@ -1044,7 +1044,8 @@ mod route_tests {
                         native_kind: None,
                         record: Some(record_id.clone()),
                     },
-                ),
+                )
+                .unwrap(),
             )
             .unwrap();
         let unknowns = [UnknownRecord::retained(
@@ -1098,7 +1099,8 @@ mod route_tests {
                                 .expect("identity grammar"),
                         ),
                     },
-                ),
+                )
+                .unwrap(),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1145,7 +1147,9 @@ mod route_tests {
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);
+        ir.model.procedural_curves[0]
+            .replace_definition(ProceduralCurveDefinition::Exact)
+            .unwrap();
         ir.model.procedural_surfaces[0]
             .replace_definition(ProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Legacy {

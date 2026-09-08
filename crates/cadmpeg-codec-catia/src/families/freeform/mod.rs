@@ -2422,9 +2422,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
-            let _attached = ir
-                .model
-                .add_procedural_curve(curve_id, ProceduralCurve::new(procedural_id, definition));
+            let _attached = ir.model.add_procedural_curve(
+                curve_id,
+                ProceduralCurve::new(procedural_id, definition).ok()?,
+            );
         }
     }
     binding_counts.partner_supports = partner_support_blocks.len();
@@ -3281,7 +3282,8 @@ mod tests {
                     .unwrap(),
                     discontinuity_flag: false,
                 },
-            ),
+            )
+            .unwrap(),
         );
 
         let attached = append_resolved_consolidated_surface_curves(
@@ -3556,7 +3558,8 @@ mod tests {
                     .unwrap(),
                     discontinuity_flag: false,
                 },
-            ),
+            )
+            .unwrap(),
         );
 
         let attached = append_resolved_consolidated_surface_curves(
