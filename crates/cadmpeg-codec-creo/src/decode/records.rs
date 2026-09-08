@@ -458,7 +458,7 @@ pub(super) struct CreoPrimitiveScalarArrayRecord {
     pub(super) id: String,
     pub(super) field: String,
     pub(super) expanded_offset: usize,
-    pub(super) count: u32,
+    pub(super) count: usize,
     pub(super) values: Vec<f64>,
 }
 
