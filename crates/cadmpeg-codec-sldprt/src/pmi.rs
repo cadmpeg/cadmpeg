@@ -13,7 +13,7 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 
-pub(crate) mod patch_slots;
+mod patch_slots;
 use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
 
 fn exact_count(value: f64) -> Option<i64> {
@@ -626,17 +626,22 @@ fn extract_dimension(
             .unwrap_or_default()
             .to_string(),
         value,
+        value_offset: value_field.data_offset as u64,
         precision: int_from(precision_field)
             .ok_or_else(|| "valPrecision is not an integer".to_string())?,
+        precision_offset: precision_field.data_offset as u64,
         display_text: outer.get("dimText").and_then(|field| match &field.kind {
             ValueKind::String(text) => Some((text.clone(), field.data_offset as u64)),
             _ => None,
         }),
         basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
+        basic_offset: basic_field.data_offset as u64,
         inspection: bool_from(inspection_field)
             .ok_or_else(|| "inspection is not a boolean".to_string())?,
+        inspection_offset: inspection_field.data_offset as u64,
         reference_only: bool_from(reference_field)
             .ok_or_else(|| "reference_only is not a boolean".to_string())?,
+        reference_only_offset: reference_field.data_offset as u64,
     }))
 }
 

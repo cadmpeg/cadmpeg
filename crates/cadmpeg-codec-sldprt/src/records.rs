@@ -30,17 +30,27 @@ pub(crate) struct PmiDimension {
     pub(crate) subtype: String,
     /// Stored dimension value.
     pub(crate) value: f64,
+    /// Byte offset of the big-endian `f64` value.
+    pub(crate) value_offset: u64,
     /// Display precision.
     pub(crate) precision: i64,
+    /// Byte offset of the `MessagePack` precision value.
+    pub(crate) precision_offset: u64,
     /// Native formatted dimension text and its byte offset.
     #[serde(flatten, with = "pmi_display_text_wire")]
     pub(crate) display_text: Option<(String, u64)>,
     /// Basic-dimension flag.
     pub(crate) basic: bool,
+    /// Byte offset of the basic flag.
+    pub(crate) basic_offset: u64,
     /// Inspection-dimension flag.
     pub(crate) inspection: bool,
+    /// Byte offset of the inspection flag.
+    pub(crate) inspection_offset: u64,
     /// Reference-only flag.
     pub(crate) reference_only: bool,
+    /// Byte offset of the reference-only flag.
+    pub(crate) reference_only_offset: u64,
 }
 
 impl PmiDimension {

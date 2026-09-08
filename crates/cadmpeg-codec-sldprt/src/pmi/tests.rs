@@ -25,11 +25,16 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
         item_count: 1,
         subtype: subtype.into(),
         value,
+        value_offset: 0,
         precision: 0,
+        precision_offset: 0,
         display_text: None,
         basic: false,
+        basic_offset: 0,
         inspection: false,
+        inspection_offset: 0,
         reference_only: false,
+        reference_only_offset: 0,
     }
 }
 
@@ -480,19 +485,13 @@ fn patch_payload_offsets_round_trip_through_reparse() {
         panic!("one record");
     };
     let mut patched = payload.clone();
-    let start = crate::pmi::patch_slots::field_offset(&payload, record.offset, "value").unwrap();
+    let start = record.value_offset as usize;
     let edited = 0.05_f64;
     patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
-    patched
-        [crate::pmi::patch_slots::field_offset(&payload, record.offset, "valPrecision").unwrap()] =
-        4;
-    patched[crate::pmi::patch_slots::field_offset(&payload, record.offset, "isBasic").unwrap()] =
-        0xc2;
-    patched
-        [crate::pmi::patch_slots::field_offset(&payload, record.offset, "isInspection").unwrap()] =
-        0xc3;
-    patched[crate::pmi::patch_slots::field_offset(&payload, record.offset, "isReferenceOnly")
-        .unwrap()] = 0xc2;
+    patched[record.precision_offset as usize] = 4;
+    patched[record.basic_offset as usize] = 0xc2;
+    patched[record.inspection_offset as usize] = 0xc3;
+    patched[record.reference_only_offset as usize] = 0xc2;
     let text_off = record.display_text_offset().expect("display text") as usize;
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
@@ -507,15 +506,8 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     assert!(edited_record.inspection);
     assert!(!edited_record.reference_only);
     assert_eq!(edited_record.display_text(), Some("50.000 mm"));
-    assert_eq!(
-        crate::pmi::patch_slots::field_offset(&patched, edited_record.offset, "value").unwrap(),
-        crate::pmi::patch_slots::field_offset(&payload, record.offset, "value").unwrap()
-    );
-    assert_eq!(
-        crate::pmi::patch_slots::field_offset(&patched, edited_record.offset, "valPrecision")
-            .unwrap(),
-        crate::pmi::patch_slots::field_offset(&payload, record.offset, "valPrecision").unwrap()
-    );
+    assert_eq!(edited_record.value_offset, record.value_offset);
+    assert_eq!(edited_record.precision_offset, record.precision_offset);
 }
 
 #[test]
@@ -957,8 +949,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
 fn u16_precision_survives_plain_patch_round_trip() {
     let mut payload = pmi_semantic_payload();
     let record = parse_payload(&payload, &mut Vec::new()).remove(0);
-    let offset =
-        crate::pmi::patch_slots::field_offset(&payload, record.offset, "valPrecision").unwrap();
+    let offset = record.precision_offset as usize;
     payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
