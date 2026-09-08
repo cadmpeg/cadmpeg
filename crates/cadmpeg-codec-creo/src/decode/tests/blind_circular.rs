@@ -274,7 +274,14 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     );
 
     let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
-    assert_eq!(sweep.cylinder_ids, vec![836]);
+    assert_eq!(
+        sweep
+            .cylinder_rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        vec![836]
+    );
     assert_eq!(sweep.direction, [0.0, -1.0, 0.0]);
     assert_eq!(
         sweep.extent,
@@ -288,7 +295,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         }
     );
     assert!(matches!(
-        sweep.geometry,
+        SurfaceGeometry::from(sweep.geometry),
         SurfaceGeometry::Cylinder { origin, axis, radius, .. }
             if origin == Point3::new(-12.5, -4.0, 0.0)
                 && axis == Vector3::new(0.0, -1.0, 0.0)
@@ -1081,11 +1088,11 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
     let frame =
         reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
-    assert_eq!(frame.origin, [4.5, 9.0, -6.0]);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(2.0));
+    assert_eq!(frame.origin(), [4.5, 9.0, -6.0]);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius(), 1.0);
+    assert_eq!(frame.length(), Some(2.0));
     assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
@@ -1121,13 +1128,16 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
 
     assert_eq!(
         reference_circle_pair_cylinder_frame(&[&first, &second]),
-        Some(crate::surface::PositionalCylinderFrame {
-            origin: first.center,
-            axis: [0.0, 0.0, 1.0],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 2.0,
-            length: Some(6.0),
-        })
+        Some(
+            crate::surface::PositionalCylinderFrame::new(
+                first.center,
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0],
+                2.0,
+                Some(6.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
@@ -1258,12 +1268,15 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         normal: [0.0, 1.0, 0.0],
         offset: 100,
     };
-    let frame = |origin| crate::surface::PositionalCylinderFrame {
-        origin,
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 0.75,
-        length: Some(34.0),
+    let frame = |origin| {
+        crate::surface::PositionalCylinderFrame::new(
+            origin,
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            0.75,
+            Some(34.0),
+        )
+        .expect("valid positional cylinder frame")
     };
     let frames = [frame([-12.5, 4.0, 0.0]), frame([12.5, 4.0, 0.0])];
     assert_eq!(
@@ -1297,10 +1310,26 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
     assert!(directed_blind_extrusion_span(transform.normal, [1.0, 0.0, 0.0], 34.0).is_none());
 
     let mut inconsistent = frames;
-    inconsistent[1].length = Some(33.0);
+    inconsistent[1] = crate::surface::PositionalCylinderFrame::new(
+        frames[1].origin(),
+        frames[1].axis(),
+        frames[1].ref_direction(),
+        frames[1].radius(),
+        Some(33.0),
+    )
+    .expect("valid positional cylinder frame");
     assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
     inconsistent = frames;
-    inconsistent[1].origin[1] = 5.0;
+    let mut origin = frames[1].origin();
+    origin[1] = 5.0;
+    inconsistent[1] = crate::surface::PositionalCylinderFrame::new(
+        origin,
+        frames[1].axis(),
+        frames[1].ref_direction(),
+        frames[1].radius(),
+        frames[1].length(),
+    )
+    .expect("valid positional cylinder frame");
     assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
 
     let diagonal = 0.5_f64.sqrt();
@@ -1308,23 +1337,27 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         normal: [diagonal, diagonal, 0.0],
         ..transform
     };
-    let perpendicular = [crate::surface::PositionalCylinderFrame {
-        origin: diagonal_transform.origin,
-        axis: [diagonal, -diagonal, 0.0],
-        ..frames[0]
-    }];
+    let perpendicular = [crate::surface::PositionalCylinderFrame::new(
+        diagonal_transform.origin,
+        [diagonal, -diagonal, 0.0],
+        [0.0, 0.0, 1.0],
+        frames[0].radius(),
+        frames[0].length(),
+    )
+    .expect("valid positional cylinder frame")];
     assert!(agreed_generated_cylinder_extent(&diagonal_transform, &perpendicular).is_none());
 }
 
 #[test]
 fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
-    let frame = crate::surface::PositionalCylinderFrame {
-        origin: [1.0, 2.0, 3.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        length: Some(5.0),
-    };
+    let frame = crate::surface::PositionalCylinderFrame::new(
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        4.0,
+        Some(5.0),
+    )
+    .expect("valid positional cylinder frame");
     let parameter =
         |surface_id, positional_cylinder_frame: Option<crate::surface::PositionalCylinderFrame>| {
             crate::surface::SurfaceParameterRecord {
@@ -1391,13 +1424,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: crate::surface::PositionalCylinderFrame {
-                    origin: [2.0, 4.0, 0.0],
-                    axis: [0.0, -1.0, 0.0],
-                    ref_direction: [1.0, 0.0, 0.0],
-                    radius: 1.0,
-                    length: Some(8.0),
-                },
+                frame: crate::surface::PositionalCylinderFrame::new(
+                    [2.0, 4.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    1.0,
+                    Some(8.0),
+                )
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -1506,7 +1540,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     else {
         panic!("cylinder frame");
     };
-    frame.length = None;
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        None,
+    )
+    .expect("valid positional cylinder frame");
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &ir, 7, None),
         Some((
@@ -1533,20 +1574,20 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         ],
     )
     .is_none());
-    let invalid_length = crate::surface::PositionalCylinderFrame {
-        length: Some(0.0),
-        ..lengthless
-    };
-    assert!(
-        bounded_cylinder_span(invalid_length, &[([0.0, -4.0, 0.0], [0.0, 1.0, 0.0])]).is_none()
-    );
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
     ) = &mut scan.surfaces.parameters[0].carrier
     else {
         panic!("cylinder frame");
     };
-    frame.length = Some(8.0);
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        Some(8.0),
+    )
+    .expect("valid positional cylinder frame");
 
     let transform = crate::placement::FeatureSectionTransform {
         definition_id: 7,
@@ -1633,7 +1674,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     else {
         panic!("cylinder frame");
     };
-    frame.length = Some(7.0);
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        Some(7.0),
+    )
+    .expect("valid positional cylinder frame");
     assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1641,7 +1689,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     else {
         panic!("cylinder frame");
     };
-    frame.length = Some(8.0);
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        Some(8.0),
+    )
+    .expect("valid positional cylinder frame");
 
     scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
     assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());

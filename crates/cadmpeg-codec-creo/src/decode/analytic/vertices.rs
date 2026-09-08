@@ -50,7 +50,7 @@ fn pcurve_candidate_agrees_with_fixed_points(
     vertices: [u32; 2],
     points: [[f64; 3]; 2],
     directions: [u8; 2],
-    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
 ) -> bool {
     let Some(ordered) = directed_pcurve_points(directions, points) else {
         return true;
@@ -58,7 +58,7 @@ fn pcurve_candidate_agrees_with_fixed_points(
     vertices.into_iter().zip(ordered).all(|(vertex, point)| {
         fixed_points
             .get(&vertex)
-            .is_none_or(|known| known.is_none_or(|known| model_points_agree(known, point)))
+            .is_none_or(|known| model_points_agree(*known, point))
     })
 }
 
@@ -373,19 +373,11 @@ enum CarrierFailureKind {
     NoValidCandidate,
 }
 
-fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> Option<CarrierFailureKind> {
-    if diagnostics.unique_solutions != 0 {
-        return None;
-    }
-    let generated_candidates = diagnostics
-        .pair_intersections
-        .saturating_add(diagnostics.triple_intersections);
-    if generated_candidates == 0 {
-        Some(CarrierFailureKind::NoGeometricCandidate)
-    } else if diagnostics.valid_candidates == 0 {
-        Some(CarrierFailureKind::NoValidCandidate)
+fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> CarrierFailureKind {
+    if diagnostics.pair_intersections == 0 && diagnostics.triple_intersections == 0 {
+        CarrierFailureKind::NoGeometricCandidate
     } else {
-        None
+        CarrierFailureKind::NoValidCandidate
     }
 }
 
@@ -428,7 +420,6 @@ pub struct CarrierVertexDiagnostic {
     pub pair_intersections: usize,
     pub triple_intersections: usize,
     pub valid_candidates: usize,
-    pub unique_solutions: usize,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -438,7 +429,6 @@ pub struct TopologicalVertexSolveDiagnostics {
     pub carrier_pair_candidates: usize,
     pub carrier_triple_candidates: usize,
     pub carrier_valid_candidates: usize,
-    pub carrier_zero_candidate_vertices: usize,
     pub carrier_ambiguous_candidate_vertices: usize,
     pub carrier_no_geometric_candidate_vertices: usize,
     pub carrier_no_valid_candidate_vertices: usize,
@@ -496,18 +486,15 @@ pub fn solve_topological_vertices(
         diagnostics.carrier_pair_candidates += carrier_diagnostics.pair_intersections;
         diagnostics.carrier_triple_candidates += carrier_diagnostics.triple_intersections;
         diagnostics.carrier_valid_candidates += carrier_diagnostics.valid_candidates;
-        let failure_kind = carrier_failure_kind(carrier_diagnostics);
         match carrier_diagnostics.unique_solutions {
             0 => {
-                diagnostics.carrier_zero_candidate_vertices += 1;
-                match failure_kind {
-                    Some(CarrierFailureKind::NoGeometricCandidate) => {
+                match carrier_failure_kind(carrier_diagnostics) {
+                    CarrierFailureKind::NoGeometricCandidate => {
                         diagnostics.carrier_no_geometric_candidate_vertices += 1;
                     }
-                    Some(CarrierFailureKind::NoValidCandidate) => {
+                    CarrierFailureKind::NoValidCandidate => {
                         diagnostics.carrier_no_valid_candidate_vertices += 1;
                     }
-                    None => {}
                 }
                 if diagnostics.carrier_rejection_samples.len() < CARRIER_VERTEX_SAMPLE_LIMIT {
                     diagnostics
@@ -522,7 +509,6 @@ pub fn solve_topological_vertices(
                             pair_intersections: carrier_diagnostics.pair_intersections,
                             triple_intersections: carrier_diagnostics.triple_intersections,
                             valid_candidates: carrier_diagnostics.valid_candidates,
-                            unique_solutions: carrier_diagnostics.unique_solutions,
                         });
                 }
             }
@@ -537,10 +523,7 @@ pub fn solve_topological_vertices(
     diagnostics.carrier_points = carrier_points.len();
     let edge_start_vertices =
         crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
-    let mut fixed_points = carrier_points
-        .into_iter()
-        .map(|(vertex, point)| (vertex, Some(point)))
-        .collect::<BTreeMap<_, _>>();
+    let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
         pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers);
     diagnostics.pcurve = pcurve_diagnostics;
@@ -607,7 +590,7 @@ pub fn solve_topological_vertices(
             }
             for (vertex, point) in vertices.into_iter().zip(ordered) {
                 diagnostics.directed_endpoint_assignments += 1;
-                fixed_points.entry(vertex).or_insert(Some(point));
+                fixed_points.entry(vertex).or_insert(point);
                 if authoritative && !ambiguous {
                     authoritative_points.entry(vertex).or_insert(point);
                 }
@@ -733,23 +716,14 @@ mod tests {
     fn carrier_failure_kind_distinguishes_generation_from_validation() {
         assert_eq!(
             carrier_failure_kind(CarrierSolveDiagnostics::default()),
-            Some(CarrierFailureKind::NoGeometricCandidate)
+            CarrierFailureKind::NoGeometricCandidate
         );
         assert_eq!(
             carrier_failure_kind(CarrierSolveDiagnostics {
                 triple_intersections: 1,
                 ..CarrierSolveDiagnostics::default()
             }),
-            Some(CarrierFailureKind::NoValidCandidate)
-        );
-        assert_eq!(
-            carrier_failure_kind(CarrierSolveDiagnostics {
-                triple_intersections: 1,
-                valid_candidates: 1,
-                unique_solutions: 1,
-                ..CarrierSolveDiagnostics::default()
-            }),
-            None
+            CarrierFailureKind::NoValidCandidate
         );
     }
 

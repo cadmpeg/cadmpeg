@@ -250,7 +250,10 @@ fn corner_envelopes_construct_dimensioned_source_cylinders() {
         radius,
     };
     assert_eq!(
-        geometries,
+        geometries
+            .into_iter()
+            .map(|(id, geometry)| (id, SurfaceGeometry::from(geometry)))
+            .collect::<Vec<_>>(),
         vec![
             (2636, expected(20.0)),
             (2662, expected(20.0)),
