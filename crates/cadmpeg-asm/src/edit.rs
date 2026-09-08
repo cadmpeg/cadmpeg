@@ -1720,6 +1720,70 @@ fn patch_nurbs_curve_record(
     Ok(())
 }
 
+enum PcurvePatchCarrier {
+    Pcurve {
+        scope: std::ops::Range<usize>,
+        wrapper_reversed: Option<bool>,
+        native_tail_flags: Option<[bool; 4]>,
+        parameter_range: Option<[f64; 2]>,
+    },
+    Intcurve(std::ops::Range<usize>),
+}
+
+impl PcurvePatchCarrier {
+    fn admit(
+        bytes: &[u8],
+        record: &Record,
+        ref_width: RefWidth,
+        edit: &InlinePcurveEdit<'_>,
+    ) -> Result<Self, CodecError> {
+        match record.head() {
+            "pcurve" => {
+                let scope = sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur")
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "pcurve record {} has no exp_par_cur payload",
+                            record.index
+                        ))
+                    })?;
+                Ok(Self::Pcurve {
+                    scope,
+                    wrapper_reversed: edit.wrapper_reversed,
+                    native_tail_flags: edit.native_tail_flags,
+                    parameter_range: edit.parameter_range,
+                })
+            }
+            "intcurve" => match (
+                edit.wrapper_reversed,
+                edit.native_tail_flags,
+                edit.parameter_range,
+            ) {
+                (None, None, None) => {
+                    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "NURBS pcurve record extent overflows address space".into(),
+                        )
+                    })?;
+                    Ok(Self::Intcurve(record.offset..end))
+                }
+                _ => Err(CodecError::NotImplemented(
+                    "intcurve UV caches have no pcurve wrapper fields".into(),
+                )),
+            },
+            _ => Err(CodecError::malformed(format_args!(
+                "record {} is not a pcurve carrier",
+                record.index
+            ))),
+        }
+    }
+
+    fn scope(&self) -> &std::ops::Range<usize> {
+        match self {
+            Self::Pcurve { scope, .. } | Self::Intcurve(scope) => scope,
+        }
+    }
+}
+
 fn patch_nurbs_pcurve_record(
     bytes: &mut [u8],
     stream_width: RefWidth,
@@ -1734,23 +1798,8 @@ fn patch_nurbs_pcurve_record(
         )));
     };
     let ref_width = stream_width;
-    let scope = if record.head() == "pcurve" {
-        sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "pcurve record {} has no exp_par_cur payload",
-                record.index
-            ))
-        })?
-    } else if record.head() == "intcurve" {
-        record.offset..record.offset.checked_add(record.len).ok_or_else(|| {
-            CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
-        })?
-    } else {
-        return Err(CodecError::malformed(format_args!(
-            "record {} is not a pcurve carrier",
-            record.index
-        )));
-    };
+    let carrier = PcurvePatchCarrier::admit(bytes, record, ref_width, edit)?;
+    let scope = carrier.scope();
     let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
         bytes.get(scope.clone()).ok_or_else(|| {
             CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
@@ -1785,8 +1834,14 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
-    if record.head() == "pcurve" {
-        if let Some(reversed) = edit.wrapper_reversed {
+    if let PcurvePatchCarrier::Pcurve {
+        wrapper_reversed,
+        native_tail_flags,
+        parameter_range,
+        ..
+    } = &carrier
+    {
+        if let Some(reversed) = *wrapper_reversed {
             let offset =
                 sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1825,7 +1880,7 @@ fn patch_nurbs_pcurve_record(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if let Some(flags) = edit.native_tail_flags {
+        if let Some(flags) = *native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
                     return Err(CodecError::malformed(format_args!(
@@ -1845,7 +1900,7 @@ fn patch_nurbs_pcurve_record(
                 }
             }
         }
-        if let Some(range) = edit.parameter_range {
+        if let Some(range) = *parameter_range {
             for (offset, value) in suffix_offsets[4..].iter().zip(range) {
                 if bytes.get(*offset) != Some(&0x06) {
                     return Err(CodecError::malformed(format_args!(
@@ -1919,6 +1974,78 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn intcurve_uv_cache_rejects_pcurve_wrapper_edits() {
+        use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
+        use cadmpeg_ir::math::Point2;
+        let mut original = vec![0x0d, 8];
+        original.extend_from_slice(b"intcurve");
+        original.extend_from_slice(crate::nurbs::reader::NUBS_MARKER);
+        for (tag, value) in [(0x04, 1i64), (0x15, 0), (0x04, 2)] {
+            original.push(tag);
+            original.extend_from_slice(&value.to_le_bytes());
+        }
+        for knot in [0.0f64, 1.0] {
+            original.push(0x06);
+            original.extend_from_slice(&knot.to_le_bytes());
+            original.push(0x04);
+            original.extend_from_slice(&1i64.to_le_bytes());
+        }
+        for component in [0.0f64, 0.0, 1.0, 1.0] {
+            original.push(0x06);
+            original.extend_from_slice(&component.to_le_bytes());
+        }
+        original.push(0x11);
+        let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
+        let geometry = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        };
+        let base = super::InlinePcurveEdit {
+            native_geometry: &geometry,
+            periodic: None,
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        };
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        edits
+            .patch_pcurve(
+                &mut original.clone(),
+                &records[0],
+                super::PcurveEdit::Inline(base),
+            )
+            .unwrap();
+        for edit in [
+            super::InlinePcurveEdit {
+                wrapper_reversed: Some(true),
+                ..base
+            },
+            super::InlinePcurveEdit {
+                native_tail_flags: Some([true; 4]),
+                ..base
+            },
+            super::InlinePcurveEdit {
+                parameter_range: Some([2.0, 3.0]),
+                ..base
+            },
+        ] {
+            let mut bytes = original.clone();
+            assert!(matches!(
+                edits.patch_pcurve(&mut bytes, &records[0], super::PcurveEdit::Inline(edit)),
+                Err(cadmpeg_core::CodecError::NotImplemented(_))
+            ));
+            assert_eq!(bytes, original);
+        }
+    }
 
     #[test]
     fn transform_rejects_nonpositive_and_nonfinite_header_scales() {
