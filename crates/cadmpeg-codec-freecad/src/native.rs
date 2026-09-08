@@ -50,6 +50,22 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
+        for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
+            let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
+            let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
+            assert_eq!(
+                serde_json::from_value::<super::ArchiveSpan>(physical).is_ok(),
+                valid
+            );
+            assert_eq!(
+                serde_json::from_value::<super::LogicalSpan>(logical).is_ok(),
+                valid
+            );
+        }
+    }
+
+    #[test]
     fn gui_state_order_is_derived_from_collection_position() {
         let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
         let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
@@ -1435,10 +1451,8 @@ impl ArchiveSpanRole {
 pub struct ArchiveSpan {
     /// Stable span identity.
     pub id: String,
-    /// Inclusive byte offset.
-    pub start: u64,
-    /// Exclusive byte offset.
-    pub end: u64,
+    /// Nonempty byte interval.
+    pub span: ByteSpan,
     /// Structural role.
     pub role: ArchiveSpanRole,
 }
@@ -1456,8 +1470,8 @@ impl From<ArchiveSpan> for ArchiveSpanWire {
     fn from(value: ArchiveSpan) -> Self {
         Self {
             id: value.id,
-            start: value.start,
-            end: value.end,
+            start: value.span.start(),
+            end: value.span.end(),
             role: value.role.as_str().to_owned(),
             entry: value.role.entry().map(str::to_owned),
         }
@@ -1470,8 +1484,7 @@ impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
     fn try_from(wire: ArchiveSpanWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
-            start: wire.start,
-            end: wire.end,
+            span: ByteSpan::try_new(wire.start, wire.end)?,
             role: ArchiveSpanRole::from_label(&wire.role, wire.entry)?,
         })
     }
@@ -2187,10 +2200,8 @@ pub struct LogicalSpan {
     pub id: String,
     /// Owning archive entry.
     pub entry: String,
-    /// Inclusive logical byte offset.
-    pub start: u64,
-    /// Exclusive logical byte offset.
-    pub end: u64,
+    /// Nonempty byte interval.
+    pub span: ByteSpan,
     /// Span family and owner.
     pub classification: LogicalClassification,
 }
@@ -2248,8 +2259,8 @@ impl From<LogicalSpan> for LogicalSpanWire {
         Self {
             id: value.id,
             entry: value.entry,
-            start: value.start,
-            end: value.end,
+            start: value.span.start(),
+            end: value.span.end(),
             classification,
             owner,
         }
@@ -2275,8 +2286,7 @@ impl TryFrom<LogicalSpanWire> for LogicalSpan {
         Ok(Self {
             id: wire.id,
             entry: wire.entry,
-            start: wire.start,
-            end: wire.end,
+            span: ByteSpan::try_new(wire.start, wire.end)?,
             classification,
         })
     }
