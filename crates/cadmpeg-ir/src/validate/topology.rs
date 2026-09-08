@@ -1374,7 +1374,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Compound { components, .. } => {
+            ProceduralCurveDefinition::Compound(compound) => {
+                let (_, components) = compound.parts();
+
                 for component in components {
                     if ids.curves(component.component.as_str()).is_none() {
                         ref_error(

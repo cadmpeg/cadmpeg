@@ -631,7 +631,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Compound { components, .. } => {
+            ProceduralCurveDefinition::Compound(compound) => {
+                let (_, components) = compound.parts();
+
                 curves.extend(
                     components
                         .iter()

@@ -3753,18 +3753,14 @@ pub(crate) fn validate_procedural_curve_edits(
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    components: before_components,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    components: after_components,
-                    ..
-                },
-            ) if before_components
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(after_compound),
+            ) if before_compound
+                .parts()
+                .1
                 .iter()
                 .map(|item| &item.component)
-                .eq(after_components.iter().map(|item| &item.component))
+                .eq(after_compound.parts().1.iter().map(|item| &item.component))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
