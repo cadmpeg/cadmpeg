@@ -55,6 +55,7 @@ pub(crate) struct Entry(pub(crate) DesignDimensionLocusPair);
 impl TryFrom<Wire> for Entry {
     type Error = String;
 
+    /// A null-locus frame with `geometry_record_index == 0` is not decoder-producible and is rejected deliberately.
     fn try_from(wire: Wire) -> Result<Self, Self::Error> {
         if wire.geometry_record_index == 0 {
             return Err("geometry_record_index must name an indexed sketch-geometry record".into());

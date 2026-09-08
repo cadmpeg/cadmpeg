@@ -3018,6 +3018,7 @@ struct DesignEntityHeaderWire {
 }
 impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
     type Error = String;
+    /// Header references without paired `record_reference_offset` and `declared_reference_count` metadata are not decoder-producible and are rejected deliberately.
     fn try_from(wire: DesignEntityHeaderWire) -> Result<Self, Self::Error> {
         if wire
             .declared_reference_count
