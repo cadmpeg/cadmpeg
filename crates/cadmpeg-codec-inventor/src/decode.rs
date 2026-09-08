@@ -24,34 +24,45 @@ use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::protein::{
-    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
+    InstancePropertiesEntry, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord,
+    ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
-    EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateParameterRecord,
-    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+    EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
+    ExternalReferenceRecordWire, UfrxModelStateParameterRecord, UfrxModelStateRecord,
+    UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord,
+    UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
-    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
+    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, MetaSectionRecord,
+    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
+    RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedMember,
+    UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{
     DatabaseState, DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState,
 };
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let container = InventorContainer::open(ctx, root)?;
+    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+}
+
+fn decode_container<'a>(
+    ctx: &DecodeContext<'a>,
+    container: &InventorContainer<'a>,
+) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
-    let recovery = DialectRecovery::of(&container);
+    let recovery = DialectRecovery::of(container);
     let matched = recovery.classify();
     let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier);
     // The kernel layer, classified from the carrier's own header. Non-primary:
@@ -60,7 +71,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .iter()
         .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         .cloned();
-    let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
+    let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
@@ -272,25 +283,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let protein_assets = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance.records.iter().map(|asset| ProteinAssetRecord {
-                id: format!(
-                    "inventor:protein:asset#{}-{}",
-                    sha256_hex(instance.entry_name.as_bytes()),
-                    asset.ordinal
-                ),
-                entry_name: instance.entry_name.clone(),
-                ordinal: asset.ordinal,
-                asset: asset.clone(),
+            instance.records.iter().map(|asset| {
+                Ok::<_, CodecError>(ProteinAssetRecord {
+                    id: format!(
+                        "inventor:protein:asset#{}-{}",
+                        sha256_hex(instance.entry_name.as_bytes()),
+                        asset.ordinal
+                    ),
+                    entry_name: InstancePropertiesEntry::try_from(instance.entry_name.clone())
+                        .map_err(CodecError::malformed)?,
+                    asset: asset.clone(),
+                })
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let protein_rejections = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance
-                .rejected
-                .iter()
-                .map(|rejected| ProteinRejectionRecord {
+            instance.rejected.iter().map(|rejected| {
+                ProteinRejectionRecord::try_from(ProteinRejectionRecordWire {
                     id: format!(
                         "inventor:protein:rejection#{}-{}",
                         sha256_hex(instance.entry_name.as_bytes()),
@@ -300,10 +311,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     ordinal: rejected.ordinal,
                     detail: rejected.detail.clone(),
                 })
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(CodecError::malformed)?;
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
+    let mut structural_issues = Vec::new();
     let ufrx = match &container.ufrx {
         UfrxState::Absent => UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
@@ -333,87 +347,115 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .model_states
                 .iter()
                 .enumerate()
-                .map(|(ordinal, state)| UfrxModelStateRecord {
-                    id: format!("inventor:ufrx:model-state#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    prefix: state.prefix,
-                    name: state.name.clone(),
-                    state: state.state,
-                    prefix_count: state.prefix_count,
-                    parameters: state
-                        .parameters
-                        .iter()
-                        .map(|parameter| UfrxModelStateParameterRecord {
-                            name: parameter.name.clone(),
-                            tag: parameter.tag,
-                            kind: parameter.kind,
-                            state: parameter.state,
-                            value: parameter.value.clone(),
-                            trailer: parameter.trailer,
-                        })
-                        .collect(),
-                    suffix_len: state.suffix.window().len() as u64,
-                    suffix_sha256: sha256_hex(state.suffix.window()),
+                .filter_map(|(ordinal, state)| {
+                    let admitted = UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
+                        id: format!("inventor:ufrx:model-state#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        prefix: state.prefix,
+                        name: state.name.clone(),
+                        state: state.state,
+                        prefix_count: state.prefix_count,
+                        parameters: state
+                            .parameters
+                            .iter()
+                            .map(|parameter| UfrxModelStateParameterRecord {
+                                name: parameter.name.clone(),
+                                tag: parameter.tag,
+                                kind: parameter.kind,
+                                state: parameter.state,
+                                value: parameter.value.clone(),
+                                trailer: parameter.trailer,
+                            })
+                            .collect(),
+                        suffix_len: state.suffix.window().len() as u64,
+                        suffix_sha256: sha256_hex(state.suffix.window()),
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-model-state-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
                 .collect::<Vec<_>>();
             let references = document
                 .references
                 .iter()
                 .enumerate()
-                .map(|(ordinal, reference)| ExternalReferenceRecord {
-                    id: format!("inventor:ufrx:external-reference#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    path: reference.path.clone(),
-                    library_id: reference.library_id,
-                    library_name: reference.library_name.clone(),
-                    display_name: reference.display_name.clone(),
-                    state_groups: reference.state_groups.clone(),
-                    state: reference.state,
-                    document_id: hex(&reference.document_id),
-                    database_id: hex(&reference.database_id),
-                    reference_id: reference.reference_id,
-                    occurrence_count: reference.occurrence_count,
-                    version: reference.version,
-                    flags: reference.flags,
+                .filter_map(|(ordinal, reference)| {
+                    let admitted = ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
+                        id: format!("inventor:ufrx:external-reference#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        path: reference.path.clone(),
+                        library_id: reference.library_id,
+                        library_name: reference.library_name.clone(),
+                        display_name: reference.display_name.clone(),
+                        state_groups: reference.state_groups.clone(),
+                        state: reference.state,
+                        document_id: hex(&reference.document_id),
+                        database_id: hex(&reference.database_id),
+                        reference_id: reference.reference_id,
+                        occurrence_count: reference.occurrence_count,
+                        version: reference.version,
+                        flags: reference.flags,
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-external-reference-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
                 .collect::<Vec<_>>();
             let embedded = document
                 .embedded_references
                 .iter()
                 .enumerate()
-                .map(|(ordinal, reference)| EmbeddedReferenceRecord {
-                    id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    value_0: reference.value_0,
-                    filetime: reference.filetime,
-                    value_1: reference.value_1,
-                    extended_value: reference.extended_value,
-                    value_2: reference.value_2,
-                    path: reference.path.clone(),
-                    library_id: reference.library_id,
-                    library_name: reference.library_name.clone(),
-                    state: reference.state,
-                    display_name: reference.display_name.clone(),
-                    state_values: reference.state_values,
-                    record_len: reference.source.window().len() as u64,
-                    record_sha256: sha256_hex(reference.source.window()),
+                .filter_map(|(ordinal, reference)| {
+                    let admitted = EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
+                        id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        value_0: reference.value_0,
+                        filetime: reference.filetime,
+                        value_1: reference.value_1,
+                        extended_value: reference.extended_value,
+                        value_2: reference.value_2,
+                        path: reference.path.clone(),
+                        library_id: reference.library_id,
+                        library_name: reference.library_name.clone(),
+                        state: reference.state,
+                        display_name: reference.display_name.clone(),
+                        state_values: reference.state_values,
+                        record_len: reference.source.window().len() as u64,
+                        record_sha256: sha256_hex(reference.source.window()),
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-embedded-reference-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
                 .collect::<Vec<_>>();
             let occurrences = document
                 .occurrences
                 .iter()
                 .enumerate()
-                .map(|(ordinal, occurrence)| UfrxOccurrenceRecord {
-                    id: format!("inventor:ufrx:occurrence#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    end_string_flag: occurrence.end_string_flag,
-                    file_reference_id: occurrence.file_reference_id,
-                    occurrence_id: occurrence.occurrence_id,
-                    header_value: occurrence.header_value,
-                    title: occurrence.title.clone(),
-                    header_padding_words: occurrence.header_padding_words,
-                    record_len: occurrence.source.window().len() as u64,
-                    record_sha256: sha256_hex(occurrence.source.window()),
+                .filter_map(|(ordinal, occurrence)| {
+                    let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
+                        id: format!("inventor:ufrx:occurrence#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        end_string_flag: occurrence.end_string_flag,
+                        file_reference_id: occurrence.file_reference_id,
+                        occurrence_id: occurrence.occurrence_id,
+                        header_value: occurrence.header_value,
+                        title: occurrence.title.clone(),
+                        header_padding_words: occurrence.header_padding_words,
+                        record_len: occurrence.source.window().len() as u64,
+                        record_sha256: sha256_hex(occurrence.source.window()),
+                    });
+                    admit_ufrx_record(
+                        admitted,
+                        &format!("ufrx-occurrence-{ordinal}"),
+                        &mut structural_issues,
+                    )
                 })
                 .collect::<Vec<_>>();
             UfrxRecord::ParsedPrefix {
@@ -423,14 +465,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 section_versions: document.section_versions.clone(),
                 original_file_name: document.original_file_name.clone(),
                 caption: document.caption.clone(),
-                representation: document.representation.as_ref().map(|state| {
-                    UfrxRepresentationRecord {
-                        prefix: state.prefix,
-                        active_representation: state.active_representation.clone(),
-                        secondary_active_lod_state: state.secondary_active_lod_state,
-                        active_model_state: state.active_model_state.clone(),
-                        active_model_state_state: state.active_model_state_state,
-                    }
+                representation: document.representation.as_ref().and_then(|state| {
+                    let admitted =
+                        UfrxRepresentationRecord::try_from(UfrxRepresentationRecordWire {
+                            prefix: state.prefix,
+                            active_representation: state
+                                .active_representation
+                                .as_ref()
+                                .map(|(name, _)| name.clone()),
+                            active_representation_kind: state
+                                .active_representation
+                                .as_ref()
+                                .map(|(_, kind)| kind.clone()),
+                            secondary_active_lod_state: state.secondary_active_lod_state,
+                            active_model_state: state.active_model_state.clone(),
+                            active_model_state_state: state.active_model_state_state,
+                        });
+                    admit_ufrx_record(admitted, "ufrx-representation", &mut structural_issues)
                 }),
                 model_states,
                 external_references: references,
@@ -441,6 +492,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             }
         }
     };
+    let ufrx_issue_count = structural_issues.len();
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -552,7 +604,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .collect(),
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
-    let mut structural_issues = Vec::new();
     if let ParsedState::Unavailable(detail) = &container.rse.registry {
         structural_issues.push(structural_issue("segment_registry", detail));
     }
@@ -827,26 +878,31 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let assembly_placements = assembly_inventory
         .placements
         .iter()
-        .map(|placement| AssemblyPlacementRecord {
-            id: format!(
-                "inventor:assembly:placement#{}-{}",
-                placement.segment_token, placement.record_ordinal
-            ),
-            segment_token: placement.segment_token.clone(),
-            record_ordinal: placement.record_ordinal,
-            header_id: placement.header_id,
-            owner_reference: placement.owner_reference,
-            attribute_reference: placement.attribute_reference,
-            state: placement.state,
-            transform_prefix: placement.transform_prefix,
-            transform: placement.transform,
-            branch: placement.branch,
-            graphics_state: placement.graphics_state,
-            occurrence_id: placement.occurrence_id,
-            graphics_index: placement.graphics_index,
-            object_reference: placement.object_reference,
-            suffix_len: placement.suffix.window().len() as u64,
-            suffix_sha256: sha256_hex(placement.suffix.window()),
+        .filter_map(|placement| {
+            admit_assembly_placement(
+                AssemblyPlacementRecordWire {
+                    id: format!(
+                        "inventor:assembly:placement#{}-{}",
+                        placement.segment_token, placement.record_ordinal
+                    ),
+                    segment_token: placement.segment_token.clone(),
+                    record_ordinal: placement.record_ordinal,
+                    header_id: placement.header_id,
+                    owner_reference: placement.owner_reference,
+                    attribute_reference: placement.attribute_reference,
+                    state: placement.state,
+                    transform_prefix: placement.transform_prefix,
+                    transform: placement.transform,
+                    branch: placement.branch,
+                    graphics_state: placement.graphics_state,
+                    occurrence_id: placement.occurrence_id,
+                    graphics_index: placement.graphics_index,
+                    object_reference: placement.object_reference,
+                    suffix_len: placement.suffix.window().len() as u64,
+                    suffix_sha256: sha256_hex(placement.suffix.window()),
+                },
+                &mut assembly_inventory.issues,
+            )
         })
         .collect::<Vec<_>>();
     let pm_app_default_styles = presentation_inventory
@@ -1354,6 +1410,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 )),
             );
         }
+        if ufrx_issue_count != 0 {
+            losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
+                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
+            )));
+        }
         match &container.ufrx {
             UfrxState::Malformed { .. } => losses.push(
                 InventorLossCode::UfrxTableMalformed
@@ -1706,6 +1767,34 @@ fn apply_kernel_header(
     source
         .attributes
         .insert("kernel_family".into(), family.label().into());
+}
+
+fn admit_ufrx_record<T>(
+    admitted: Result<T, String>,
+    scope: &str,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Option<T> {
+    admitted
+        .inspect_err(|detail| issues.push(structural_issue(scope, detail)))
+        .ok()
+}
+
+fn admit_assembly_placement(
+    wire: AssemblyPlacementRecordWire,
+    issues: &mut Vec<RecordIssue>,
+) -> Option<AssemblyPlacementRecord> {
+    let segment_token = wire.segment_token.clone();
+    let record_ordinal = wire.record_ordinal;
+    AssemblyPlacementRecord::try_from(wire)
+        .inspect_err(|detail| {
+            issues.push(RecordIssue {
+                family: RecordIssueFamily::Assembly,
+                segment_token,
+                record_ordinal,
+                detail: detail.clone(),
+            });
+        })
+        .ok()
 }
 
 fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {
