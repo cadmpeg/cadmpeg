@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::feature::definitions::{DecodedField, DimensionValue, ScalarLane};
+use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes, ScalarLane};
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchSectionPoint {
@@ -36,12 +36,40 @@ pub(crate) struct CreoSketchBucketHeader {
 pub(crate) struct CreoSketchSection3d {
     pub(crate) sketch_plane_entity_id: Option<u32>,
     pub(crate) sketch_plane_flip: Option<bool>,
-    pub(crate) reference_plane_entity_ids: Vec<u32>,
-    pub(crate) reference_plane_rows: Vec<CreoSketchReferencePlane>,
+    #[serde(flatten, serialize_with = "serialize_reference_planes")]
+    pub(crate) reference_planes: ReferencePlanes,
     pub(crate) reference_plane_datum_geometry_id: Option<u32>,
     pub(crate) orientation: CreoSketchSectionOrientation,
     pub(crate) dimension_ids: Vec<u32>,
     pub(crate) offset: usize,
+}
+
+fn serialize_reference_planes<S: serde::Serializer>(
+    planes: &ReferencePlanes,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let rows = match planes {
+        ReferencePlanes::Named(_) => &[][..],
+        ReferencePlanes::Positional(rows) => rows.as_slice(),
+    }
+    .iter()
+    .map(|row| CreoSketchReferencePlane {
+        plane_entity_id: row.plane_entity_id,
+        reference_type: row.reference_type,
+        external_reference_id: row.external_reference_id,
+        segment_id: row.segment_id,
+        sub_index: row.sub_index,
+        reference_flip: row.reference_flip.map(super::sketch_ids::binary_flag_value),
+    })
+    .collect::<Vec<_>>();
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry(
+        "reference_plane_entity_ids",
+        &planes.entity_ids().collect::<Vec<_>>(),
+    )?;
+    map.serialize_entry("reference_plane_rows", &rows)?;
+    map.end()
 }
 
 #[derive(Serialize)]
