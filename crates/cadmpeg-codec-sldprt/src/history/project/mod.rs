@@ -879,7 +879,12 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                 configuration
                     .id
                     .strip_prefix("sldprt:history:configuration#")
-                    .unwrap_or(&configuration.id)
+                    .map_or_else(
+                        || std::borrow::Cow::Owned(
+                            configuration.id.replace('%', "%25").replace('#', "%23")
+                        ),
+                        std::borrow::Cow::Borrowed
+                    )
             ))
             .expect("identity grammar"),
             ordinal: configuration.ordinal,
