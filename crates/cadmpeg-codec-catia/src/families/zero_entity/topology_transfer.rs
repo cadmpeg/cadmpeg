@@ -907,9 +907,9 @@ mod tests {
                     members: crate::families::zero_entity::records::ZeroEntityLoopMembers::try_new(
                         7,
                         1,
-                        std::num::NonZeroUsize::new(3).unwrap(),
+                        std::num::NonZeroUsize::new(3).expect("nonzero loop member count"),
                     )
-                    .unwrap(),
+                    .expect("admitted loop member run"),
                     typed_references: vec![1, 2, 3],
                     support_record_ordinals,
 

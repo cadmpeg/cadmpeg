@@ -2100,14 +2100,15 @@ mod tests {
 
     #[test]
     fn loop_member_run_bounds_preserve_zero_members_and_terminal_slots() {
-        let count = NonZeroUsize::new(3).unwrap();
-        let members = ZeroEntityLoopMembers::try_new(4, 2, count).unwrap();
+        let count = NonZeroUsize::new(3).expect("nonzero loop member count");
+        let members =
+            ZeroEntityLoopMembers::try_new(4, 2, count).expect("admitted loop member run");
         assert_eq!(members.member_ids().collect::<Vec<_>>(), [2, 1, 0]);
         assert_eq!(members.support_slots().collect::<Vec<_>>(), [2, 3, 4]);
         assert!(ZeroEntityLoopMembers::try_new(4, 0, count).is_none());
         assert!(ZeroEntityLoopMembers::try_new(4, 3, count).is_none());
-        let singleton =
-            ZeroEntityLoopMembers::try_new(u32::MAX, u32::MAX, NonZeroUsize::MIN).unwrap();
+        let singleton = ZeroEntityLoopMembers::try_new(u32::MAX, u32::MAX, NonZeroUsize::MIN)
+            .expect("admitted loop member run");
         assert_eq!(singleton.member_ids().collect::<Vec<_>>(), [0]);
         assert_eq!(singleton.support_slots().collect::<Vec<_>>(), [u32::MAX]);
     }
