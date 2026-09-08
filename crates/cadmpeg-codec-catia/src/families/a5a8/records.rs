@@ -1900,7 +1900,8 @@ mod tests {
         assert!(A8KnotLane::try_new(vec![1.0, 0.0], vec![2, 2]).is_none());
         assert!(A8KnotLane::try_new(vec![0.0, 0.0], vec![2, 2]).is_none());
         assert!(A8KnotLane::try_new(vec![0.0, f64::INFINITY], vec![2, 2]).is_none());
-        let lane = A8KnotLane::try_new(vec![0.0, 1.0], vec![2, 2]).unwrap();
+        let lane =
+            A8KnotLane::try_new(vec![0.0, 1.0], vec![2, 2]).expect("aligned increasing knot lane");
         assert_eq!(lane.expanded(), Some(vec![0.0, 0.0, 1.0, 1.0]));
         assert_eq!(lane.pole_count(1), Some(2));
     }
