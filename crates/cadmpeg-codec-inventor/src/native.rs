@@ -1436,7 +1436,7 @@ mod tests {
     #[test]
     fn active_carrier_admission_requires_one_arena_record() {
         let record = ActiveCarrierRecord::NotApplicable {
-            id: "carrier".into(),
+            id: "inventor:kernel:active-carrier#root".into(),
         };
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         assert!(ActiveCarrierRecord::read(&namespace).is_err());
@@ -1454,7 +1454,15 @@ mod tests {
             wire,
             vec![serde_json::to_value(&record).expect("valid carrier")]
         );
-        for records in [vec![], vec![record.clone(), record]] {
+        for records in [
+            vec![],
+            vec![
+                record,
+                ActiveCarrierRecord::NotApplicable {
+                    id: "inventor:kernel:active-carrier#other".into(),
+                },
+            ],
+        ] {
             namespace
                 .set_arena("active_carrier", &records)
                 .expect("valid wire records");
