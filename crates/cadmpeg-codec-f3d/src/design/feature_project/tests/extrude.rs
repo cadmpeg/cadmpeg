@@ -175,7 +175,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 record_index: 100,
                 byte_offset: 300,
                 class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-                asset_id: crate::records::DesignGuidText::try_from(
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
                     "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
                 )
                 .unwrap(),
@@ -751,12 +751,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         record_index: 201,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),
         asset_id_offset: 0,
-        context_id: crate::records::DesignGuidText::try_from(
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
             "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
         )
         .unwrap(),

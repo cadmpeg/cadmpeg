@@ -673,12 +673,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 586,
             local_id_offset: 21,
-            asset_id: crate::records::DesignGuidText::try_from(
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
                 "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 33,
-            context_id: crate::records::DesignGuidText::try_from(
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
                 "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".to_owned(),
             )
             .unwrap(),
@@ -705,7 +705,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 record_index: 300,
                 byte_offset: 3000,
                 class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-                asset_id: crate::records::DesignGuidText::try_from(
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
                     "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
                 )
                 .unwrap(),

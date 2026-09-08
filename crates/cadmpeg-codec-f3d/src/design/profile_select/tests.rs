@@ -82,12 +82,12 @@ fn operand(
         record_index,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),
         asset_id_offset: 0,
-        context_id: crate::records::DesignGuidText::try_from(
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
             "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
         )
         .unwrap(),
@@ -254,12 +254,12 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         class_tag: crate::records::DesignClassTag::try_from("278".to_owned()).unwrap(),
         local_id: 200,
         local_id_offset: 0,
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),
         asset_id_offset: 0,
-        context_id: crate::records::DesignGuidText::try_from(
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
             "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
         )
         .unwrap(),
@@ -634,7 +634,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         record_index: 10,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),
@@ -1053,7 +1053,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         record_index: 10,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),

@@ -96,12 +96,12 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         local_id: 42,
         local_id_offset: 421,
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "11111111-2222-4333-8444-555555555555".to_owned(),
         )
         .unwrap(),
         asset_id_offset: 429,
-        context_id: crate::records::DesignGuidText::try_from(
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
             "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
         )
         .unwrap(),

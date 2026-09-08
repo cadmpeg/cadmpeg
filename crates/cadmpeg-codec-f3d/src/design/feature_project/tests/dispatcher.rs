@@ -226,12 +226,12 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
             selection: DesignWorkPointPlaneSelection {
                 class_tag: crate::records::DesignClassTag::try_from("267".to_owned()).unwrap(),
-                asset_id: crate::records::DesignGuidText::try_from(
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
                     "00000000-0000-0000-0000-000000000001".to_owned(),
                 )
                 .unwrap(),
                 asset_id_offset: 1,
-                context_id: crate::records::DesignGuidText::try_from(
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
                     "00000000-0000-0000-0000-000000000002".to_owned(),
                 )
                 .unwrap(),
@@ -519,7 +519,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             record_index: 101,
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-            asset_id: crate::records::DesignGuidText::try_from(
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),

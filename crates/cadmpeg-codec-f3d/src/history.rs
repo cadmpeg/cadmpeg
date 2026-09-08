@@ -1335,8 +1335,8 @@ fn combine_recipe_family_tool_slots(
     recipes: &[crate::records::ConstructionRecipe],
 ) -> Option<Vec<i64>> {
     type FamilyKey = (
-        crate::records::DesignGuidText,
-        crate::records::DesignGuidText,
+        crate::records::DesignRelaxedGuidText,
+        crate::records::DesignRelaxedGuidText,
         u64,
         u32,
         String,

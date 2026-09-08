@@ -351,8 +351,8 @@ pub fn bind_work_point_input_carriers(
                     })
                     .collect::<Vec<_>>();
                 let (Ok(asset_id), Ok(context_id)) = (
-                    crate::records::DesignGuidText::try_from(selection.asset_id.clone()),
-                    crate::records::DesignGuidText::try_from(selection.context_id.clone()),
+                    crate::records::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
+                    crate::records::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
                 ) else {
                     continue;
                 };
@@ -399,8 +399,8 @@ pub fn bind_work_point_input_carriers(
                 continue;
             }
             let (Ok(asset_id), Ok(context_id)) = (
-                crate::records::DesignGuidText::try_from(selection.asset_id.clone()),
-                crate::records::DesignGuidText::try_from(selection.context_id.clone()),
+                crate::records::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
+                crate::records::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
             ) else {
                 continue;
             };
@@ -639,8 +639,8 @@ pub fn decode_edge_identity_operands(
                 continue;
             };
             let (Ok(asset_id), Ok(context_id)) = (
-                crate::records::DesignGuidText::try_from(parsed.asset_id),
-                crate::records::DesignGuidText::try_from(parsed.context_id),
+                crate::records::DesignRelaxedGuidText::try_from(parsed.asset_id),
+                crate::records::DesignRelaxedGuidText::try_from(parsed.context_id),
             ) else {
                 continue;
             };

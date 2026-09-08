@@ -376,12 +376,12 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             record_index: operand_record_index,
             byte_offset,
             class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-            asset_id: crate::records::DesignGuidText::try_from(
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
                 "11111111-1111-4111-8111-111111111111".to_owned(),
             )
             .unwrap(),
             asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
-            context_id: crate::records::DesignGuidText::try_from(
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
                 "22222222-2222-4222-8222-222222222222".to_owned(),
             )
             .unwrap(),
@@ -1022,7 +1022,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         record_index: 20,
         byte_offset: 200,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),
@@ -1224,12 +1224,12 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 167,
             local_id_offset: 1_145,
-            asset_id: crate::records::DesignGuidText::try_from(
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
                 "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 1_157,
-            context_id: crate::records::DesignGuidText::try_from(
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
                 "9dea94a1-729a-4032-930b-d4ba4eaadb0c".to_owned(),
             )
             .unwrap(),
@@ -1337,12 +1337,12 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         record_index: 200,
         byte_offset: 1_000,
         class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "11111111-2222-4333-8444-555555555555".to_owned(),
         )
         .unwrap(),
         asset_id_offset: 1_034,
-        context_id: crate::records::DesignGuidText::try_from(
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
             "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
         )
         .unwrap(),

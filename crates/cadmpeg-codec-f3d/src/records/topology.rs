@@ -5,7 +5,7 @@ use super::feature::DesignAxis;
 use super::{
     ConstructionRecipeKind, DesignRecipeReference, Located, NonEmptyByteSpan, SketchRelationOperand,
 };
-use super::{DesignClassTag, DesignEntityId, DesignGuidText, DesignSecondaryIdentity};
+use super::{DesignClassTag, DesignEntityId, DesignRelaxedGuidText, DesignSecondaryIdentity};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
@@ -32,7 +32,7 @@ pub struct DesignSketchProfileOperand {
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selected Sketch reference.
-    pub asset_id: DesignGuidText,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// Full Design entity id of the selected Sketch.
@@ -1251,11 +1251,11 @@ pub struct DesignConstructionPersistentIdentity {
     /// Byte offset of `local_id`.
     pub local_id_offset: u64,
     /// Asset UUID qualifying the local identity.
-    pub asset_id: DesignGuidText,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the local identity context.
-    pub context_id: DesignGuidText,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Whether the fixed tail's optional slot is present.
@@ -1524,11 +1524,11 @@ pub struct DesignExtrudeSelectionMember {
     /// Byte offset of `local_id`.
     pub local_id_offset: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: DesignGuidText,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the local selection-identity context.
-    pub context_id: DesignGuidText,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Whether the fixed tail's optional slot is present.
@@ -1581,11 +1581,11 @@ pub struct DesignEntitySelectionOperand {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignGuidText,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignGuidText,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Nested indexed record that carries the persistent entity identity.
@@ -2001,11 +2001,11 @@ pub struct DesignBodyRecipeOperand {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the persistent selection namespace.
-    pub asset_id: DesignGuidText,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignGuidText,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Raw four-byte selector-tail member after the fixed `u32 2`.
@@ -2327,11 +2327,11 @@ pub struct DesignEdgeIdentityOperand {
     /// Local persistent selection identity preceding the two UUID fields.
     pub local_id: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: DesignGuidText,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the local selection-identity context.
-    pub context_id: DesignGuidText,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.

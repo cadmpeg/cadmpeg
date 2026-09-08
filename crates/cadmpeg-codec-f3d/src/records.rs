@@ -3245,6 +3245,36 @@ impl From<DesignGuidText> for String {
     }
 }
 
+/// A relaxed GUID with its original text.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "String"))]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignRelaxedGuidText(String);
+
+impl DesignRelaxedGuidText {
+    /// The original GUID text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl TryFrom<String> for DesignRelaxedGuidText {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !crate::bytes::is_guid_relaxed(&value) {
+            return Err(
+                "GUID must be 36 through 38 alphanumeric, hyphen, or underscore characters".into(),
+            );
+        }
+        Ok(Self(value))
+    }
+}
+impl From<DesignRelaxedGuidText> for String {
+    fn from(value: DesignRelaxedGuidText) -> Self {
+        value.0
+    }
+}
+
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesignMeshTextureResource {

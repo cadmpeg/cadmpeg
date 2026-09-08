@@ -662,12 +662,12 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         record_index: 112,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        asset_id: crate::records::DesignGuidText::try_from(
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )
         .unwrap(),
         asset_id_offset: 0,
-        context_id: crate::records::DesignGuidText::try_from(
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
             "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
         )
         .unwrap(),
@@ -1400,12 +1400,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
             layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
             local_id: u64::from(record_index),
-            asset_id: crate::records::DesignGuidText::try_from(
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 0,
-            context_id: crate::records::DesignGuidText::try_from(
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),

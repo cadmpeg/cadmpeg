@@ -1187,3 +1187,18 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
         .to_string();
     assert!(error.contains("name_record_index"));
 }
+
+#[test]
+fn relaxed_guid_text_accepts_relaxed_only_value() {
+    let wire = "\"GAAAAAAA_BBBB-4CCC-8DDD-EEEEEEEEEEEE\"";
+    let value: crate::records::DesignRelaxedGuidText = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), wire);
+}
+
+#[test]
+fn strict_guid_text_rejects_relaxed_only_value() {
+    assert!(serde_json::from_str::<crate::records::DesignGuidText>(
+        "\"GAAAAAAA_BBBB-4CCC-8DDD-EEEEEEEEEEEE\""
+    )
+    .is_err());
+}
