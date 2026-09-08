@@ -10,7 +10,7 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
         [1.0, 0.0, 0.0],
         std::f64::consts::FRAC_PI_4,
     )
-    .unwrap();
+    .expect("valid positional cone frame");
 
     assert!(PositionalConeFrame::new(
         {

@@ -124,7 +124,7 @@ fn selector_corner_interval_cylinders_resolve_axis_origin_and_radius() {
                 4.0,
                 Some(6.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
     let mut split_second_selector = forward.clone();
@@ -151,7 +151,7 @@ fn selector_corner_interval_cylinders_resolve_axis_origin_and_radius() {
                 4.0,
                 Some(6.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
     let mut split_first_selector = build([0x13, 0x12], [2.0, 8.0, 18.0, 3.0, 5.0, 12.0, 7.0, 9.0]);

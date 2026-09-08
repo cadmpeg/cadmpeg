@@ -81,7 +81,7 @@ fn positional_line_extrusion_requires_a_non_degenerate_plane_carrier() {
 fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
     let valid =
         PositionalTorusFrame::new([0.0, 1.0, 2.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 4.0, 0.5)
-            .unwrap();
+            .expect("valid positional torus frame");
 
     assert!(PositionalTorusFrame::new(
         {
@@ -151,7 +151,7 @@ fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
         3.0,
         Some(4.0),
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
 
     assert!(PositionalCylinderFrame::new(
         {
@@ -212,7 +212,7 @@ fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
         2.0,
         Some(8.0),
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
     assert_eq!(
         unique_positional_cylinder_frame(&[first, first]),
         Some(first)
@@ -225,7 +225,7 @@ fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
         3.0,
         first.length(),
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
     assert_eq!(
         unique_positional_cylinder_frame(&[first, conflicting]),
         None
@@ -465,7 +465,7 @@ fn positional_cylinder_frame_decodes_compact_y_axis_envelopes() {
                 0.75,
                 Some(34.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
     assert_eq!(
@@ -478,7 +478,7 @@ fn positional_cylinder_frame_decodes_compact_y_axis_envelopes() {
                 0.75,
                 Some(34.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -505,7 +505,7 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
                 2.0,
                 Some(12.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -523,7 +523,7 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
                 3.5,
                 Some(8.5)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -541,7 +541,7 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
                 2.0,
                 Some(12.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -558,7 +558,7 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
                 17.5,
                 Some(100.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -587,7 +587,7 @@ fn positional_cylinder_frame_decodes_signed_axis_aligned_envelopes() {
                 1.75,
                 Some(2.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -605,7 +605,7 @@ fn positional_cylinder_frame_decodes_signed_axis_aligned_envelopes() {
                 1.75,
                 Some(2.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -729,7 +729,7 @@ fn positional_cylinder_frame_decodes_signed_axial_radial_envelopes() {
                 11.0,
                 Some(0.199_999_999_999_999_98)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -747,7 +747,7 @@ fn positional_cylinder_frame_decodes_signed_axial_radial_envelopes() {
                 11.0,
                 Some(0.199_999_999_999_999_98)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
 
@@ -1241,7 +1241,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
             15.0,
             Some(2.0_f64.sqrt())
         )
-        .unwrap()
+        .expect("valid positional cylinder frame")
     );
     let selector_corner_interval = [
         0x12, 0x2d, 0x40, 0x7a, 0x35, 0xc4, 0x3e, 0x21, 0x5b, 0x11, 0x2d, 0x44, 0xff, 0xd2, 0xa6,
@@ -1630,7 +1630,7 @@ fn complete_directrix_interval_cylinders_accept_selector_opener_variants() {
         2.0,
         Some(4.0),
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
     for opener in [
         &[0x18, 0xe4, 0x11][..],
         &[0x18, 0xe4, 0x00, 0x11, 0x07],
@@ -1911,7 +1911,7 @@ fn decodes_held_coordinate_type24_round_envelope() {
                 1.0,
                 Some(4.0)
             )
-            .unwrap()
+            .expect("valid positional cylinder frame")
         )
     );
     assert_eq!(replay.type24_round_radius(), Some(1.0));

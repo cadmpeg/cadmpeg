@@ -112,7 +112,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
                         [0.0, 1.0, 0.0],
                         std::f64::consts::FRAC_PI_4,
                     )
-                    .unwrap(),
+                    .expect("valid positional cone frame"),
                 ),
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,

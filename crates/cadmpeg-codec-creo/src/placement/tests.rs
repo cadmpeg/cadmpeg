@@ -993,7 +993,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
                     0.75,
                     Some(34.0),
                 )
-                .unwrap(),
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -1062,7 +1062,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
             frame.radius(),
             frame.length(),
         )
-        .unwrap();
+        .expect("valid positional cylinder frame");
     }
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1077,7 +1077,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         frame.radius(),
         frame.length(),
     )
-    .unwrap();
+    .expect("valid positional cylinder frame");
     let divergent_sources = PlacementSources {
         surface_parameters: &far_divergent,
         ..sources

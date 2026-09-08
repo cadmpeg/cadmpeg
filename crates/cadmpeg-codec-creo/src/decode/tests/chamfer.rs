@@ -83,7 +83,7 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
                         [0.0, 1.0, 0.0],
                         std::f64::consts::FRAC_PI_4,
                     )
-                    .unwrap(),
+                    .expect("valid positional cone frame"),
                 ),
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,

@@ -53,7 +53,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
                     5.0,
                     minor_radius,
                 )
-                .unwrap(),
+                .expect("valid positional torus frame"),
             ),
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
@@ -94,7 +94,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
                 0.0,
                 2.0,
             )
-            .unwrap(),
+            .expect("valid positional torus frame"),
         ),
     );
     let mut ir = cadmpeg_ir::document::CadIr::empty();

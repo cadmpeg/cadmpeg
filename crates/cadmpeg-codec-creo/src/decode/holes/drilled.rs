@@ -438,7 +438,7 @@ pub fn simple_drilled_axis_placement_from_frames(
     let axis = normalized(first.axis())?;
     let coordinate_scale = frames
         .iter()
-        .flat_map(|frame| frame.origin())
+        .flat_map(crate::surface::PositionalCylinderFrame::origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
     (diameter.is_finite() && diameter > 0.0).then_some(())?;
