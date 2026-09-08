@@ -250,15 +250,17 @@ impl AnnotationBuilder {
         offset: u64,
     ) -> ProvenanceNote<'_> {
         let id = id.to_string();
-        if !self
+        let stream = if let Some(existing) = self
             .annotations
             .streams
             .iter()
-            .any(|existing| Arc::ptr_eq(existing, &stream.0))
+            .find(|existing| existing.as_ref() == stream.0.as_ref())
         {
+            existing.clone()
+        } else {
             self.annotations.streams.push(stream.0.clone());
-        }
-        let stream = stream.0.clone();
+            stream.0.clone()
+        };
         self.annotations.provenance.insert(
             id.clone(),
             AnnotationProvenance::annotation(stream, offset, None),
@@ -506,11 +508,23 @@ mod tests {
         resumed.note("resumed", &handle, 3);
         let mut empty = AnnotationBuilder::new();
         empty.note("empty", &handle, 4);
+        let mut same_name = AnnotationBuilder::new();
+        let local = same_name.stream("first");
+        same_name.note("same-name", &handle, 5);
+        assert_eq!(same_name.annotations().stream_count(), 1);
+        assert!(Arc::ptr_eq(
+            same_name.annotations.provenance["same-name"].stream_ref(),
+            &local.0,
+        ));
+        let wire = serde_json::to_value(same_name.annotations()).unwrap();
+        assert_eq!(wire["streams"], serde_json::json!(["first"]));
+        assert_eq!(wire["provenance"]["same-name"]["stream"], 0);
         for (builder, id) in [
             (second, "foreign"),
             (cloned, "cloned"),
             (resumed, "resumed"),
             (empty, "empty"),
+            (same_name, "same-name"),
         ] {
             let annotations = builder.build();
             assert_eq!(annotations.provenance[id].stream(), "first");
