@@ -105,11 +105,11 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
     for carrier in carriers {
         let reversed = reverse_pcurve_over_range(&carrier, range)
             .expect("a finite conic interval has an exact coefficient reflection");
-        assert!(match (&carrier, &reversed) {
-            (PcurveGeometry::Ellipse(_), PcurveGeometry::Harmonic(_)) => true,
-            (PcurveGeometry::Hyperbola(_), PcurveGeometry::Hyperbolic(_)) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            (&carrier, &reversed),
+            (PcurveGeometry::Ellipse(_), PcurveGeometry::Harmonic(_))
+                | (PcurveGeometry::Hyperbola(_), PcurveGeometry::Hyperbolic(_))
+        ));
         for parameter in [0.25, 0.5, 1.0, 1.5, 1.75] {
             let expected =
                 cadmpeg_ir::eval::pcurve_uv(&carrier, range[0] + range[1] - parameter).unwrap();
@@ -169,7 +169,7 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
     for parameter in [0.25, 1.0, 2.0, 2.75] {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
+        let actual = cadmpeg_ir::eval::pcurve_uv(basis, parameter).unwrap();
         assert!((actual.u - expected.u).abs() < 1.0e-12);
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }

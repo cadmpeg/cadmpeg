@@ -51,6 +51,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_FILLET_CIRCLE: f64 = 1.0e-12;
 
+const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
+
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     let segment = crate::feature::FeatureSegment {
@@ -1636,24 +1638,18 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     .is_none());
     let upper_parameter = f64::midpoint(1.0, 7.0_f64.sqrt());
     let upper_radius = 2.0 + upper_parameter;
-    assert!(match select_unique_curve_candidate(
+    assert!(matches!(select_unique_curve_candidate(
         candidates,
         [
             [upper_radius, 0.0, upper_parameter],
             [0.0, upper_radius, upper_parameter],
         ],
-    ) {
-        Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
+    ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
             if {
                 let (center, _, _, radius) = circle_curve.parts();
-                (center.z - upper_parameter).abs() < 1.0e-12
-                    && (radius - upper_radius).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+                (center.z - upper_parameter).abs() < EPS_COAXIAL_CIRCLE
+                    && (radius - upper_radius).abs() < EPS_COAXIAL_CIRCLE
+            }));
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [3.0 + 7.0_f64.sqrt(), 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],
@@ -1683,17 +1679,13 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         }
         _ => false,
     });
-    assert!(match resolve_curve_candidates(tangent_candidates, None) {
-        Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                (center.z - 1.5).abs() < 1.0e-12 && (radius - 3.5).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            (center.z - 1.5).abs() < EPS_COAXIAL_CIRCLE && (radius - 3.5).abs() < EPS_COAXIAL_CIRCLE
+        })
+    );
     assert!(resolve_curve_candidates(
         coaxial_cone_torus_circle_candidates(cone, tangent_torus),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
@@ -1787,17 +1779,11 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     let candidates = coaxial_cones_section_candidates(first, second);
     assert_eq!(candidates.len(), 2);
     assert!(
-        match select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]) {
-            Some((CurveGeometry::Circle(circle_curve), "coaxial_cones_circle"))
-                if {
-                    let (center, _, _, radius) = circle_curve.parts();
-                    (center.z - 4.0).abs() < 1.0e-12 && (radius - 6.0).abs() < 1.0e-12
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Circle(circle_curve), "coaxial_cones_circle"))
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            (center.z - 4.0).abs() < EPS_COAXIAL_CIRCLE && (radius - 6.0).abs() < EPS_COAXIAL_CIRCLE
+        })
     );
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [10.0, 0.0, 0.0],
