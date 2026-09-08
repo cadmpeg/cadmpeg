@@ -57,11 +57,13 @@ fn analytic_conic_boundary_defines_its_plane() {
     let plane = analytic_curve_plane(&CurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             Point3::new(3.0, 4.0, 5.0),
-            Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
+            Vector3::new(0.0, 0.0, -2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
             Vector3::new(1.0, 0.0, 0.0),
             7.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     ))
     .expect("circle plane");
     assert_eq!(plane.origin, [3.0, 4.0, 5.0]);
@@ -71,7 +73,7 @@ fn analytic_conic_boundary_defines_its_plane() {
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0)
         )
-        .unwrap()
+        .expect("valid LineCurve fixture")
     ))
     .is_none());
 }
@@ -159,9 +161,11 @@ fn distinct_boundary_lines_define_one_plane() {
     let analytic = analytic_boundary_line(&CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
-            Vector3::new(2.0, 0.0, 0.0).unit().unwrap(),
+            Vector3::new(2.0, 0.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     ))
     .expect("analytic line");
     assert_eq!(analytic.direction, [1.0, 0.0, 0.0]);
@@ -207,7 +211,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
                 Vector3::new(1.0, 0.0, 0.0),
                 5.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         ),
         source_object: None,
     });

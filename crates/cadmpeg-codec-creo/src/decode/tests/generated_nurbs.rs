@@ -110,7 +110,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },
@@ -122,7 +122,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     Vector3::new(0.0, 0.0, -1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },

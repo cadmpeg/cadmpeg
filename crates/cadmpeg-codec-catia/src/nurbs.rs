@@ -798,7 +798,7 @@ mod tests {
                 Point2::new(2.0, -1.0),
                 Point2::new(3.0, 4.0),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
         let reversed = reverse_pcurve_geometry(&geometry, range).expect("reversible line");
@@ -815,9 +815,11 @@ mod tests {
         let line = CurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(2.0, -1.0, 4.0),
-                Vector3::new(3.0, 4.0, -2.0).unit().unwrap(),
+                Vector3::new(3.0, 4.0, -2.0)
+                    .unit()
+                    .expect("nonzero fixture direction"),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         );
         let circle = CurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -826,7 +828,7 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 3.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
             let (reversed, reversed_range) =
@@ -880,7 +882,7 @@ mod tests {
                 0.4,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid HelixCurveConstruction fixture"),
         );
         let (reversed, reversed_range) =
             reverse_helix_definition(&definition, range).expect("reversible helix");
@@ -982,7 +984,7 @@ mod tests {
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid HelixCurveConstruction fixture"),
         );
 
         let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
@@ -1012,7 +1014,7 @@ mod tests {
                     0.0,
                     Vector3::new(0.0, 0.0, 1.0),
                 )
-                .unwrap(),
+                .expect("valid HelixCurveConstruction fixture"),
             )
         };
 
@@ -1040,7 +1042,7 @@ mod tests {
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid HelixCurveConstruction fixture"),
         );
         let mut non_axial_pitch = definition.clone();
         if let ProceduralCurveDefinition::Helix(helix_payload) = &mut non_axial_pitch {
@@ -1055,7 +1057,7 @@ mod tests {
                 apex_factor,
                 axis,
             )
-            .unwrap();
+            .expect("valid HelixCurveConstruction fixture");
         }
         assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4).is_none());
 
@@ -1069,7 +1071,7 @@ mod tests {
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(circular_helix_cache(&overflowing_fit, f64::MAX).is_none());
     }

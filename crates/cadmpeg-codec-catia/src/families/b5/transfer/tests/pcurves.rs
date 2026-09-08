@@ -491,9 +491,11 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     let line = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
-            Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
+            Vector3::new(0.0, 0.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let forward =
         oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 9.0]).expect("forward line range");
@@ -524,7 +526,7 @@ fn analytic_line_range_uses_oriented_signed_distance() {
             Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let tiny = oriented_line_plan(&tiny_direction, [2.0, 0.0, 0.0], [3.0, 0.0, 0.0])
         .expect("finite nonzero line direction");
@@ -713,7 +715,7 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let mut plans = HashMap::new();
     let mut conflicts = HashSet::new();
@@ -747,7 +749,7 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         ),
         parameter_range: Some([2.0, 8.0]),
         edge_tolerance: None,
@@ -973,7 +975,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
                     0.0,
                     0.0
                 )
-                .unwrap()
+                .expect("valid SphericalGreatCirclePcurve fixture")
             ),
             false,
             parameter_range,

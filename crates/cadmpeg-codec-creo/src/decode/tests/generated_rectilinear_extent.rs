@@ -89,7 +89,7 @@ fn generated_fixture(
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };
@@ -274,7 +274,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };

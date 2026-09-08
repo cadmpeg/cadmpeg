@@ -172,7 +172,7 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
                     [1.0, 0.0, 0.0].into()
                 },
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     }
@@ -189,7 +189,7 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
                 [1.0, 0.0, 0.0].into(),
                 radius,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         ),
         source_object: None,
     }

@@ -22,7 +22,7 @@ fn circle() -> CurveGeometry {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     )
 }
 
@@ -35,7 +35,7 @@ fn ellipse() -> CurveGeometry {
             4.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid EllipseCurve fixture"),
     )
 }
 
@@ -62,9 +62,11 @@ fn preserves_unit_line_parameterization_and_orders_the_interval() {
     let line = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
-            Vector3::new(2.0, 0.0, 0.0).unit().unwrap(),
+            Vector3::new(2.0, 0.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert_eq!(
         exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.0, 3.0]]),
@@ -77,9 +79,11 @@ fn withholds_parameters_for_points_off_the_line() {
     let line = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
-            Vector3::new(2.0, 0.0, 0.0).unit().unwrap(),
+            Vector3::new(2.0, 0.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert_eq!(
         exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.1, 3.0]]),
@@ -308,7 +312,7 @@ fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
             4.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid EllipseCurve fixture"),
     );
     assert_eq!(
         full_periodic_conic_edge_parameter_range(&ellipse, [4.0, 0.0, 0.0]),
@@ -329,7 +333,7 @@ fn nonperiodic_conics_recover_their_native_parameters() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid ParabolaCurve fixture"),
     );
     let parabola_points = [evaluated(&parabola, 3.0), evaluated(&parabola, -2.0)];
     assert_eq!(
@@ -349,7 +353,7 @@ fn nonperiodic_conics_recover_their_native_parameters() {
             3.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid HyperbolaCurve fixture"),
     );
     let hyperbola_points = [evaluated(&hyperbola, 2.0), evaluated(&hyperbola, -1.0)];
     let range = nonperiodic_conic_edge_parameter_range(&hyperbola, hyperbola_points)
@@ -372,7 +376,7 @@ fn solved_endpoints_select_one_hyperbola_branch() {
             3.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid HyperbolaCurve fixture"),
     );
     let branches = analytic_curve_branches(&hyperbola, "hyperbola");
     let points = [
@@ -396,7 +400,7 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let midpoint = native_pcurve_midpoint(
         &cylinder,
@@ -417,7 +421,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let surfaces = [10, 11]
         .map(|face| Surface {

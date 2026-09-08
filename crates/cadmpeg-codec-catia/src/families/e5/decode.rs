@@ -2399,17 +2399,15 @@ pub(crate) fn e5_occurrence_intersection_context(
     if (left.2[0] - right.2[0]).abs() > tolerance || (left.2[1] - right.2[1]).abs() > tolerance {
         return None;
     }
-    Some(
-        IntcurveSupportContext::try_new(
-            [left, right].map(|side| IntcurveSupportSide {
-                surface: Some(side.0.clone()),
-                pcurve: Some(SupportPcurve::new(side.1.clone(), None)),
-            }),
-            left.2,
-            std::array::from_fn(|_| Vec::new()),
-        )
-        .ok()?,
+    IntcurveSupportContext::try_new(
+        [left, right].map(|side| IntcurveSupportSide {
+            surface: Some(side.0.clone()),
+            pcurve: Some(SupportPcurve::new(side.1.clone(), None)),
+        }),
+        left.2,
+        std::array::from_fn(|_| Vec::new()),
     )
+    .ok()
 }
 
 fn e5_support_occurrence_intersection_context(
@@ -3058,7 +3056,7 @@ mod route_tests {
                     normal,
                     u_axis,
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale,
         };
@@ -3094,7 +3092,7 @@ mod route_tests {
                     Point2::new(0.0, 0.0),
                     Point2::new(-1.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid LinePcurve fixture"),
             ),
             range,
             endpoints,
@@ -3192,7 +3190,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [1.0, 1.0],
         };
@@ -3298,7 +3296,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [1.0, 1.0],
         };
@@ -3366,7 +3364,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [1.0, 1.0],
         };
@@ -3566,7 +3564,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [1.0, 1.0],
         };
@@ -3702,14 +3700,14 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 2.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         );
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(0.0, 3.0),
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -3746,7 +3744,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 2.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         );
         let transverse_noise = f64::EPSILON;
         let pcurve = PcurveGeometry::Line(
@@ -3754,7 +3752,7 @@ mod route_tests {
                 Point2::new(0.0, 3.0),
                 Point2::new(1.0, transverse_noise),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -3785,7 +3783,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 2.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         );
         let direction = 1e-200;
         let parameter_end = 1e200;
@@ -3794,7 +3792,7 @@ mod route_tests {
                 Point2::new(0.0, 3.0),
                 Point2::new(direction, 0.0),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -3824,14 +3822,14 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let plane_pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(
                 Point2::new(0.0, 0.0),
                 Point2::new(direction, 0.0),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         let plane_native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -3861,7 +3859,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let native = E5Pcurve::Line {
             surface: 0,
@@ -3874,7 +3872,7 @@ mod route_tests {
                 Point2::new(f64::MAX, 0.0),
                 Point2::new(f64::MAX, 0.0),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         assert!(e5_boundary_curve(
             &surface,
@@ -3895,7 +3893,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let native = E5Pcurve::Circle {
             surface: 0,
@@ -3907,7 +3905,7 @@ mod route_tests {
         };
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-                .unwrap(),
+                .expect("valid LinePcurve fixture"),
         );
         assert!(e5_boundary_curve(
             &surface,
@@ -3928,7 +3926,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let tiny = f64::from_bits(1);
         let native = E5Pcurve::Line {
@@ -3942,7 +3940,7 @@ mod route_tests {
                 Point2::new(0.0, 0.0),
                 Point2::new(tiny, 0.0),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -3969,7 +3967,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
@@ -4028,7 +4026,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let points = vec![[0.0, 0.0], [1.0, 2.0]];
         let first = vec![[1.0, 2.0], [1.0, 2.0]];
@@ -4076,7 +4074,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let native = E5Pcurve::Jet {
             surface: 0,
@@ -4116,7 +4114,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         let right = CurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -4125,7 +4123,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         assert!(equivalent_e5_curve_carriers(&left, &right));
         let reversed_axis = CurveGeometry::Circle(
@@ -4135,7 +4133,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         assert!(!equivalent_e5_curve_carriers(&left, &reversed_axis));
         let shifted_reference = CurveGeometry::Circle(
@@ -4145,7 +4143,7 @@ mod route_tests {
                 Vector3::new(0.0, 1.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         assert!(!equivalent_e5_curve_carriers(&left, &shifted_reference));
         assert!(e5_circle_carriers_have_same_ordered_sweep(
@@ -4167,7 +4165,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         assert!(!equivalent_e5_curve_carriers(&left, &displaced));
 
@@ -4176,14 +4174,14 @@ mod route_tests {
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         );
         let parallel_line = CurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         );
         assert!(equivalent_e5_curve_carriers(&line, &parallel_line));
         let reversed_line = CurveGeometry::Line(
@@ -4191,7 +4189,7 @@ mod route_tests {
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(-1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         );
         assert!(!equivalent_e5_curve_carriers(&line, &reversed_line));
     }
@@ -4208,7 +4206,7 @@ mod route_tests {
                     Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             uv_scale: [0.5, 1.0],
         };
@@ -4314,7 +4312,7 @@ mod route_tests {
                     1.0,
                     half_angle,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             ),
             uv_scale: [0.5, half_angle.cos() / 4.0],
         };
@@ -4381,7 +4379,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [f64::MAX, 1.0],
         };
@@ -4405,7 +4403,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [f64::MAX, 1.0],
         };
@@ -4431,7 +4429,7 @@ mod route_tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             uv_scale: [1.0, 1.0],
         };
@@ -4455,7 +4453,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
@@ -4494,7 +4492,7 @@ mod route_tests {
                     5.0,
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid TorusSurface fixture"),
             ),
             uv_scale: [0.2, 0.5],
         };
@@ -4540,7 +4538,7 @@ mod route_tests {
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 [-2.0, 3.0],
             ),
@@ -4551,7 +4549,7 @@ mod route_tests {
                         Point2::new(0.0, 1.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 [-2.0 - 1e-14, 3.0 + 1e-14],
             ),
@@ -4601,7 +4599,7 @@ mod route_tests {
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 pcurve_range: [100.0, 200.0],
                 curve: None,
@@ -4614,7 +4612,7 @@ mod route_tests {
                         Point2::new(0.0, 1.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 pcurve_range: [-5.0, 5.0],
                 curve: None,
@@ -4657,7 +4655,7 @@ mod route_tests {
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         );
         let nurbs = CurveGeometry::Nurbs(
             NurbsCurve::new(
@@ -4678,7 +4676,7 @@ mod route_tests {
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 pcurve_range: [10.0, 20.0],
                 curve: Some((line.clone(), [0.0, 1.0])),
@@ -4691,7 +4689,7 @@ mod route_tests {
                         Point2::new(0.0, 1.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 pcurve_range: [-4.0, 6.0],
                 curve: Some((nurbs, [100.0, 110.0])),
@@ -4709,7 +4707,7 @@ mod route_tests {
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid CircleCurve fixture"),
             ),
             [0.0, 1.0],
         ));
@@ -4722,7 +4720,7 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         let right_circle = CurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -4731,7 +4729,7 @@ mod route_tests {
                 Vector3::new(0.0, 1.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         sides[0].curve = Some((left_circle.clone(), [0.0, std::f64::consts::PI]));
         sides[1].curve = Some((

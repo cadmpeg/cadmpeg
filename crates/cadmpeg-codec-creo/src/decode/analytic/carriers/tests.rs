@@ -27,7 +27,7 @@ fn cylinder_surface(id: u32, radius: f64) -> Surface {
                 Vector3::new(1.0, 0.0, 0.0),
                 radius,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         ),
     )
 }
@@ -59,7 +59,7 @@ fn existing_plane_carrier_accepts_reversed_normal() {
             Vector3::new(0.0, 0.0, -1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
 
     assert_eq!(
@@ -76,7 +76,7 @@ fn existing_plane_carrier_rejects_offset_conflict() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
 
     assert_eq!(
@@ -104,7 +104,7 @@ fn existing_non_plane_carrier_conflicts_with_topology() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
 
     assert_eq!(
@@ -167,7 +167,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             Vector3::new(0.0, 0.0, -1.0),
             0.75,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
 
     let carriers = placed_carriers(&scan, &ir);
@@ -261,7 +261,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
         ),
         carrier_surface(
@@ -272,7 +272,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
         ),
     ]);
@@ -444,7 +444,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
                 Vector3::new(1.0, 0.0, 0.0),
                 5.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         ),
         source_object: None,
     };

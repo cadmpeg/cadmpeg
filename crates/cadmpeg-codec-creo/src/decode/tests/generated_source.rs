@@ -134,7 +134,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let cone = SurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -145,7 +145,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             1.0,
             0.5,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     assert_eq!(
         analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cone,),
@@ -217,7 +217,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             4.0,
             1.0,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
@@ -1122,7 +1122,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
             Vector3::new(1.0, 0.0, 0.0),
             0.3125,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let mut existing = BTreeMap::from([(30, carrier.clone()), (31, carrier.clone())]);
     let sources = vec![vec![10, 11], vec![30, 31]];
@@ -1161,7 +1161,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     let radius = 0.25;
     *cylinder_surface =
         cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-            .unwrap();
+            .expect("valid CylinderSurface fixture");
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &conflicting_patch, 0.625),
         None
@@ -1486,7 +1486,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid LineCurve fixture"),
             ),
             source_object: Some(source(41)),
         },
@@ -1799,7 +1799,7 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end).unwrap();
+        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end).expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");
@@ -1908,7 +1908,8 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam).unwrap();
+        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam)
+            .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("circle seam");

@@ -39,7 +39,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -53,8 +53,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             let (origin, normal, u_axis) = plane_surface.parts();
             let mut origin = *origin;
             origin.y = 2.0;
-            *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred datum plane"),
     }
@@ -89,7 +89,7 @@ fn plane_surface(origin_y: f64) -> Surface {
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     }

@@ -217,7 +217,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
                 Point3::new(2_000_000.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid LineCurve fixture"),
         ),
         source_object: None,
     });
@@ -562,7 +562,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             190,
         ),
@@ -574,7 +574,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             192,
         ),
@@ -588,7 +588,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     1.0,
                     std::f64::consts::FRAC_PI_6,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             ),
             194,
         ),
@@ -600,7 +600,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid SphereSurface fixture"),
             ),
             196,
         ),
@@ -613,7 +613,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
                     2.0,
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid TorusSurface fixture"),
             ),
             198,
         ),
@@ -639,7 +639,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
             2.0,
             3.0,
         )
-        .unwrap(),
+        .expect("valid HyperbolaCurve fixture"),
     );
     let range = [0.2, 1.1];
     let span = CurveSpan {
@@ -764,7 +764,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
     let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
@@ -784,7 +784,7 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let span = CurveSpan {
         range: [0.5, 0.5],

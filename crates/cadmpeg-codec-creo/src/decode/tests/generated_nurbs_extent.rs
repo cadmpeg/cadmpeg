@@ -65,7 +65,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
                 normal,
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };

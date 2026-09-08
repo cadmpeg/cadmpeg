@@ -1885,7 +1885,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -1898,7 +1898,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -1952,7 +1952,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2015,7 +2015,7 @@ mod tests {
                         1.0,
                         std::f64::consts::FRAC_PI_4,
                     )
-                    .unwrap(),
+                    .expect("valid ConeSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2028,7 +2028,7 @@ mod tests {
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2130,7 +2130,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2143,7 +2143,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2239,7 +2239,7 @@ mod tests {
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -2281,7 +2281,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let face_carrier = CarrierEquation::Plane(PlaneEquation {
             origin: [0.0, 0.0, 0.0],
@@ -2355,7 +2355,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2368,7 +2368,7 @@ mod tests {
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
                 source_object: None,
             },
@@ -2396,7 +2396,7 @@ mod tests {
                 1.0,
                 std::f64::consts::FRAC_PI_4,
             )
-            .unwrap(),
+            .expect("valid ConeSurface fixture"),
         );
         let mirrored = mirrored_support_apex_cone(&current).expect("support cone mirror");
         let plane = PlaneEquation {

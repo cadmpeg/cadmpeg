@@ -49,12 +49,12 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
             );
             assert_eq!(result.ir().model.curves.len(), 1, "{version} {family}");
             assert!(
-                match (&result.ir().model.curves[0].geometry, family_number) {
-                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse(_), 0) => true,
-                    (cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_), 1) => true,
-                    (cadmpeg_ir::geometry::CurveGeometry::Parabola(_), 2) => true,
-                    _ => false,
-                },
+                matches!(
+                    (&result.ir().model.curves[0].geometry, family_number),
+                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse(_), 0)
+                        | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_), 1)
+                        | (cadmpeg_ir::geometry::CurveGeometry::Parabola(_), 2)
+                ),
                 "{version} {family}: {:?}",
                 result.ir().model.curves[0].geometry
             );

@@ -30,7 +30,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
                     },
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -86,7 +86,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
-            .unwrap()
+            .expect("valid LineCurve fixture")
         ))
     );
     let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -139,7 +139,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                     Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid SphereSurface fixture"),
             ),
             source_object: None,
         },
@@ -151,7 +151,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },
@@ -218,7 +218,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                     Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -230,7 +230,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                     Vector3::new(0.0, sqrt_three / 2.0, -0.5),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },
@@ -307,7 +307,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                     Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -320,7 +320,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                     Vector3::new(0.0, 0.0, 1.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -388,7 +388,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
     };
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     let plane =
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
@@ -397,7 +397,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ));
     let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet(
         cadmpeg_ir::geometry::RollingBallJetStations::try_new(
@@ -428,7 +428,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                 })
                 .collect(),
         )
-        .unwrap(),
+        .expect("valid RollingBallJetStations fixture"),
     );
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
@@ -523,7 +523,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     assert!(solve(
         cylinder.clone(),
@@ -550,7 +550,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             1.0,
             std::f64::consts::FRAC_PI_4,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     assert!(solve(
         cone.clone(),

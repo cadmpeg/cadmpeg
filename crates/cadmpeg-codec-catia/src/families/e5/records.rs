@@ -829,7 +829,7 @@ mod tests {
         );
         assert_close(jet.stations[1].site.second_derivative.angle, 4.0);
         assert!(matches!(
-            jet.definition().unwrap(),
+            jet.definition().expect("valid rolling-ball jet fixture"),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));
     }
 

@@ -57,7 +57,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             Point3::new(10.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert_eq!(
         curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0]),
@@ -66,7 +66,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
                 Point3::new(20.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
-            .unwrap()
+            .expect("valid LineCurve fixture")
         ))
     );
     assert_eq!(
@@ -91,7 +91,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
                     Point3::new(10.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0)
                 )
-                .unwrap()
+                .expect("valid LineCurve fixture")
             ),
             [10.0, 20.0],
             [0.0, 2.0],
@@ -104,7 +104,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
                 None,
                 false,
             )
-            .unwrap()
+            .expect("valid NurbsCurve fixture")
         ))
     );
 }
@@ -626,11 +626,11 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     ]);
     let pcurve_20 = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     let pcurve_21 = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     let pcurves = BTreeMap::from([
         (20, (pcurve_20.clone(), false, [2.0, 4.0])),
@@ -711,7 +711,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         procedure: None,
     };
@@ -725,7 +725,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 false,
                 [0.0, 1.0],
@@ -739,7 +739,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
                         Point2::new(1.0, 0.0),
                         Point2::new(-1.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LinePcurve fixture"),
                 ),
                 false,
                 [0.0, 1.0],
@@ -1160,7 +1160,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             procedure: None,
         },

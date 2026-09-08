@@ -87,7 +87,7 @@ fn placed_extrusion_arc_defines_cylinder() {
                 Vector3::new(0.0, 1.0, 0.0),
                 2.0
             )
-            .unwrap()
+            .expect("valid CylinderSurface fixture")
         ))
     );
     assert_eq!(
@@ -99,7 +99,7 @@ fn placed_extrusion_arc_defines_cylinder() {
                 Vector3::new(0.0, 1.0, 0.0),
                 2.0
             )
-            .unwrap()
+            .expect("valid CircleCurve fixture")
         ))
     );
     assert_eq!(
@@ -117,7 +117,7 @@ fn placed_extrusion_arc_defines_cylinder() {
                 Vector3::new(0.0, 1.0, 0.0),
                 2.0
             )
-            .unwrap()
+            .expect("valid CircleCurve fixture")
         ))
     );
 }

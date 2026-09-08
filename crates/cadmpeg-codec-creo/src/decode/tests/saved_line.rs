@@ -1732,7 +1732,7 @@ fn placed_extrusion_line_defines_plane() {
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(0.0, 1.0, 0.0)
             )
-            .unwrap()
+            .expect("valid PlaneSurface fixture")
         ))
     );
     assert_eq!(
@@ -1742,7 +1742,7 @@ fn placed_extrusion_line_defines_plane() {
                 Point3::new(10.0, 22.0, 33.0),
                 Vector3::new(0.0, 1.0, 0.0)
             )
-            .unwrap()
+            .expect("valid LineCurve fixture")
         ))
     );
 }

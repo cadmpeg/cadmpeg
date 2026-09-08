@@ -25,7 +25,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
             Vector3::new(1.0, 0.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let surface_ids = [
         SurfaceId::mint("catia:test:surface#sphere-0".to_string()).expect("identity grammar"),
@@ -86,7 +86,7 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
             Vector3::new(1.0, 0.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 12,
