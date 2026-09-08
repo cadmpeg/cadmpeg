@@ -3516,7 +3516,7 @@ pub(crate) fn project_edge_flange(
         })
     };
 
-    let height = match &operation.shape.height() {
+    let height = match &operation.selection.shape().height() {
         DesignEdgeFlangeHeightExtent::Distance => SheetMetalFlangeHeight::Distance(design_length(
             parameter(operation.height_owner_record_index, "FlangeHeight")?,
         )?),
@@ -3587,7 +3587,7 @@ pub(crate) fn project_edge_flange(
         "FlangeAngle",
     )?)?;
 
-    let width = match &operation.shape {
+    let width = match &operation.selection.shape() {
         crate::records::feature::DesignEdgeFlangeShape::FullEdge { .. } => {
             SheetMetalFlangeWidth::FullEdge
         }
@@ -3660,9 +3660,10 @@ pub(crate) fn project_edge_flange(
 
     // Each role-`0x08` group carries one selected edge. The aggregate role-`0x43`
     // group repeats them, so it contributes no separate selection.
-    operation.shape.edges().next()?;
+    operation.selection.shape().edges().next()?;
     let selections = operation
-        .shape
+        .selection
+        .shape()
         .edges()
         .map(|edge| {
             let mut matching = groups.iter().filter(|group| {
@@ -3787,7 +3788,7 @@ pub(crate) fn project_hem(
         .members()
         .iter()
         .map(|member| member.value)
-        .eq([operation.edge_operand_record_index]);
+        .eq([operation.edge_operand_record_index()]);
     if edge_has_extra || !edge_role_ok || !edge_members_ok {
         return None;
     }
@@ -3804,7 +3805,7 @@ pub(crate) fn project_hem(
         .members()
         .iter()
         .map(|member| member.value)
-        .eq([operation.aggregate_operand_record_index]);
+        .eq([operation.aggregate_operand_record_index()]);
     if aggregate_has_extra || !aggregate_role_ok || !aggregate_members_ok {
         return None;
     }
@@ -3823,7 +3824,7 @@ pub(crate) fn project_hem(
         .filter(|operand| {
             native_stream(&operand.id) == native_stream(&edge_group.id)
                 && operand.scope_record_index == edge_group.scope_record_index
-                && operand.record_index == operation.edge_operand_record_index
+                && operand.record_index == operation.edge_operand_record_index()
         })
         .collect::<Vec<_>>();
     let edge_slot = match edge_slot.as_slice() {

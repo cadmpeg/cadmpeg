@@ -1808,27 +1808,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
                 // the entries no role claims are exactly the width owners.
-                let edge_count = operation.shape.edges().count();
+                let edge_count = operation.selection.shape().edges().count();
                 let claimed = operation
-                    .shape
+                    .selection
+                    .shape()
                     .edges()
                     .flat_map(|edge| {
                         [
-                            &edge.wrapper_record_index,
-                            &edge.group_record_index,
-                            &edge.operand_record_index,
-                            &edge.aggregate_operand_record_index,
+                            edge.wrapper_record_index,
+                            edge.group_record_index,
+                            edge.operand_record_index(),
+                            edge.aggregate_operand_record_index,
                         ]
                     })
-                    .chain(operation.shape.owner_indices())
-                    .chain(&operation.auxiliary_reference_record_indices)
+                    .chain(operation.selection.shape().owner_indices().copied())
+                    .chain(operation.auxiliary_reference_record_indices.iter().copied())
                     .chain([
-                        &operation.aggregate_group_record_index,
-                        &operation.height_owner_record_index,
-                        &operation.angle_owner_record_index,
-                        &operation.settings_record_index,
+                        operation.selection.aggregate_group_record_index(),
+                        operation.height_owner_record_index,
+                        operation.angle_owner_record_index,
+                        operation.settings_record_index,
                     ])
-                    .copied()
                     .collect::<Vec<_>>();
                 let mut claimed = claimed;
                 if let records::feature::DesignEdgeFlangeHeightExtent::ToObject {
@@ -1836,7 +1836,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     target_operand_record_index,
                     offset_owner_record_index,
                     ..
-                } = operation.shape.height()
+                } = operation.selection.shape().height()
                 {
                     claimed.extend([
                         target_group_record_index,
@@ -1850,14 +1850,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && claimed
                         .iter()
                         .all(|index| scope.reference_members.values().any(|value| value == index))
-                    && operation.shape.edges().all(|edge| {
-                        edge.operand_record_index == edge.group_record_index.saturating_add(3)
-                    })
-                    && (edge_count != 1
-                        || operation.shape.edges().all(|edge| {
-                            edge.aggregate_operand_record_index
-                                == operation.aggregate_group_record_index.saturating_add(3)
-                        }))
                     && operation.bend_radius_offset > scope.byte_offset
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
@@ -1865,15 +1857,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let hem_link = match scope.hem_operation() {
             None => true,
             Some(operation) => {
-                // The ordered reference table is in record-index order, so the
-                // check is that every role names a distinct table entry and that
-                // each group's operand is the record three after it.
                 let mut claimed = vec![
                     operation.edge_wrapper_record_index,
                     operation.edge_group_record_index,
-                    operation.edge_operand_record_index,
+                    operation.edge_operand_record_index(),
                     operation.aggregate_group_record_index,
-                    operation.aggregate_operand_record_index,
+                    operation.aggregate_operand_record_index(),
                     operation.settings_record_index,
                 ];
                 match &operation.parameter_owners {
@@ -1900,10 +1889,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && claimed
                         .iter()
                         .all(|index| scope.reference_members.values().any(|value| value == index))
-                    && operation.edge_operand_record_index
-                        == operation.edge_group_record_index.saturating_add(3)
-                    && operation.aggregate_operand_record_index
-                        == operation.aggregate_group_record_index.saturating_add(3)
                     && operation.bend_radius_offset > scope.byte_offset
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
