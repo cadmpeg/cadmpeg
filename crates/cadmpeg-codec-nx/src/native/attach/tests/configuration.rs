@@ -589,7 +589,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: vec![FeatureId::mint(dependency).expect("identity grammar")],
+        dependencies: vec![
+            FeatureId::mint(format!("synthetic:test:id#{dependency}")).expect("identity grammar")
+        ],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -859,7 +861,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression: text.to_string(),
         value: None,
         source_entry: "entry".to_string(),
-        source_table: "table".to_string(),
+        source_table: "nx:test:expression-table#table".to_string(),
         source_offset: 0,
     };
     let parameter_use = |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
@@ -1230,7 +1232,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         expression: key.to_string(),
         value: Some(f64::from(key)),
         source_entry: "part".into(),
-        source_table: "table".into(),
+        source_table: "nx:test:expression-table#table".into(),
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
@@ -1298,7 +1300,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
         expression: formula.into(),
         value,
         source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: "table".into(),
+        source_table: "nx:test:expression-table#table".into(),
         source_offset: u64::from(key),
     };
     let expressions = [
@@ -1343,7 +1345,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         expression: "4".into(),
         value: Some(4.0),
         source_entry: "part".into(),
-        source_table: "table".into(),
+        source_table: "nx:test:expression-table#table".into(),
         source_offset: 1,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
