@@ -194,87 +194,78 @@ impl<'a> ArchiveSnapshot<'a> {
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
-        match entry.compression {
-            ZipCompression::Stored => {
-                let view = ctx.register_slice_as(
-                    self.root,
-                    ByteRange {
-                        start: absolute_start,
-                        end: absolute_end,
-                    },
-                    entry.name.clone(),
-                )?;
-                if view.window().len() as u64 != entry.uncompressed_size {
-                    return Err(CodecError::malformed(format_args!(
-                        "stored size mismatch for {}",
-                        entry.name
-                    )));
-                }
-                if crc32fast::hash(view.window()) != entry.crc32 {
-                    return Err(CodecError::malformed(format_args!(
-                        "CRC mismatch for {}",
-                        entry.name
-                    )));
-                }
-                Ok(view)
-            }
-            ZipCompression::Deflate | ZipCompression::Zstd => {
-                let start = usize::try_from(absolute_start).map_err(|_| {
-                    CodecError::Malformed("ZIP data offset does not fit memory".into())
-                })?;
-                let end = usize::try_from(absolute_end).map_err(|_| {
-                    CodecError::Malformed("ZIP data offset does not fit memory".into())
-                })?;
-                let source = self.root.child(start, end).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "ZIP data range escapes archive for {}",
-                        entry.name
-                    ))
-                })?;
-                let mut decoder: Box<dyn Read> = match entry.compression {
-                    ZipCompression::Deflate => {
-                        Box::new(flate2::read::DeflateDecoder::new(source.window()))
-                    }
-                    ZipCompression::Zstd => Box::new(
-                        zstd::stream::read::Decoder::with_buffer(source.window()).map_err(
-                            |error| {
-                                CodecError::malformed(format_args!(
-                                    "cannot open Zstandard frame for {}: {error}",
-                                    entry.name
-                                ))
-                            },
-                        )?,
-                    ),
-                    ZipCompression::Stored => unreachable!("stored entries use borrowed views"),
-                };
-                let mut writer = ctx.begin_expand_as(
-                    source,
-                    ExpandSpec::Exact(entry.uncompressed_size),
-                    entry.name.clone(),
-                )?;
-                let mut chunk = [0_u8; 16 * 1024];
-                loop {
-                    let read = decoder.read(&mut chunk).map_err(|error| {
-                        CodecError::malformed(format_args!(
-                            "cannot inflate {}: {error}",
+        let open_decoder: fn(&[u8]) -> Result<Box<dyn Read + '_>, std::io::Error> =
+            match entry.compression {
+                ZipCompression::Stored => {
+                    let view = ctx.register_slice_as(
+                        self.root,
+                        ByteRange {
+                            start: absolute_start,
+                            end: absolute_end,
+                        },
+                        entry.name.clone(),
+                    )?;
+                    if view.window().len() as u64 != entry.uncompressed_size {
+                        return Err(CodecError::malformed(format_args!(
+                            "stored size mismatch for {}",
                             entry.name
-                        ))
-                    })?;
-                    if read == 0 {
-                        break;
+                        )));
                     }
-                    writer.write(&chunk[..read])?;
+                    if crc32fast::hash(view.window()) != entry.crc32 {
+                        return Err(CodecError::malformed(format_args!(
+                            "CRC mismatch for {}",
+                            entry.name
+                        )));
+                    }
+                    return Ok(view);
                 }
-                let view = writer.finalize()?;
-                if crc32fast::hash(view.window()) != entry.crc32 {
-                    return Err(CodecError::malformed(format_args!(
-                        "CRC mismatch for {}",
-                        entry.name
-                    )));
+                ZipCompression::Deflate => {
+                    |bytes| Ok(Box::new(flate2::read::DeflateDecoder::new(bytes)))
                 }
-                Ok(view)
+                ZipCompression::Zstd => |bytes| {
+                    zstd::stream::read::Decoder::with_buffer(bytes)
+                        .map(|decoder| Box::new(decoder) as Box<dyn Read>)
+                },
+            };
+        let start = usize::try_from(absolute_start)
+            .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
+        let end = usize::try_from(absolute_end)
+            .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
+        let source = self.root.child(start, end).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "ZIP data range escapes archive for {}",
+                entry.name
+            ))
+        })?;
+        let mut decoder = open_decoder(source.window()).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "cannot open Zstandard frame for {}: {error}",
+                entry.name
+            ))
+        })?;
+        let mut writer = ctx.begin_expand_as(
+            source,
+            ExpandSpec::Exact(entry.uncompressed_size),
+            entry.name.clone(),
+        )?;
+        let mut chunk = [0_u8; 16 * 1024];
+        loop {
+            let read = decoder.read(&mut chunk).map_err(|error| {
+                CodecError::malformed(format_args!("cannot inflate {}: {error}", entry.name))
+            })?;
+            if read == 0 {
+                break;
             }
+            writer.write(&chunk[..read])?;
         }
+        let view = writer.finalize()?;
+        if crc32fast::hash(view.window()) != entry.crc32 {
+            return Err(CodecError::malformed(format_args!(
+                "CRC mismatch for {}",
+                entry.name
+            )));
+        }
+        Ok(view)
     }
 
     /// Builds generic entry summaries using a codec-owned role classifier.
