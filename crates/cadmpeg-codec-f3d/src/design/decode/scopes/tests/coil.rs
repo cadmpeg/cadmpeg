@@ -308,6 +308,8 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ]
+        .try_into()
+        .unwrap()
     );
 
     for (operation, expected) in [
@@ -327,6 +329,8 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ]
+            .try_into()
+            .unwrap()
         );
     }
 }

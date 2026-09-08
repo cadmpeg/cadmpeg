@@ -1203,7 +1203,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     })
                                     .collect(),
                             },
-                            |transform| project_work_plane(scope, transform),
+                            |transform| project_work_plane(scope, transform.into()),
                         )
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkAxis {
                         scope
@@ -3403,7 +3403,7 @@ fn project_move(
             operation.transform[1][3] * 10.0,
             operation.transform[2][3] * 10.0,
         ),
-        rotation: matrix_axis_angle(&operation.transform),
+        rotation: matrix_axis_angle(operation.transform.as_ref()),
         copies: 0,
     })
 }

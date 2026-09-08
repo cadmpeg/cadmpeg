@@ -696,12 +696,16 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         320,
     );
-    target_scope.with_work_plane_transform([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]);
+    target_scope.with_work_plane_transform(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap(),
+    );
 
     let groups = [edge_group, target_group];
     let target_scopes = [target_scope.clone()];

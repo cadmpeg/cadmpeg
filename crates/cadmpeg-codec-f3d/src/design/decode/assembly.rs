@@ -313,20 +313,23 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     )?;
     let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
-    Some(DesignAssemblyLegacyOperands {
-        point: DesignAssemblyLegacyOperand {
-            construction_class_tag: point_class_tag.try_into().ok()?,
-            construction: Box::new(point),
-            selection: first_selection,
-            reference_offset: point_reference.offset,
-        },
-        hole: DesignAssemblyLegacyOperand {
-            construction_class_tag: hole_class_tag.try_into().ok()?,
-            construction: Box::new(hole),
-            selection: second_selection,
-            reference_offset: hole_reference.offset,
-        },
-    })
+    Some(
+        crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+            DesignAssemblyLegacyOperand {
+                construction_class_tag: point_class_tag.try_into().ok()?,
+                construction: Box::new(point),
+                selection: first_selection,
+                reference_offset: point_reference.offset,
+            },
+            DesignAssemblyLegacyOperand {
+                construction_class_tag: hole_class_tag.try_into().ok()?,
+                construction: Box::new(hole),
+                selection: second_selection,
+                reference_offset: hole_reference.offset,
+            },
+        )
+        .ok()?,
+    )
 }
 
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {

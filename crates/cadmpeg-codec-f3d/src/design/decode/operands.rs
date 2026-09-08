@@ -2632,7 +2632,7 @@ pub(crate) fn parse_construction_operand_dual_transform(
     )
 }
 
-fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<crate::records::SketchPlacementMatrix> {
     let mut view = View::over_retained(bytes);
     view.seek(at)?;
     let mut transform = [[0.0; 4]; 4];
@@ -2641,7 +2641,7 @@ fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
             *cell = view.f64_le()?;
         }
     }
-    crate::records::valid_sketch_transform(&transform).then_some(transform)
+    transform.try_into().ok()
 }
 
 /// Take one reference naming a record of the same segment, advancing `at` past

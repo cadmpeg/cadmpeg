@@ -57,7 +57,7 @@ pub(crate) fn project_local_components(
                             [0.0, 0.0, 1.0, 0.0],
                             [0.0, 0.0, 0.0, 1.0],
                         ],
-                        |frame| frame.value,
+                        |frame| frame.value.into(),
                     ),
                 );
             }
@@ -69,7 +69,7 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 operation.component_guid.as_str(),
                 operation.source_occurrence_guid.as_str(),
-                operation.source_transform,
+                operation.source_transform.into(),
             );
             project_occurrence(
                 &mut components,
@@ -77,7 +77,7 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 operation.component_guid.as_str(),
                 operation.copied_occurrence_guid.as_str(),
-                operation.copied_transform,
+                operation.copied_transform.into(),
             );
         }
         if let Some(construction) = scope.derived_instance_construction() {
@@ -87,7 +87,7 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 construction.component_guid.as_str(),
                 construction.occurrence_guid.as_str(),
-                construction.transform,
+                construction.transform.into(),
             );
         }
         let Some(crate::records::feature::DesignRectangularPatternInstances::Components {
@@ -107,7 +107,7 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 component_guid.as_str(),
                 occurrence.occurrence_guid.as_str(),
-                occurrence.instance.transform.value,
+                occurrence.instance.transform.value.into(),
             );
         }
     }
@@ -183,7 +183,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             parent: OccurrenceParent::Root,
             ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
                 .unwrap_or(u32::MAX),
-            transform: neutral_transform(*construction.transform()),
+            transform: neutral_transform((*construction.transform()).into()),
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some(construction.neutron_role.clone()),
@@ -315,9 +315,9 @@ mod tests {
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 source_occurrence_guid: SOURCE.to_owned().try_into().expect("GUID"),
                 copied_occurrence_guid: COPY.to_owned().try_into().expect("GUID"),
-                source_transform: identity_matrix(),
+                source_transform: identity_matrix().try_into().unwrap(),
                 source_transform_offset: 0,
-                copied_transform: identity_matrix(),
+                copied_transform: identity_matrix().try_into().unwrap(),
                 copied_transform_offset: 0,
             });
         }
@@ -352,7 +352,7 @@ mod tests {
                 carrier_record_index: 382,
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
-                transform: identity_matrix(),
+                transform: identity_matrix().try_into().unwrap(),
                 transform_offset: 473,
             });
         }
@@ -369,7 +369,7 @@ mod tests {
             placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: std::num::NonZeroU32::MIN,
                 transform: crate::records::Located {
-                    value: identity_matrix(),
+                    value: identity_matrix().try_into().unwrap(),
                     offset: 209,
                 },
             },

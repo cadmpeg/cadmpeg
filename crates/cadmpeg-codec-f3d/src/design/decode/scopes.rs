@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
-use crate::records::valid_sketch_transform;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
@@ -2183,32 +2182,32 @@ pub(crate) fn exact_component_insert_construction(
                 )
             }
             (261, "263") if scope.class_tag.as_str() == "296" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "261") if scope.class_tag.as_str() == "410" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "258") if scope.class_tag.as_str() == "426" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "266") if scope.class_tag.as_str() == "434" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "264") if scope.class_tag.as_str() == "414" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (257 | 267, "264") if scope.class_tag.as_str() == "414" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope_shifted(bytes, start, relation_record_index)?,
             ),
@@ -2328,7 +2327,7 @@ pub(crate) fn exact_component_insert_construction(
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                    transform,
+                    transform.into(),
                 )?;
             (
                 carrier_record_index,
@@ -2567,7 +2566,7 @@ fn exact_component_insert_scope_283_262_257(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+) -> Option<(crate::records::SketchPlacementMatrix, Option<usize>, u64)> {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(
             start + component_scope_283_257::RELATION_MARKER
@@ -2608,7 +2607,7 @@ fn exact_component_insert_scope_283_262_257(
         return None;
     }
     Some((
-        identity_matrix(),
+        crate::records::SketchPlacementMatrix::IDENTITY,
         None,
         View::u64_le_at(bytes, start + component_scope_283_257::OCCURRENCE_IDENTITY)?,
     ))
@@ -2618,7 +2617,7 @@ fn exact_component_insert_scope_283_262_385(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+) -> Option<(crate::records::SketchPlacementMatrix, Option<usize>, u64)> {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 44..start + 52)? != [1, 0, 0, 0, 0, 0, 0, 0]
         || bytes.get(start + 38..start + 44)? != [0; 6]
@@ -2744,7 +2743,7 @@ fn exact_component_insert_scope_414_264_389(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+) -> Option<(crate::records::SketchPlacementMatrix, Option<usize>, u64)> {
     if bytes.get(start + 11..start + 20)? != [0; 9]
         || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
         || bytes.get(start + 33..start + 37)? != [0; 4]
@@ -2783,7 +2782,7 @@ fn legacy_component_insert_placements(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-    transform: [[f64; 4]; 4],
+    transform: crate::records::SketchPlacementMatrix,
 ) -> Vec<(String, usize, Option<usize>)> {
     let Some((class_tag, after_tag)) =
         lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
@@ -3023,13 +3022,16 @@ fn unique_indexed_record_before(
     Some(*at)
 }
 
-pub(crate) fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+pub(crate) fn rigid_transform_at(
+    bytes: &[u8],
+    at: usize,
+) -> Option<crate::records::SketchPlacementMatrix> {
     let values = f64s_at(bytes, at, 16)?;
     let mut transform = [[0.0; 4]; 4];
     for (ordinal, value) in values.into_iter().enumerate() {
         transform[ordinal / 4][ordinal % 4] = value;
     }
-    valid_sketch_transform(&transform).then_some(transform)
+    transform.try_into().ok()
 }
 
 fn exact_assembly_operand_frames(
@@ -3151,9 +3153,7 @@ fn exact_assembly_operand_frames(
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
         }
-        if !valid_sketch_transform(&transform) {
-            return None;
-        }
+        let transform = crate::records::SketchPlacementMatrix::try_from(transform).ok()?;
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset: (reference_at + 1) as u64,
@@ -4526,7 +4526,7 @@ fn exact_rectangular_pattern_instances(
     ))
 }
 
-type TransformCandidate = ([[f64; 4]; 4], u64);
+type TransformCandidate = (crate::records::SketchPlacementMatrix, u64);
 
 fn exact_rigid_transform_candidates(
     bytes: &[u8],
@@ -4562,14 +4562,17 @@ fn exact_rigid_transform_candidates(
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
         }
-        if valid_sketch_transform(&transform) {
+        if let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) {
             candidates.push((transform, u64::try_from(offset).ok()?));
         }
     }
     (!candidates.is_empty()).then_some(candidates)
 }
 
-fn same_transform_basis(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
+fn same_transform_basis(
+    left: &crate::records::SketchPlacementMatrix,
+    right: &crate::records::SketchPlacementMatrix,
+) -> bool {
     (0..3).all(|row| {
         (0..3).all(|column| {
             (left[row][column] - right[row][column]).abs() <= EPS_SCOPES_SAME_TRANSFORM_BASIS_E10
@@ -4577,7 +4580,10 @@ fn same_transform_basis(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
     })
 }
 
-fn translation_delta(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> [f64; 3] {
+fn translation_delta(
+    left: &crate::records::SketchPlacementMatrix,
+    right: &crate::records::SketchPlacementMatrix,
+) -> [f64; 3] {
     [
         right[0][3] - left[0][3],
         right[1][3] - left[1][3],
@@ -6640,9 +6646,9 @@ pub(crate) fn exact_move_operation(
                 .collect::<Vec<[f64; 4]>>()
                 .try_into()
                 .ok()?;
-            if !valid_sketch_transform(&transform) {
+            let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
-            }
+            };
             candidates.push(DesignMoveOperation {
                 transform,
                 transform_offset: (start + transform_offset) as u64,
@@ -7323,7 +7329,7 @@ pub(crate) fn exact_path_feature_construction(
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ScopePlacementFrame {
-    pub(crate) transform: [[f64; 4]; 4],
+    pub(crate) transform: crate::records::SketchPlacementMatrix,
     pub(crate) transform_offset: u64,
     pub(crate) reference: Option<(u32, u64)>,
 }
@@ -7493,9 +7499,9 @@ pub(crate) fn exact_work_plane_frame(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            if !valid_sketch_transform(&transform) {
+            let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
-            }
+            };
             candidates.push(ScopePlacementFrame {
                 transform,
                 transform_offset: matrix_at as u64,
@@ -7730,7 +7736,7 @@ pub(crate) fn exact_joint_origin_frame(
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if valid_sketch_transform(&transform) {
+                if let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) {
                     candidates.push(ScopePlacementFrame {
                         transform,
                         transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
@@ -7750,7 +7756,7 @@ pub(crate) fn exact_joint_origin_frame(
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if valid_sketch_transform(&transform) {
+                if let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) {
                     candidates.push(ScopePlacementFrame {
                         transform,
                         transform_offset: (start + 49) as u64,
@@ -7771,9 +7777,9 @@ pub(crate) fn exact_joint_origin_frame(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            if !valid_sketch_transform(&transform) {
+            let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
-            }
+            };
             candidates.push(ScopePlacementFrame {
                 transform,
                 transform_offset: (start + 60) as u64,
@@ -9233,7 +9239,7 @@ fn exact_coil_placement(
                 transform[ordinal / 4][ordinal % 4] = value;
             }
             Some(crate::records::Located {
-                value: transform,
+                value: crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
                 offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?)
                     .ok()?,
             })
@@ -9286,7 +9292,7 @@ fn exact_coil_placement(
                 transform[ordinal / 4][ordinal % 4] = value;
             }
             Some(crate::records::Located {
-                value: transform,
+                value: crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
                 offset: u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?).ok()?,
             })
         }
@@ -9538,10 +9544,7 @@ fn exact_coil_face_selection(
     })
 }
 
-fn valid_right_handed_coil_transform(transform: &[[f64; 4]; 4]) -> bool {
-    if !valid_sketch_transform(transform) {
-        return false;
-    }
+fn valid_right_handed_coil_transform(transform: &crate::records::SketchPlacementMatrix) -> bool {
     let radial = [transform[0][0], transform[1][0], transform[2][0]];
     let tangent = [transform[0][1], transform[1][1], transform[2][1]];
     let axis = [transform[0][2], transform[1][2], transform[2][2]];
@@ -9745,7 +9748,10 @@ fn exact_long_coil_transform(
     })
 }
 
-fn exact_long_coil_transform_values(bytes: &[u8], start: usize) -> Option<[[f64; 4]; 4]> {
+fn exact_long_coil_transform_values(
+    bytes: &[u8],
+    start: usize,
+) -> Option<crate::records::SketchPlacementMatrix> {
     let values = f64s_at(bytes, start.checked_add(77)?, 16)?;
     if !exact_long_coil_matrix(bytes, start) {
         return None;
@@ -9754,6 +9760,7 @@ fn exact_long_coil_transform_values(bytes: &[u8], start: usize) -> Option<[[f64;
     for (ordinal, value) in values.into_iter().enumerate() {
         transform[ordinal / 4][ordinal % 4] = value;
     }
+    let transform = crate::records::SketchPlacementMatrix::try_from(transform).ok()?;
     valid_right_handed_coil_transform(&transform).then_some(transform)
 }
 

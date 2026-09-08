@@ -120,7 +120,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![85]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-322/261 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
         work_plane_class_322_332::MATRIX as u64
@@ -207,7 +207,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-400 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
 }
@@ -260,7 +260,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         )
         .expect("legacy Move transform frame");
 
-        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_record_index, record_index);
         assert_eq!(u32::from(decoded.form), form);
         assert_eq!(decoded.form_offset, (frame_at + 43) as u64);

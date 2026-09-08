@@ -165,7 +165,9 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
+        ]
+        .try_into()
+        .unwrap(),
         transform_offset: 22,
     };
     let path = crate::records::feature::DesignAssemblyOperandPath {
@@ -333,8 +335,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         recipe_references: Vec::new(),
         next_byte_offset: 600,
     };
-    let carriers = crate::records::feature::DesignAssemblyLegacyOperands {
-        point: crate::records::feature::DesignAssemblyLegacyOperand {
+    let carriers = crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+        crate::records::feature::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
             reference_offset: 11,
@@ -354,7 +356,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             }),
             selection: selection(40),
         },
-        hole: crate::records::feature::DesignAssemblyLegacyOperand {
+        crate::records::feature::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
                 .unwrap(),
             reference_offset: 22,
@@ -375,13 +377,34 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             }),
             selection: selection(41),
         },
-    };
+    )
+    .unwrap();
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut point = carriers.point.clone();
+        point.construction.position[0] = value;
+        assert!(
+            crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+                point,
+                carriers.hole.clone()
+            )
+            .is_err()
+        );
+        let mut hole = carriers.hole.clone();
+        hole.construction.position[2] = value;
+        assert!(
+            crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+                carriers.point.clone(),
+                hole
+            )
+            .is_err()
+        );
+    }
     let solved_frame = crate::records::feature::DesignAssemblySolvedFrame {
         reference_record_index: 30,
         reference_offset: 33,
         record_byte_offset: 300,
         class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        transform: identity,
+        transform: identity.try_into().unwrap(),
         transform_offset: 325,
     };
     for frames_field_present in [false, true] {
@@ -410,6 +433,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 [0.0, 0.0, 1.0, 3.0],
                 [0.0, 0.0, 0.0, 1.0]
             ]
+            .try_into()
+            .unwrap()
         );
         assert_eq!(frames[1].transform[2][3], 6.0);
         let wire = serde_json::to_string(&alignment).unwrap();

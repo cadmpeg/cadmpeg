@@ -336,7 +336,7 @@ pub(crate) fn project_assembly_joints(
         let id = crate::ids::neutral_assembly_joint_id(scope);
         let [first_operand, second_operand] = operands;
         let [first_frame, second_frame] =
-            std::array::from_fn(|index| neutral_transform(frames[index].transform));
+            std::array::from_fn(|index| neutral_transform(frames[index].transform.into()));
         joints.entry(id.as_str().to_owned()).or_insert_with(|| {
             let mut joint = AssemblyJoint::paired(
                 id,
@@ -886,12 +886,16 @@ mod tests {
             80,
         );
         let mut origin_scope = origin_scope;
-        origin_scope.with_joint_origin_transform([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]);
+        origin_scope.with_joint_origin_transform(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+        );
         let occurrence =
             OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
         let features = [

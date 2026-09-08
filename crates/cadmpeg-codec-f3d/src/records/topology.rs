@@ -2,6 +2,7 @@
 //! Historical topology selections, recipe operands, and incidence records.
 
 use super::feature::DesignAxis;
+use super::SketchPlacementMatrix;
 use super::{
     ConstructionRecipeKind, DesignRecipeReference, Located, NonEmptyByteSpan, SketchRelationOperand,
 };
@@ -1204,7 +1205,7 @@ pub struct DesignConstructionOperandTransform {
     /// Per-file dynamic transform-record class tag.
     pub class_tag: DesignClassTag,
     /// Row-major local-to-model affine transform.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
     /// Indexed record immediately following the transform.
@@ -1225,11 +1226,11 @@ pub struct DesignConstructionOperandDualTransform {
     /// Per-file dynamic transform-record class tag.
     pub class_tag: DesignClassTag,
     /// First row-major affine transform.
-    pub first_transform: [[f64; 4]; 4],
+    pub first_transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub first_transform_offset: u64,
     /// Second row-major affine transform.
-    pub second_transform: [[f64; 4]; 4],
+    pub second_transform: SketchPlacementMatrix,
     /// Byte offset of the second matrix scalar.
     pub second_transform_offset: u64,
 }
@@ -1283,7 +1284,7 @@ struct DesignConstructionOperandPathWire {
     entity_ref_offset: u64,
     /// Optional row-major selection-path placement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    transform: Option<[[f64; 4]; 4]>,
+    transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the first transform scalar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -1362,7 +1363,7 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
 /// Placement layout carried by a persistent-entity selection path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DesignConstructionPathPlacement {
-    Transform(Located<[[f64; 4]; 4]>),
+    Transform(Located<SketchPlacementMatrix>),
     Compact(bool),
 }
 

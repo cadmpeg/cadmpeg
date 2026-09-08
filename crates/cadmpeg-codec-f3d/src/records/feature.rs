@@ -2,6 +2,7 @@
 //! Typed modeling-feature scopes, operations, and source operands.
 
 use super::topology::{DesignEntitySelectionFaceCandidate, DesignSketchProfileOperand};
+use super::SketchPlacementMatrix;
 use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
     ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
@@ -794,16 +795,16 @@ pub struct DesignCoilPlacement {
     /// Dynamic class tag of the frame carrier.
     pub transform_class_tag: DesignClassTag,
     /// Explicit matrix and its byte offset; absent for the encoded identity form.
-    pub explicit_transform: Option<Located<[[f64; 4]; 4]>>,
+    pub explicit_transform: Option<Located<SketchPlacementMatrix>>,
 }
 
 impl DesignCoilPlacement {
     /// Row-major local-to-model matrix with translation in source centimetres.
     #[must_use]
-    pub fn transform(&self) -> &[[f64; 4]; 4] {
+    pub fn transform(&self) -> &SketchPlacementMatrix {
         self.explicit_transform
             .as_ref()
-            .map_or(&IDENTITY_MATRIX, |matrix| &matrix.value)
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| &matrix.value)
     }
 }
 
@@ -826,7 +827,7 @@ struct DesignCoilPlacementWire {
     transform_class_tag: String,
     /// Row-major local-to-model rigid transform. Matrix values are in source
     /// centimetres for the translation column.
-    transform: [[f64; 4]; 4],
+    transform: SketchPlacementMatrix,
     /// Byte offset of the matrix, or absent for the encoded identity form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -888,7 +889,7 @@ impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
 pub struct DesignCoilTransform {
     /// Row-major local-to-model rigid transform. Translation is in source
     /// centimetres.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
 }
@@ -967,7 +968,7 @@ pub struct DesignCylinderPrimitive {
     pub diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<Located<[[f64; 4]; 4]>>,
+    pub transform: Option<Located<SketchPlacementMatrix>>,
     /// Result Boolean operation.
     pub operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
@@ -990,7 +991,7 @@ struct DesignCylinderPrimitiveWire {
     diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    transform: Option<[[f64; 4]; 4]>,
+    transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the shifted-form source frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -1038,7 +1039,7 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
     pub transform_offset: u64,
     /// Sphere diameter in source centimetres.
@@ -1057,7 +1058,7 @@ pub struct DesignSpherePrimitive {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignTorusPrimitive {
     /// Row-major local-to-model placement frame.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
     pub transform_offset: u64,
     /// Major diameter in source centimetres.
@@ -1142,7 +1143,7 @@ pub struct DesignThickenOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignMoveOperation {
     /// Row-major model-space rigid transform in source centimetres.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
     /// Indexed class-349 record carrying `transform`.
@@ -1776,7 +1777,7 @@ pub enum DesignRectangularPatternInstances {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DesignPatternInstance {
     pub record_index: u32,
-    pub transform: Located<[[f64; 4]; 4]>,
+    pub transform: Located<SketchPlacementMatrix>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1817,7 +1818,7 @@ struct DesignRectangularPatternInstancesWire {
     /// Seed record followed by the generated-instance records in pattern order.
     record_indices: Vec<u32>,
     /// Row-major local-to-model placements parallel to `record_indices`.
-    transforms: Vec<[[f64; 4]; 4]>,
+    transforms: Vec<SketchPlacementMatrix>,
     /// Byte offsets of the first transform scalar parallel to `record_indices`.
     transform_offsets: Vec<u64>,
     /// Component occurrences carried by this run when the pattern repeats a component.
@@ -1954,7 +1955,7 @@ pub struct DesignAssemblySolvedFrame {
     /// Dynamic class of the frame-carrier indexed record.
     pub class_tag: DesignClassTag,
     /// Row-major solved connector frame.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
 }
@@ -1971,11 +1972,28 @@ pub struct DesignAssemblyLegacyOperand<C> {
 /// The ordered point and hole constructions of a legacy 421-byte assembly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignAssemblyLegacyOperands {
-    pub point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
-    pub hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
+    point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
+    hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
 }
 
 impl DesignAssemblyLegacyOperands {
+    /// Admit legacy operand carriers with finite solved positions.
+    pub fn try_new(
+        point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
+        hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
+    ) -> Result<Self, String> {
+        if !point
+            .construction
+            .position
+            .iter()
+            .chain(hole.construction.position.iter())
+            .all(|value| value.is_finite())
+        {
+            return Err("legacy_operand_carriers position must be finite".into());
+        }
+        Ok(Self { point, hole })
+    }
+
     pub(crate) fn references(&self) -> [Located<u32>; 2] {
         [
             Located {
@@ -2005,7 +2023,7 @@ impl DesignAssemblyLegacyOperands {
         [0, 1].map(|index| {
             let mut transform = solved.transform;
             for (row, value) in positions[index].into_iter().enumerate() {
-                transform[row][3] = value;
+                transform.0[row][3] = value;
             }
             DesignAssemblyOperandFrame {
                 reference_record_index: references[index].value,
@@ -2043,8 +2061,8 @@ impl DesignAssemblyLegacyOperands {
                     .into(),
             );
         }
-        let carriers = Self {
-            point: DesignAssemblyLegacyOperand {
+        let carriers = Self::try_new(
+            DesignAssemblyLegacyOperand {
                 construction_class_tag: point
                     .construction_class_tag
                     .try_into()
@@ -2053,7 +2071,7 @@ impl DesignAssemblyLegacyOperands {
                 selection: point.selection,
                 reference_offset: point.frame.reference_offset,
             },
-            hole: DesignAssemblyLegacyOperand {
+            DesignAssemblyLegacyOperand {
                 construction_class_tag: hole
                     .construction_class_tag
                     .try_into()
@@ -2062,7 +2080,7 @@ impl DesignAssemblyLegacyOperands {
                 selection: hole.selection,
                 reference_offset: hole.frame.reference_offset,
             },
-        };
+        )?;
         if [point.frame, hole.frame] != carriers.frames(solved) {
             return Err(
                 "legacy_operand_carriers frame disagrees with construction and solved_frame".into(),
@@ -2959,7 +2977,7 @@ pub struct DesignAssemblyOperandFrame {
     /// Byte offset of `reference_record_index`.
     pub reference_offset: u64,
     /// Row-major operand-local-to-model transform.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first transform scalar.
     pub transform_offset: u64,
 }
@@ -2991,16 +3009,18 @@ pub struct DesignComponentInsertConstruction {
 /// Scope-local matrix with an optional equal matrix in the grouped carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignComponentInsertMatrix {
-    pub scope: Located<[[f64; 4]; 4]>,
+    pub scope: Located<SketchPlacementMatrix>,
     pub carrier_offset: Option<u64>,
 }
 
 impl DesignComponentInsertConstruction {
     #[must_use]
-    pub fn transform(&self) -> &[[f64; 4]; 4] {
+    pub fn transform(&self) -> &SketchPlacementMatrix {
         self.placement
             .as_ref()
-            .map_or(&IDENTITY_MATRIX, |matrix| &matrix.scope.value)
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| {
+                &matrix.scope.value
+            })
     }
 
     #[must_use]
@@ -3032,7 +3052,7 @@ struct DesignComponentInsertConstructionWire {
     /// Byte offset of the occurrence-role string payload.
     neutron_role_offset: u64,
     /// Row-major local occurrence transform in centimetres.
-    transform: [[f64; 4]; 4],
+    transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar. `None` is the
     /// stored identity form, which has no scalar block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3113,7 +3133,7 @@ pub struct DesignDerivedInstanceConstruction {
     /// Placed occurrence GUID carried by the joined occurrence.
     pub occurrence_guid: DesignRelaxedGuidText,
     /// Row-major local-to-model placement in centimetres.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar.
     pub transform_offset: u64,
 }
@@ -3155,7 +3175,7 @@ pub enum DesignComponentOccurrencePlacement {
     /// Explicit matrix and one-based occurrence ordinal.
     Explicit {
         ordinal: NonZeroU32,
-        transform: Located<[[f64; 4]; 4]>,
+        transform: Located<SketchPlacementMatrix>,
     },
 }
 
@@ -3169,7 +3189,7 @@ impl DesignComponentOccurrence {
     }
 
     #[must_use]
-    pub fn transform(&self) -> Option<Located<[[f64; 4]; 4]>> {
+    pub fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => None,
             DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(transform),
@@ -3201,7 +3221,7 @@ struct DesignComponentOccurrenceWire {
     occurrence_ordinal: u32,
     /// Explicit local-to-model placement for placed occurrences.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    transform: Option<[[f64; 4]; 4]>,
+    transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the explicit placement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -3271,11 +3291,11 @@ pub struct DesignCopyPasteComponentOperation {
     /// Newly copied occurrence identity.
     pub copied_occurrence_guid: DesignRelaxedGuidText,
     /// Source placement embedded by the scope.
-    pub source_transform: [[f64; 4]; 4],
+    pub source_transform: SketchPlacementMatrix,
     /// Byte offset of the source placement.
     pub source_transform_offset: u64,
     /// Copied placement embedded by both scope and occurrence carrier.
-    pub copied_transform: [[f64; 4]; 4],
+    pub copied_transform: SketchPlacementMatrix,
     /// Byte offset of the scope-local copied placement.
     pub copied_transform_offset: u64,
 }
@@ -5556,7 +5576,7 @@ where
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct WorkPlaneFrameWire {
-    work_plane_transform: Option<[[f64; 4]; 4]>,
+    work_plane_transform: Option<SketchPlacementMatrix>,
     work_plane_transform_offset: Option<u64>,
     work_plane_reference: Option<u32>,
     work_plane_reference_offset: Option<u64>,
@@ -5607,7 +5627,7 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct JointOriginFrameWire {
-    joint_origin_transform: Option<[[f64; 4]; 4]>,
+    joint_origin_transform: Option<SketchPlacementMatrix>,
     joint_origin_transform_offset: Option<u64>,
     joint_origin_reference: Option<u32>,
     joint_origin_reference_offset: Option<u64>,
@@ -5970,7 +5990,7 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
-    pub work_plane_transform: [[f64; 4]; 4],
+    pub work_plane_transform: SketchPlacementMatrix,
     /// Byte offset of the explicit 16-f64 matrix.
     pub work_plane_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
@@ -5995,7 +6015,7 @@ pub struct DesignWorkPlaneReference {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DesignJointOriginTransform {
     /// Exact row-major local-to-model frame.
-    pub joint_origin_transform: [[f64; 4]; 4],
+    pub joint_origin_transform: SketchPlacementMatrix,
     /// Byte offset of the explicit 16-f64 matrix.
     pub joint_origin_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
@@ -7830,7 +7850,7 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub(crate) fn work_plane_transform(&self) -> Option<SketchPlacementMatrix> {
         self.work_plane_frame()
             .map(|frame| frame.work_plane_transform)
     }
@@ -7852,7 +7872,7 @@ impl DesignParameterScope {
             .and_then(|frame| frame.work_plane_construction.as_mut())
     }
 
-    pub(crate) fn joint_origin_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub(crate) fn joint_origin_transform(&self) -> Option<SketchPlacementMatrix> {
         self.joint_origin_frame()
             .map(|frame| frame.joint_origin_transform)
     }
@@ -7886,7 +7906,7 @@ impl DesignParameterScope {
 #[cfg(test)]
 impl DesignParameterScope {
     /// Build a scope carrying only its identity, kind, and record index.
-    pub(crate) fn with_work_plane_transform(&mut self, transform: [[f64; 4]; 4]) {
+    pub(crate) fn with_work_plane_transform(&mut self, transform: SketchPlacementMatrix) {
         self.payload = DesignScopePayload::WorkPlane(Some(DesignWorkPlaneTransform {
             work_plane_transform: transform,
             work_plane_transform_offset: 0,
@@ -7904,7 +7924,7 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn with_joint_origin_transform(&mut self, transform: [[f64; 4]; 4]) {
+    pub(crate) fn with_joint_origin_transform(&mut self, transform: SketchPlacementMatrix) {
         self.payload = DesignScopePayload::JointOrigin(Some(DesignJointOriginTransform {
             joint_origin_transform: transform,
             joint_origin_transform_offset: 0,
