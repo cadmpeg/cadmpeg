@@ -698,6 +698,7 @@ native_record_id!(
 
 /// The native ordered Design feature-timeline key in an already encoded
 /// `f3d:` stream scope.
+#[cfg(test)]
 pub(crate) fn native_design_feature_timeline_id_in_stream(
     stream: &str,
     offset: impl std::fmt::Display,
