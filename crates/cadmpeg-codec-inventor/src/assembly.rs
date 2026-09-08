@@ -661,7 +661,7 @@ mod tests {
             record_len: 1,
             record_sha256: "0".repeat(64),
         })
-        .unwrap()
+        .expect("valid native record fixture")
     }
 
     fn external_reference(

@@ -827,10 +827,18 @@ mod tests {
             "state_values": [0,0,0,0,0,0,0,0], "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
-        let admitted: UfrxOccurrenceRecord = serde_json::from_value(occurrence.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), occurrence);
-        let admitted: EmbeddedReferenceRecord = serde_json::from_value(embedded.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), embedded);
+        let admitted: UfrxOccurrenceRecord =
+            serde_json::from_value(occurrence.clone()).expect("valid native record fixture");
+        assert_eq!(
+            serde_json::to_value(admitted).expect("valid native record fixture"),
+            occurrence
+        );
+        let admitted: EmbeddedReferenceRecord =
+            serde_json::from_value(embedded.clone()).expect("valid native record fixture");
+        assert_eq!(
+            serde_json::to_value(admitted).expect("valid native record fixture"),
+            embedded
+        );
         for (field, value) in [
             ("record_len", serde_json::json!(0)),
             ("record_sha256", serde_json::json!("a".repeat(63))),
@@ -839,20 +847,20 @@ mod tests {
             let mut wire = occurrence.clone();
             wire[field] = value.clone();
             assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
-                .unwrap_err()
+                .expect_err("invalid native record fixture")
                 .to_string()
                 .contains(field));
             let mut wire = embedded.clone();
             wire[field] = value;
             assert!(serde_json::from_value::<EmbeddedReferenceRecord>(wire)
-                .unwrap_err()
+                .expect_err("invalid native record fixture")
                 .to_string()
                 .contains(field));
         }
         let mut wire = occurrence;
         wire["header_padding_words"] = serde_json::json!(9);
         assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
-            .unwrap_err()
+            .expect_err("invalid native record fixture")
             .to_string()
             .contains("header_padding_words"));
     }
