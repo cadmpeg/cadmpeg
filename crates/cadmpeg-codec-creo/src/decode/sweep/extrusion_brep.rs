@@ -5,7 +5,7 @@ use super::super::feature_history::{
     feature_allows_additive_linear_extrusion, generated_profile_entry_is_admissible,
 };
 use super::super::native::annotate;
-use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
@@ -23,6 +23,7 @@ use super::profiles::{
 use crate::container::ContainerScan;
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -200,19 +201,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: id.clone(),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(
-                        transform.origin[0] + offset * transform.normal[0],
-                        transform.origin[1] + offset * transform.normal[1],
-                        transform.origin[2] + offset * transform.normal[2],
+                        transform.origin()[0] + offset * transform.normal()[0],
+                        transform.origin()[1] + offset * transform.normal()[1],
+                        transform.origin()[2] + offset * transform.normal()[2],
                     ),
                     normal: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
+                        transform.normal()[0],
+                        transform.normal()[1],
+                        transform.normal()[2],
                     ),
                     u_axis: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
+                        transform.u_axis()[0],
+                        transform.u_axis()[1],
+                        transform.u_axis()[2],
                     ),
                 },
                 source_object: None,
@@ -246,9 +247,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ir.model.points.push(Point {
                         id: point_id.clone(),
                         position: Point3::new(
-                            position[0] + offset * transform.normal[0],
-                            position[1] + offset * transform.normal[1],
-                            position[2] + offset * transform.normal[2],
+                            position[0] + offset * transform.normal()[0],
+                            position[1] + offset * transform.normal()[1],
+                            position[2] + offset * transform.normal()[2],
                         ),
                         source_object: None,
                     });
@@ -285,16 +286,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ProfileGeometry::Line { .. } => {
                             let placed_start = section_point_in_model(transform, start);
                             let placed_end = section_point_in_model(transform, end);
-                            let Some(direction) = normalized(std::array::from_fn(|axis| {
+                            let Some(direction) = normalize(std::array::from_fn(|axis| {
                                 placed_end[axis] - placed_start[axis]
                             })) else {
                                 continue;
                             };
                             CurveGeometry::Line {
                                 origin: Point3::new(
-                                    placed_start[0] + offset * transform.normal[0],
-                                    placed_start[1] + offset * transform.normal[1],
-                                    placed_start[2] + offset * transform.normal[2],
+                                    placed_start[0] + offset * transform.normal()[0],
+                                    placed_start[1] + offset * transform.normal()[1],
+                                    placed_start[2] + offset * transform.normal()[2],
                                 ),
                                 direction: Vector3::new(direction[0], direction[1], direction[2]),
                             }
@@ -305,19 +306,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             let (axis_sign, _) = oriented_arc_parameterization(reversed, 0.0, 0.0);
                             CurveGeometry::Circle {
                                 center: Point3::new(
-                                    center[0] + offset * transform.normal[0],
-                                    center[1] + offset * transform.normal[1],
-                                    center[2] + offset * transform.normal[2],
+                                    center[0] + offset * transform.normal()[0],
+                                    center[1] + offset * transform.normal()[1],
+                                    center[2] + offset * transform.normal()[2],
                                 ),
                                 axis: Vector3::new(
-                                    axis_sign * transform.normal[0],
-                                    axis_sign * transform.normal[1],
-                                    axis_sign * transform.normal[2],
+                                    axis_sign * transform.normal()[0],
+                                    axis_sign * transform.normal()[1],
+                                    axis_sign * transform.normal()[2],
                                 ),
                                 ref_direction: Vector3::new(
-                                    transform.u_axis[0],
-                                    transform.u_axis[1],
-                                    transform.u_axis[2],
+                                    transform.u_axis()[0],
+                                    transform.u_axis()[1],
+                                    transform.u_axis()[2],
                                 ),
                                 radius: radius.0,
                             }
@@ -334,9 +335,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             let Some(translated) = translated_nurbs_curve(
                                 &placed,
                                 [
-                                    offset * transform.normal[0],
-                                    offset * transform.normal[1],
-                                    offset * transform.normal[2],
+                                    offset * transform.normal()[0],
+                                    offset * transform.normal()[1],
+                                    offset * transform.normal()[2],
                                 ],
                             ) else {
                                 continue;
@@ -389,14 +390,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Line {
                         origin: Point3::new(
-                            origin[0] + span.lower * transform.normal[0],
-                            origin[1] + span.lower * transform.normal[1],
-                            origin[2] + span.lower * transform.normal[2],
+                            origin[0] + span.lower * transform.normal()[0],
+                            origin[1] + span.lower * transform.normal()[1],
+                            origin[2] + span.lower * transform.normal()[2],
                         ),
                         direction: Vector3::new(
-                            transform.normal[0],
-                            transform.normal[1],
-                            transform.normal[2],
+                            transform.normal()[0],
+                            transform.normal()[1],
+                            transform.normal()[2],
                         ),
                     },
                     source_object: None,

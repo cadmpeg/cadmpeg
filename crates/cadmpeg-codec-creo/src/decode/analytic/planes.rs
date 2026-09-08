@@ -3,6 +3,7 @@
 
 use crate::decode::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -14,7 +15,6 @@ use crate::container::ContainerScan;
 use crate::curve::CurveTopologyRow;
 
 use super::super::holes::plane_envelope_corners;
-use super::super::sketch::normalized;
 use super::super::surfaces::{
     fc05_cap_pair_model_frame, fc05_model_frame, intersect_plane_with_carrier_components,
 };
@@ -45,7 +45,7 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             residual.abs() <= EPS_ON_CARRIER
         }
         CarrierEquation::Cylinder(cylinder) => {
-            let Some(axis) = normalized(cylinder.axis) else {
+            let Some(axis) = normalize(cylinder.axis) else {
                 return false;
             };
             let relative = std::array::from_fn(|index| point[index] - cylinder.origin[index]);
@@ -56,7 +56,7 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
         }
         CarrierEquation::Cone(cone) => {
             let (Some(axis), Some(x_axis)) =
-                (normalized(cone.axis()), normalized(cone.ref_direction()))
+                (normalize(cone.axis()), normalize(cone.ref_direction()))
             else {
                 return false;
             };
@@ -78,7 +78,7 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
                 <= EPS_ON_CARRIER * sphere.radius.max(1.0)
         }
         CarrierEquation::Torus(torus) => {
-            let Some(axis) = normalized(torus.axis) else {
+            let Some(axis) = normalize(torus.axis) else {
                 return false;
             };
             let relative = std::array::from_fn(|index| point[index] - torus.center[index]);
@@ -116,7 +116,7 @@ pub fn tangent_plane_sphere_point(
     plane: PlaneEquation,
     sphere: SphereEquation,
 ) -> Option<[f64; 3]> {
-    let normal = normalized(plane.normal)?;
+    let normal = normalize(plane.normal)?;
     let signed_distance = dot(
         normal,
         std::array::from_fn(|index| sphere.center[index] - plane.origin[index]),
@@ -325,7 +325,7 @@ pub fn is_axis_aligned(vector: [f64; 3]) -> bool {
 }
 
 pub fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEquation> {
-    let mut normal = normalized(plane.normal)?;
+    let mut normal = normalize(plane.normal)?;
     let mut distance = dot(normal, plane.origin);
     if !distance.is_finite() {
         return None;
@@ -427,8 +427,8 @@ pub fn agreed_plane_surface(
         .iter()
         .filter_map(|candidate| {
             let chart = candidate.chart?;
-            let normal = normalized(chart.normal)?;
-            let u_axis = normalized(chart.u_axis)?;
+            let normal = normalize(chart.normal)?;
+            let u_axis = normalize(chart.u_axis)?;
             (dot(normal, u_axis).abs() <= EPS_AGREE).then_some((
                 chart.origin,
                 normal,
@@ -605,8 +605,8 @@ fn plane_candidates_equivalent(first: PlaneCandidate, second: PlaneCandidate) ->
 
 fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<[f64; 3]> {
     let chart = candidate.chart?;
-    let normal = normalized(chart.normal)?;
-    let u_axis = normalized(chart.u_axis)?;
+    let normal = normalize(chart.normal)?;
+    let u_axis = normalize(chart.u_axis)?;
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
     let v_axis = cross(normal, u_axis);
     let point = std::array::from_fn(|axis| {
@@ -623,10 +623,10 @@ fn pcurve_candidate_endpoint_witness(
     if candidate.chart.is_none() {
         return false;
     }
-    let Some(adjacent_normal) = normalized(adjacent.equation.normal) else {
+    let Some(adjacent_normal) = normalize(adjacent.equation.normal) else {
         return false;
     };
-    let Some(candidate_normal) = normalized(candidate.equation.normal) else {
+    let Some(candidate_normal) = normalize(candidate.equation.normal) else {
         return false;
     };
     let cross_normals = cross(candidate_normal, adjacent_normal);
@@ -928,7 +928,7 @@ fn fc05_reference_circle_frame(
     if !circle.center_stored || !circle.radius.is_finite() || circle.radius <= 0.0 {
         return None;
     }
-    let axis = normalized(circle.axis)?;
+    let axis = normalize(circle.axis)?;
     let radial = std::array::from_fn(|index| circle.start[index] - circle.center[index]);
     let end_radial = std::array::from_fn(|index| circle.end[index] - circle.center[index]);
     let radial_length = dot(radial, radial).sqrt();
@@ -991,10 +991,10 @@ fn plane_candidate_is_fc05_tangent(
     candidate: PlaneCandidate,
     cylinder: super::equations::CylinderEquation,
 ) -> bool {
-    let Some(normal) = normalized(candidate.equation.normal) else {
+    let Some(normal) = normalize(candidate.equation.normal) else {
         return false;
     };
-    let Some(axis) = normalized(cylinder.axis) else {
+    let Some(axis) = normalize(cylinder.axis) else {
         return false;
     };
     if dot(normal, axis).abs() > EPS_FC05_TANGENT_AXIS {
@@ -1559,10 +1559,10 @@ pub fn frame_bound_outline_plane_candidate(
 ) -> Option<PlaneCandidate> {
     (frame.surface_id == outline.surface_id).then_some(())?;
     let decoded_frame = frame.frame();
-    let frame_normal = normalized(decoded_frame.normal?)?;
-    let frame_u_axis = normalized(decoded_frame.u_axis?)?;
-    let outline_normal = normalized(outline.normal)?;
-    let outline_u_axis = normalized(outline.u_axis)?;
+    let frame_normal = normalize(decoded_frame.normal?)?;
+    let frame_u_axis = normalize(decoded_frame.u_axis?)?;
+    let outline_normal = normalize(outline.normal)?;
+    let outline_u_axis = normalize(outline.u_axis)?;
     (dot(frame_normal, outline_normal) >= 1.0 - EPS_AGREE).then_some(())?;
     (dot(frame_u_axis, outline_u_axis) >= 1.0 - EPS_AGREE).then_some(())?;
     let frame_origin = decoded_frame.origin?;
@@ -1589,7 +1589,7 @@ pub fn envelope_reconciled_plane_candidate(
 ) -> Option<PlaneCandidate> {
     let decoded_frame = frame.frame();
     let origin = decoded_frame.origin?;
-    let normal = normalized(equation.normal)?;
+    let normal = normalize(equation.normal)?;
     let origin_scale = origin
         .iter()
         .chain(equation.origin.iter())
@@ -1723,7 +1723,7 @@ pub fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Optio
         for second in first + 1..points.len() {
             let first_direction = std::array::from_fn(|axis| points[first][axis] - origin[axis]);
             let second_direction = std::array::from_fn(|axis| points[second][axis] - origin[axis]);
-            let Some(candidate) = normalized(cross(first_direction, second_direction)) else {
+            let Some(candidate) = normalize(cross(first_direction, second_direction)) else {
                 continue;
             };
             normal = Some(candidate);
@@ -1751,7 +1751,7 @@ pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
         CurveGeometry::Circle { center, axis, .. }
         | CurveGeometry::Ellipse { center, axis, .. } => (
             [center.x, center.y, center.z],
-            normalized([axis.x, axis.y, axis.z])?,
+            normalize([axis.x, axis.y, axis.z])?,
         ),
         CurveGeometry::Nurbs(nurbs) => {
             valid_positive_nurbs_curve(nurbs)?;
@@ -1778,7 +1778,7 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
     let (origin, direction) = match geometry {
         CurveGeometry::Line { origin, direction } => (
             [origin.x, origin.y, origin.z],
-            normalized([direction.x, direction.y, direction.z])?,
+            normalize([direction.x, direction.y, direction.z])?,
         ),
         CurveGeometry::Nurbs(nurbs) => {
             (nurbs.degree() == 1 && !nurbs.periodic()).then_some(())?;
@@ -1786,7 +1786,7 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
             let first = *nurbs.control_points().first()?;
             let last = *nurbs.control_points().last()?;
             let origin = [first.x, first.y, first.z];
-            let direction = normalized([last.x - first.x, last.y - first.y, last.z - first.z])?;
+            let direction = normalize([last.x - first.x, last.y - first.y, last.z - first.z])?;
             let scale = nurbs
                 .control_points()
                 .iter()
@@ -1833,8 +1833,8 @@ pub fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation
             let direction_cross = cross(lines[first].direction, lines[second].direction);
             let displacement =
                 std::array::from_fn(|axis| lines[second].origin[axis] - lines[first].origin[axis]);
-            let normal = normalized(direction_cross)
-                .or_else(|| normalized(cross(lines[first].direction, displacement)));
+            let normal = normalize(direction_cross)
+                .or_else(|| normalize(cross(lines[first].direction, displacement)));
             if let Some(normal) = normal {
                 candidate = Some(PlaneEquation {
                     origin: lines[first].origin,

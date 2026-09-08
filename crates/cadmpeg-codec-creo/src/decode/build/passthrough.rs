@@ -22,7 +22,7 @@ pub(in super::super) fn preserve_passthrough_sections(
 ) -> Vec<UnknownRecord> {
     let mut unknowns = Vec::new();
     for section in scan.framing.sections.iter().filter(|section| {
-        section.role == SectionRole::PsbGeometry || section.role == SectionRole::Thumbnail
+        section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
     }) {
         let end = (section.offset + section.length).min(scan.framing.data.len());
         let section_bytes = &scan.framing.data[section.offset..end];
@@ -30,7 +30,7 @@ pub(in super::super) fn preserve_passthrough_sections(
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
-        let (bytes, offset, tag, exactness) = if section.role == SectionRole::Thumbnail {
+        let (bytes, offset, tag, exactness) = if section.role() == SectionRole::Thumbnail {
             if raw_is_compressed {
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;
@@ -70,12 +70,12 @@ pub(in super::super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let id = UnknownId::mint(format!("creo:{}:section#{}", section.name, offset))
+        let id = UnknownId::mint(format!("creo:{}:section#{}", section.name(), offset))
             .expect("identity grammar");
         annotate(
             annotations,
             &id,
-            &section.name,
+            section.name(),
             offset as u64,
             tag,
             exactness,
@@ -100,7 +100,7 @@ pub(in super::super) fn legacy_source_stream<'a>(
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
-        .map_or("legacy_ascii", |section| section.name.as_str())
+        .map_or("legacy_ascii", |section| section.name())
 }
 
 pub(in super::super) fn emit_legacy_value_arena<T: Serialize>(
@@ -152,7 +152,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_integer_values",
-        &legacy.persistence.integer_values,
+        &legacy.persistence.integer_values.rows,
         "legacy_type_1_integer",
     )?;
     emit_legacy_value_arena(
@@ -160,7 +160,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_real_values",
-        &legacy.persistence.real_values,
+        &legacy.persistence.real_values.rows,
         "legacy_type_2_real",
     )?;
     emit_legacy_value_arena(

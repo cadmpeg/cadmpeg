@@ -2,6 +2,7 @@
 //! Simple drilled-hole recipes, envelopes, and dimension matching.
 
 use crate::decode::axis::Axis;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::HoleForm;
@@ -12,7 +13,7 @@ use crate::container::ContainerScan;
 use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
-use super::super::sketch::{approximately_equal, normalized};
+use super::super::sketch::approximately_equal;
 use super::super::sweep::unique_available_positional_cylinder_frame_records;
 
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
@@ -435,7 +436,7 @@ pub fn simple_drilled_axis_placement_from_frames(
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
     let first = *frames.first()?;
-    let axis = normalized(first.axis())?;
+    let axis = normalize(first.axis())?;
     let coordinate_scale = frames
         .iter()
         .flat_map(crate::surface::PositionalCylinderFrame::origin)
@@ -446,7 +447,7 @@ pub fn simple_drilled_axis_placement_from_frames(
     frames
         .iter()
         .all(|frame| {
-            let Some(candidate_axis) = normalized(frame.axis()) else {
+            let Some(candidate_axis) = normalize(frame.axis()) else {
                 return false;
             };
             let radius_scale = frame.radius().abs().max(radius.abs()).max(1.0);

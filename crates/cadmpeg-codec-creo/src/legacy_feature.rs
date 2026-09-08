@@ -72,8 +72,8 @@ impl<'a> Index<'a> {
         Some(Self {
             objects,
             children,
-            integers: value_index(&persistence.integer_values),
-            reals: value_index(&persistence.real_values),
+            integers: value_index(&persistence.integer_values.rows),
+            reals: value_index(&persistence.real_values.rows),
         })
     }
 
@@ -328,7 +328,7 @@ mod tests {
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Integer,
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -341,7 +341,7 @@ mod tests {
 
     fn real(parent: &str, value: f64, offset: usize) -> crate::legacy::RealRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: "value".to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -410,8 +410,14 @@ mod tests {
             },
         ));
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -453,7 +459,7 @@ mod tests {
     #[test]
     fn ignores_non_round_dimension_rows() {
         let mut persistence = persistence(&[2.0]);
-        persistence.integer_values.retain(|record| {
+        persistence.integer_values.rows.retain(|record| {
             !(record.parent == Some(fixture_offset("dimension_0")) && record.name == "dim_type")
         });
         let result = scan(&persistence, &[]);

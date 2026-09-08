@@ -2,12 +2,12 @@
 //! Feature plane equations and generated cylinder and cap extents.
 
 use super::super::holes::blind_extrude_side;
-use super::super::sketch::normalized;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -175,9 +175,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| {
-            entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
-        })
+        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
     {
         let Some(source_id) = entry.source_entity_id() else {
             continue;
@@ -241,10 +239,10 @@ fn cylinder_frame_agrees_with_model(
         return matches!(surface.geometry, SurfaceGeometry::Unknown { .. });
     };
     let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
-        normalized(frame.axis()),
-        normalized([axis.x, axis.y, axis.z]),
-        normalized(frame.ref_direction()),
-        normalized([ref_direction.x, ref_direction.y, ref_direction.z]),
+        normalize(frame.axis()),
+        normalize([axis.x, axis.y, axis.z]),
+        normalize(frame.ref_direction()),
+        normalize([ref_direction.x, ref_direction.y, ref_direction.z]),
     ) else {
         return false;
     };
@@ -381,10 +379,10 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
     transform: &crate::placement::FeatureSectionTransform,
     frames: &[crate::surface::PositionalCylinderFrame],
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let normal = normalized(transform.normal)?;
+    let normal = transform.normal();
     let first = *frames.first()?;
     let length = first.length().filter(|length| *length > 0.0)?;
-    let direction = normalized(first.axis())?;
+    let direction = normalize(first.axis())?;
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
@@ -394,7 +392,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
             frame
                 .length()
                 .is_some_and(|candidate| close(candidate, length))
-                && normalized(frame.axis()).is_some_and(|axis| {
+                && normalize(frame.axis()).is_some_and(|axis| {
                     axis.iter()
                         .zip(direction)
                         .all(|(left, right)| close(*left, right))
@@ -402,7 +400,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
                 && close(
                     dot(
                         std::array::from_fn(|index| {
-                            frame.origin()[index] - transform.origin[index]
+                            frame.origin()[index] - transform.origin()[index]
                         }),
                         normal,
                     ),

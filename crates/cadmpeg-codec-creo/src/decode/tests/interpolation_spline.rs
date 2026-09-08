@@ -191,15 +191,15 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         );
     }
 
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(1),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(1),
+        [10.0, 20.0, 30.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     let side = extrusion_brep_side_surface(
         &transform,
         &spline,
@@ -548,17 +548,17 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             reference_type: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 1,
-            feature_id: Some(942),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 1.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            offset: 0,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(942),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
@@ -908,20 +908,25 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         saved_section: None,
         offset: 80,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 822,
-        feature_id: Some(822),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 90,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        822,
+        Some(822),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        90,
+    )
+    .expect("valid section frame");
 
-    let mismatched_transform = crate::placement::FeatureSectionTransform {
-        feature_id: Some(900),
-        ..transform.clone()
-    };
+    let mismatched_transform = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        Some(900),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
     assert_eq!(
         unique_feature_profile_definition(
             std::slice::from_ref(&definition),
@@ -956,11 +961,15 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         Some(822)
     );
 
-    let mismatched_section_transform = crate::placement::FeatureSectionTransform {
-        definition_id: 900,
-        feature_id: Some(822),
-        ..transform
-    };
+    let mismatched_section_transform = crate::placement::FeatureSectionTransform::new(
+        900,
+        Some(822),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
     assert!(unique_feature_profile_definition(
         std::slice::from_ref(&definition),
         std::slice::from_ref(&mismatched_section_transform),
@@ -1674,15 +1683,15 @@ fn circular_sweep_projects_profile_direction_and_extent() {
 
 #[test]
 fn circular_sweep_cylinder_recovers_its_section_profile() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 917,
-        feature_id: Some(40),
-        origin: [1.0, 2.0, 3.0],
-        u_axis: [0.0, 0.0, -1.0],
-        v_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 20,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        917,
+        Some(40),
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, -1.0],
+        [1.0, 0.0, 0.0],
+        20,
+    )
+    .expect("valid section frame");
     let cylinder = HoleCylinder {
         origin: Point3::new(5.0, -14.0, 1.0),
         axis: Vector3::new(0.0, 1.0, 0.0),

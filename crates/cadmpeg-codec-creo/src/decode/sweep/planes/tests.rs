@@ -312,15 +312,15 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         saved_section: None,
         offset: 0,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        feature_id: Some(7),
-        origin: frame.origin(),
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: frame.axis(),
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        7,
+        Some(7),
+        frame.origin(),
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        0,
+    )
+    .expect("valid section frame");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(
         33,

@@ -180,31 +180,32 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
         family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
-            value: crate::surface::SurfaceNamedValue::ScalarArray(
-                crate::surface::arrays::DimensionedScalars::try_new(
-                    4,
-                    3,
-                    [
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        f64::NAN,
-                        0.0,
-                        0.0,
-                    ]
-                    .into_iter()
-                    .map(Some)
-                    .collect(),
-                    None,
-                )
-                .expect("valid scalar array"),
-            ),
+            value: crate::surface::SurfaceNamedValue::ScalarArray({
+                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                    .expect("valid scalar array");
+                array
+                    .fill_values(
+                        [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            f64::NAN,
+                            0.0,
+                            0.0,
+                        ]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                    )
+                    .expect("matching scalar extent");
+                array
+            }),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
@@ -221,31 +222,32 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
         family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
-            value: crate::surface::SurfaceNamedValue::ScalarArray(
-                crate::surface::arrays::DimensionedScalars::try_new(
-                    4,
-                    3,
-                    [
-                        1.0,
-                        0.0,
-                        0.0,
-                        f64::NAN,
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                    ]
-                    .into_iter()
-                    .map(Some)
-                    .collect(),
-                    None,
-                )
-                .expect("valid scalar array"),
-            ),
+            value: crate::surface::SurfaceNamedValue::ScalarArray({
+                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                    .expect("valid scalar array");
+                array
+                    .fill_values(
+                        [
+                            1.0,
+                            0.0,
+                            0.0,
+                            f64::NAN,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                        ]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                    )
+                    .expect("matching scalar extent");
+                array
+            }),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
