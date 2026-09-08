@@ -19,9 +19,8 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum F3dLossCode {
+pub(crate) enum F3dLossCode {
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -177,7 +176,7 @@ pub enum F3dLossCode {
 impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub const ALL: &'static [F3dLossCode] = &[
+    pub(crate) const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -257,7 +256,7 @@ impl F3dLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
@@ -345,7 +344,7 @@ impl F3dLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::BodylessDesignCarrier
             | Self::AssemblyComponentsExternal
@@ -363,7 +362,65 @@ impl F3dLossCode {
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            _ => Severity::Warning,
+            Self::DimensionCompanionUntyped
+            | Self::ConfigurationMemberUnassigned
+            | Self::ConfigurationRuleUnbound
+            | Self::ConfigurationParameterOverrideUnbound
+            | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ActComponentLinkUnresolved
+            | Self::DrawingDocumentOmitted
+            | Self::DesignBodyBindingUnresolved
+            | Self::ReferenceImageNativeRetained
+            | Self::DecalNativeRetained
+            | Self::EdgeReferenceLostUnrepaired
+            | Self::FeatureDefinitionIncomplete
+            | Self::FeatureScopeUnprojected
+            | Self::ParameterUnprojected
+            | Self::ParameterOwnerUnrecognized
+            | Self::ParameterUnitUntyped
+            | Self::MaterialDistanceUnitUntyped
+            | Self::ParameterExpressionUnbound
+            | Self::HistoryDependencyUnprojected
+            | Self::HistoryDependencyAmbiguous
+            | Self::SketchRelationNativeRetained
+            | Self::SketchDimensionNativeRetained
+            | Self::SketchPlacementUnprojected
+            | Self::SketchPointUnprojected
+            | Self::SketchCurveUnprojected
+            | Self::SketchSurfaceUnprojected
+            | Self::SketchTextUnprojected
+            | Self::SketchRelationUnprojected
+            | Self::DimensionUnprojected
+            | Self::FeatureProfileSelectionNative
+            | Self::FeaturePathSelectionNative
+            | Self::FeatureFaceSelectionNative
+            | Self::FeatureFaceSelectionActiveSubstituted
+            | Self::FeatureBodySelectionNative
+            | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureEdgeSelectionNative
+            | Self::FeatureEdgeOperandUnresolved
+            | Self::FeatureEdgeSelectionLost
+            | Self::BrepBlobUndecoded
+            | Self::MeshContainerUnjoined
+            | Self::MeshContainerMissing
+            | Self::MeshAttributeNotTransferred
+            | Self::XrefTableUndecoded
+            | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementSuperseded
+            | Self::MeshVertexPrecisionReduced
+            | Self::FaceSurfaceReferenceDangling
+            | Self::SurfaceShapeNotDecoded
+            | Self::ProceduralCurveUndecoded
+            | Self::PcurveUndecoded
+            | Self::BlendSupportPartial
+            | Self::SolvedRecordUntyped
+            | Self::MaterialNotTransferred
+            | Self::TsplineRecordUntyped
+            | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
+            | Self::KernelDialectUnverified
+            | Self::KernelCarrierUnparseable
+            | Self::DialectLayerCollision => Severity::Warning,
         }
     }
 
@@ -454,7 +511,7 @@ impl F3dLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced("f3d", self.code(), self.shared_taxonomy())
     }
 
@@ -463,7 +520,7 @@ impl F3dLossCode {
     /// The structured code is `f3d/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
