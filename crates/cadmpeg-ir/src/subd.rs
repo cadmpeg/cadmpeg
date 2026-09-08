@@ -245,13 +245,9 @@ impl SubdCage {
                     }
                 }
                 for grip in spokes.iter().chain(sectors).flatten() {
-                    if !finite_point(grip.point)
-                        || !grip.weight.is_finite()
-                        || grip.weight <= 0.0
-                        || !grip_indices.insert(grip.source_index)
-                    {
+                    if !grip_indices.insert(grip.source_index) {
                         return Err(SubdError(format!(
-                            "vertices[{index}].secondary_grips has an invalid or repeated grip"
+                            "vertices[{index}].secondary_grips repeats a source_index"
                         )));
                     }
                 }
@@ -631,13 +627,57 @@ impl JsonSchema for SubdGripWedge {
 /// A secondary grip point and its source grip-array identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdSecondaryGripWire")]
 pub struct SubdSecondaryGrip {
     /// Index in the source cage's `0g` grip array.
     pub source_index: u32,
     /// Grip position in document units.
-    pub point: Point3,
+    point: Point3,
     /// Positive rational grip weight.
-    pub weight: f64,
+    weight: f64,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdSecondaryGripWire {
+    source_index: u32,
+    point: Point3,
+    weight: f64,
+}
+
+impl TryFrom<SubdSecondaryGripWire> for SubdSecondaryGrip {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdSecondaryGripWire) -> Result<Self, Self::Error> {
+        Self::new(wire.source_index, wire.point, wire.weight)
+    }
+}
+
+impl SubdSecondaryGrip {
+    /// Construct a finite grip point with a positive finite rational weight.
+    pub fn new(source_index: u32, point: Point3, weight: f64) -> Result<Self, SubdError> {
+        if !finite_point(point) {
+            return Err(SubdError("point must be finite".into()));
+        }
+        if !weight.is_finite() || weight <= 0.0 {
+            return Err(SubdError("weight must be finite and positive".into()));
+        }
+        Ok(Self {
+            source_index,
+            point,
+            weight,
+        })
+    }
+
+    /// Grip position in document units.
+    pub const fn point(&self) -> Point3 {
+        self.point
+    }
+
+    /// Positive rational grip weight.
+    pub const fn weight(&self) -> f64 {
+        self.weight
+    }
 }
 
 /// A control-cage vertex tag.

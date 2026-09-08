@@ -431,3 +431,41 @@ fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
         assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
     }
 }
+
+#[test]
+fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
+    let point = Point3::new(-1.0, 2.0, 3.0);
+    let base = serde_json::json!({"source_index": 0, "point": point, "weight": 1.0});
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for point in [
+            Point3::new(invalid, 0.0, 0.0),
+            Point3::new(0.0, invalid, 0.0),
+            Point3::new(0.0, 0.0, invalid),
+        ] {
+            assert!(super::SubdSecondaryGrip::new(0, point, 1.0).is_err());
+            let mut wire = base.clone();
+            wire["point"] = serde_json::json!(point);
+            assert!(serde_json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
+        }
+    }
+    for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(super::SubdSecondaryGrip::new(0, point, invalid).is_err());
+        let mut wire = base.clone();
+        wire["weight"] = serde_json::json!(invalid);
+        assert!(serde_json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
+    }
+    for weight in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
+        let grip = super::SubdSecondaryGrip::new(u32::MAX, point, weight).unwrap();
+        assert_eq!(grip.point(), point);
+        assert_eq!(grip.weight(), weight);
+        let wire = serde_json::to_value(&grip).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!({"source_index": u32::MAX, "point": point, "weight": weight})
+        );
+        assert_eq!(
+            serde_json::from_value::<super::SubdSecondaryGrip>(wire).unwrap(),
+            grip
+        );
+    }
+}
