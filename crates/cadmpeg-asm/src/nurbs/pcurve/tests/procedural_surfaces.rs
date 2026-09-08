@@ -1350,7 +1350,57 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                 ProjectionTailPatchLayout::Ranged { flag, role, .. } => {
                     assert!(!early_close);
                     assert_eq!(flag, tail_flag);
-                    assert_eq!(&bytes[role], b"surf1");
+                    let role = role.range();
+                    assert_eq!(&bytes[role.clone()], b"surf1");
+                    for word in [b"surf".as_slice(), b"surf12", b"wrong"] {
+                        let mut malformed = bytes[..role.start - 1].to_vec();
+                        malformed.push(word.len() as u8);
+                        malformed.extend_from_slice(word);
+                        assert!(projection_patch_layout(&malformed, int_width).is_none());
+                        let record = crate::sab::Record {
+                            index: 0,
+                            name: "intcurve".into(),
+                            tokens: Vec::new().into(),
+                            offset: 0,
+                            len: malformed.len(),
+                        };
+                        let edits = crate::edit::AsmEditSet::from_framed(
+                            vec![record.clone()],
+                            int_width,
+                            1.0,
+                        );
+                        let definition =
+                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
+                                context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                    sides: std::array::from_fn(|_| {
+                                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                                            surface: None,
+                                            pcurve: None,
+                                        }
+                                    }),
+                                    parameter_range: [-2.0, 3.0],
+                                    discontinuities: [vec![0.25], vec![], vec![0.5, 0.75]],
+                                },
+                                discontinuity_flag: true,
+                                source: cadmpeg_ir::ids::CurveId::mint("f3d:brep:entity#1")
+                                    .unwrap(),
+                                tail: cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                                    flag: false,
+                                    parameter_range: [-1.0, 1.0],
+                                    role: cadmpeg_ir::geometry::ProjectionRole::Surf1,
+                                },
+                            };
+                        let before = malformed.clone();
+                        assert!(matches!(
+                            edits.patch_procedural_curve_definition(
+                                &mut malformed,
+                                &record,
+                                &definition
+                            ),
+                            Err(cadmpeg_core::CodecError::Malformed(_))
+                        ));
+                        assert_eq!(malformed, before);
+                    }
                 }
             }
         }

@@ -137,3 +137,50 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
         }
     }
 }
+
+#[test]
+fn history_pcurve_use_has_no_invented_parameter_interval() {
+    let record = |index, name: &str, fields: &[i64]| Record {
+        index,
+        name: name.into(),
+        tokens: fields.iter().copied().map(Token::Ref).collect(),
+        offset: 0,
+        len: 0,
+    };
+    let records = [
+        record(0, "face", &[-1, -1, -1, -1, 1]),
+        record(1, "loop", &[-1, -1, -1, -1, 2]),
+        record(2, "coedge", &[-1, -1, -1, 2, 2, -1, 3, -1, 1, 4]),
+        record(3, "edge", &[-1; 9]),
+        record(4, "pcurve", &[]),
+    ];
+    let by_index = records.iter().map(|r| (r.index as i64, r)).collect();
+    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    let mut carriers = Carriers::default();
+    let mut reach = Reachable {
+        faces: HashSet::from([0]),
+        ..Reachable::default()
+    };
+    let mut out = AsmBrep::default();
+    walk_reachable_topology(
+        &mut out,
+        &by_index,
+        &table,
+        &mut carriers,
+        &mut reach,
+        DecodePurpose::History,
+        IdFormat("f3d"),
+    );
+    super::super::emit::emit_coedges(
+        &mut out,
+        &records,
+        &table,
+        None,
+        &carriers,
+        &reach,
+        IdFormat("f3d"),
+    );
+    assert_eq!(out.coedges.len(), 1);
+    assert_eq!(out.coedges[0].pcurves.len(), 1);
+    assert_eq!(out.coedges[0].pcurves[0].parameter_range, None);
+}
