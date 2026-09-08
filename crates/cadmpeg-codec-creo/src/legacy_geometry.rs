@@ -475,45 +475,51 @@ fn surface_carrier(
         .filter(|object| object.name.starts_with("srf_prim_ptr("));
     let primitive = primitives.next()?;
     primitives.next().is_none().then_some(())?;
-    let expected_name = match row.kind {
-        SurfaceKind::Plane => "srf_prim_ptr(plane)",
-        SurfaceKind::Cylinder => "srf_prim_ptr(cylinder)",
-        SurfaceKind::Cone => "srf_prim_ptr(cone)",
-        SurfaceKind::TorusOrSphere => "srf_prim_ptr(torus)",
-        SurfaceKind::Spline => "srf_prim_ptr(splsrf)",
-        _ => return None,
+    enum AnalyticFamily {
+        Plane,
+        Cylinder,
+        Cone,
+        TorusOrSphere,
+    }
+    let (family, expected_name) = match row.kind {
+        SurfaceKind::Plane => (AnalyticFamily::Plane, "srf_prim_ptr(plane)"),
+        SurfaceKind::Cylinder => (AnalyticFamily::Cylinder, "srf_prim_ptr(cylinder)"),
+        SurfaceKind::Cone => (AnalyticFamily::Cone, "srf_prim_ptr(cone)"),
+        SurfaceKind::TorusOrSphere => (AnalyticFamily::TorusOrSphere, "srf_prim_ptr(torus)"),
+        SurfaceKind::Spline => {
+            (primitive.name == "srf_prim_ptr(splsrf)").then_some(())?;
+            let points = real_vector_array(reals, primitive.offset, "i_points")?;
+            let u_parameters = real_scalar_array(reals, primitive.offset, "u_params")?;
+            let v_parameters = real_scalar_array(reals, primitive.offset, "v_params")?;
+            let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
+            let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
+            let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
+            let (u_derivatives, v_derivatives, mixed_derivatives) =
+                legacy_spline_boundary_derivatives(
+                    &points,
+                    &u_parameters,
+                    &v_parameters,
+                    &u_tangents,
+                    &v_tangents,
+                    &mixed_derivatives,
+                )?;
+            return Some(LegacySurfaceCarrier {
+                namespace,
+                surface_id: row.id,
+                geometry: LegacySurfaceGeometry::Spline {
+                    points,
+                    u_parameters,
+                    v_parameters,
+                    u_derivatives,
+                    v_derivatives,
+                    mixed_derivatives,
+                },
+                offset: primitive.offset,
+            });
+        }
+        SurfaceKind::Fillet | SurfaceKind::Extrusion(_) => return None,
     };
     (primitive.name == expected_name).then_some(())?;
-
-    if row.kind == SurfaceKind::Spline {
-        let points = real_vector_array(reals, primitive.offset, "i_points")?;
-        let u_parameters = real_scalar_array(reals, primitive.offset, "u_params")?;
-        let v_parameters = real_scalar_array(reals, primitive.offset, "v_params")?;
-        let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
-        let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
-        let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
-        let (u_derivatives, v_derivatives, mixed_derivatives) = legacy_spline_boundary_derivatives(
-            &points,
-            &u_parameters,
-            &v_parameters,
-            &u_tangents,
-            &v_tangents,
-            &mixed_derivatives,
-        )?;
-        return Some(LegacySurfaceCarrier {
-            namespace,
-            surface_id: row.id,
-            geometry: LegacySurfaceGeometry::Spline {
-                points,
-                u_parameters,
-                v_parameters,
-                u_derivatives,
-                v_derivatives,
-                mixed_derivatives,
-            },
-            offset: primitive.offset,
-        });
-    }
 
     let local_system = real_record(reals, primitive.offset, "local_sys")?;
     let slots = local_system_slots(local_system)?;
@@ -522,20 +528,20 @@ fn surface_carrier(
     let third = [slots[2], slots[5], slots[8]];
     surface::valid_right_handed_frame(first, second, third).then_some(())?;
     let origin = [slots[9], slots[10], slots[11]];
-    let geometry = match row.kind {
-        SurfaceKind::Plane => LegacySurfaceGeometry::Plane {
+    let geometry = match family {
+        AnalyticFamily::Plane => LegacySurfaceGeometry::Plane {
             origin,
             normal: third,
             u_axis: first,
         },
-        SurfaceKind::Cylinder => LegacySurfaceGeometry::Cylinder {
+        AnalyticFamily::Cylinder => LegacySurfaceGeometry::Cylinder {
             origin,
             axis: third,
             ref_direction: first,
             radius: real_scalar(reals, primitive.offset, "radius")
                 .filter(|radius| radius.is_finite() && *radius > 0.0)?,
         },
-        SurfaceKind::Cone => {
+        AnalyticFamily::Cone => {
             let signed_half_angle = real_scalar(reals, primitive.offset, "half_angle")?;
             if !signed_half_angle.is_finite()
                 || signed_half_angle == 0.0
@@ -557,7 +563,7 @@ fn surface_carrier(
                 parameter_v_sign: signed_half_angle.signum(),
             }
         }
-        SurfaceKind::TorusOrSphere => {
+        AnalyticFamily::TorusOrSphere => {
             let major_radius = real_scalar(reals, primitive.offset, "radius1")
                 .filter(|radius| radius.is_finite() && *radius >= 0.0)?;
             let minor_radius = real_scalar(reals, primitive.offset, "radius2")
@@ -579,7 +585,6 @@ fn surface_carrier(
                 }
             }
         }
-        _ => unreachable!("surface carrier family was filtered above"),
     };
     Some(LegacySurfaceCarrier {
         namespace,
