@@ -921,7 +921,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = DesignOperandRole::ROLE_0X41;
+    group.role = DesignOperandRole::PROFILE;
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -980,7 +980,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = DesignOperandRole::ROLE_0X41;
+    group.role = DesignOperandRole::PROFILE;
     group.members = vec![10]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })

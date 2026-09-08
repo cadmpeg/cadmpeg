@@ -679,7 +679,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             opaque_scalar_offset: 1076,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         role_offset: 1054,
 
@@ -951,7 +951,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
     profile_group.record_index = 104;
     profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
-    profile_group.role = DesignOperandRole::ROLE_0X41;
+    profile_group.role = DesignOperandRole::PROFILE;
     let direct_profile_with_selection_group = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -1090,7 +1090,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
         DesignExtrudeFaceRole::Termination,
     ));
-    face_group.role = DesignOperandRole::ROLE_0X11;
+    face_group.role = DesignOperandRole::FACES;
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);

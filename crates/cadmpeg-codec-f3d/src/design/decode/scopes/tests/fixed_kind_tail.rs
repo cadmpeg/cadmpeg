@@ -1442,7 +1442,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             _ => {}
         }
     }
-    shell_group.role = DesignOperandRole::ROLE_0X4;
+    shell_group.role = DesignOperandRole::BODIES_A;
     assert!(matches!(
         crate::design::feature_project::project_shell(
             &compact_shell_scope,

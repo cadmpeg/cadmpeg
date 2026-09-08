@@ -1565,7 +1565,7 @@ fn exact_surface_offset_face_groups(
         let Some(group) = group else {
             continue;
         };
-        if group.role != DesignOperandRole::ROLE_0X41
+        if group.role != DesignOperandRole::PROFILE
             || group.frame.opaque_index != 252
             || group.members.is_empty()
             || !covered_references.insert(group.record_index)
@@ -5144,7 +5144,7 @@ pub fn bind_mirror_constructions(
             .filter(|group| {
                 matches!(
                     group.role,
-                    DesignOperandRole::ROLE_0X4 | DesignOperandRole::ROLE_0X8
+                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                 )
             })
             .collect::<Vec<_>>();
@@ -5222,7 +5222,7 @@ pub fn bind_mirror_constructions(
                 continue;
             };
         let seed_feature = match seed_group.members.as_slice() {
-            _ if seed_group.role != DesignOperandRole::ROLE_0X8 => None,
+            _ if seed_group.role != DesignOperandRole::BODIES_B => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))
                 .and_then(|header| compact_feature_reference(bytes, header))

@@ -1258,7 +1258,7 @@ pub(crate) fn bind_feature_body_selections(
         let mut matching_groups = groups.iter().filter(|group| {
             group.id == *group_id
                 && group.scope_record_index == scope.record_index
-                && group.role == DesignOperandRole::ROLE_0X4
+                && group.role == DesignOperandRole::BODIES_A
                 && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
         });
         let Some(group) = matching_groups.next() else {
@@ -1500,7 +1500,7 @@ fn bind_pattern_body_selections(
             .iter()
             .filter(|group| {
                 group.scope_record_index == scope.record_index
-                    && group.role == DesignOperandRole::ROLE_0X8
+                    && group.role == DesignOperandRole::BODIES_B
                     && !group.members.is_empty()
                     && crate::ids::native_stream(&group.id) == stream
             })
@@ -1616,9 +1616,9 @@ fn bind_body_recipe_body_selection(
             && group.scope_record_index == scope.record_index
             && matches!(
                 group.role,
-                DesignOperandRole::ROLE_0X4
+                DesignOperandRole::BODIES_A
                     | DesignOperandRole::ROLE_0X5
-                    | DesignOperandRole::ROLE_0X8
+                    | DesignOperandRole::BODIES_B
             )
             && crate::ids::native_stream(&group.id) == stream
     });
@@ -1688,9 +1688,9 @@ fn bind_direct_body_recipe_body_selection(
                     && group.scope_record_index == scope.record_index
                     && matches!(
                         group.role,
-                        DesignOperandRole::ROLE_0X4
+                        DesignOperandRole::BODIES_A
                             | DesignOperandRole::ROLE_0X5
-                            | DesignOperandRole::ROLE_0X8
+                            | DesignOperandRole::BODIES_B
                     )
                     && crate::ids::native_stream(&group.id) == stream
             });

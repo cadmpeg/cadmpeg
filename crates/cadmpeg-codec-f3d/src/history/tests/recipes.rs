@@ -838,7 +838,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -997,7 +997,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale.into();
     scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
-    scale_group.role = DesignOperandRole::ROLE_0X4;
+    scale_group.role = DesignOperandRole::BODIES_A;
     let scale_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),
@@ -1583,7 +1583,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .is_empty());
 
     let mut unrelated_group = group;
-    unrelated_group.role = DesignOperandRole::ROLE_0X11;
+    unrelated_group.role = DesignOperandRole::FACES;
     let mut rejected = vec![operand];
     bind_face_operand_history_candidates(
         &mut rejected,

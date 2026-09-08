@@ -211,7 +211,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             opaque_scalar_offset: 1075,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         role_offset: 1053,
 

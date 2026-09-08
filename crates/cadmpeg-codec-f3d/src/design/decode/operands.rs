@@ -711,11 +711,11 @@ pub fn decode_face_operands(
             == Some(DesignFeatureFamily::Loft)
             && matches!(
                 group.role,
-                DesignOperandRole::ROLE_0X41 | DesignOperandRole::ROLE_0X43
+                DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
             );
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
-            && group.role == DesignOperandRole::ROLE_0X11;
+            && group.role == DesignOperandRole::FACES;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
             && group.role == DesignOperandRole::ROLE_0X21;
@@ -725,10 +725,10 @@ pub fn decode_face_operands(
         );
         let is_circular_pattern_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::CircularPattern)
-            && group.role == DesignOperandRole::ROLE_0X8;
+            && group.role == DesignOperandRole::BODIES_B;
         let is_mirror_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == DesignOperandRole::ROLE_0X8;
+            && group.role == DesignOperandRole::BODIES_B;
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role == DesignOperandRole::ROLE_0X5;
@@ -742,7 +742,7 @@ pub fn decode_face_operands(
         let is_thread_face = scope.kind() == crate::records::feature::DesignFeatureKind::Thread
             && group.role == DesignOperandRole::ROLE_0X10;
         let is_hole_face = scope.kind() == crate::records::feature::DesignFeatureKind::Hole
-            && group.role == DesignOperandRole::ROLE_0X4;
+            && group.role == DesignOperandRole::BODIES_A;
         let is_draft_operand =
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
@@ -750,7 +750,7 @@ pub fn decode_face_operands(
             && group.role == DesignOperandRole::ROLE_0X10;
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
-            && group.role == DesignOperandRole::ROLE_0X41;
+            && group.role == DesignOperandRole::PROFILE;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -1978,11 +1978,11 @@ fn extrude_operand_role(
         return None;
     }
     match role {
-        DesignOperandRole::ROLE_0X4 | DesignOperandRole::ROLE_0X8 => {
+        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B => {
             Some(PendingExtrudeRole::Bodies)
         }
-        DesignOperandRole::ROLE_0X41 => Some(PendingExtrudeRole::Profile),
-        DesignOperandRole::ROLE_0X11 => Some(PendingExtrudeRole::Faces),
+        DesignOperandRole::PROFILE => Some(PendingExtrudeRole::Profile),
+        DesignOperandRole::FACES => Some(PendingExtrudeRole::Faces),
         DesignOperandRole::ROLE_0X5
             if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>

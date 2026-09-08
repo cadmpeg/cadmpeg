@@ -105,7 +105,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
 #[test]
 fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
-    let body_group = group(10, 20, DesignOperandRole::ROLE_0X8);
+    let body_group = group(10, 20, DesignOperandRole::BODIES_B);
     let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[])
         .expect("body rectangular pattern");
     assert_linear_seed(
@@ -116,7 +116,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
     );
 
     let face_scope = rectangular_scope();
-    let face_group = group(10, 30, DesignOperandRole::ROLE_0X4);
+    let face_group = group(10, 30, DesignOperandRole::BODIES_A);
     let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[])
         .expect("face rectangular pattern");
     assert_linear_seed(

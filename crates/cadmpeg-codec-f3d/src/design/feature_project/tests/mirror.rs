@@ -94,7 +94,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
 fn mirror_seed_role_selects_body_or_face_semantics() {
     let body_scope = mirror_scope(20);
     let body_groups = [
-        group(10, 20, DesignOperandRole::ROLE_0X8),
+        group(10, 20, DesignOperandRole::BODIES_B),
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Pattern { seeds, pattern } =
@@ -111,7 +111,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
 
     let face_scope = mirror_scope(40);
     let face_groups = [
-        group(10, 40, DesignOperandRole::ROLE_0X4),
+        group(10, 40, DesignOperandRole::BODIES_A),
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Pattern { seeds, .. } =

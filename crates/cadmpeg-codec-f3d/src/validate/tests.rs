@@ -490,7 +490,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes.push(scope);
         native.design_construction_operand_groups.extend([
-            group(100, 0, 101, 1_000, DesignOperandRole::ROLE_0X4),
+            group(100, 0, 101, 1_000, DesignOperandRole::BODIES_A),
             group(200, 2, 201, 2_000, DesignOperandRole::ROLE_0X5),
         ]);
         native.design_record_headers.extend([
@@ -529,7 +529,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].role =
-        DesignOperandRole::ROLE_0X8;
+        DesignOperandRole::BODIES_B;
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -545,7 +545,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].role =
-        DesignOperandRole::ROLE_0X8;
+        DesignOperandRole::BODIES_B;
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -672,7 +672,7 @@ fn validation_checks_pipe_path_group_roles() {
     assert_eq!(group_native_finding_count(&ir), 1);
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].role =
-        DesignOperandRole::ROLE_0X8;
+        DesignOperandRole::BODIES_B;
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 
@@ -1109,7 +1109,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             opaque_scalar_offset: 464,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X41,
+        role: DesignOperandRole::PROFILE,
         extrude_role: Some(DesignExtrudeOperandRole::Profile),
         role_offset: 450,
 
@@ -1318,7 +1318,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X41,
+        role: DesignOperandRole::PROFILE,
         extrude_role: Some(crate::records::topology::DesignExtrudeOperandRole::Profile),
         role_offset: 953,
         paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),

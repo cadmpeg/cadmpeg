@@ -190,7 +190,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         1200,
     );
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
-    let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::ROLE_0X4);
+    let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::BODIES_A);
     let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X21);
     let body = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),

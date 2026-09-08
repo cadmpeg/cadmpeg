@@ -134,7 +134,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -604,7 +604,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -912,7 +912,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X4,
+        role: DesignOperandRole::BODIES_A,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
@@ -1082,7 +1082,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             *slot = Some(operation);
         }
         let groups = vec![
-            group(record_index, 710, 713, DesignOperandRole::ROLE_0X8),
+            group(record_index, 710, 713, DesignOperandRole::BODIES_B),
             group(record_index, 717, 720, DesignOperandRole::ROLE_0X43),
         ];
         let inputs = crate::design::feature_project::ProjectInputs {

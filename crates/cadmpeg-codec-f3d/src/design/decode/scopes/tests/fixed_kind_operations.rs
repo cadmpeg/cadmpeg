@@ -640,7 +640,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut revolve_profile = thicken_group.clone();
     revolve_profile.id = "stream:profile".into();
     revolve_profile.scope_record_index = revolve_scope.record_index;
-    revolve_profile.role = DesignOperandRole::ROLE_0X41;
+    revolve_profile.role = DesignOperandRole::PROFILE;
     let mut revolve_axis = revolve_profile.clone();
     revolve_axis.id = "stream:axis".into();
     revolve_axis.role = DesignOperandRole::ROLE_0X21;
@@ -666,7 +666,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
-    indexed_profile.role = DesignOperandRole::ROLE_0X41;
+    indexed_profile.role = DesignOperandRole::PROFILE;
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
@@ -678,7 +678,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
     indexed_bodies.record_index = 901;
-    indexed_bodies.role = DesignOperandRole::ROLE_0X4;
+    indexed_bodies.role = DesignOperandRole::BODIES_A;
     let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:indexed-axis-selection".into(),
         scope_record_index: indexed_revolve_scope.record_index,
@@ -1051,8 +1051,8 @@ pub(super) fn continue_fixed_kind_operations(
         group
     };
     let role_41 = [
-        loft_group(0, DesignOperandRole::ROLE_0X41),
-        loft_group(1, DesignOperandRole::ROLE_0X41),
+        loft_group(0, DesignOperandRole::PROFILE),
+        loft_group(1, DesignOperandRole::PROFILE),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1067,9 +1067,9 @@ pub(super) fn continue_fixed_kind_operations(
             if sections.len() == 2 && guides.is_empty()
     ));
     let guided_role_41 = [
-        loft_group(0, DesignOperandRole::ROLE_0X41),
-        loft_group(1, DesignOperandRole::ROLE_0X41),
-        loft_group(2, DesignOperandRole::ROLE_0X41),
+        loft_group(0, DesignOperandRole::PROFILE),
+        loft_group(1, DesignOperandRole::PROFILE),
+        loft_group(2, DesignOperandRole::PROFILE),
         loft_group(3, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
@@ -1104,8 +1104,8 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let cut = [
-        loft_group(0, DesignOperandRole::ROLE_0X4),
-        loft_group(1, DesignOperandRole::ROLE_0X41),
+        loft_group(0, DesignOperandRole::BODIES_A),
+        loft_group(1, DesignOperandRole::PROFILE),
         loft_group(2, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
@@ -1152,8 +1152,8 @@ pub(super) fn continue_fixed_kind_operations(
         paired_byte_offset: 87,
     };
     let legacy_cut = [
-        loft_group(1, DesignOperandRole::ROLE_0X8),
-        loft_group(2, DesignOperandRole::ROLE_0X41),
+        loft_group(1, DesignOperandRole::BODIES_B),
+        loft_group(2, DesignOperandRole::PROFILE),
         loft_group(3, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
@@ -1346,9 +1346,9 @@ pub(super) fn continue_fixed_kind_operations(
         group.role = role;
         group
     };
-    let profile = sweep_group(0, DesignOperandRole::ROLE_0X41);
+    let profile = sweep_group(0, DesignOperandRole::PROFILE);
     let path = sweep_group(1, DesignOperandRole::ROLE_0X5);
-    let body = sweep_group(2, DesignOperandRole::ROLE_0X4);
+    let body = sweep_group(2, DesignOperandRole::BODIES_A);
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -1482,7 +1482,7 @@ pub(super) fn continue_fixed_kind_operations(
         value: 2795,
         offset: profile_carrier.members[0].offset,
     }];
-    let mut guide_surface = sweep_group(4, DesignOperandRole::ROLE_0X11);
+    let mut guide_surface = sweep_group(4, DesignOperandRole::FACES);
     guide_surface.id = "stream:sweep-guide-surface".into();
     let entity_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:sweep-profile-selection".into(),

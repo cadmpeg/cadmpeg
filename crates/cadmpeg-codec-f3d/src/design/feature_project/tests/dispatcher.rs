@@ -685,8 +685,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread,
     ];
     let groups = vec![
-        group(10, 0, 100, &[101], DesignOperandRole::ROLE_0X41),
-        group(20, 0, 200, &[201], DesignOperandRole::ROLE_0X4),
+        group(10, 0, 100, &[101], DesignOperandRole::PROFILE),
+        group(20, 0, 200, &[201], DesignOperandRole::BODIES_A),
         group(30, 0, 300, &[301], DesignOperandRole::ROLE_0X5),
         group(70, 0, 701, &[702], DesignOperandRole::ROLE_0X10),
     ];

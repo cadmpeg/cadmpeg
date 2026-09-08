@@ -20,7 +20,7 @@ use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
 
 const DECAL_TARGET_ROLE: crate::records::topology::DesignOperandRole =
-    crate::records::topology::DesignOperandRole::ROLE_0X4;
+    crate::records::topology::DesignOperandRole::BODIES_A;
 
 /// Decode every structurally complete Decal image record.
 pub fn decode_decal_images(

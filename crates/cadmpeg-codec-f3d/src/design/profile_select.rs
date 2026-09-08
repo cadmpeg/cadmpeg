@@ -183,7 +183,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 let mut matching_groups = groups.iter().filter(|group| {
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
-                        && group.role == DesignOperandRole::ROLE_0X41
+                        && group.role == DesignOperandRole::PROFILE
                         && group
                             .members
                             .iter()
@@ -216,7 +216,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 let mut matching_groups = groups.iter().filter(|group| {
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
-                        && group.role == DesignOperandRole::ROLE_0X41
+                        && group.role == DesignOperandRole::PROFILE
                         && group.members.len() == 1
                         && native_stream(&group.id) == Some(stream)
                 });
@@ -536,7 +536,7 @@ fn resolve_entity_selection_profile(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::{PathRef, ProfileRef};
 
-    if group.role != DesignOperandRole::ROLE_0X41 {
+    if group.role != DesignOperandRole::PROFILE {
         return None;
     }
     match resolve_entity_selection_path(group, resolution)? {
@@ -2264,7 +2264,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     for group in groups.iter().filter(|group| {
         matches!(
             group.role,
-            DesignOperandRole::ROLE_0X41 | DesignOperandRole::ROLE_0X43
+            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
         ) && group.members.len() == 1
     }) {
         let Some(stream) = native_stream(&group.id) else {

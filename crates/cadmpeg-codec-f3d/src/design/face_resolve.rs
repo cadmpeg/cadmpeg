@@ -614,7 +614,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     if scope.kind() != crate::records::feature::DesignFeatureKind::Loft
         || !matches!(
             group.role,
-            DesignOperandRole::ROLE_0X41 | DesignOperandRole::ROLE_0X43
+            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
         )
         || group.members.is_empty()
         || !group.lost_edge_references.is_empty()

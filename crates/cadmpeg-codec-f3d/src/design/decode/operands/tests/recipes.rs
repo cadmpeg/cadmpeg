@@ -322,7 +322,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X4,
+        role: DesignOperandRole::BODIES_A,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
@@ -740,7 +740,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 972,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: None,
         role_offset: 960,
 
@@ -1653,7 +1653,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 958,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X11,
+        role: DesignOperandRole::FACES,
         extrude_role: Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Termination,
         )),

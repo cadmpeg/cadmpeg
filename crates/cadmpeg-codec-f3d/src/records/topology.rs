@@ -452,17 +452,29 @@ pub enum DesignExtrudeFaceRole {
 pub struct DesignOperandRole(u64);
 
 impl DesignOperandRole {
-    /// Primary tool-body operand run.
-    pub const ROLE_0X4: Self = Self(0x0000_0004_0000_0000);
+    /// Extrude body operand run A.
+    pub const BODIES_A: Self = Self(0x0000_0004_0000_0000);
+    /// Extrude body operand run B.
+    pub const BODIES_B: Self = Self(0x0000_0008_0000_0000);
+    /// Extrude profile operand run.
+    pub const PROFILE: Self = Self(0x0000_0041_0000_0000);
+    /// Extrude face operand run.
+    pub const FACES: Self = Self(0x0000_0011_0000_0000);
+
+    // These codes have scope-dependent meanings and no single semantic name.
+    /// Scope-dependent role code 0x5.
     pub const ROLE_0X5: Self = Self(0x0000_0005_0000_0000);
+    /// Scope-dependent role code 0x7.
     pub const ROLE_0X7: Self = Self(0x0000_0007_0000_0000);
-    pub const ROLE_0X8: Self = Self(0x0000_0008_0000_0000);
+    /// Scope-dependent role code 0x9.
     pub const ROLE_0X9: Self = Self(0x0000_0009_0000_0000);
+    /// Scope-dependent role code 0x10.
     pub const ROLE_0X10: Self = Self(0x0000_0010_0000_0000);
-    pub const ROLE_0X11: Self = Self(0x0000_0011_0000_0000);
+    /// Scope-dependent role code 0x12.
     pub const ROLE_0X12: Self = Self(0x0000_0012_0000_0000);
+    /// Scope-dependent role code 0x21.
     pub const ROLE_0X21: Self = Self(0x0000_0021_0000_0000);
-    pub const ROLE_0X41: Self = Self(0x0000_0041_0000_0000);
+    /// Scope-dependent role code 0x43.
     pub const ROLE_0X43: Self = Self(0x0000_0043_0000_0000);
 
     /// Wrap the stored u64 role code.

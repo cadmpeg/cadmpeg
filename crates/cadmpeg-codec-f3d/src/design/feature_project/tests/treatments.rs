@@ -549,7 +549,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
                 variant: false,
             },
-            role: DesignOperandRole::ROLE_0X8,
+            role: DesignOperandRole::BODIES_B,
             extrude_role: None,
             role_offset: 1_060 + u64::from(scope_reference_ordinal),
             paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -977,7 +977,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X8,
+        role: DesignOperandRole::BODIES_B,
         extrude_role: None,
         role_offset: 1110 + u64::from(ordinal) * 200,
 
@@ -1340,7 +1340,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         *slot = vec![patch_boundary(2, 300, 100)];
     }
     let mut patch_group = group(100, 0, vec![200]);
-    patch_group.role = DesignOperandRole::ROLE_0X4;
+    patch_group.role = DesignOperandRole::BODIES_A;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
@@ -1372,7 +1372,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         *slot = vec![patch_boundary(2, 300, 100), patch_boundary(5, 301, 101)];
     }
     let mut second_patch_group = group(101, 3, vec![201]);
-    second_patch_group.role = DesignOperandRole::ROLE_0X4;
+    second_patch_group.role = DesignOperandRole::BODIES_A;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
@@ -1447,7 +1447,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     {
         *slot = vec![patch_boundary(2, 300, 100)];
     }
-    patch_group.role = DesignOperandRole::ROLE_0X41;
+    patch_group.role = DesignOperandRole::PROFILE;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
@@ -1483,7 +1483,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     {
         *slot = vec![patch_boundary(2, 300, 100)];
     }
-    patch_group.role = DesignOperandRole::ROLE_0X4;
+    patch_group.role = DesignOperandRole::BODIES_A;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
@@ -1535,7 +1535,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     fill_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 300, 301, 400]);
     let mut tools = group(100, 0, vec![200, 201]);
-    tools.role = DesignOperandRole::ROLE_0X4;
+    tools.role = DesignOperandRole::BODIES_A;
     let mut cell = group(300, 3, vec![301]);
     cell.role = DesignOperandRole::ROLE_0X5;
     assert!(matches!(

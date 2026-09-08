@@ -123,7 +123,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [26, 37]
     );
-    assert_eq!(group.role, DesignOperandRole::ROLE_0X8);
+    assert_eq!(group.role, DesignOperandRole::BODIES_B);
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.frame.member_count_offset, 21);
     assert!(group.frame.auxiliary_records.is_empty());
@@ -147,7 +147,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
         .complete()
         .expect("counted Extrude whole-body group");
-    assert_eq!(whole_body.role, DesignOperandRole::ROLE_0X4);
+    assert_eq!(whole_body.role, DesignOperandRole::BODIES_A);
     assert_eq!(
         whole_body.extrude_role,
         Some(DesignExtrudeOperandRole::Bodies)
@@ -179,7 +179,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(flagged.role, DesignOperandRole::ROLE_0X8);
+    assert_eq!(flagged.role, DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
     start_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
@@ -297,7 +297,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(flagless.role, DesignOperandRole::ROLE_0X8);
+    assert_eq!(flagless.role, DesignOperandRole::BODIES_B);
     assert!(!flagless.frame.variant);
     assert_eq!(
         flagless.paired_byte_offset,
@@ -392,7 +392,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         [37, 48]
     );
     assert!(auxiliary.frame.trailing_records.is_empty());
-    assert_eq!(auxiliary.role, DesignOperandRole::ROLE_0X11);
+    assert_eq!(auxiliary.role, DesignOperandRole::FACES);
     assert_eq!(auxiliary.extrude_role, None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
@@ -627,7 +627,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 500,
         offset: 1118,
     }];
-    split_target_group.role = DesignOperandRole::ROLE_0X4;
+    split_target_group.role = DesignOperandRole::BODIES_A;
     let split_tool = DesignFaceOperand {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
         scope_record_index: split_body_scope.record_index,
@@ -762,7 +762,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         match mutate {
             0 => tool.scope_reference_ordinal = 1,
             1 => tool.record_index = 101,
-            2 => tool.role = DesignOperandRole::ROLE_0X8,
+            2 => tool.role = DesignOperandRole::BODIES_B,
             3 => {
                 tool.members = vec![crate::records::Located {
                     value: 201,
@@ -1085,7 +1085,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody.into();
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    remove_group.role = DesignOperandRole::ROLE_0X4;
+    remove_group.role = DesignOperandRole::BODIES_A;
     assert_eq!(
         crate::design::feature_project::project_remove_body(
             &remove_scope,
@@ -1233,7 +1233,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
                 .collect::<Vec<_>>(),
             [group_record_index + 3]
         );
-        assert_eq!(group.role, DesignOperandRole::ROLE_0X4);
+        assert_eq!(group.role, DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
         assert_eq!(group.paired_byte_offset, paired_at as u64);
     }
