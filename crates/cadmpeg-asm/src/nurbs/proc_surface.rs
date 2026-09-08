@@ -81,6 +81,14 @@ impl DecodedProceduralSurface {
         }
     }
 
+    /// Return the effective fit tolerance of the solved surface cache.
+    pub fn cache_fit_tolerance(&self) -> Option<f64> {
+        match self.cache {
+            ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
+            ProceduralSurfaceCache::Revision => self.definition.revision_cache_fit_tolerance(),
+        }
+    }
+
     pub(crate) fn into_parts(self) -> (DecodedProceduralSurfaceDefinition, ProceduralSurfaceCache) {
         (self.definition, self.cache)
     }
@@ -218,6 +226,62 @@ pub enum DecodedProceduralSurfaceDefinition {
     VariableBlend(Box<EmbeddedVariableBlend>),
     /// Vertex-blend patch with complete embedded boundary graphs.
     VertexBlend(Box<EmbeddedVertexBlend>),
+}
+
+impl DecodedProceduralSurfaceDefinition {
+    fn revision_cache_fit_tolerance(&self) -> Option<f64> {
+        match self {
+            Self::Exact { spline } => match spline {
+                cadmpeg_ir::geometry::ExactSpline::Revision { form, .. } => {
+                    form.cache.fit_tolerance()
+                }
+                cadmpeg_ir::geometry::ExactSpline::Legacy { .. } => None,
+            },
+            Self::Taper { revision_form, .. }
+            | Self::Extrusion { revision_form, .. }
+            | Self::Revolution { revision_form, .. }
+            | Self::Sum { revision_form, .. } => revision_form
+                .as_ref()
+                .and_then(|form| form.cache.fit_tolerance()),
+            Self::Offset { layout, .. } => match layout {
+                EmbeddedOffsetLayout::Revision(form) => form.cache.fit_tolerance(),
+                EmbeddedOffsetLayout::Legacy { .. } => None,
+            },
+            Self::Loft(construction) => match &construction.layout {
+                EmbeddedLoftLayout::Revision(form, _) => form.cache.fit_tolerance(),
+                EmbeddedLoftLayout::Legacy { .. } => None,
+            },
+            Self::RevisionCompoundLoft(construction) => construction.cache.fit_tolerance(),
+            Self::RevisionG2Blend(construction) => construction.cache.fit_tolerance(),
+            Self::Sweep(construction) => match &construction.layout {
+                EmbeddedSweepSurfaceLayout::Revision { form, .. } => form.cache.fit_tolerance(),
+                EmbeddedSweepSurfaceLayout::Legacy { .. } => None,
+            },
+            Self::TSpline(construction) => construction
+                .revision_form
+                .as_ref()
+                .and_then(|form| form.cache.fit_tolerance()),
+            Self::Deformable(construction) => match &construction.layout {
+                EmbeddedDeformableSurfaceLayout::Revision(form) => form.cache.fit_tolerance(),
+                EmbeddedDeformableSurfaceLayout::Legacy { .. } => None,
+            },
+            Self::Blend { native, .. } => native
+                .as_ref()
+                .and_then(|construction| construction.cache.fit_tolerance()),
+            Self::VariableBlend(construction) => construction.cache.fit_tolerance(),
+            Self::Compound { .. }
+            | Self::SubSurface { .. }
+            | Self::CompoundLoft(_)
+            | Self::ScaledCompoundLoft(_)
+            | Self::Skin(_)
+            | Self::Law(_)
+            | Self::Net(_)
+            | Self::Helix(_)
+            | Self::G2Blend(_)
+            | Self::Ruled { .. }
+            | Self::VertexBlend(_) => None,
+        }
+    }
 }
 
 /// Embedded revision-gated G2 blend before stable IR ids are assigned.
