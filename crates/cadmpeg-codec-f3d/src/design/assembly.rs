@@ -587,8 +587,11 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
-            id: FeatureId::mint(format!("test:model:feature#{}", native_ref.replace('#', ":")))
-                .expect("identity grammar"),
+            id: FeatureId::mint(format!(
+                "test:model:feature#{}",
+                native_ref.replace('#', ":")
+            ))
+            .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
