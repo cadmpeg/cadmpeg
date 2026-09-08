@@ -1655,9 +1655,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             variant: false,
         },
         role: DesignOperandRole::ROLE_0X11,
-        extrude_role: Some(DesignExtrudeOperandRole::Faces(Some(
+        extrude_role: Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Termination,
-        ))),
+        )),
         role_offset: 946,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),

@@ -417,8 +417,10 @@ pub enum DesignExtrudeOperandRole {
     Bodies,
     /// Sketch profile swept by the Extrude.
     Profile,
-    /// Faces used by profile-start or termination construction.
-    Faces(Option<DesignExtrudeFaceRole>),
+    /// Faces used by profile-start or termination construction. The ordered
+    /// position inside the scope always resolves to one of the two uses, so
+    /// there is no unresolved face role.
+    Faces(DesignExtrudeFaceRole),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -519,7 +521,7 @@ pub struct DesignConstructionOperandGroup {
 impl DesignConstructionOperandGroup {
     pub(crate) fn extrude_face_role(&self) -> Option<DesignExtrudeFaceRole> {
         match self.extrude_role {
-            Some(DesignExtrudeOperandRole::Faces(role)) => role,
+            Some(DesignExtrudeOperandRole::Faces(role)) => Some(role),
             _ => None,
         }
     }
@@ -563,12 +565,15 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
             (Some(DesignExtrudeOperandRoleTag::Profile), None) => {
                 Some(DesignExtrudeOperandRole::Profile)
             }
-            (Some(DesignExtrudeOperandRoleTag::Faces), face_role) => {
+            (Some(DesignExtrudeOperandRoleTag::Faces), Some(face_role)) => {
                 Some(DesignExtrudeOperandRole::Faces(face_role))
             }
             (None, None) => None,
             _ => {
-                return Err("extrude_face_role is only valid when extrude_role is faces".into());
+                return Err(
+                    "extrude_face_role is required by, and only valid with, the faces extrude_role"
+                        .into(),
+                );
             }
         };
         Ok(Self {
@@ -610,7 +615,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
                 (Some(DesignExtrudeOperandRoleTag::Profile), None)
             }
             Some(DesignExtrudeOperandRole::Faces(face_role)) => {
-                (Some(DesignExtrudeOperandRoleTag::Faces), face_role)
+                (Some(DesignExtrudeOperandRoleTag::Faces), Some(face_role))
             }
             None => (None, None),
         };

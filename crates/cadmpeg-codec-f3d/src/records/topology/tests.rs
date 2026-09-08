@@ -315,6 +315,36 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
             .to_string();
         assert!(error.contains("members"));
         assert!(error.contains("member_offsets"));
+        for (roles, valid) in [
+            (r#""extrude_role":"bodies","#, true),
+            (
+                r#""extrude_role":"faces","extrude_face_role":"start","#,
+                true,
+            ),
+            (r#""extrude_role":"faces","#, false),
+            (r#""extrude_face_role":"start","#, false),
+            (
+                r#""extrude_role":"bodies","extrude_face_role":"start","#,
+                false,
+            ),
+        ] {
+            let tagged = wire.replace(r#""role":0,"#, &format!("\"role\":0,{roles}"));
+            let parsed = serde_json::from_str::<
+                crate::records::topology::DesignConstructionOperandGroup,
+            >(&tagged);
+            if valid {
+                assert_eq!(
+                    serde_json::to_string(&parsed.expect("tagged construction group"))
+                        .expect("tagged construction wire"),
+                    tagged
+                );
+            } else {
+                assert!(parsed
+                    .expect_err("unpaired extrude role")
+                    .to_string()
+                    .contains("extrude_face_role"));
+            }
+        }
     }
 }
 

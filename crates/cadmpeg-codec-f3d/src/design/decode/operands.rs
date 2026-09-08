@@ -1669,24 +1669,22 @@ pub(crate) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
 ) {
-    let mut face_groups = groups.iter_mut().filter(|group| {
-        group
-            .extrude_role
-            .is_some_and(|role| matches!(role, DesignExtrudeOperandRole::Faces(_)))
-    });
+    let mut face_groups = groups
+        .iter_mut()
+        .filter(|group| extrude_operand_role(scope, group.role) == Some(PendingExtrudeRole::Faces));
     if scope.extrude_prologue().map(DesignExtrudePrologue::start)
         == Some(DesignExtrudeStart::FromFace)
     {
         if let Some(group) = face_groups.next() {
-            group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+            group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
                 DesignExtrudeFaceRole::Start,
-            )));
+            ));
         }
     }
     for group in face_groups {
-        group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+        group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Termination,
-        )));
+        ));
     }
 }
 
@@ -1964,24 +1962,33 @@ impl ConstructionOperandGroupParse {
 /// for their termination groups. It is also a valid Thicken role, so the
 /// extent and exact-layout gates are part of this admission rule rather than
 /// a global role alias.
+/// Extrude operand role before the ordered face groups are separated into
+/// start and termination uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingExtrudeRole {
+    Bodies,
+    Profile,
+    Faces,
+}
+
 fn extrude_operand_role(
     scope: &DesignParameterScope,
     role: DesignOperandRole,
-) -> Option<DesignExtrudeOperandRole> {
+) -> Option<PendingExtrudeRole> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude) {
         return None;
     }
     match role {
         DesignOperandRole::ROLE_0X4 | DesignOperandRole::ROLE_0X8 => {
-            Some(DesignExtrudeOperandRole::Bodies)
+            Some(PendingExtrudeRole::Bodies)
         }
-        DesignOperandRole::ROLE_0X41 => Some(DesignExtrudeOperandRole::Profile),
-        DesignOperandRole::ROLE_0X11 => Some(DesignExtrudeOperandRole::Faces(None)),
+        DesignOperandRole::ROLE_0X41 => Some(PendingExtrudeRole::Profile),
+        DesignOperandRole::ROLE_0X11 => Some(PendingExtrudeRole::Faces),
         DesignOperandRole::ROLE_0X5
             if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>
         {
-            Some(DesignExtrudeOperandRole::Faces(None))
+            Some(PendingExtrudeRole::Faces)
         }
         DesignOperandRole::ROLE_0X12
             if scope
@@ -1989,10 +1996,10 @@ fn extrude_operand_role(
                 .and_then(DesignExtrudePrologue::extent)
                 == Some(DesignExtrudeExtent::OneSidedToFace) =>
         {
-            Some(DesignExtrudeOperandRole::Faces(None))
+            Some(PendingExtrudeRole::Faces)
         }
         DesignOperandRole::ROLE_0X12 if is_class_296_two_sided_to_faces_scope(scope) => {
-            Some(DesignExtrudeOperandRole::Faces(None))
+            Some(PendingExtrudeRole::Faces)
         }
         _ => None,
     }
@@ -2189,7 +2196,14 @@ pub(crate) fn parse_construction_operand_group(
         return Unclosed;
     };
 
-    let extrude_role = extrude_operand_role(scope, role);
+    // Face groups take their start/termination use from their ordered position
+    // in the scope, which `assign_extrude_face_roles` resolves once every group
+    // of the scope is decoded.
+    let extrude_role = match extrude_operand_role(scope, role) {
+        Some(PendingExtrudeRole::Bodies) => Some(DesignExtrudeOperandRole::Bodies),
+        Some(PendingExtrudeRole::Profile) => Some(DesignExtrudeOperandRole::Profile),
+        Some(PendingExtrudeRole::Faces) | None => None,
+    };
     let (Ok(member_count_offset), Ok(role_offset), Ok(opaque_index_offset), Ok(paired_byte_offset)) = (
         u64::try_from(member_count_at),
         u64::try_from(role_at),

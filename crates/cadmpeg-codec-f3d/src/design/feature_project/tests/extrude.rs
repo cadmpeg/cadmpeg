@@ -1087,7 +1087,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     let mut face_group = body_group.clone();
     face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(None));
+    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
+        DesignExtrudeFaceRole::Termination,
+    ));
     face_group.role = DesignOperandRole::ROLE_0X11;
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
@@ -1225,9 +1227,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     set_extrude_direction_reversed(&mut scope, true);
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
         DesignExtrudeFaceRole::Termination,
-    )));
+    ));
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
         &scope,
@@ -1414,9 +1416,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
-    start_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+    start_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
         DesignExtrudeFaceRole::Start,
-    )));
+    ));
     let from_face = project_extrude(
         &scope,
         &[

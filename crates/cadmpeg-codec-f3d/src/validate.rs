@@ -4493,7 +4493,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     == Some(&profile.record_index)
                             })
                     }
-                    Some(records::topology::DesignExtrudeOperandRole::Faces(Some(_))) => {
+                    Some(records::topology::DesignExtrudeOperandRole::Faces(_)) => {
                         group.role == DesignOperandRole::ROLE_0X11
                             || group.role == DesignOperandRole::ROLE_0X12
                                 && scope
@@ -4508,7 +4508,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     .map(records::feature::DesignExtrudePrologue::start)
                                     == Some(records::feature::DesignExtrudeStart::FromFace)
                     }
-                    Some(records::topology::DesignExtrudeOperandRole::Faces(None)) => false,
                     None => group.role == DesignOperandRole::ROLE_0X5,
                 },
                 Some(

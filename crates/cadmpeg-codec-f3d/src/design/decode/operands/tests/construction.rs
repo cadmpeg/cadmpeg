@@ -214,14 +214,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 start_offset: 1042,
             });
     }
-    let start_face =
+    let mut start_face =
         parse_construction_operand_group(&start_face_bytes, &from_face_scope, 0, &record)
             .complete()
             .expect("counted Extrude start-face group");
     assert_eq!(start_face.role, DesignOperandRole::ROLE_0X5);
+    assert_eq!(start_face.extrude_role, None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &from_face_scope,
+        std::slice::from_mut(&mut start_face),
+    );
     assert_eq!(
         start_face.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Start
+        ))
     );
 
     let mut to_face_scope = from_face_scope.clone();
@@ -251,14 +258,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut to_face_bytes = bytes.clone();
     to_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
-    let legacy_to_face =
+    let mut legacy_to_face =
         parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
             .complete()
             .expect("counted Extrude legacy to-face group");
     assert_eq!(legacy_to_face.role, DesignOperandRole::ROLE_0X12);
+    assert_eq!(legacy_to_face.extrude_role, None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &to_face_scope,
+        std::slice::from_mut(&mut legacy_to_face),
+    );
     assert_eq!(
         legacy_to_face.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
     );
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
@@ -340,7 +354,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         class_tag: crate::records::DesignClassTag::try_from("283".to_owned()).unwrap(),
         ..record.clone()
     };
-    let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
+    let mut auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
         .complete()
         .expect("Extrude face group carrying both optional references");
     assert_eq!(
@@ -379,9 +393,16 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert!(auxiliary.frame.trailing_records.is_empty());
     assert_eq!(auxiliary.role, DesignOperandRole::ROLE_0X11);
+    assert_eq!(auxiliary.extrude_role, None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &scope,
+        std::slice::from_mut(&mut auxiliary),
+    );
     assert_eq!(
         auxiliary.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
     );
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
@@ -1289,12 +1310,19 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };
-    let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
+    let mut group = parse_construction_operand_group(&bytes, &scope, 0, &header)
         .complete()
         .expect("class-296 two-sided-to-faces construction group");
+    assert_eq!(group.extrude_role, None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &scope,
+        std::slice::from_mut(&mut group),
+    );
     assert_eq!(
         group.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
     );
 
     let mut wrong_length = scope.clone();
