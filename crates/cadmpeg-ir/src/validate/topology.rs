@@ -6408,7 +6408,7 @@ fn check_feature_sketch_references(
                         "native sketch profile selections are empty or repeated",
                     );
                 }
-                _ => continue,
+                _ => {}
             }
         }
         for path in paths {
