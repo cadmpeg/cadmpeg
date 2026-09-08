@@ -204,12 +204,22 @@ pub struct ZeroEntityEdgeStride {
     pub record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub allocations: [u32; 5],
-    /// The three allocations in the `0638`/`2569` topology namespace, in
-    /// source order `[T, T-1, T-2]`.
-    pub topology_refs: [u32; 3],
-    /// The two allocations selecting the adjacent surface-support slots, in
-    /// source order `[X, Y]`.
-    pub surface_support_refs: [u32; 2],
+}
+
+impl ZeroEntityEdgeStride {
+    /// Topology allocations in source order.
+    pub const fn topology_refs(&self) -> [u32; 3] {
+        [
+            self.allocations[0],
+            self.allocations[3],
+            self.allocations[4],
+        ]
+    }
+
+    /// Adjacent surface-support allocations in source order.
+    pub const fn surface_support_refs(&self) -> [u32; 2] {
+        [self.allocations[1], self.allocations[2]]
+    }
 }
 
 /// One positional `0638` oriented use.
@@ -1768,8 +1778,6 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             Some(ZeroEntityEdgeStride {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
-                topology_refs: [allocations[0], allocations[3], allocations[4]],
-                surface_support_refs: [allocations[1], allocations[2]],
                 allocations,
             })
         })
@@ -2752,8 +2760,8 @@ mod tests {
         };
         assert_eq!(edge_stride.record_ordinal, 1);
         assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
-        assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
-        assert_eq!(edge_stride.surface_support_refs, [7, 8]);
+        assert_eq!(edge_stride.topology_refs(), [5, 4, 3]);
+        assert_eq!(edge_stride.surface_support_refs(), [7, 8]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
