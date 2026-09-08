@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Rhino 3DM archive writing.
 
+use crate::mesh::FaceIndexWidth;
 use std::io::{Seek, SeekFrom, Write};
 
 pub(crate) mod target;
@@ -3407,20 +3408,19 @@ fn mesh_payload(
     payload.extend([0_u8; 5]);
 
     let width = if mesh.vertices().len() < 256 {
-        1_i32
+        FaceIndexWidth::One
     } else if mesh.vertices().len() < 65_536 {
-        2_i32
+        FaceIndexWidth::Two
     } else {
-        4_i32
+        FaceIndexWidth::Four
     };
-    payload.extend(width.to_le_bytes());
+    payload.extend((width.bytes() as i32).to_le_bytes());
     for triangle in mesh.triangles() {
         for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
             match width {
-                1 => payload.push(index as u8),
-                2 => payload.extend((index as u16).to_le_bytes()),
-                4 => payload.extend(index.to_le_bytes()),
-                _ => unreachable!(),
+                FaceIndexWidth::One => payload.push(index as u8),
+                FaceIndexWidth::Two => payload.extend((index as u16).to_le_bytes()),
+                FaceIndexWidth::Four => payload.extend(index.to_le_bytes()),
             }
         }
     }
