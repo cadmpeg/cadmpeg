@@ -99,7 +99,7 @@ impl<'a> Index<'a> {
         };
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 
@@ -110,7 +110,7 @@ impl<'a> Index<'a> {
         };
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array { .. } => None,
+            NumericPayload::Array(_) => None,
         }
     }
 }
