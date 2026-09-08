@@ -46,7 +46,7 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const CADIR_DOC: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
@@ -91,7 +91,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.cadir.json",
         r#"{
-          "ir_version": "7",
+          "ir_version": "6",
           "source": {
             "format": "rhino",
             "attributes": {},
@@ -552,7 +552,7 @@ fn query_projects_a_real_check_report_end_to_end() {
 // --- query item -------------------------------------------------------------
 
 const ITEM_DOC: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "model": {
     "sketch_entities": [
       {

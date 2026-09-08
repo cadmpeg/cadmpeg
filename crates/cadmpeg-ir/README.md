@@ -5,7 +5,7 @@ It provides the `CadIr` data model, codec interfaces, validation, structural
 diffing, JSON serialization, and explicit representations of source fidelity
 and decode loss.
 
-Schema detail lives in [CAD IR version 7][ir-spec].
+Schema detail lives in [CAD IR version 6][ir-spec].
 
 ## Install
 
@@ -75,7 +75,7 @@ byte offsets.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 7][ir-spec]
+- [CAD IR version 6][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]

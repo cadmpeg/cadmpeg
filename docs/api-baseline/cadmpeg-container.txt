@@ -1,4 +1,4 @@
-# generated at 5526cd5f7
+# generated at 7606cda8d
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -50,7 +50,7 @@ pub struct cadmpeg_container::compound::CompoundStreamId(_)
 impl cadmpeg_container::compound::CompoundStreamId
 pub const fn cadmpeg_container::compound::CompoundStreamId::directory_id(self) -> u32
 pub const fn cadmpeg_container::compound::CompoundStreamId::from_directory_id(u32) -> Self
-pub fn cadmpeg_container::compound::read_detection_prefix(&mut dyn std::io::Read, usize, u64) -> core::io::error::Result<alloc::vec::Vec<u8>>
+pub fn cadmpeg_container::compound::read_detection_prefix(&mut dyn alloc::io::read::Read, usize, u64) -> core::io::error::Result<alloc::vec::Vec<u8>>
 pub mod cadmpeg_container::compression
 pub fn cadmpeg_container::compression::inflate_bounded_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
 pub fn cadmpeg_container::compression::inflate_deflate<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>, cadmpeg_core::decode::context::ExpandSpec) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>

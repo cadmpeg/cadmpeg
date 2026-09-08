@@ -1,4 +1,4 @@
-# generated at f444fcb0b
+# generated at 7606cda8d
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -471,8 +471,8 @@ pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::decode::ParseError) -
 impl core::convert::From<cadmpeg_core::target::TargetRefusal> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal) -> Self
 pub mod cadmpeg_core::io
-pub trait cadmpeg_core::io::ReadSeek: std::io::Read + core::io::seek::Seek
-impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub trait cadmpeg_core::io::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
+impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
 pub mod cadmpeg_core::target
 pub enum cadmpeg_core::target::DefaultSource
 pub cadmpeg_core::target::DefaultSource::ForeignFormat(alloc::string::String)
@@ -566,5 +566,5 @@ pub cadmpeg_core::ContainerEntry::compression: cadmpeg_core::container::EntryCom
 pub cadmpeg_core::ContainerEntry::name: alloc::string::String
 pub cadmpeg_core::ContainerEntry::role: cadmpeg_core::container::ContainerRole
 pub cadmpeg_core::ContainerEntry::uncompressed_size: u64
-pub trait cadmpeg_core::ReadSeek: std::io::Read + core::io::seek::Seek
-impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub trait cadmpeg_core::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
+impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T

@@ -607,7 +607,7 @@ macro_rules! declare_arena_name {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "7";
+pub const IR_VERSION: &str = "6";
 
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);

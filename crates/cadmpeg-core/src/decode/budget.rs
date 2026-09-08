@@ -466,7 +466,7 @@ pub fn refuse_local_limit(
 
 /// Allocates `count` copies of `value` with `try_reserve_exact` and no panic on OOM.
 ///
-/// Use [`DecodeContext::alloc_filled`] when a decode session can also charge
+/// Use [`crate::decode::DecodeContext::alloc_filled`] when a decode session can also charge
 /// collection items. This helper is for call sites that only need the
 /// allocation bound.
 pub fn alloc_filled<T: Clone>(

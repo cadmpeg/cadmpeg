@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 7. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 6. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 
@@ -19,7 +19,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 - `check` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
 - `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 
-CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 7, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 6, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
 A successful dump is not a checked model.
 
@@ -85,7 +85,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`                | CLI orchestration, conversion workflow, native validators, and output dispatch.                                                        |
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
-| `cadmpeg-ir`             | `CadIr` version 7, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
+| `cadmpeg-ir`             | `CadIr` version 6, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar and embedded-layer identity.                                                                      |

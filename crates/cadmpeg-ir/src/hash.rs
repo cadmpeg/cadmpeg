@@ -448,11 +448,11 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "1820f590514800c5e06ede9ec2589d9596319e2196a253e5f58cc772b3539caf"
+            "d1ba8ac967bf02f410e362b0ba5cdefaa410bbbab7c21d4180443b16906ff487"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
-            "f7e3c741c5340b0d21cffef31e21089912d46c1a252aa3bb48cedf547f73d4fa"
+            "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
         );
     }
 
@@ -540,7 +540,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "6bc2ac50b363a3eb6d84daf622a2acb97119f4ea1abba19a241de25872d1e134"
+            "3c2f8334870f7c44b3de17bda445f4f56003a68e22f6078f11f96ed5109725a9"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),

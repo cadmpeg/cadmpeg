@@ -26,7 +26,7 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const JOIN_DOC: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "model": {
     "features": [
       {"id": "f1", "native_ref": "n1"},
@@ -44,7 +44,7 @@ const JOIN_DOC: &str = r#"{
 }"#;
 
 const RIGHT_DOC: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "native": {
     "rhino": {
       "unknowns": [
