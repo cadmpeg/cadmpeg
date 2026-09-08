@@ -327,11 +327,11 @@ pub(crate) fn try_decode_geometry(
             .enumerate()
         {
             match &geometry {
-                SurfaceGeometry::Plane { .. } => counts.planes += 1,
-                SurfaceGeometry::Cylinder { .. } => counts.cylinders += 1,
-                SurfaceGeometry::Cone { .. } => counts.cones += 1,
-                SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
-                SurfaceGeometry::Torus { .. } => counts.tori += 1,
+                SurfaceGeometry::Plane(_) => counts.planes += 1,
+                SurfaceGeometry::Cylinder(_) => counts.cylinders += 1,
+                SurfaceGeometry::Cone(_) => counts.cones += 1,
+                SurfaceGeometry::Sphere(_) => counts.spheres += 1,
+                SurfaceGeometry::Torus(_) => counts.tori += 1,
                 SurfaceGeometry::Nurbs(_)
                 | SurfaceGeometry::Procedural { .. }
                 | SurfaceGeometry::Polygonal(_)
@@ -528,18 +528,18 @@ pub(crate) fn try_decode_geometry(
             .enumerate()
         {
             match &geometry {
-                CurveGeometry::Line { .. } => counts.lines += 1,
-                CurveGeometry::Circle { .. } => counts.circles += 1,
-                CurveGeometry::Ellipse { .. } => counts.ellipses += 1,
-                CurveGeometry::Parabola { .. }
-                | CurveGeometry::Hyperbola { .. }
-                | CurveGeometry::Degenerate { .. }
-                | CurveGeometry::Composite { .. }
-                | CurveGeometry::Nurbs(_)
-                | CurveGeometry::Procedural { .. }
-                | CurveGeometry::Polyline(_)
-                | CurveGeometry::Transformed { .. }
-                | CurveGeometry::Unknown { .. } => {}
+                CurveGeometry::Line(_) => counts.lines += 1,
+                CurveGeometry::Circle(_) => counts.circles += 1,
+                CurveGeometry::Ellipse(_) => counts.ellipses += 1,
+                CurveGeometry::Parabola(_) => {}
+                CurveGeometry::Hyperbola(_) => {}
+                CurveGeometry::Degenerate(_) => {}
+                CurveGeometry::Composite { .. } => {}
+                CurveGeometry::Nurbs(_) => {}
+                CurveGeometry::Procedural { .. } => {}
+                CurveGeometry::Polyline(_) => {}
+                CurveGeometry::Transformed { .. } => {}
+                CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId::mint(format!("nx:s{si}:crv#{ci}")).expect("identity grammar");
             annotate_node(

@@ -885,11 +885,11 @@ pub(crate) fn annotate_node(
 
 pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
     match geometry {
-        SurfaceGeometry::Plane { .. } => "PLANE",
-        SurfaceGeometry::Cylinder { .. } => "CYLINDER",
-        SurfaceGeometry::Cone { .. } => "CONE",
-        SurfaceGeometry::Sphere { .. } => "SPHERE",
-        SurfaceGeometry::Torus { .. } => "TORUS",
+        SurfaceGeometry::Plane(_) => "PLANE",
+        SurfaceGeometry::Cylinder(_) => "CYLINDER",
+        SurfaceGeometry::Cone(_) => "CONE",
+        SurfaceGeometry::Sphere(_) => "SPHERE",
+        SurfaceGeometry::Torus(_) => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
         SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
         SurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
@@ -900,12 +900,12 @@ pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
 
 pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
     match geometry {
-        CurveGeometry::Line { .. } => "LINE",
-        CurveGeometry::Circle { .. } => "CIRCLE",
-        CurveGeometry::Ellipse { .. } => "ELLIPSE",
-        CurveGeometry::Parabola { .. } => "PARABOLA",
-        CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
-        CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
+        CurveGeometry::Line(_) => "LINE",
+        CurveGeometry::Circle(_) => "CIRCLE",
+        CurveGeometry::Ellipse(_) => "ELLIPSE",
+        CurveGeometry::Parabola(_) => "PARABOLA",
+        CurveGeometry::Hyperbola(_) => "HYPERBOLA",
+        CurveGeometry::Degenerate(_) => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
         CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
@@ -980,7 +980,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
 
 pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Line { .. } => {
+        CurveGeometry::Line(_) => {
             let range = [raw[0] * 1000.0, raw[1] * 1000.0];
             range.into_iter().all(f64::is_finite).then_some(range)
         }
@@ -1124,7 +1124,15 @@ fn orient_edge_range_for_geometry_with_budget(
         [range[1], range[0]]
     };
     let range = match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+        CurveGeometry::Circle(_) => {
+            let sweep = range[1] - range[0];
+            (0.0..=std::f64::consts::TAU)
+                .contains(&sweep)
+                .then_some(())?;
+            let start = range[0].rem_euclid(std::f64::consts::TAU);
+            [start, start + sweep]
+        }
+        CurveGeometry::Ellipse(_) => {
             let sweep = range[1] - range[0];
             (0.0..=std::f64::consts::TAU)
                 .contains(&sweep)

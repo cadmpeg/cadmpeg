@@ -840,13 +840,15 @@ mod tests {
             face_local_slot: ordinal,
             uv_endpoints: None,
             pcurve: None,
-            model_curve: Some(CurveGeometry::Line {
-                origin: start,
-                direction: end
-                    .vector_from(start)
-                    .unit()
-                    .expect("non-degenerate test edge"),
-            }),
+            model_curve: Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    start,
+                    end.vector_from(start)
+                        .unit()
+                        .expect("non-degenerate test edge"),
+                )
+                .unwrap(),
+            )),
             model_curve_construction: None,
             model_parameters: Some([0.0, end.distance(start)]),
             model_midpoint: Some(Point3::new(
@@ -945,11 +947,14 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: points[0],
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    points[0],
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         for run in &runs {
@@ -957,13 +962,15 @@ mod tests {
                 let [start, end] = support.model_endpoints.expect("test endpoints");
                 ir.model.curves.push(Curve {
                     id: curve_ids[&support.record_ordinal].clone(),
-                    geometry: CurveGeometry::Line {
-                        origin: start,
-                        direction: end
-                            .vector_from(start)
-                            .unit()
-                            .expect("non-degenerate test edge"),
-                    },
+                    geometry: CurveGeometry::Line(
+                        cadmpeg_ir::geometry::LineCurve::try_new(
+                            start,
+                            end.vector_from(start)
+                                .unit()
+                                .expect("non-degenerate test edge"),
+                        )
+                        .unwrap(),
+                    ),
                     source_object: None,
                 });
             }
@@ -1050,32 +1057,40 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: points[0],
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    points[0],
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         for run in &runs {
             for support in &run.supports {
                 let [start, end] = support.model_endpoints.expect("test endpoints");
                 let geometry = if support.record_ordinal == 5 {
-                    CurveGeometry::Ellipse {
-                        center: points[0],
-                        axis: Vector3::new(0.0, 0.0, 1.0),
-                        major_direction: Vector3::new(1.0, 0.0, 0.0),
-                        major_radius: 1.0,
-                        minor_radius: 1.0,
-                    }
+                    CurveGeometry::Ellipse(
+                        cadmpeg_ir::geometry::EllipseCurve::try_new(
+                            points[0],
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            1.0,
+                            1.0,
+                        )
+                        .unwrap(),
+                    )
                 } else {
-                    CurveGeometry::Line {
-                        origin: start,
-                        direction: end
-                            .vector_from(start)
-                            .unit()
-                            .expect("non-degenerate test edge"),
-                    }
+                    CurveGeometry::Line(
+                        cadmpeg_ir::geometry::LineCurve::try_new(
+                            start,
+                            end.vector_from(start)
+                                .unit()
+                                .expect("non-degenerate test edge"),
+                        )
+                        .unwrap(),
+                    )
                 };
                 ir.model.curves.push(Curve {
                     id: curve_ids[&support.record_ordinal].clone(),

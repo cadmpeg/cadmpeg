@@ -165,15 +165,13 @@ pub(crate) fn write_seekable(
             continue;
         }
         let (class, payload) = match &curve.geometry {
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => (
-                ARC_CLASS,
-                circle_payload(*center, *axis, *ref_direction, *radius),
-            ),
+            CurveGeometry::Circle(circle_curve) => {
+                let (center, axis, ref_direction, radius) = circle_curve.parts();
+                (
+                    ARC_CLASS,
+                    circle_payload(*center, *axis, *ref_direction, *radius),
+                )
+            }
             CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
@@ -192,14 +190,13 @@ pub(crate) fn write_seekable(
             continue;
         }
         let (class, payload) = match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => (
-                PLANE_SURFACE_CLASS,
-                plane_surface_payload(*origin, *normal, *u_axis),
-            ),
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (origin, normal, u_axis) = plane_surface.parts();
+                (
+                    PLANE_SURFACE_CLASS,
+                    plane_surface_payload(*origin, *normal, *u_axis),
+                )
+            }
             SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
@@ -677,13 +674,7 @@ fn prepare_write(
                 curve.id.as_str()
             )));
         }
-        let CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } = &curve.geometry
-        else {
+        let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
             if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 continue;
@@ -693,6 +684,7 @@ fn prepare_write(
                 curve.id.as_str()
             )));
         };
+        let (center, axis, ref_direction, radius) = circle_curve.parts();
         let axis_norm = axis.norm();
         let reference_norm = ref_direction.norm();
         let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
@@ -724,11 +716,8 @@ fn prepare_write(
             )));
         }
         match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => {
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (origin, normal, u_axis) = plane_surface.parts();
                 check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
             }
             SurfaceGeometry::Nurbs(nurbs) => check_nurbs_surface(surface.id.as_str(), nurbs)?,
@@ -1001,11 +990,8 @@ fn planar_sheet_brep_payload(
         ));
     }
     let (plane_frame, nurbs_patch) = match &surface.geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
             (
                 Some((*origin, *normal, *u_axis, normal.cross(*u_axis))),
@@ -1567,11 +1553,8 @@ fn multi_face_brep_payload(
             )));
         }
         match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => {
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (origin, normal, u_axis) = plane_surface.parts();
                 check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
                 face_surfaces.push(WritableFaceSurface::Plane {
                     origin: *origin,
@@ -1905,14 +1888,13 @@ fn multi_face_brep_payload(
         .surfaces
         .iter()
         .map(|surface| match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => (
-                PLANE_SURFACE_CLASS,
-                plane_surface_payload(*origin, *normal, *u_axis),
-            ),
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (origin, normal, u_axis) = plane_surface.parts();
+                (
+                    PLANE_SURFACE_CLASS,
+                    plane_surface_payload(*origin, *normal, *u_axis),
+                )
+            }
             SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
             _ => unreachable!("validated writable face surface"),
         })
@@ -2184,7 +2166,8 @@ fn validate_planar_edge(
         )));
     }
     let (expected_start, expected_end) = match &curve.geometry {
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
             if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
                 return Err(CodecError::malformed(format_args!(
                     "edge {} has an invalid line parameterization",
@@ -2263,7 +2246,7 @@ fn brep_c3_curve(
         .find(|curve| edge.curve.as_ref() == Some(&curve.id))
         .expect("validated edge curve");
     match &curve.geometry {
-        CurveGeometry::Line { .. } => {
+        CurveGeometry::Line(_) => {
             let from = vertex_point(model, &edge.start).expect("validated edge start");
             let to = vertex_point(model, &edge.end).expect("validated edge end");
             (
@@ -2297,7 +2280,7 @@ fn generated_projected_brep_c2_curve(
         .find(|curve| edge.curve.as_ref() == Some(&curve.id))
         .expect("validated edge curve");
     Ok(match &curve.geometry {
-        CurveGeometry::Line { .. } => {
+        CurveGeometry::Line(_) => {
             let (from, to) = if sense == Sense::Forward {
                 (&edge.start, &edge.end)
             } else {
@@ -2428,7 +2411,8 @@ fn explicit_brep_c2_curve(
     }
     let domain = edge.param_range.expect("validated edge domain");
     match &pcurve.geometry {
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
+        cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) => {
+            let (origin, direction) = line_pcurve.parts();
             if !origin.u.is_finite()
                 || !origin.v.is_finite()
                 || !direction.u.is_finite()
@@ -2582,7 +2566,8 @@ fn validate_nurbs_trim_loop(
                 && v <= v_domain[1] + uv_epsilon
         };
         let control_hull_inside = match &pcurve.geometry {
-            cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
+            cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) => {
+                let (origin, direction) = line_pcurve.parts();
                 domain.into_iter().all(|parameter| {
                     inside_domain(
                         origin.u + direction.u * parameter,

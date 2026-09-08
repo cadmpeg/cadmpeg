@@ -346,7 +346,10 @@ fn decode_resolves_prefixed_deltas_edge_curve() {
         .model
         .curves
         .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+        .any(|curve| match curve.geometry {
+            CurveGeometry::Line(_) => true,
+            _ => false,
+        }));
 }
 
 #[test]
@@ -361,5 +364,8 @@ fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
         .model
         .curves
         .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+        .any(|curve| match curve.geometry {
+            CurveGeometry::Line(_) => true,
+            _ => false,
+        }));
 }

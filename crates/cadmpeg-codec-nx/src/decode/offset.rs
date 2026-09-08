@@ -1792,10 +1792,10 @@ fn surface_parameter_periods_inner(
         return [None, None];
     };
     let periods = match &carrier.geometry {
-        SurfaceGeometry::Cylinder { .. }
-        | SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
+        SurfaceGeometry::Cylinder(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Cone(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Torus(_) => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
         SurfaceGeometry::Nurbs(nurbs) => {
             let period = |periodic: bool, knots: &[f64], degree: u32, count: u32| {
                 periodic.then(|| {
@@ -2236,16 +2236,15 @@ pub(crate) fn intersection_side(
 
 pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
     let point = match surface {
-        SurfaceGeometry::Plane { .. } => Point2::new(uv[0] * 1000.0, uv[1] * 1000.0),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            Point2::new(uv[0], uv[1] * 1000.0)
-        }
-        SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. }
-        | SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Plane(_) => Point2::new(uv[0] * 1000.0, uv[1] * 1000.0),
+        SurfaceGeometry::Cylinder(_) => Point2::new(uv[0], uv[1] * 1000.0),
+        SurfaceGeometry::Cone(_) => Point2::new(uv[0], uv[1] * 1000.0),
+        SurfaceGeometry::Sphere(_) => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Torus(_) => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Nurbs(_) => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Polygonal(_) => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Procedural { .. } => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
         SurfaceGeometry::Transformed { basis, .. } => return surface_parameters(basis, uv),
     };
     [point.u, point.v]
@@ -2259,15 +2258,19 @@ pub(crate) fn normalize_pcurve_parameters(
     surface: &SurfaceGeometry,
 ) -> Option<()> {
     match pcurve {
-        PcurveGeometry::Line { origin, direction } => {
+        PcurveGeometry::Line(line_pcurve) => {
+            let (origin, direction) = line_pcurve.parts();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
             let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
             let converted_end = surface_parameters(surface, [end.u, end.v])?;
-            *origin = converted_origin;
-            *direction = Point2::new(
-                converted_end.u - converted_origin.u,
-                converted_end.v - converted_origin.v,
-            );
+            *line_pcurve = cadmpeg_ir::geometry::LinePcurve::try_new(
+                converted_origin,
+                Point2::new(
+                    converted_end.u - converted_origin.u,
+                    converted_end.v - converted_origin.v,
+                ),
+            )
+            .ok()?;
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let converted = nurbs

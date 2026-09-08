@@ -72,19 +72,12 @@ fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
 }
 
 pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
-    let (
-        CurveGeometry::Line {
-            origin: first_origin,
-            direction: first_direction,
-        },
-        CurveGeometry::Line {
-            origin: second_origin,
-            direction: second_direction,
-        },
-    ) = (first, second)
+    let (CurveGeometry::Line(line_curve), CurveGeometry::Line(line_curve_2)) = (first, second)
     else {
         return None;
     };
+    let (first_origin, first_direction) = line_curve.parts();
+    let (second_origin, second_direction) = line_curve_2.parts();
     let first_origin = [first_origin.x, first_origin.y, first_origin.z];
     let second_origin = [second_origin.x, second_origin.y, second_origin.z];
     let first_direction = [first_direction.x, first_direction.y, first_direction.z];
@@ -122,9 +115,10 @@ pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> 
 }
 
 pub fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
-    let CurveGeometry::Line { origin, direction } = line else {
+    let CurveGeometry::Line(line_curve) = line else {
         return Vec::new();
     };
+    let (origin, direction) = line_curve.parts();
     let Some(PlanarConicEquation {
         origin: conic_origin,
         normal,
@@ -285,10 +279,13 @@ pub fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) 
         ) else {
             return Vec::new();
         };
-        let line = CurveGeometry::Line {
-            origin: Point3::new(origin[0], origin[1], origin[2]),
-            direction: Vector3::new(direction[0], direction[1], direction[2]),
+        let Ok(line) = cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(origin[0], origin[1], origin[2]),
+            Vector3::new(direction[0], direction[1], direction[2]),
+        ) else {
+            return Vec::new();
         };
+        let line = CurveGeometry::Line(line);
         let mut points = line_conic_intersections(&line, first);
         points.retain(|point| curve_contains_points(second, [*point, *point]));
         return points;
@@ -646,11 +643,11 @@ pub fn solve_topological_vertices(
             let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,
-                CurveGeometry::Line { .. }
-                    | CurveGeometry::Circle { .. }
-                    | CurveGeometry::Ellipse { .. }
-                    | CurveGeometry::Parabola { .. }
-                    | CurveGeometry::Hyperbola { .. }
+                CurveGeometry::Line(_)
+                    | CurveGeometry::Circle(_)
+                    | CurveGeometry::Ellipse(_)
+                    | CurveGeometry::Parabola(_)
+                    | CurveGeometry::Hyperbola(_)
             );
             evaluable.then_some((row.id, geometry))
         })
@@ -710,18 +707,24 @@ mod tests {
         ir.model.curves.extend([
             Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    direction: Vector3::new(1.0, 0.0, 0.0),
-                },
+                geometry: CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
                 source_object: None,
             },
             Curve {
                 id: id.clone(),
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 1.0, 0.0),
-                    direction: Vector3::new(1.0, 0.0, 0.0),
-                },
+                geometry: CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
                 source_object: None,
             },
         ]);

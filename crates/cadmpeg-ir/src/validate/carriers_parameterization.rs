@@ -864,7 +864,20 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
-                CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+                CurveGeometry::Circle(_) => {
+                    // Canonical periodic domain: the start angle wrapped into
+                    // one turn, the sweep at most a full turn. An arc crossing
+                    // the seam ends past `τ`. A full-period edge retains
+                    // its serialized phase, which may use any equivalent
+                    // angular branch.
+                    let sweep = end - start;
+                    let full_period = (sweep - tau).abs()
+                        < EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9;
+                    valid &= sweep
+                        <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
+                        && (full_period || (0.0..tau).contains(&start));
+                }
+                CurveGeometry::Ellipse(_) => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
                     // the seam ends past `τ`. A full-period edge retains
@@ -994,17 +1007,17 @@ fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
     match geometry {
         PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
         PcurveGeometry::Transformed { basis, .. } => pcurve_requires_bounded_domain(basis),
-        PcurveGeometry::Line { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. }
-        | PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Harmonic { .. }
-        | PcurveGeometry::Parabola { .. }
-        | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::Hyperbolic { .. }
-        | PcurveGeometry::Trimmed { .. }
-        | PcurveGeometry::Offset { .. }
-        | PcurveGeometry::PolarHarmonic { .. } => false,
+        PcurveGeometry::Line(_) => false,
+        PcurveGeometry::SphericalGreatCircle(_) => false,
+        PcurveGeometry::Circle(_) => false,
+        PcurveGeometry::Ellipse(_) => false,
+        PcurveGeometry::Harmonic(_) => false,
+        PcurveGeometry::Parabola(_) => false,
+        PcurveGeometry::Hyperbola(_) => false,
+        PcurveGeometry::Hyperbolic(_) => false,
+        PcurveGeometry::Trimmed(_) => false,
+        PcurveGeometry::Offset(_) => false,
+        PcurveGeometry::PolarHarmonic(_) => false,
     }
 }
 

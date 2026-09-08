@@ -37,11 +37,14 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
 fn plane_surface(id: u32, z: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     }
 }
@@ -59,12 +62,15 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.75,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                origin,
+                axis,
+                Vector3::new(1.0, 0.0, 0.0),
+                0.75,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     }
 }
@@ -207,12 +213,15 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
     assert!(feature_plane_equations(&scan, &ir, 917).is_none());
 
     scan.planes.outlines.remove(1);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 2.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
     assert!(feature_plane_equations(&scan, &ir, 917).is_none());
 }
 
@@ -364,27 +373,36 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         cylinder_surface(33, Point3::new(0.0, 4.0, 0.0), Vector3::new(0.0, -1.0, 0.0));
     assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 0.75,
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            0.75,
+        )
+        .unwrap(),
+    );
     assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 0.8,
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            0.8,
+        )
+        .unwrap(),
+    );
     assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 4.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
 
     ir.model.surfaces[0] =

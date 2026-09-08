@@ -153,7 +153,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end);
+        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end).unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");
         };
@@ -585,11 +585,14 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1060,11 +1063,14 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1261,11 +1267,14 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
 
@@ -1621,12 +1630,15 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 draft: None,
             },
         },
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(2.0, 3.0, 4.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.5,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(2.0, 3.0, 4.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.5,
+            )
+            .unwrap(),
+        ),
     };
 
     assert_eq!(
@@ -1672,22 +1684,31 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
         normal: [0.0, -1.0, 0.0],
         offset: 20,
     };
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(5.0, -14.0, 1.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.5,
-    };
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(5.0, -14.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.5,
+        )
+        .unwrap(),
+    );
 
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &cylinder),
         Some(([2.0, 4.0], 4.5))
     );
     let mut off_axis = cylinder.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut off_axis else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut off_axis else {
         unreachable!();
     };
-    *axis = Vector3::new(1.0, 0.0, 0.0);
+    let (origin, _, _, radius) = cylinder_surface.parts();
+
+    let axis = Vector3::new(1.0, 0.0, 0.0);
+    let ref_direction = Vector3::new(0.0, 0.0, 1.0);
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, ref_direction, *radius)
+            .unwrap();
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &off_axis),
         None
@@ -1893,26 +1914,32 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ]),
         None
     );
-    assert!(matches!(
-        hole_cylinder_from_cap_outlines([
-            (
-                902,
-                [0.0, 0.0, 0.85],
-                [0.0, 0.0, 1.0],
-                [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]],
-            ),
-            (
-                905,
-                [0.0, 0.0, 7.35],
-                [0.0, 0.0, -1.0],
-                [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]],
-            ),
-        ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-            if origin == Point3::new(0.0, 19.0, 0.85)
-                && axis == Vector3::new(0.0, 0.0, 1.0)
-                && radius == 1.5
-    ));
+    assert!(match hole_cylinder_from_cap_outlines([
+        (
+            902,
+            [0.0, 0.0, 0.85],
+            [0.0, 0.0, 1.0],
+            [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]],
+        ),
+        (
+            905,
+            [0.0, 0.0, 7.35],
+            [0.0, 0.0, -1.0],
+            [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]],
+        ),
+    ]) {
+        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(0.0, 19.0, 0.85)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *radius == 1.5
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
     assert!(hole_cylinder_from_cap_outlines([
         (
             902,
@@ -1928,31 +1955,43 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ),
     ])
     .is_none());
-    assert!(matches!(
-        circular_sweep_cylinder_from_cap_outlines([
-            (
-                828,
-                [0.0, 4.0, 0.0],
-                [0.0, 1.0, 0.0],
-                Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
-            ),
-            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
-        ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-            if origin == Point3::new(-12.5, 4.0, 0.0)
-                && axis == Vector3::new(0.0, -1.0, 0.0)
-                && radius == 0.75
-    ));
-    assert!(matches!(
-        cylinder_from_single_cap_outline((
-            46,
-            [0.0, 16.0, 0.0],
+    assert!(match circular_sweep_cylinder_from_cap_outlines([
+        (
+            828,
+            [0.0, 4.0, 0.0],
             [0.0, 1.0, 0.0],
-            Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
-        )),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-            if origin == Point3::new(0.0, 16.0, 0.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && radius == 4.45
-    ));
+            Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
+        ),
+        (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
+    ]) {
+        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(-12.5, 4.0, 0.0)
+                    && *axis == Vector3::new(0.0, -1.0, 0.0)
+                    && *radius == 0.75
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
+    assert!(match cylinder_from_single_cap_outline((
+        46,
+        [0.0, 16.0, 0.0],
+        [0.0, 1.0, 0.0],
+        Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
+    )) {
+        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(0.0, 16.0, 0.0)
+                    && *axis == Vector3::new(0.0, 1.0, 0.0)
+                    && *radius == 4.45
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 }

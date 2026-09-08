@@ -544,17 +544,18 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         panic!("expected an exact revolution definition");
     };
     assert_eq!(directrix.as_str(), "iges:model:curve#D3");
-    assert!(matches!(
-        result
-            .ir()
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == *directrix)
-            .expect("line generatrix")
-            .geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Line { .. }
-    ));
+    assert!(match result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *directrix)
+        .expect("line generatrix")
+        .geometry
+    {
+        cadmpeg_ir::geometry::CurveGeometry::Line(_) => true,
+        _ => false,
+    });
     assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert_eq!(
         procedural.record_bounds,
@@ -669,10 +670,10 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .find(|curve| curve.id == *directrix)
             .expect("hyperbola directrix")
             .geometry;
-        assert!(matches!(
-            directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }
-        ));
+        assert!(match directrix_geometry {
+            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_) => true,
+            _ => false,
+        });
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let source_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
@@ -954,10 +955,10 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .find(|curve| curve.id == *directrix)
             .expect("hyperbola directrix")
             .geometry;
-        assert!(matches!(
-            directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }
-        ));
+        assert!(match directrix_geometry {
+            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_) => true,
+            _ => false,
+        });
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
@@ -1175,17 +1176,14 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = result.ir().model.surfaces[0]
+    let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = result.ir().model.surfaces[0]
         .geometry
         .solved_cache()
         .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected a plane carrier");
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 2.0));
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -1297,13 +1295,14 @@ fn decode_solves_signed_analytic_offset_surfaces() {
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = *offset
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = *offset
             .geometry
             .solved_cache()
             .expect("solved offset carrier")
         else {
             panic!("expected an exact plane offset carrier");
         };
+        let (&origin, _, _) = plane_surface.parts();
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
@@ -1334,13 +1333,14 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D7")
             .expect("offset cylinder");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = *surface
+        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface) = *surface
             .geometry
             .solved_cache()
             .expect("solved offset cylinder")
         else {
             panic!("expected cylindrical offset carrier")
         };
+        let (_, _, _, &radius) = cylinder_surface.parts();
         assert_eq!(radius, expected_radius);
         assert!(
             result.report().losses.is_empty(),

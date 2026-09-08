@@ -20,11 +20,14 @@ fn surface_draft(id: &str) -> ModelDraft {
     draft
         .insert(Surface {
             id: SurfaceId::mint(id).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         })
         .expect("insert surface into draft");
@@ -68,30 +71,39 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 fn trimmed_pcurve_fit_uses_declared_endpoints() {
     let surface_id =
         SurfaceId::mint("step:data:surface#trimmed-endpoints").expect("identity grammar");
-    let surface_geometry = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface_geometry = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
         source_object: None,
     });
-    let pcurve = PcurveGeometry::Trimmed {
-        parameter_range: [
-            std::f64::consts::FRAC_PI_2,
-            5.0 * std::f64::consts::FRAC_PI_2,
-        ],
-        same_sense: true,
-        basis: Box::new(PcurveGeometry::Circle {
-            center: Point2::new(0.0, 0.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            radius: 1.0,
-        }),
-    };
+    let pcurve = PcurveGeometry::Trimmed(
+        cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+            [
+                std::f64::consts::FRAC_PI_2,
+                5.0 * std::f64::consts::FRAC_PI_2,
+            ],
+            true,
+            Box::new(PcurveGeometry::Circle(
+                cadmpeg_ir::geometry::CirclePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(0.0, 1.0),
+                    1.0,
+                )
+                .unwrap(),
+            )),
+        )
+        .unwrap(),
+    );
 
     let fit = pcurve_declared_endpoint_fit(
         &ModelIndex::new(&ir),
@@ -113,11 +125,14 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
 fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     let surface_id =
         SurfaceId::mint("step:data:surface#bounded-search-witness").expect("identity grammar");
-    let surface_geometry = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface_geometry = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -128,14 +143,17 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     // The polar harmonic has a stationary chart tangent at seed 0. Its
     // exact point at pi is outside the default seed set, so the bounded
     // Newton loop cannot prove that the seed result is the global minimum.
-    let pcurve = PcurveGeometry::PolarHarmonic {
-        radial_center: Point2::new(2.0, -1.0),
-        radial_cos: Point2::new(0.0, 1.0),
-        radial_sin: Point2::new(1.0, 0.0),
-        axial_origin: 0.0,
-        axial_cos: 0.0,
-        axial_sin: 0.0,
-    };
+    let pcurve = PcurveGeometry::PolarHarmonic(
+        cadmpeg_ir::geometry::PolarHarmonicPcurve::try_new(
+            Point2::new(2.0, -1.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(1.0, 0.0),
+            0.0,
+            0.0,
+            0.0,
+        )
+        .unwrap(),
+    );
     let exact_parameter = std::f64::consts::PI;
     let exact_uv = pcurve_uv(&pcurve, exact_parameter).expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
@@ -204,9 +222,10 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#27")
         .expect("unsampled-divergence pcurve");
     let parameter_range = match &pcurve.geometry {
-        PcurveGeometry::Trimmed {
-            parameter_range, ..
-        } => *parameter_range,
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            *parameter_range
+        }
         other => panic!("expected trimmed pcurve, got {other:?}"),
     };
     let surface_id = decoded
@@ -223,7 +242,10 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         .curves
         .iter()
         .find_map(|curve| match curve.geometry {
-            CurveGeometry::Circle { center, radius, .. } => Some((center, radius)),
+            CurveGeometry::Circle(circle_curve) => {
+                let (&center, _, _, &radius) = circle_curve.parts();
+                Some((center, radius))
+            }
             _ => None,
         })
         .expect("3D circle carrier");
@@ -533,14 +555,17 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
         .expect("shared source pcurve");
-    assert!(matches!(
-        &source.geometry,
-        PcurveGeometry::Trimmed {
-            parameter_range,
-            same_sense: true,
-            ..
-        } if *parameter_range == [0.0, 1.0]
-    ));
+    assert!(match &source.geometry {
+        PcurveGeometry::Trimmed(trimmed_pcurve)
+            if {
+                let (parameter_range, _, _) = trimmed_pcurve.parts();
+                (*trimmed_pcurve.parts().1 == true) && (*parameter_range == [0.0, 1.0])
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 
     assert!(decoded
         .ir()
@@ -592,14 +617,17 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
         .expect("reordered shared source pcurve");
-    assert!(matches!(
-        &source.geometry,
-        PcurveGeometry::Trimmed {
-            parameter_range,
-            same_sense: true,
-            ..
-        } if *parameter_range == [0.0, 1.0]
-    ));
+    assert!(match &source.geometry {
+        PcurveGeometry::Trimmed(trimmed_pcurve)
+            if {
+                let (parameter_range, _, _) = trimmed_pcurve.parts();
+                (*trimmed_pcurve.parts().1 == true) && (*parameter_range == [0.0, 1.0])
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 
     assert!(decoded
         .ir()
@@ -641,11 +669,14 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 fn shared_surface_carrier_is_staged_once() {
     let surface = Surface {
         id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");

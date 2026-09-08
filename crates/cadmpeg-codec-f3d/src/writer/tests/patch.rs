@@ -123,12 +123,20 @@ fn generated_straight_record_patches_by_token_boundaries() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .expect("patched generated straight record");
-    assert!(matches!(
-        cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]),
-        Some(CurveGeometry::Line { origin, direction })
-            if origin == Point3::new(40.0, 50.0, 60.0)
-                && direction == Vector3::new(0.0, 1.0, 0.0)
-    ));
+    assert!(
+        match cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]) {
+            Some(CurveGeometry::Line(line_curve))
+                if {
+                    let (origin, direction) = line_curve.parts();
+                    *origin == Point3::new(40.0, 50.0, 60.0)
+                        && *direction == Vector3::new(0.0, 1.0, 0.0)
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
 }
 
 #[test]
@@ -204,14 +212,22 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .expect("patched sphere record");
-    assert!(matches!(
-        cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]),
-        Some((SurfaceGeometry::Sphere { center, axis, ref_direction, radius }, false))
-            if center == Point3::new(10.0, 20.0, 30.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == -25.0
-    ));
+    assert!(
+        match cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]) {
+            Some((SurfaceGeometry::Sphere(sphere_surface), false))
+                if {
+                    let (center, axis, ref_direction, radius) = sphere_surface.parts();
+                    *center == Point3::new(10.0, 20.0, 30.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == -25.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
 }
 
 #[test]
@@ -292,21 +308,24 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .expect("patched torus record");
-    assert!(matches!(
-        cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]),
-        Some((SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        }, false))
-            if center == Point3::new(10.0, 20.0, 30.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && major_radius == 20.0
-                && minor_radius == -35.0
-    ));
+    assert!(
+        match cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]) {
+            Some((SurfaceGeometry::Torus(torus_surface), false))
+                if {
+                    let (center, axis, ref_direction, major_radius, minor_radius) =
+                        torus_surface.parts();
+                    *center == Point3::new(10.0, 20.0, 30.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *major_radius == 20.0
+                        && *minor_radius == -35.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
 }
 
 #[test]
@@ -388,19 +407,22 @@ fn generated_cylinder_preserves_native_angle_branch() {
     .expect("patched cylinder record");
     // The patch preserves the record's native negative-cosine angle
     // branch, so decode reports the inward-normal flag.
-    assert!(matches!(
-        cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]),
-        Some((SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        }, true))
-            if origin == Point3::new(10.0, 20.0, 30.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 40.0
-    ));
+    assert!(
+        match cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]) {
+            Some((SurfaceGeometry::Cylinder(cylinder_surface), true))
+                if {
+                    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+                    *origin == Point3::new(10.0, 20.0, 30.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 40.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
 }
 
 #[test]
@@ -492,21 +514,24 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .expect("patched ellipse record");
-    assert!(matches!(
-        cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]),
-        Some(CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        })
-            if center == Point3::new(10.0, 20.0, 30.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && major_direction == Vector3::new(1.0, 0.0, 0.0)
-                && major_radius == 40.0
-                && minor_radius == 10.0
-    ));
+    assert!(
+        match cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]) {
+            Some(CurveGeometry::Ellipse(ellipse_curve))
+                if {
+                    let (center, axis, major_direction, major_radius, minor_radius) =
+                        ellipse_curve.parts();
+                    *center == Point3::new(10.0, 20.0, 30.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *major_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *major_radius == 40.0
+                        && *minor_radius == 10.0
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
+    );
 }
 
 #[test]

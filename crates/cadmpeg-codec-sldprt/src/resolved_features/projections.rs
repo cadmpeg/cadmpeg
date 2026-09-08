@@ -1961,9 +1961,14 @@ pub(super) fn unique_cylindrical_face(
     let cylindrical = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder {
-                radius: candidate, ..
-            } if (candidate - radius).abs() <= tolerance => Some(&surface.id),
+            SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let (_, _, _, &candidate) = cylinder_surface.parts();
+                    (candidate - radius).abs() <= tolerance
+                } =>
+            {
+                Some(&surface.id)
+            }
             _ => None,
         })
         .collect::<HashSet<_>>();
@@ -1982,7 +1987,7 @@ pub(super) fn unique_topological_cylindrical_face(
     let cylindrical = surfaces
         .iter()
         .filter_map(|surface| {
-            matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }).then_some(&surface.id)
+            matches!(surface.geometry, SurfaceGeometry::Cylinder(_)).then_some(&surface.id)
         })
         .collect::<HashSet<_>>();
     let mut candidates = faces
@@ -2046,11 +2051,8 @@ pub(super) fn unique_planar_face(
     let planar = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane {
-                origin: candidate_origin,
-                normal: candidate_normal,
-                ..
-            } => {
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (&candidate_origin, &candidate_normal, _) = plane_surface.parts();
                 let candidate_length = candidate_normal.norm();
                 if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
                     return None;

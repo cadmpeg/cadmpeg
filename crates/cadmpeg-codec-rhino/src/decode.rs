@@ -3454,11 +3454,16 @@ fn stage_extrusion_caps(
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: extrusion.cap_origins[cap],
-                normal: extrusion.cap_normals[cap],
-                u_axis: extrusion.cap_u_axes[cap],
-            },
+            geometry: SurfaceGeometry::Plane(
+                match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    extrusion.cap_origins[cap],
+                    extrusion.cap_normals[cap],
+                    extrusion.cap_u_axes[cap],
+                ) {
+                    Ok(plane) => plane,
+                    Err(_) => return false,
+                },
+            ),
             source_object: Some(association.clone()),
         });
         let mut loop_ids = Vec::with_capacity(boundaries.len());
@@ -4436,7 +4441,7 @@ fn scale_plane_pcurves(
         .model()
         .surfaces
         .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane(_)))
         .map(|surface| surface.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let plane_faces = staged
@@ -5153,21 +5158,9 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Nurbs(nurbs)
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let decoded = crate::curves::DecodedCurve::leaf(
-                CurveGeometry::Circle {
-                    center,
-                    axis,
-                    ref_direction,
-                    radius,
-                },
-                Vec::new(),
-            );
+        CurveGeometry::Circle(circle_curve) => {
+            let decoded =
+                crate::curves::DecodedCurve::leaf(CurveGeometry::Circle(circle_curve), Vec::new());
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             nurbs
@@ -5179,7 +5172,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Nurbs(nurbs)
         }
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (&origin, &direction) = line_curve.parts();
             let transformed_origin = transform.apply_point(origin);
             let endpoint = transform.apply_point(Point3::new(
                 origin.x + direction.x,
@@ -5195,18 +5189,17 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             if !norm.is_finite() || norm == 0.0 {
                 return Err("instance line transform collapsed its direction".to_string());
             }
-            CurveGeometry::Line {
-                origin: transformed_origin,
-                direction: cadmpeg_ir::math::Vector3::new(
-                    value.x / norm,
-                    value.y / norm,
-                    value.z / norm,
-                ),
-            }
+            CurveGeometry::Line(cadmpeg_ir::geometry::LineCurve::try_new(
+                transformed_origin,
+                cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm),
+            )?)
         }
-        CurveGeometry::Degenerate { point } => CurveGeometry::Degenerate {
-            point: transform.apply_point(point),
-        },
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (&point,) = degenerate_curve.parts();
+            CurveGeometry::Degenerate(cadmpeg_ir::geometry::DegenerateCurve::try_new(
+                transform.apply_point(point),
+            )?)
+        }
         CurveGeometry::Unknown { record } => {
             curve.geometry = CurveGeometry::Unknown { record };
             return Err("unknown free curve cannot be transformed exactly".to_string());
@@ -5237,11 +5230,8 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 .map_err(|error| error.to_string())?;
             SurfaceGeometry::Nurbs(nurbs)
         }
-        SurfaceGeometry::Plane {
-            origin: source_origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (&source_origin, &normal, &u_axis) = plane_surface.parts();
             let origin = transform.apply_point(source_origin);
             let normal = transform
                 .apply_normal(normal)
@@ -5266,15 +5256,15 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             if !length.is_finite() || length == 0.0 {
                 return Err("instance plane transform collapsed its frame".to_string());
             }
-            SurfaceGeometry::Plane {
+            SurfaceGeometry::Plane(cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin,
                 normal,
-                u_axis: cadmpeg_ir::math::Vector3::new(
+                cadmpeg_ir::math::Vector3::new(
                     value.x / length,
                     value.y / length,
                     value.z / length,
                 ),
-            }
+            )?)
         }
         SurfaceGeometry::Unknown { record } => {
             surface.geometry = SurfaceGeometry::Unknown { record };

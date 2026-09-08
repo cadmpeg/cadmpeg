@@ -83,11 +83,14 @@ fn generated_fixture(
     };
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin,
+                normal,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
@@ -265,11 +268,14 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
     };
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin,
+                normal,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());

@@ -264,9 +264,10 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .iter()
         .find(|curve| &curve.id == curve_id)
         .expect("conic carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { axis, .. } = &carrier.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = &carrier.geometry else {
         panic!("expected the ratio-1 ellipse to decode as a circle");
     };
+    let (_, axis, _, _) = circle_curve.parts();
     assert!((axis.z - -1.0).abs() < 1.0e-12, "axis must be negated");
 }
 

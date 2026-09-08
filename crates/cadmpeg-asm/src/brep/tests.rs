@@ -62,17 +62,14 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             native_position: Point3::new(0.0, 0.0, 0.0),
             revision_form: None,
         };
-    let Some(SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    }) = analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0)))
+    let Some(SurfaceGeometry::Cylinder(cylinder_surface)) =
+        analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0)))
     else {
         panic!("exact circle extrusion did not reduce")
     };
-    assert!(point_vector(Point3::new(2.0, 3.0, 4.0), origin).norm() < 1.0e-12);
-    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    assert!(point_vector(Point3::new(2.0, 3.0, 4.0), *origin).norm() < 1.0e-12);
+    assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -156,18 +153,18 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
 
     let mut elevated = degree_elevated_circle();
     assert!(rational_four_arc_circle(&elevated).is_some());
-    assert!(matches!(
-        analytic_procedural_surface(
-            &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
-                directrix: elevated.clone(),
-                parameter_interval: [0.0, 4.0],
-                direction: Vector3::new(0.0, 0.0, 3.0),
-                native_position: Point3::new(0.0, 0.0, 0.0),
-                revision_form: None,
-            }
-        ),
-        Some(SurfaceGeometry::Cylinder { .. })
-    ));
+    assert!(match analytic_procedural_surface(
+        &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
+            directrix: elevated.clone(),
+            parameter_interval: [0.0, 4.0],
+            direction: Vector3::new(0.0, 0.0, 3.0),
+            native_position: Point3::new(0.0, 0.0, 0.0),
+            revision_form: None,
+        }
+    ) {
+        Some(SurfaceGeometry::Cylinder(_)) => true,
+        _ => false,
+    });
     elevated
         .edit_control_points(|points| points[5].x += 1.0e-5)
         .unwrap();
@@ -175,20 +172,21 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
 }
 
 fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {
-    SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    }
+    SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+    )
 }
 
 fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    }
+    SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            origin,
+            axis,
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    )
 }
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
@@ -228,17 +226,19 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
         native: None,
     };
-    assert!(matches!(
-        analytic_procedural_surface(&definition),
-        Some(SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        }) if origin == Point3::new(2.0, 2.0, -4.0)
-            && axis == Vector3::new(0.0, 0.0, 1.0)
-            && radius == 2.0
-    ));
+    assert!(match analytic_procedural_surface(&definition) {
+        Some(SurfaceGeometry::Cylinder(cylinder_surface))
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(2.0, 2.0, -4.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *radius == 2.0
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 
     let nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         spine: Some(spine), ..
@@ -284,20 +284,22 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
         cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
         native: None,
     };
-    assert!(matches!(
-        analytic_procedural_surface(&definition),
-        Some(SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        }) if center == Point3::new(0.0, 0.0, 1.0)
-            && axis == Vector3::new(0.0, 0.0, 1.0)
-            && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && major_radius == 5.0
-            && minor_radius == -2.0
-    ));
+    assert!(match analytic_procedural_surface(&definition) {
+        Some(SurfaceGeometry::Torus(torus_surface))
+            if {
+                let (center, axis, ref_direction, major_radius, minor_radius) =
+                    torus_surface.parts();
+                *center == Point3::new(0.0, 0.0, 1.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                    && *major_radius == 5.0
+                    && *minor_radius == -2.0
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 
     let nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend { supports, .. } =
         &mut definition

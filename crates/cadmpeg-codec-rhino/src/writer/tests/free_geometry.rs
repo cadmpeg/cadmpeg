@@ -117,9 +117,9 @@ fn rejection_occurs_before_output() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Degenerate {
-            point: Point3::new(0.0, 0.0, 0.0),
-        },
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        ),
         source_object: None,
     });
     let mut output = vec![0xaa];
@@ -138,12 +138,15 @@ fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        },
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let mut bytes = Vec::new();
@@ -242,11 +245,14 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        },
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {

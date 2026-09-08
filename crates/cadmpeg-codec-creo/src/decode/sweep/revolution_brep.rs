@@ -157,13 +157,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let Some(curve_geometry) = curve_geometry else {
                 continue;
             };
-            let CurveGeometry::Circle {
-                center,
-                axis: curve_axis,
-                ref_direction,
-                radius,
-            } = curve_geometry
-            else {
+            let CurveGeometry::Circle(circle_curve) = curve_geometry else {
                 unreachable!();
             };
             let curve_id =
@@ -177,12 +171,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let position = section_point_in_model(transform, *point);
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Circle {
-                    center,
-                    axis: curve_axis,
-                    ref_direction,
-                    radius,
-                },
+                geometry: CurveGeometry::Circle(circle_curve),
                 source_object: None,
             });
             ir.model.points.push(Point {

@@ -448,14 +448,11 @@ pub(crate) fn resolve_planar_face_selection(
     let matching = faces
         .iter()
         .filter_map(|face| {
-            let SurfaceGeometry::Plane {
-                origin: candidate_origin,
-                normal: candidate_normal,
-                ..
-            } = &surfaces.get(&face.surface)?.geometry
+            let SurfaceGeometry::Plane(plane_surface) = &surfaces.get(&face.surface)?.geometry
             else {
                 return None;
             };
+            let (candidate_origin, candidate_normal, _) = plane_surface.parts();
             let candidate_length = candidate_normal.norm();
             if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
                 return None;

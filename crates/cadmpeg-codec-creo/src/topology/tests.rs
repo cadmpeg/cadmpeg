@@ -416,9 +416,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve.as_ref())
             .expect("edge curve");
-        let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = curve.geometry else {
+        let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) = curve.geometry else {
             panic!("edge line: {curve:#?}");
         };
+        let (&origin, &direction) = line_curve.parts();
         let start = model
             .vertices
             .iter()
@@ -476,10 +477,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .iter()
             .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
             .expect("projected plane pcurve");
-        assert!(matches!(
-            pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Line { .. }
-        ));
+        assert!(match pcurve.geometry {
+            cadmpeg_ir::geometry::PcurveGeometry::Line(_) => true,
+            _ => false,
+        });
         let edge = model
             .edges
             .iter()

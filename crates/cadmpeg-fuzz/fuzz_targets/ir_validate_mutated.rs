@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parses IR JSON, applies one of 14 deterministic semantic mutations selected
+//! Parses IR JSON, applies one of 13 deterministic semantic mutations selected
 //! by the first input byte, and validates the result. Validation findings are
 //! expected; panics are failures.
 
@@ -27,7 +27,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
 
-    match strategy % 14 {
+    match strategy % 13 {
         0 => {
             // Mutate vertex positions with NaN/infinity
             for point in &mut ir.model.points {
@@ -66,66 +66,54 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         4 => {
-            // Mutate surface geometry with degenerate values
-            for surface in &mut ir.model.surfaces {
-                if let cadmpeg_ir::geometry::SurfaceGeometry::Plane { normal, .. } =
-                    &mut surface.geometry
-                {
-                    normal.x = 0.0;
-                    normal.y = 0.0;
-                    normal.z = 0.0;
-                }
-            }
-        }
-        5 => {
             // Create empty body (no regions)
             if !ir.model.bodies.is_empty() {
                 ir.model.bodies[0].regions.clear();
             }
         }
-        6 => {
+        5 => {
             // Create face with no loops
             if !ir.model.faces.is_empty() {
                 ir.model.faces[0].loops.clear();
             }
         }
-        7 => {
+        6 => {
             // Mutate tolerances to invalid values
             ir.tolerances.linear = -1.0;
             ir.tolerances.angular = f64::NAN;
         }
-        8 => {
+        7 => {
             // Clear all geometry but keep topology
             ir.model.points.clear();
             ir.model.curves.clear();
             ir.model.surfaces.clear();
         }
-        9 => {
+        8 => {
             // Break a radial ring with an unresolved coedge.
             if let Some(coedge) = ir.model.coedges.first_mut() {
                 coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("fuzz:missing:coedge#0")
                     .expect("identity grammar");
             }
         }
-        10 => {
+        9 => {
             // Violate canonical arena ordering.
             ir.model.coedges.reverse();
         }
-        11 => {
+        10 => {
             // Put a coedge-owned edge into a shell's wire set.
             if let (Some(shell), Some(edge)) = (ir.model.shells.first_mut(), ir.model.edges.first())
             {
                 shell.wire_edges.push(edge.id.clone());
             }
         }
-        12 => {
+        11 => {
             // Add an annotation for an entity that does not exist.
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let stream = annotations.stream("fuzz:nonexistent");
             annotations.note("nonexistent", stream, u64::MAX);
             source_fidelity.annotations.append(annotations.build());
         }
-        13 => {
+        12 => {
             // Put an invalid range on a canonical curve parameterization.
             if let Some(edge) = ir.model.edges.first_mut() {
                 edge.param_range = Some([f64::INFINITY, f64::NEG_INFINITY]);

@@ -17,29 +17,38 @@ fn variable_blend_eval_fixture(
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: slice.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            crate::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.extend([
         Surface {
             id: first_surface.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                crate::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: second_surface.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: second_origin,
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                crate::geometry::PlaneSurface::try_new(
+                    second_origin,
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -61,7 +70,9 @@ fn variable_blend_eval_fixture(
             parameter_ranges: [[None, None], [None, None]],
         }),
         curve: None,
-        pcurve: Some(PcurveGeometry::Line { origin, direction }),
+        pcurve: Some(PcurveGeometry::Line(
+            crate::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+        )),
         location: Point3::new(0.0, 0.0, 0.0),
         secondary_pcurve: None,
         extension: None,
@@ -317,14 +328,14 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
         let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
         };
-        construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line {
-            origin: Point2::new(3.0, 0.0),
-            direction: Point2::new(0.0, 1.0),
-        });
-        construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line {
-            origin: Point2::new(0.5, 2.0),
-            direction: Point2::new(0.0, 2.0),
-        });
+        construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line(
+            crate::geometry::LinePcurve::try_new(Point2::new(3.0, 0.0), Point2::new(0.0, 1.0))
+                .unwrap(),
+        ));
+        construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line(
+            crate::geometry::LinePcurve::try_new(Point2::new(0.5, 2.0), Point2::new(0.0, 2.0))
+                .unwrap(),
+        ));
     });
 
     let index = crate::index::ModelIndex::new(&ir);
@@ -349,10 +360,13 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         [3.0, 3.0],
         Some(VariableBlendCrossSection::Circular),
     );
-    ir.model.curves[0].geometry = CurveGeometry::Line {
-        origin: Point3::new(3.0, 0.0, 3.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
-    };
+    ir.model.curves[0].geometry = CurveGeometry::Line(
+        crate::geometry::LineCurve::try_new(
+            Point3::new(3.0, 0.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .unwrap(),
+    );
     let ProceduralSurfaceDefinition::VariableBlend { construction } =
         ir.model.procedural_surfaces[0].definition()
     else {
@@ -610,10 +624,13 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
             discriminator: 0,
             parameter: 0.0,
             radius: 0.0,
-            function: PcurveGeometry::Line {
-                origin: Point2::new(2.0, 100.0),
-                direction: Point2::new(3.0, 200.0),
-            },
+            function: PcurveGeometry::Line(
+                crate::geometry::LinePcurve::try_new(
+                    Point2::new(2.0, 100.0),
+                    Point2::new(3.0, 200.0),
+                )
+                .unwrap(),
+            ),
             terminal: crate::geometry::VariableBlendTerminal::Double(0.0),
         },
     };

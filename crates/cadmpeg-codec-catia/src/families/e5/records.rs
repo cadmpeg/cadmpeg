@@ -201,16 +201,19 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
             {
                 if radius.is_finite() && radius > 0.0 {
                     if let Some(axis) = frame_u.cross(frame_v).unit() {
+                        let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
+                            origin,
+                            axis,
+                            frame_u.unit().unwrap_or_else(|| {
+                                cadmpeg_ir::geometry::derive_reference_direction(axis)
+                            }),
+                            radius,
+                        ) else {
+                            continue;
+                        };
                         out.push(E5Circle {
                             pos,
-                            geometry: CurveGeometry::Circle {
-                                center: origin,
-                                axis,
-                                ref_direction: frame_u.unit().unwrap_or_else(|| {
-                                    cadmpeg_ir::geometry::derive_reference_direction(axis)
-                                }),
-                                radius,
-                            },
+                            geometry: CurveGeometry::Circle(payload),
                         });
                     }
                 }

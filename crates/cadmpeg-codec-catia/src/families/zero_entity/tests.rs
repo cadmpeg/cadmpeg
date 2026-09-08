@@ -106,12 +106,8 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     assert!(result.ir().model.bodies.is_empty());
     assert!(result.ir().model.shells.is_empty());
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
             assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(

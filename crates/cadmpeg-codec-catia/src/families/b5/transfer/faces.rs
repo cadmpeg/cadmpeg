@@ -224,14 +224,10 @@ fn b5_planar_loop_points(
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)?;
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = &surface.geometry
-    else {
+    let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
         return None;
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
     let normal = normal.unit()?;
     let u_axis = u_axis.unit()?;
     if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
@@ -267,13 +263,10 @@ fn b5_planar_loop_points(
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == *pcurve_id)?;
-        let PcurveGeometry::Line {
-            origin: uv_origin,
-            direction,
-        } = &pcurve.geometry
-        else {
+        let PcurveGeometry::Line(line_pcurve) = &pcurve.geometry else {
             return None;
         };
+        let (uv_origin, direction) = line_pcurve.parts();
         let uv_endpoints = parameter_range.map(|parameter| {
             Point2::new(
                 uv_origin.u + parameter * direction.u,
@@ -650,13 +643,16 @@ mod tests {
                 pcurves.push(Pcurve {
                     id: PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
                         .expect("identity grammar"),
-                    geometry: PcurveGeometry::Line {
-                        origin: Point2::new(start_point[0], start_point[1]),
-                        direction: Point2::new(
-                            end_point[0] - start_point[0],
-                            end_point[1] - start_point[1],
-                        ),
-                    },
+                    geometry: PcurveGeometry::Line(
+                        cadmpeg_ir::geometry::LinePcurve::try_new(
+                            Point2::new(start_point[0], start_point[1]),
+                            Point2::new(
+                                end_point[0] - start_point[0],
+                                end_point[1] - start_point[1],
+                            ),
+                        )
+                        .unwrap(),
+                    ),
                     metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                         None,
                         Some([0.0, 1.0]),
@@ -738,11 +734,14 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface%2310".to_string())
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model.pcurves = pcurves;

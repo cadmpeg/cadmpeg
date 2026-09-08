@@ -284,14 +284,15 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
     )
     .expect("clipping plane");
     let DecodedSurface::Typed {
-        geometry: SurfaceGeometry::Plane { origin, .. },
+        geometry: SurfaceGeometry::Plane(plane_surface),
         derived,
         ..
     } = decoded
     else {
         panic!("typed plane carrier");
     };
-    assert_eq!(origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
+    let (origin, _, _) = plane_surface.parts();
+    assert_eq!(*origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
     assert!(derived);
 
     let invalid = clipping_plane_payload(false);
@@ -520,10 +521,10 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
         let (plane, _) =
             read_plane_surface_with_parameterization(&mut reader, 1.0).expect("required invariant");
         assert_eq!(reader.remaining(), 0);
-        assert!(matches!(
-            plane,
-            cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
-        ));
+        assert!(match plane {
+            cadmpeg_ir::geometry::SurfaceGeometry::Plane(_) => true,
+            _ => false,
+        });
     }
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);

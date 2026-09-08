@@ -15,18 +15,24 @@ fn direct_surface_fixture(
     ir.model.curves = vec![
         Curve {
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                direction: Vector3::new(2.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(2.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Curve {
             id: CurveId::mint("test:model:entity#second").expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(5.0, 10.0, 13.0),
-                direction: Vector3::new(0.0, 3.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(5.0, 10.0, 13.0),
+                    Vector3::new(0.0, 3.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ];

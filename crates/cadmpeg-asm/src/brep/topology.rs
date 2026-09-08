@@ -289,12 +289,9 @@ pub(crate) fn walk_reachable_topology(
                     if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
-                                pcurve_geo
-                                    .entry(pc)
-                                    .or_insert_with(|| PcurveGeometry::Line {
-                                        origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                                    });
+                                pcurve_geo.entry(pc).or_insert_with(|| {
+                                    PcurveGeometry::Line(cadmpeg_ir::geometry::LinePcurve::U_AXIS)
+                                });
                                 pcurve_parameter_ranges.entry(ci).or_insert([0.0, 0.0]);
                                 kept_pcurves.insert(pc);
                             } else {

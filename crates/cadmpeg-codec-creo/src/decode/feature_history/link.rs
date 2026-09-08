@@ -61,12 +61,11 @@ pub(in super::super) fn surface_kind_for_geometry(
     geometry: &SurfaceGeometry,
 ) -> Option<crate::surface::SurfaceKind> {
     match geometry {
-        SurfaceGeometry::Plane { .. } => Some(crate::surface::SurfaceKind::Plane),
-        SurfaceGeometry::Cylinder { .. } => Some(crate::surface::SurfaceKind::Cylinder),
-        SurfaceGeometry::Cone { .. } => Some(crate::surface::SurfaceKind::Cone),
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
-            Some(crate::surface::SurfaceKind::TorusOrSphere)
-        }
+        SurfaceGeometry::Plane(_) => Some(crate::surface::SurfaceKind::Plane),
+        SurfaceGeometry::Cylinder(_) => Some(crate::surface::SurfaceKind::Cylinder),
+        SurfaceGeometry::Cone(_) => Some(crate::surface::SurfaceKind::Cone),
+        SurfaceGeometry::Sphere(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
+        SurfaceGeometry::Torus(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
         SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
         SurfaceGeometry::Transformed { basis, .. } => surface_kind_for_geometry(basis),
         SurfaceGeometry::Procedural { cache, .. } => cache

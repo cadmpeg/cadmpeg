@@ -78,11 +78,8 @@ pub(in super::super) fn revolution_boundary_pcurve(
         dot(relative, tangent).atan2(dot(relative, reference))
     };
     match surface {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             let normal = vector(*normal);
             let u_axis = vector(*u_axis);
             let v_axis = cross(normal, u_axis);
@@ -103,20 +100,10 @@ pub(in super::super) fn revolution_boundary_pcurve(
             } else {
                 std::f64::consts::TAU
             };
-            Some(circular_pcurve(center, radius, start, start + direction))
+            Some(circular_pcurve(center, radius, start, start + direction)?)
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            ..
-        }
-        | SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
             let carrier_axis = vector(*axis);
             let relative = point_from(*origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -126,14 +113,23 @@ pub(in super::super) fn revolution_boundary_pcurve(
             } else {
                 std::f64::consts::TAU
             };
-            Some(line_pcurve([u, v], [u + direction, v]))
+            Some(line_pcurve([u, v], [u + direction, v])?)
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, _, _, _) = cone_surface.parts();
+            let carrier_axis = vector(*axis);
+            let relative = point_from(*origin);
+            let u = azimuth(relative, carrier_axis, vector(*ref_direction));
+            let v = dot(relative, carrier_axis);
+            let direction = if dot(carrier_axis, axis_direction).is_sign_negative() {
+                -std::f64::consts::TAU
+            } else {
+                std::f64::consts::TAU
+            };
+            Some(line_pcurve([u, v], [u + direction, v])?)
+        }
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, _) = sphere_surface.parts();
             let carrier_axis = vector(*axis);
             let relative = point_from(*center);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -142,15 +138,10 @@ pub(in super::super) fn revolution_boundary_pcurve(
                 relative[index] - axial * carrier_axis[index]
             });
             let v = axial.atan2(dot(radial, radial).sqrt());
-            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
+            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             let carrier_axis = vector(*axis);
             let reference = vector(*ref_direction);
             let relative = point_from(*center);
@@ -177,7 +168,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             (positive_residual.min(negative_residual) <= EPS_RESIDUAL_AGREEMENT * scale * scale)
                 .then_some(())?;
             let v = axial.atan2(signed_ring - major_radius);
-            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
+            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal(_)
@@ -246,7 +237,7 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         return Some(line_pcurve(
             [parameter, 0.0],
             [parameter, std::f64::consts::TAU],
-        ));
+        )?);
     }
     revolution_boundary_pcurve(
         surface,
@@ -311,7 +302,7 @@ pub(in super::super) fn revolution_face_sense(
         let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
         let parameter = lower + (upper - lower) * 0.5;
-        line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])
+        line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])?
     } else {
         revolution_boundary_pcurve(surface, model_point, axis)?
     };

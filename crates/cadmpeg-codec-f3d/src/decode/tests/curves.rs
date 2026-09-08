@@ -440,10 +440,15 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(-5.0, 4.0, 2.0),
-        direction: cadmpeg_ir::math::Vector3::new(2.0, 1.0, -0.5),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(-5.0, 4.0, 2.0),
+            cadmpeg_ir::math::Vector3::new(2.0, 1.0, -0.5)
+                .unit()
+                .unwrap(),
+        )
+        .unwrap(),
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -561,10 +566,15 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0),
-        direction: cadmpeg_ir::math::Vector3::new(1.0, -2.0, 0.5),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0),
+            cadmpeg_ir::math::Vector3::new(1.0, -2.0, 0.5)
+                .unit()
+                .unwrap(),
+        )
+        .unwrap(),
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -957,10 +967,15 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == component.component)
             .expect("compound component curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
-            direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+                cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -1219,10 +1234,13 @@ fn generated_mixed_offset_supports_write_source_less() {
         context.sides[1].surface = None;
         context.sides[1].pcurve = None;
         context.sides[0].pcurve = Some(
-            cadmpeg_ir::geometry::PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                direction: cadmpeg_ir::math::Point2::new(3.0, -1.0),
-            }
+            cadmpeg_ir::geometry::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                    cadmpeg_ir::math::Point2::new(3.0, -1.0),
+                )
+                .unwrap(),
+            )
             .into(),
         );
         context.sides[0]
@@ -1312,24 +1330,26 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             .geometry
             .clone()
     });
-    assert!(matches!(
-        supports[0],
-        SurfaceGeometry::Cone {
-            radius: 10.0,
-            ratio: 0.4,
-            half_angle,
-            axis,
-            ..
-        } if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-            && axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-    ));
-    assert!(matches!(
-        supports[1],
-        SurfaceGeometry::Torus {
-            minor_radius: -7.5,
-            ..
+    assert!(match supports[0] {
+        SurfaceGeometry::Cone(cone_surface)
+            if {
+                let (_, axis, _, _, _, half_angle) = cone_surface.parts();
+                (*cone_surface.parts().3 == 10.0)
+                    && (*cone_surface.parts().4 == 0.4)
+                    && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+                        && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
+            } =>
+        {
+            true
         }
-    ));
+        _ => false,
+    });
+    assert!(match supports[1] {
+        SurfaceGeometry::Torus(torus_surface) if { *torus_surface.parts().4 == -7.5 } => {
+            true
+        }
+        _ => false,
+    });
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -1393,15 +1413,21 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             .geometry
             .clone()
     });
-    assert!(matches!(
-        expected_geometries[0],
-        SurfaceGeometry::Cone { half_angle, .. }
-            if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        expected_geometries[1],
-        SurfaceGeometry::Torus { .. }
-    ));
+    assert!(match expected_geometries[0] {
+        SurfaceGeometry::Cone(cone_surface)
+            if {
+                let (_, _, _, _, _, half_angle) = cone_surface.parts();
+                (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
+    assert!(match expected_geometries[1] {
+        SurfaceGeometry::Torus(_) => true,
+        _ => false,
+    });
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
@@ -1667,10 +1693,12 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .iter()
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("third support surface");
-    assert!(matches!(
-        third_surface.geometry,
-        SurfaceGeometry::Sphere { radius: -12.5, .. }
-    ));
+    assert!(match third_surface.geometry {
+        SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 } => {
+            true
+        }
+        _ => false,
+    });
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
@@ -1723,10 +1751,12 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .iter()
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("round-trip third support surface");
-    assert!(matches!(
-        third_surface.geometry,
-        SurfaceGeometry::Sphere { radius: -12.5, .. }
-    ));
+    assert!(match third_surface.geometry {
+        SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 } => {
+            true
+        }
+        _ => false,
+    });
 }
 
 #[test]

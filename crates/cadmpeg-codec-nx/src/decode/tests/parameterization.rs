@@ -49,10 +49,14 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
     let mut translated = result.ir().clone();
     for carrier in &mut translated.model.surfaces {
-        if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
+        if let SurfaceGeometry::Plane(plane_surface) = &mut carrier.geometry {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;
             origin.z += 1.0e12;
+            *plane_surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
         }
     }
     let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -957,10 +961,13 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     });
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
@@ -1073,20 +1080,26 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     ir.model.surfaces.extend([
         Surface {
             id: base_surfaces[0].clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: base_surfaces[1].clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -1220,27 +1233,26 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .iter()
             .find(|surface| surface.id == spine_surfaces[side])
             .unwrap();
-        let SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } = support.geometry
-        else {
+        let SurfaceGeometry::Plane(plane_surface) = support.geometry else {
             panic!("plane support");
         };
+        let (&origin, &normal, &u_axis) = plane_surface.parts();
         let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))
             .expect("identity grammar");
         result.ir_mut().model.surfaces.push(Surface {
             id: id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(
-                    origin.x + radius * normal.x,
-                    origin.y + radius * normal.y,
-                    origin.z + radius * normal.z,
-                ),
-                normal,
-                u_axis,
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(
+                        origin.x + radius * normal.x,
+                        origin.y + radius * normal.y,
+                        origin.z + radius * normal.z,
+                    ),
+                    normal,
+                    u_axis,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         id
@@ -1613,11 +1625,14 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     for support in &supports {
         ir.model.surfaces.push(Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -1672,10 +1687,13 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: Some(offsets[1].clone()),
                             pcurve: Some(
-                                PcurveGeometry::Line {
-                                    origin: Point2::new(1.0, 2.0),
-                                    direction: Point2::new(3.0, 4.0),
-                                }
+                                PcurveGeometry::Line(
+                                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                                        Point2::new(1.0, 2.0),
+                                        Point2::new(3.0, 4.0),
+                                    )
+                                    .unwrap(),
+                                )
                                 .into(),
                             ),
                         },

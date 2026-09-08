@@ -401,18 +401,15 @@ fn validate_zero_entity_model_curve(
                 })
                 && !curve.periodic()
         }
-        (Some([0x28, 0x8a] | [0x29, 0xb8]), Some(CurveGeometry::Line { origin, direction })) => {
+        (Some([0x28, 0x8a] | [0x29, 0xb8]), Some(CurveGeometry::Line(line_curve))) => {
+            let (origin, direction) = line_curve.parts();
             finite_point(origin) && finite_vector(direction)
         }
         (
             Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),
-            Some(CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            }),
+            Some(CurveGeometry::Circle(circle_curve)),
         ) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             finite_point(center)
                 && finite_vector(axis)
                 && finite_vector(ref_direction)

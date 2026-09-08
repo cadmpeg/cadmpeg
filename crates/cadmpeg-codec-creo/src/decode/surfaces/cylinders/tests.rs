@@ -162,11 +162,14 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
     cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: origin.into(),
-            normal: normal.into(),
-            u_axis: [1.0, 0.0, 0.0].into(),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin.into(),
+                normal.into(),
+                [1.0, 0.0, 0.0].into(),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     }
 }
@@ -175,12 +178,15 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: [0.0, 0.0, 0.0].into(),
-            axis: [0.0, 0.0, 1.0].into(),
-            ref_direction: [1.0, 0.0, 0.0].into(),
-            radius,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                [0.0, 0.0, 0.0].into(),
+                [0.0, 0.0, 1.0].into(),
+                [1.0, 0.0, 0.0].into(),
+                radius,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     }
 }
@@ -280,15 +286,10 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
     let [surface] = ir.model.surfaces.as_slice() else {
         panic!("one generated cylinder");
     };
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        radius,
-        ..
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         panic!("generated cylinder: {:?}", surface.geometry);
     };
+    let (&origin, &axis, _, &radius) = cylinder_surface.parts();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 1.0);
@@ -308,17 +309,19 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
         2
     );
     assert!(ir.model.surfaces.iter().all(|surface| {
-        matches!(
-            surface.geometry,
-            SurfaceGeometry::Cylinder {
-                radius,
-                origin,
-                axis,
-                ..
-            } if radius == 0.3125
-                && origin == [0.0, 1.625, -1.0].into()
-                && axis == [0.0, 0.0, 1.0].into()
-        )
+        match surface.geometry {
+            SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let (origin, axis, _, radius) = cylinder_surface.parts();
+                    *radius == 0.3125
+                        && *origin == [0.0, 1.625, -1.0].into()
+                        && *axis == [0.0, 0.0, 1.0].into()
+                } =>
+            {
+                true
+            }
+            _ => false,
+        }
     }));
 }
 
@@ -593,15 +596,10 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     let [surface] = ir.model.surfaces.as_slice() else {
         panic!("one reconciled cylinder");
     };
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         panic!("reconciled cylinder: {:?}", surface.geometry);
     };
+    let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
     assert_eq!(origin, [-12.5, 4.0, 0.0].into());
     assert_eq!(axis, [0.0, 1.0, 0.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());

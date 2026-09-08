@@ -77,10 +77,10 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     assert_eq!(context.sides[1].surface.as_ref(), Some(&incident[1]));
 
     let pcurve_id = PcurveId::mint("nx:test:pcurve#0").expect("identity grammar");
-    let pcurve_geometry = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let pcurve_geometry = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
     ir.model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),

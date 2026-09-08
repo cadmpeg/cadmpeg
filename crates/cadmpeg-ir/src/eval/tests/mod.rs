@@ -550,41 +550,56 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
 #[test]
 fn direct_analytic_curve_inverses_preserve_native_parameters() {
     let geometries = [
-        CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
-        CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        },
-        CurveGeometry::Ellipse {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        CurveGeometry::Parabola {
-            vertex: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            focal_distance: 2.0,
-        },
-        CurveGeometry::Hyperbola {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
+        CurveGeometry::Line(
+            crate::geometry::LineCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        CurveGeometry::Circle(
+            crate::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .unwrap(),
+        ),
+        CurveGeometry::Ellipse(
+            crate::geometry::EllipseCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
+        CurveGeometry::Parabola(
+            crate::geometry::ParabolaCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
+        CurveGeometry::Hyperbola(
+            crate::geometry::HyperbolaCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
     ];
     for (index, geometry) in geometries.into_iter().enumerate() {
         let parameter = if matches!(
             &geometry,
-            CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+            CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_)
         ) {
             0.7 + std::f64::consts::TAU
         } else {
@@ -680,10 +695,13 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            crate::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let index = crate::index::ModelIndex::new(&ir);
@@ -698,12 +716,15 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
 
 #[test]
 fn transformed_curve_inverse_uses_the_basis_parameterization() {
-    let basis = CurveGeometry::Circle {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.0,
-    };
+    let basis = CurveGeometry::Circle(
+        crate::geometry::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+        )
+        .unwrap(),
+    );
     let transform = Transform::from_rows([
         [-2.0, 0.0, 0.0, 1.0e6],
         [0.0, 0.5, 0.0, -2.0e6],
@@ -751,7 +772,9 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
-        geometry: CurveGeometry::Degenerate { point },
+        geometry: CurveGeometry::Degenerate(
+            crate::geometry::DegenerateCurve::try_new(point).unwrap(),
+        ),
         source_object: None,
     });
     let seed = 123.5;
@@ -896,11 +919,14 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                crate::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -1099,11 +1125,14 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         ProceduralSurfaceId::mint("test:model:entity#subset-construction").expect("valid identity");
     let offset_construction =
         ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Plane(
+        crate::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
@@ -1178,11 +1207,14 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                crate::geometry::PlaneSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -1227,9 +1259,21 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(2.0, 0.0, 0.0),
+        geometry: CurveGeometry::Transformed {
+            basis: Box::new(CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            transform: crate::transform::Transform::from_rows([
+                [2.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0, 3.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+            .unwrap(),
         },
         source_object: None,
     });
@@ -1343,18 +1387,24 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Curve {
             id: spine_id.clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(7.0, 11.0, 13.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(7.0, 11.0, 13.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ];
@@ -1446,10 +1496,13 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Transformed {
-            basis: Box::new(CurveGeometry::Line {
-                origin: Point3::new(2.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
-            }),
+            basis: Box::new(CurveGeometry::Line(
+                crate::geometry::LineCurve::try_new(
+                    Point3::new(2.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            )),
             transform: Transform::identity(),
         },
         source_object: None,
@@ -1503,10 +1556,13 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            crate::geometry::LineCurve::try_new(
+                Point3::new(2.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -1566,10 +1622,13 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            crate::geometry::LineCurve::try_new(
+                Point3::new(2.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.points.extend([
@@ -1641,39 +1700,54 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
 
 #[test]
 fn analytic_and_transformed_surface_partials_follow_parameterization() {
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
-    let sphere = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-    };
-    let torus = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 5.0,
-        minor_radius: 2.0,
-    };
+    let cylinder = SurfaceGeometry::Cylinder(
+        crate::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    let cone = SurfaceGeometry::Cone(
+        crate::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .unwrap(),
+    );
+    let sphere = SurfaceGeometry::Sphere(
+        crate::geometry::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+        )
+        .unwrap(),
+    );
+    let torus = SurfaceGeometry::Torus(
+        crate::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+            2.0,
+        )
+        .unwrap(),
+    );
     let transformed = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        basis: Box::new(SurfaceGeometry::Plane(
+            crate::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform: Transform::from_rows([
             [2.0, 0.0, 0.0, 7.0],
             [0.0, 3.0, 0.0, 11.0],
@@ -1715,12 +1789,15 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
 #[test]
 fn analytic_and_rational_curve_derivatives_are_exact() {
     let parameter = 1.0e16;
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-    };
+    let circle = CurveGeometry::Circle(
+        crate::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+        )
+        .unwrap(),
+    );
     let tangent = curve_tangent(&circle, parameter).expect("analytic tangent");
     assert_eq!(
         tangent,

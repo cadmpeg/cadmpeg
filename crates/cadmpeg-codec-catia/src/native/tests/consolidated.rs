@@ -609,17 +609,20 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                 .starts_with("catia:consolidated:surface-revolution-directrix#")
         })
         .expect("transferred revolution directrix");
-    assert!(matches!(
-        directrix.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius: 3.0,
-        } if center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
-            && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-            && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-    ));
+    assert!(match directrix.geometry {
+        cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
+            if {
+                let (center, axis, ref_direction, _) = circle_curve.parts();
+                (*circle_curve.parts().3 == 3.0)
+                    && (*center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
+                        && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                        && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
     let revolution = decoded
         .ir()
         .model
@@ -634,18 +637,21 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .expect("transferred revolution construction");
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         decoded.ir().model.procedural_surface_owner(&revolution.id) == Some(&surface.id)
-            && matches!(
-                surface.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-                    center,
-                    axis,
-                    ref_direction,
-                    major_radius: 2.0,
-                    minor_radius: 3.0,
-                }) if *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)
-                    && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                    && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-            )
+            && match surface.geometry.solved_cache() {
+                Some(cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
+                    if {
+                        let (center, axis, ref_direction, _, _) = torus_surface.parts();
+                        (*torus_surface.parts().3 == 2.0)
+                            && (*torus_surface.parts().4 == 3.0)
+                            && (*center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)
+                                && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                                && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+                    } =>
+                {
+                    true
+                }
+                _ => false,
+            }
     }));
     assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     assert!(matches!(

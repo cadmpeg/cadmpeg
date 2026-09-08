@@ -77,10 +77,11 @@ pub fn counterbore_dimensions(
         .into_iter()
         .filter_map(|(surface_id, geometry)| {
             generated_cylinders.contains(&surface_id).then_some(())?;
-            let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
+            let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
                 return None;
             };
-            Some(radius)
+            let (_, _, _, radius) = cylinder_surface.parts();
+            Some(*radius)
         })
         .collect::<Vec<_>>();
     let dimension_tables = || {
@@ -509,9 +510,10 @@ pub fn counterbore_axis_placement_from_sources(
     let [carrier] = carriers.as_slice() else {
         return None;
     };
-    let SurfaceGeometry::Cylinder { origin, axis, .. } = carrier else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
         unreachable!("cylinder carrier helper returns a cylinder")
     };
+    let (origin, axis, _, _) = cylinder_surface.parts();
     Some(cadmpeg_ir::features::HolePlacement::Axis {
         origin: *origin,
         axis: *axis,
@@ -834,15 +836,10 @@ pub fn counterbore_source_boundary_circle(
                         == CurveId::mint(format!("creo:visibgeom:curve#{}", edge.id))
                             .expect("identity grammar")
                 }))?;
-                let CurveGeometry::Circle {
-                    center,
-                    axis,
-                    radius: candidate,
-                    ..
-                } = &curve.geometry
-                else {
+                let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
                     return None;
                 };
+                let (center, axis, _, candidate) = circle_curve.parts();
                 ((*candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalized([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
@@ -933,30 +930,23 @@ pub fn counterbore_source_patch_geometries(
         }
         _ => return None,
     };
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        ..
-    } = carrier
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
         return None;
     };
-    let geometry = |radius| SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+    let geometry = |radius| {
+        Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+                .ok()?,
+        ))
     };
+    let counterbore_geometry = geometry(counterbore_radius)?;
+    let bore_geometry = geometry(0.5 * bore_diameter)?;
     Some(
         counterbore_source
             .iter()
-            .map(|id| (*id, geometry(counterbore_radius)))
-            .chain(
-                bore_source
-                    .iter()
-                    .map(|id| (*id, geometry(0.5 * bore_diameter))),
-            )
+            .map(|id| (*id, counterbore_geometry.clone()))
+            .chain(bore_source.iter().map(|id| (*id, bore_geometry.clone())))
             .collect(),
     )
 }
@@ -990,11 +980,16 @@ pub fn counterbore_source_corner_patch_geometries(
     )?;
     let mut ref_direction = [0.0; 3];
     ref_direction[assignment.bore.axis.complement()[0].index()] = 1.0;
-    let geometry = |radius| SurfaceGeometry::Cylinder {
-        origin: assignment.position,
-        axis: assignment.direction,
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        radius,
+    let geometry = |radius| {
+        Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                assignment.position,
+                assignment.direction,
+                Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius,
+            )
+            .ok()?,
+        ))
     };
     let radius_for = |source_index| {
         if source_index == assignment.bore_source {
@@ -1003,12 +998,13 @@ pub fn counterbore_source_corner_patch_geometries(
             0.5 * counterbore_diameter
         }
     };
+    let geometries = [geometry(radius_for(0))?, geometry(radius_for(1))?];
     Some(
         [first_source, second_source]
             .into_iter()
             .enumerate()
             .flat_map(|(source_index, ids)| {
-                let geometry = geometry(radius_for(source_index));
+                let geometry = geometries[source_index].clone();
                 ids.iter().copied().map(move |id| (id, geometry.clone()))
             })
             .collect(),
@@ -1025,9 +1021,11 @@ pub fn complete_cylinder_source_carrier(
         .map(|id| existing_geometries.get(id))
         .collect::<Option<Vec<_>>>()?;
     let first = (*carriers.first()?).clone();
-    (matches!(&first, SurfaceGeometry::Cylinder { radius: candidate, .. }
-        if (*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT)
-        && carriers.iter().all(|candidate| **candidate == first))
+    (matches!(&first, SurfaceGeometry::Cylinder(cylinder_surface)
+    if {
+        let (_, _, _, candidate) = cylinder_surface.parts();
+        (*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
+    }) && carriers.iter().all(|candidate| **candidate == first))
     .then_some(first)
 }
 

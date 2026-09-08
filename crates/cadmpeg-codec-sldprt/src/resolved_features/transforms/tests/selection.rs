@@ -799,12 +799,15 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .map(|(index, (y, z))| Surface {
             id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(19.5, y, z),
-                axis: Vector3::new(1.0, 0.0, 0.0),
-                ref_direction: Vector3::new(0.0, 1.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(19.5, y, z),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    3.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         })
         .collect::<Vec<_>>();

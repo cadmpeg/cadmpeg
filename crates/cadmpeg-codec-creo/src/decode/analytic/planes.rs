@@ -383,10 +383,13 @@ pub fn reconciled_model_plane(
     let model_plane = match model_surfaces.as_slice() {
         [] => None,
         [surface] => match &surface.geometry {
-            SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
-                origin: [origin.x, origin.y, origin.z],
-                normal: [normal.x, normal.y, normal.z],
-            }),
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (origin, normal, _) = plane_surface.parts();
+                Some(PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                })
+            }
             SurfaceGeometry::Unknown { .. } => None,
             _ => return None,
         },
@@ -1749,11 +1752,20 @@ pub fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Optio
 
 pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
     let (origin, normal) = match geometry {
-        CurveGeometry::Circle { center, axis, .. }
-        | CurveGeometry::Ellipse { center, axis, .. } => (
-            [center.x, center.y, center.z],
-            normalized([axis.x, axis.y, axis.z])?,
-        ),
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, _, _) = circle_curve.parts();
+            (
+                [center.x, center.y, center.z],
+                normalized([axis.x, axis.y, axis.z])?,
+            )
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, _, _, _) = ellipse_curve.parts();
+            (
+                [center.x, center.y, center.z],
+                normalized([axis.x, axis.y, axis.z])?,
+            )
+        }
         CurveGeometry::Nurbs(nurbs) => {
             valid_positive_nurbs_curve(nurbs)?;
             let plane = topology_bound_plane(
@@ -1777,10 +1789,13 @@ pub struct BoundaryLine {
 
 pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
     let (origin, direction) = match geometry {
-        CurveGeometry::Line { origin, direction } => (
-            [origin.x, origin.y, origin.z],
-            normalized([direction.x, direction.y, direction.z])?,
-        ),
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            (
+                [origin.x, origin.y, origin.z],
+                normalized([direction.x, direction.y, direction.z])?,
+            )
+        }
         CurveGeometry::Nurbs(nurbs) => {
             (nurbs.degree() == 1 && !nurbs.periodic()).then_some(())?;
             valid_positive_nurbs_curve(nurbs)?;

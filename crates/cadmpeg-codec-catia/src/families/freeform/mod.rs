@@ -89,6 +89,14 @@ pub(crate) fn append_consolidated_revolutions(
             "catia:consolidated:surface-revolution-directrix#{index}"
         ))
         .expect("identity grammar");
+        let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
+            center,
+            direction_x,
+            direction_y,
+            profile.radius,
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &directrix,
@@ -99,12 +107,7 @@ pub(crate) fn append_consolidated_revolutions(
         );
         ir.model.curves.push(Curve {
             id: directrix.clone(),
-            geometry: CurveGeometry::Circle {
-                center,
-                axis: direction_x,
-                ref_direction: direction_y,
-                radius: profile.radius,
-            },
+            geometry: CurveGeometry::Circle(payload),
             source_object: Some(cgm_source("profile-circle", profile.record_id)),
         });
         let surface = SurfaceId::mint(format!(
@@ -151,14 +154,17 @@ pub(crate) fn append_consolidated_revolutions(
                     center.y - radial.y,
                     center.z - radial.z,
                 );
-                SurfaceGeometry::Torus {
-                    center: torus_center,
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    torus_center,
                     axis,
                     ref_direction,
                     major_radius,
-                    minor_radius: profile.radius,
-                }
-            });
+                    profile.radius,
+                )
+                .ok()
+                .map(SurfaceGeometry::Torus)
+            })
+            .flatten();
         annotate(
             annotations,
             &surface,
@@ -597,12 +603,15 @@ pub(crate) fn try_decode_freeform_surfaces(
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Circle {
-                center: circle.center,
-                axis: circle.axis,
-                ref_direction: circle.ref_direction,
-                radius: circle.radius,
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    circle.center,
+                    circle.axis,
+                    circle.ref_direction,
+                    circle.radius,
+                )
+                .ok()?,
+            ),
             source_object: Some(cgm_source_key(
                 "b2-spatial-circle-frame",
                 format!("{:010}", circle.pos),
@@ -990,51 +999,61 @@ fn freeform_surface_carriers(
     surfaces.extend(
         crate::families::b2::records::b2_cylinders_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: surface.surface_geometry(),
-                source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
+            .filter_map(|surface| {
+                Some(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: surface.surface_geometry()?,
+                    source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
+                    source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
+                })
             }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: surface.cylinder.surface_geometry(),
-                source_object: cgm_source("surface", surface.object_id),
-                source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
+            .filter_map(|surface| {
+                Some(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: surface.cylinder.surface_geometry()?,
+                    source_object: cgm_source("surface", surface.object_id),
+                    source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
+                })
             }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_cones_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: crate::families::b2::records::b2_cone_geometry(&surface),
-                source_object: cgm_source_key("b2-03-29-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
+            .filter_map(|surface| {
+                Some(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: crate::families::b2::records::b2_cone_geometry(&surface)?,
+                    source_object: cgm_source_key("b2-03-29-frame", format!("{:010}", surface.pos)),
+                    source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
+                })
             }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_spheres_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: crate::families::b2::records::b2_sphere_geometry(&surface),
-                source_object: cgm_source_key("b2-03-2a-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
+            .filter_map(|surface| {
+                Some(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: crate::families::b2::records::b2_sphere_geometry(&surface)?,
+                    source_object: cgm_source_key("b2-03-2a-frame", format!("{:010}", surface.pos)),
+                    source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
+                })
             }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_tori_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: crate::families::b2::records::b2_torus_geometry(&surface),
-                source_object: cgm_source_key("b2-03-2b-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
+            .filter_map(|surface| {
+                Some(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: crate::families::b2::records::b2_torus_geometry(&surface)?,
+                    source_object: cgm_source_key("b2-03-2b-frame", format!("{:010}", surface.pos)),
+                    source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
+                })
             }),
     );
     surfaces
@@ -1114,6 +1133,12 @@ fn append_consolidated_line_profiles(
     {
         let id = CurveId::mint(format!("catia:consolidated:line-profile-curve#{index}"))
             .expect("identity grammar");
+        let Ok(payload) = cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(line.origin[0], line.origin[1], line.origin[2]),
+            Vector3::new(line.direction[0], line.direction[1], line.direction[2]),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -1124,10 +1149,7 @@ fn append_consolidated_line_profiles(
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(line.origin[0], line.origin[1], line.origin[2]),
-                direction: Vector3::new(line.direction[0], line.direction[1], line.direction[2]),
-            },
+            geometry: CurveGeometry::Line(payload),
             source_object: Some(cgm_source_key(
                 "b2-03-0e-frame",
                 format!("{:010}", line.pos),
@@ -1816,18 +1838,19 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let Some(cylinder) = standalone.get(pos) else {
                         continue;
                     };
-                    let carrier = cylinder.surface_geometry();
-                    let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                    let Some(carrier) = cylinder.surface_geometry() else { continue; };
+                    let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
                         continue;
                     };
-                    if radius <= 0.0 || !radius.is_finite() {
+ let (_, _, _, radius,) = cylinder_surface.parts();
+                    if *radius <= 0.0 || !radius.is_finite() {
                         continue;
                     }
                     (
                         (*pos, None),
                         carrier,
                         None,
-                        ConsolidatedCarrierChart::Cylinder { radius },
+                        ConsolidatedCarrierChart::Cylinder { radius: *radius },
                         "consolidated_b2_03_28_cylinder",
                         "cylinder",
                     )
@@ -1836,18 +1859,19 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let Some(value) = embedded.get(pos) else {
                         continue;
                     };
-                    let carrier = value.cylinder.surface_geometry();
-                    let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                    let Some(carrier) = value.cylinder.surface_geometry() else { continue; };
+                    let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
                         continue;
                     };
-                    if radius <= 0.0 || !radius.is_finite() {
+ let (_, _, _, radius,) = cylinder_surface.parts();
+                    if *radius <= 0.0 || !radius.is_finite() {
                         continue;
                     }
                     (
                         (*pos, None),
                         carrier,
                         Some(cgm_source("surface", value.object_id)),
-                        ConsolidatedCarrierChart::Cylinder { radius },
+                        ConsolidatedCarrierChart::Cylinder { radius: *radius },
                         "consolidated_b2_03_60_cylinder",
                         "cylinder",
                     )
@@ -1864,7 +1888,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     }
                     (
                         (*pos, None),
-                        crate::families::b2::records::b2_cone_geometry(cone),
+                        match crate::families::b2::records::b2_cone_geometry(cone) { Some(carrier) => carrier, None => continue },
                         None,
                         ConsolidatedCarrierChart::Cone { cone },
                         "consolidated_b2_03_29_cone",
@@ -1877,7 +1901,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     };
                     (
                         (*pos, None),
-                        crate::families::b2::records::b2_sphere_geometry(sphere),
+                        match crate::families::b2::records::b2_sphere_geometry(sphere) { Some(carrier) => carrier, None => continue },
                         None,
                         ConsolidatedCarrierChart::Identity,
                         "consolidated_b2_03_2a_sphere",
@@ -1890,7 +1914,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     };
                     (
                         (*pos, None),
-                        crate::families::b2::records::b2_torus_geometry(torus),
+                        match crate::families::b2::records::b2_torus_geometry(torus) { Some(carrier) => carrier, None => continue },
                         None,
                         ConsolidatedCarrierChart::Torus { torus },
                         "consolidated_b2_03_2b_torus",
@@ -2413,7 +2437,7 @@ fn solve_planar_chart_rechart(
     loci: &[Point3],
     target: &SurfaceGeometry,
 ) -> Option<ConsolidatedCarrierChart<'static>> {
-    if !matches!(target, SurfaceGeometry::Plane { .. }) || sites.len() != loci.len() {
+    if !matches!(target, SurfaceGeometry::Plane(_)) || sites.len() != loci.len() {
         return None;
     }
     // Target-chart image of each locus. A locus off the plane has no image,
@@ -2595,27 +2619,15 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     if left == right {
         return true;
     }
-    let (
-        SurfaceGeometry::Cone {
-            origin: left_origin,
-            axis: left_axis,
-            ref_direction: left_reference,
-            radius: left_radius,
-            ratio: left_ratio,
-            half_angle: left_angle,
-        },
-        SurfaceGeometry::Cone {
-            origin: right_origin,
-            axis: right_axis,
-            ref_direction: right_reference,
-            radius: right_radius,
-            ratio: right_ratio,
-            half_angle: right_angle,
-        },
-    ) = (left, right)
+    let (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2)) =
+        (left, right)
     else {
         return false;
     };
+    let (left_origin, left_axis, left_reference, left_radius, left_ratio, left_angle) =
+        cone_surface.parts();
+    let (right_origin, right_axis, right_reference, right_radius, right_ratio, right_angle) =
+        cone_surface_2.parts();
     if left_axis != right_axis
         || left_reference != right_reference
         || left_ratio.to_bits() != right_ratio.to_bits()
@@ -2666,20 +2678,13 @@ fn rechart_equivalent_surface_pcurve(
     if source == target {
         return Ok(Some(pcurve.clone()));
     }
-    let (
-        SurfaceGeometry::Cone {
-            origin: source_origin,
-            axis: source_axis,
-            ..
-        },
-        SurfaceGeometry::Cone {
-            origin: target_origin,
-            ..
-        },
-    ) = (source, target)
+    let (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2)) =
+        (source, target)
     else {
         return Ok(None);
     };
+    let (source_origin, source_axis, _, _, _, _) = cone_surface.parts();
+    let (target_origin, _, _, _, _, _) = cone_surface_2.parts();
     if !same_surface_locus(source, target) {
         return Ok(None);
     }
@@ -2690,15 +2695,19 @@ fn rechart_equivalent_surface_pcurve(
         return Err(RechartFailure::NonFinite);
     }
     match pcurve {
-        PcurveGeometry::Line { origin, direction } => {
+        PcurveGeometry::Line(line_pcurve) => {
+            let (origin, direction) = line_pcurve.parts();
             let shifted_v = origin.v + v_shift;
             if !shifted_v.is_finite() {
                 return Err(RechartFailure::NonFinite);
             }
-            Ok(Some(PcurveGeometry::Line {
-                origin: Point2::new(origin.u, shifted_v),
-                direction: *direction,
-            }))
+            Ok(Some(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(origin.u, shifted_v),
+                    *direction,
+                )
+                .map_err(|_| RechartFailure::NonFinite)?,
+            )))
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let mut shifted = nurbs.clone();
@@ -2981,15 +2990,20 @@ mod tests {
 
     #[test]
     fn paired_surface_lifts_require_one_matching_carrier() {
-        let plane = |z| SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        let plane = |z| {
+            SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, z),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )
         };
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(1.0, 0.0),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .unwrap(),
+        );
         let resolved = plane(0.0);
         let matching = plane(0.001);
         let distant = plane(1.0);
@@ -3017,13 +3031,18 @@ mod tests {
 
     #[test]
     fn cone_locus_equality_accepts_only_the_same_apex_shift() {
-        let cone = |origin, radius| SurfaceGeometry::Cone {
-            origin,
-            axis: Vector3::new(-1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius,
-            ratio: 1.0,
-            half_angle: std::f64::consts::FRAC_PI_4,
+        let cone = |origin, radius| {
+            SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    origin,
+                    Vector3::new(-1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    radius,
+                    1.0,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            )
         };
         let apex_form = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
         let shifted = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
@@ -3034,39 +3053,55 @@ mod tests {
 
     #[test]
     fn equivalent_cone_pcurve_moves_to_the_target_axial_origin() {
-        let cone = |origin, radius| SurfaceGeometry::Cone {
-            origin,
-            axis: Vector3::new(-1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius,
-            ratio: 1.0,
-            half_angle: std::f64::consts::FRAC_PI_4,
+        let cone = |origin, radius| {
+            SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    origin,
+                    Vector3::new(-1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    radius,
+                    1.0,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            )
         };
         let source = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
         let target = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.25, 1.5),
-            direction: Point2::new(2.0, -0.5),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(0.25, 1.5),
+                Point2::new(2.0, -0.5),
+            )
+            .unwrap(),
+        );
         assert_eq!(
             rechart_equivalent_surface_pcurve(&pcurve, &source, &target)
                 .expect("finite pcurve rechart"),
-            Some(PcurveGeometry::Line {
-                origin: Point2::new(0.25, 5.0),
-                direction: Point2::new(2.0, -0.5),
-            })
+            Some(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(0.25, 5.0),
+                    Point2::new(2.0, -0.5)
+                )
+                .unwrap()
+            ))
         );
     }
 
     #[test]
     fn equivalent_cone_rechart_reports_overflow_for_finite_nurbs_poles() {
-        let cone = |origin, radius| SurfaceGeometry::Cone {
-            origin,
-            axis: Vector3::new(-1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius,
-            ratio: 1.0,
-            half_angle: std::f64::consts::FRAC_PI_4,
+        let cone = |origin, radius| {
+            SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    origin,
+                    Vector3::new(-1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    radius,
+                    1.0,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            )
         };
         let shift = f64::MAX * 0.5;
         let source = cone(
@@ -3119,7 +3154,8 @@ mod tests {
             .into_iter()
             .next()
             .expect("one exact cylinder")
-            .surface_geometry();
+            .surface_geometry()
+            .unwrap();
 
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
@@ -3285,11 +3321,14 @@ mod tests {
             .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
 
@@ -3337,11 +3376,14 @@ mod tests {
             .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
 
@@ -3376,19 +3418,25 @@ mod tests {
         for (id, geometry) in [
             (
                 "known-0",
-                SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
+                SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
             ),
             (
                 "known-1",
-                SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
+                SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
             ),
             ("unknown", SurfaceGeometry::Unknown { record: None }),
         ] {
@@ -3450,11 +3498,14 @@ mod tests {
             param_range: None,
             tolerance: None,
         });
-        let plane = SurfaceGeometry::Plane {
-            origin: Point3::new(10.0, 20.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let plane = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(10.0, 20.0, 0.0),
+                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        );
         let support_ids = [
             SurfaceId::mint("catia:test:surface#standard-plane%230".to_string())
                 .expect("identity grammar"),
@@ -3524,11 +3575,9 @@ mod tests {
         let origin = Point3::new(7.0, -2.0, 11.0);
         let u_axis = Vector3::new(0.0, 1.0, 0.0);
         let normal = Vector3::new(1.0, 0.0, 0.0);
-        let target = SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        };
+        let target = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+        );
         // Sites in the target chart, deliberately not collinear so the
         // isometry between the charts is uniquely determined.
         let target_sites = [[0.0, 0.0], [3.0, 1.0], [5.0, -2.0], [8.0, 4.0]];
@@ -3689,21 +3738,25 @@ mod tests {
         let bytes = crate::test_support::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
-        assert!(matches!(
-            carriers.as_slice(),
+        assert!(match carriers.as_slice() {
             [carrier]
-                if matches!(
-                    carrier.geometry,
-                    SurfaceGeometry::Sphere {
-                        center,
-                        axis,
-                        ref_direction,
-                        radius: 5.0,
-                    } if center == Point3::new(1.0, 2.0, 3.0)
-                        && axis == Vector3::new(0.0, 0.0, 1.0)
-                        && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                )
-        ));
+                if match carrier.geometry {
+                    SurfaceGeometry::Sphere(sphere_surface)
+                        if {
+                            let (center, axis, ref_direction, _) = sphere_surface.parts();
+                            (*sphere_surface.parts().3 == 5.0)
+                                && (*center == Point3::new(1.0, 2.0, 3.0)
+                                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                        } =>
+                    {
+                        true
+                    }
+                    _ => false,
+                } =>
+                true,
+            _ => false,
+        });
     }
 
     #[test]
@@ -3711,22 +3764,26 @@ mod tests {
         let bytes = crate::test_support::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
-        assert!(matches!(
-            carriers.as_slice(),
+        assert!(match carriers.as_slice() {
             [carrier]
-                if matches!(
-                    carrier.geometry,
-                    SurfaceGeometry::Torus {
-                        center,
-                        axis,
-                        ref_direction,
-                        major_radius: 7.0,
-                        minor_radius: 2.0,
-                    } if center == Point3::new(1.0, 2.0, 3.0)
-                        && axis == Vector3::new(0.0, 0.0, 1.0)
-                        && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                )
-        ));
+                if match carrier.geometry {
+                    SurfaceGeometry::Torus(torus_surface)
+                        if {
+                            let (center, axis, ref_direction, _, _) = torus_surface.parts();
+                            (*torus_surface.parts().3 == 7.0)
+                                && (*torus_surface.parts().4 == 2.0)
+                                && (*center == Point3::new(1.0, 2.0, 3.0)
+                                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                        } =>
+                    {
+                        true
+                    }
+                    _ => false,
+                } =>
+                true,
+            _ => false,
+        });
     }
 
     #[test]
@@ -3734,20 +3791,24 @@ mod tests {
         let bytes = crate::test_support::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
-        assert!(matches!(
-            carriers.as_slice(),
+        assert!(match carriers.as_slice() {
             [carrier]
-                if matches!(
-                    carrier.geometry,
-                    SurfaceGeometry::Cylinder {
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius: 4.0,
-                    } if origin == Point3::new(0.0, 0.0, 0.0)
-                        && axis == Vector3::new(0.0, 1.0, 0.0)
-                        && ref_direction == Vector3::new(0.0, 0.0, 1.0)
-                )
-        ));
+                if match carrier.geometry {
+                    SurfaceGeometry::Cylinder(cylinder_surface)
+                        if {
+                            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+                            (*cylinder_surface.parts().3 == 4.0)
+                                && (*origin == Point3::new(0.0, 0.0, 0.0)
+                                    && *axis == Vector3::new(0.0, 1.0, 0.0)
+                                    && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
+                        } =>
+                    {
+                        true
+                    }
+                    _ => false,
+                } =>
+                true,
+            _ => false,
+        });
     }
 }

@@ -6,10 +6,13 @@ use crate::ids::ProceduralCurveId;
 fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion() {
     let source = CurveId::mint("test:model:curve#source").unwrap();
     let subset = CurveId::mint("test:model:curve#subset").unwrap();
-    let line = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let line = CurveGeometry::Line(
+        crate::geometry::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     for sense in [true, false] {
         let mut ir = CadIr::empty();
         for id in [&source, &subset] {

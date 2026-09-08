@@ -33,11 +33,8 @@ fn decode_builds_valid_topology_and_plane() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
 
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(u_axis.x, 1.0);

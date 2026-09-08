@@ -219,7 +219,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     }
                 }
                 [Surface {
-                    geometry: SurfaceGeometry::Plane { .. },
+                    geometry: SurfaceGeometry::Plane(_),
                     ..
                 }] => {
                     let plane = reconciled_model_plane(&local_planes, ir, row.id)?;
@@ -242,9 +242,10 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                         ..
                     }] => {}
                     [Surface {
-                        geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
+                        geometry: SurfaceGeometry::Cylinder(cylinder_surface),
                         ..
                     }] => {
+                        let (origin, axis, _, _) = cylinder_surface.parts();
                         let parameters = crate::surface::unique_surface_parameter(
                             &scan.surfaces.parameters,
                             row.id,
@@ -467,7 +468,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                         ..
                     }] => local_planes.get(&row.id).copied(),
                     [Surface {
-                        geometry: SurfaceGeometry::Plane { .. },
+                        geometry: SurfaceGeometry::Plane(_),
                         ..
                     }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
                     _ => return None,
@@ -701,7 +702,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 ..
             }] => local_planes.get(&row.id).copied(),
             [Surface {
-                geometry: SurfaceGeometry::Plane { .. },
+                geometry: SurfaceGeometry::Plane(_),
                 ..
             }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
             _ => return None,

@@ -94,34 +94,21 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
         )
     };
     let result = match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             let (u, v, _) = components(*origin, *normal, *u_axis);
             Point2::new(u, v)
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
             if *radius == 0.0 {
                 return None;
             }
             let (x, y, v) = components(*origin, *axis, *ref_direction);
             Point2::new((y / radius).atan2(x / radius), v)
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
             let (x, y, v) = components(*origin, *axis, *ref_direction);
             let local_radius = radius + v * half_angle.tan();
             if local_radius == 0.0 || *ratio == 0.0 {
@@ -129,25 +116,16 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             }
             Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
             if *radius == 0.0 {
                 return None;
             }
             let (x, y, z) = components(*center, *axis, *ref_direction);
             Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             if *minor_radius == 0.0 {
                 return None;
             }
@@ -2859,45 +2837,38 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         return None;
     }
     match geometry {
-        CurveGeometry::Line { direction, .. } => Some(*direction),
-        CurveGeometry::Circle {
-            axis,
-            ref_direction,
-            radius,
-            ..
-        } => Some(vector_sum(&[
-            (-radius * t.sin(), *ref_direction),
-            (radius * t.cos(), axis.cross(*ref_direction)),
-        ])),
-        CurveGeometry::Ellipse {
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(vector_sum(&[
-            (-major_radius * t.sin(), *major_direction),
-            (minor_radius * t.cos(), axis.cross(*major_direction)),
-        ])),
-        CurveGeometry::Parabola {
-            axis,
-            major_direction,
-            focal_distance,
-            ..
-        } => Some(vector_sum(&[
-            (2.0 * focal_distance * t, *major_direction),
-            (2.0 * focal_distance, axis.cross(*major_direction)),
-        ])),
-        CurveGeometry::Hyperbola {
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(vector_sum(&[
-            (major_radius * t.sinh(), *major_direction),
-            (minor_radius * t.cosh(), axis.cross(*major_direction)),
-        ])),
+        CurveGeometry::Line(line_curve) => {
+            let (_, direction) = line_curve.parts();
+            Some(*direction)
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (_, axis, ref_direction, radius) = circle_curve.parts();
+            Some(vector_sum(&[
+                (-radius * t.sin(), *ref_direction),
+                (radius * t.cos(), axis.cross(*ref_direction)),
+            ]))
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (_, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            Some(vector_sum(&[
+                (-major_radius * t.sin(), *major_direction),
+                (minor_radius * t.cos(), axis.cross(*major_direction)),
+            ]))
+        }
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (_, axis, major_direction, focal_distance) = parabola_curve.parts();
+            Some(vector_sum(&[
+                (2.0 * focal_distance * t, *major_direction),
+                (2.0 * focal_distance, axis.cross(*major_direction)),
+            ]))
+        }
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (_, axis, major_direction, major_radius, minor_radius) = hyperbola_curve.parts();
+            Some(vector_sum(&[
+                (major_radius * t.sinh(), *major_direction),
+                (minor_radius * t.cosh(), axis.cross(*major_direction)),
+            ]))
+        }
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_tangent(
@@ -2917,10 +2888,10 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
             cache: Some(geometry),
             ..
         } => curve_tangent_inner(geometry, t, depth + 1),
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Degenerate(_) => None,
+        CurveGeometry::Procedural { .. } => None,
+        CurveGeometry::Composite { .. } => None,
+        CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -2934,41 +2905,32 @@ fn curve_second_derivative_inner(
     }
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
-        CurveGeometry::Line { .. } => Some(zero),
-        CurveGeometry::Circle {
-            axis,
-            ref_direction,
-            radius,
-            ..
-        } => Some(vector_sum(&[
-            (-radius * t.cos(), *ref_direction),
-            (-radius * t.sin(), axis.cross(*ref_direction)),
-        ])),
-        CurveGeometry::Ellipse {
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(vector_sum(&[
-            (-major_radius * t.cos(), *major_direction),
-            (-minor_radius * t.sin(), axis.cross(*major_direction)),
-        ])),
-        CurveGeometry::Parabola {
-            major_direction,
-            focal_distance,
-            ..
-        } => Some(vector_sum(&[(2.0 * focal_distance, *major_direction)])),
-        CurveGeometry::Hyperbola {
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(vector_sum(&[
-            (major_radius * t.cosh(), *major_direction),
-            (minor_radius * t.sinh(), axis.cross(*major_direction)),
-        ])),
+        CurveGeometry::Line(_) => Some(zero),
+        CurveGeometry::Circle(circle_curve) => {
+            let (_, axis, ref_direction, radius) = circle_curve.parts();
+            Some(vector_sum(&[
+                (-radius * t.cos(), *ref_direction),
+                (-radius * t.sin(), axis.cross(*ref_direction)),
+            ]))
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (_, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            Some(vector_sum(&[
+                (-major_radius * t.cos(), *major_direction),
+                (-minor_radius * t.sin(), axis.cross(*major_direction)),
+            ]))
+        }
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (_, _, major_direction, focal_distance) = parabola_curve.parts();
+            Some(vector_sum(&[(2.0 * focal_distance, *major_direction)]))
+        }
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (_, axis, major_direction, major_radius, minor_radius) = hyperbola_curve.parts();
+            Some(vector_sum(&[
+                (major_radius * t.cosh(), *major_direction),
+                (minor_radius * t.sinh(), axis.cross(*major_direction)),
+            ]))
+        }
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_second_derivative(
@@ -2990,10 +2952,10 @@ fn curve_second_derivative_inner(
             cache: Some(geometry),
             ..
         } => curve_second_derivative_inner(geometry, t, depth + 1),
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Degenerate(_) => None,
+        CurveGeometry::Procedural { .. } => None,
+        CurveGeometry::Composite { .. } => None,
+        CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -3416,7 +3378,7 @@ fn is_line_geometry(geometry: &CurveGeometry, depth: usize) -> bool {
         return false;
     }
     match geometry {
-        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Line(_) => true,
         CurveGeometry::Transformed { basis, .. } => is_line_geometry(basis, depth + 1),
         _ => false,
     }
@@ -3926,11 +3888,12 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(surface) = index.surfaces(support_id.as_str()) else {
             continue;
         };
-        let PcurveGeometry::Line { origin, direction } = pcurve else {
+        let PcurveGeometry::Line(line_pcurve) = pcurve else {
             continue;
         };
+        let (origin, direction) = line_pcurve.parts();
         let parameter = match &surface.geometry {
-            SurfaceGeometry::Plane { .. } => {
+            SurfaceGeometry::Plane(_) => {
                 let Some(base) = model_surface_point_by_id(index, support_id, origin.u, origin.v)
                 else {
                     continue;
@@ -3949,11 +3912,8 @@ fn model_curve_parameter_near_point_with_tolerance(
                 (denominator.is_finite() && denominator > 0.0)
                     .then(|| offset.dot(tangent) / denominator)
             }
-            SurfaceGeometry::Cylinder { .. }
-            | SurfaceGeometry::Cone { .. }
-            | SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Torus { .. } => {
-                analytic_surface_parameters(&surface.geometry, point).and_then(|mut uv| {
+            SurfaceGeometry::Cylinder(_) => analytic_surface_parameters(&surface.geometry, point)
+                .and_then(|mut uv| {
                     if direction.v == 0.0 && direction.u != 0.0 {
                         let expected = origin.u + direction.u * seed;
                         uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
@@ -3961,7 +3921,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                         Some((uv.u - origin.u) / direction.u)
                     } else if direction.u == 0.0
                         && direction.v != 0.0
-                        && matches!(&surface.geometry, SurfaceGeometry::Torus { .. })
+                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
                     {
                         let expected = origin.v + direction.v * seed;
                         uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
@@ -3972,8 +3932,70 @@ fn model_curve_parameter_near_point_with_tolerance(
                     } else {
                         None
                     }
-                })
-            }
+                }),
+            SurfaceGeometry::Cone(_) => analytic_surface_parameters(&surface.geometry, point)
+                .and_then(|mut uv| {
+                    if direction.v == 0.0 && direction.u != 0.0 {
+                        let expected = origin.u + direction.u * seed;
+                        uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.u - origin.u) / direction.u)
+                    } else if direction.u == 0.0
+                        && direction.v != 0.0
+                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                    {
+                        let expected = origin.v + direction.v * seed;
+                        uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.v - origin.v) / direction.v)
+                    } else if direction.u == 0.0 && direction.v != 0.0 {
+                        Some((uv.v - origin.v) / direction.v)
+                    } else {
+                        None
+                    }
+                }),
+            SurfaceGeometry::Sphere(_) => analytic_surface_parameters(&surface.geometry, point)
+                .and_then(|mut uv| {
+                    if direction.v == 0.0 && direction.u != 0.0 {
+                        let expected = origin.u + direction.u * seed;
+                        uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.u - origin.u) / direction.u)
+                    } else if direction.u == 0.0
+                        && direction.v != 0.0
+                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                    {
+                        let expected = origin.v + direction.v * seed;
+                        uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.v - origin.v) / direction.v)
+                    } else if direction.u == 0.0 && direction.v != 0.0 {
+                        Some((uv.v - origin.v) / direction.v)
+                    } else {
+                        None
+                    }
+                }),
+            SurfaceGeometry::Torus(_) => analytic_surface_parameters(&surface.geometry, point)
+                .and_then(|mut uv| {
+                    if direction.v == 0.0 && direction.u != 0.0 {
+                        let expected = origin.u + direction.u * seed;
+                        uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.u - origin.u) / direction.u)
+                    } else if direction.u == 0.0
+                        && direction.v != 0.0
+                        && matches!(&surface.geometry, SurfaceGeometry::Torus(_))
+                    {
+                        let expected = origin.v + direction.v * seed;
+                        uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.v - origin.v) / direction.v)
+                    } else if direction.u == 0.0 && direction.v != 0.0 {
+                        Some((uv.v - origin.v) / direction.v)
+                    } else {
+                        None
+                    }
+                }),
             SurfaceGeometry::Nurbs(surface) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
                     if direction.u == 0.0 && direction.v != 0.0 {
@@ -4111,18 +4133,15 @@ fn direct_curve_parameter_near_point(
         (delta.dot(reference), delta.dot(transverse), delta.dot(axis))
     };
     let parameter = match geometry {
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
             let denominator = direction.dot(*direction);
             (denominator.is_finite() && denominator > 0.0)
                 .then(|| delta.dot(*direction) / denominator)?
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             if *radius == 0.0 {
                 return None;
             }
@@ -4130,13 +4149,8 @@ fn direct_curve_parameter_near_point(
             let canonical = (y / radius).atan2(x / radius);
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             if *major_radius == 0.0 || *minor_radius == 0.0 {
                 return None;
             }
@@ -4144,25 +4158,16 @@ fn direct_curve_parameter_near_point(
             let canonical = (y / minor_radius).atan2(x / major_radius);
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => {
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
             if *focal_distance == 0.0 {
                 return None;
             }
             let (_, transverse, _) = components(*vertex, *axis, *major_direction);
             transverse / (2.0 * focal_distance)
         }
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            minor_radius,
-            ..
-        } => {
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, _, minor_radius) = hyperbola_curve.parts();
             if *minor_radius == 0.0 {
                 return None;
             }
@@ -4187,7 +4192,8 @@ fn direct_curve_parameter_near_point(
             }
             direct_curve_parameter_near_point(basis, basis_point, seed, basis_tolerance)?
         }
-        CurveGeometry::Degenerate { point: stored } => {
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (stored,) = degenerate_curve.parts();
             let error = (stored.x - point.x)
                 .hypot(stored.y - point.y)
                 .hypot(stored.z - point.z);
@@ -4340,58 +4346,55 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
         return None;
     }
     match geometry {
-        CurveGeometry::Line { origin, direction } => Some(offset(*origin, &[(t, *direction)])),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => Some(offset(
-            *center,
-            &[
-                (radius * t.cos(), *ref_direction),
-                (radius * t.sin(), axis.cross(*ref_direction)),
-            ],
-        )),
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => Some(offset(
-            *center,
-            &[
-                (major_radius * t.cos(), *major_direction),
-                (minor_radius * t.sin(), axis.cross(*major_direction)),
-            ],
-        )),
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => Some(offset(
-            *vertex,
-            &[
-                (focal_distance * t * t, *major_direction),
-                (2.0 * focal_distance * t, axis.cross(*major_direction)),
-            ],
-        )),
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => Some(offset(
-            *center,
-            &[
-                (major_radius * t.cosh(), *major_direction),
-                (minor_radius * t.sinh(), axis.cross(*major_direction)),
-            ],
-        )),
-        CurveGeometry::Degenerate { point } => Some(*point),
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            Some(offset(*origin, &[(t, *direction)]))
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            Some(offset(
+                *center,
+                &[
+                    (radius * t.cos(), *ref_direction),
+                    (radius * t.sin(), axis.cross(*ref_direction)),
+                ],
+            ))
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            Some(offset(
+                *center,
+                &[
+                    (major_radius * t.cos(), *major_direction),
+                    (minor_radius * t.sin(), axis.cross(*major_direction)),
+                ],
+            ))
+        }
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            Some(offset(
+                *vertex,
+                &[
+                    (focal_distance * t * t, *major_direction),
+                    (2.0 * focal_distance * t, axis.cross(*major_direction)),
+                ],
+            ))
+        }
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                hyperbola_curve.parts();
+            Some(offset(
+                *center,
+                &[
+                    (major_radius * t.cosh(), *major_direction),
+                    (minor_radius * t.sinh(), axis.cross(*major_direction)),
+                ],
+            ))
+        }
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (point,) = degenerate_curve.parts();
+            Some(*point)
+        }
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_point(
@@ -4448,20 +4451,13 @@ fn surface_point_with_budget_inner(
         return None;
     }
     match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             let v_axis = normal.cross(*u_axis);
             Some(offset(*origin, &[(u, *u_axis), (v, v_axis)]))
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4474,14 +4470,8 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4496,12 +4486,8 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4516,13 +4502,8 @@ fn surface_point_with_budget_inner(
                 ],
             ))
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4814,11 +4795,8 @@ fn surface_second_partials_inner(
     }
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             let v_axis = normal.cross(*u_axis);
             Some(SurfaceSecondPartials {
                 point: offset(*origin, &[(u, *u_axis), (v, v_axis)]),
@@ -4829,12 +4807,8 @@ fn surface_second_partials_inner(
                 dvv: zero,
             })
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4860,14 +4834,8 @@ fn surface_second_partials_inner(
                 dvv: zero,
             })
         }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4902,12 +4870,8 @@ fn surface_second_partials_inner(
                 dvv: zero,
             })
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4946,13 +4910,8 @@ fn surface_second_partials_inner(
                 ]),
             })
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -5515,7 +5474,10 @@ fn straight_sweep_path_origin(
 ) -> Option<Point3> {
     let curve = index.curves(spine.as_str())?;
     match &curve.geometry {
-        CurveGeometry::Line { origin, .. } => Some(*origin),
+        CurveGeometry::Line(line_curve) => {
+            let (origin, _) = line_curve.parts();
+            Some(*origin)
+        }
         CurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1 && nurbs.control_points().len() == 2 && !nurbs.periodic() =>
         {
@@ -7506,7 +7468,8 @@ fn pcurve_uv_differential_inner(
     if depth > 256 {
         return None;
     }
-    if let PcurveGeometry::Offset { distance, basis } = geometry {
+    if let PcurveGeometry::Offset(offset_pcurve) = geometry {
+        let (distance, basis) = offset_pcurve.parts();
         let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
         let tangent = basis.tangent?;
         let speed = tangent.u.hypot(tangent.v);
@@ -7536,17 +7499,16 @@ fn pcurve_uv_differential_inner(
         });
     }
     let pair = match geometry {
-        PcurveGeometry::Line { origin, direction } => (
-            Point2::new(origin.u + t * direction.u, origin.v + t * direction.v),
-            *direction,
-            Point2::new(0.0, 0.0),
-        ),
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            y_axis,
-            radius,
-        } => {
+        PcurveGeometry::Line(line_pcurve) => {
+            let (origin, direction) = line_pcurve.parts();
+            (
+                Point2::new(origin.u + t * direction.u, origin.v + t * direction.v),
+                *direction,
+                Point2::new(0.0, 0.0),
+            )
+        }
+        PcurveGeometry::Circle(circle_pcurve) => {
+            let (center, x_axis, y_axis, radius) = circle_pcurve.parts();
             let cosine = t.cos();
             let sine = t.sin();
             (
@@ -7564,13 +7526,8 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
+        PcurveGeometry::Ellipse(ellipse_pcurve) => {
+            let (center, x_axis, y_axis, major_radius, minor_radius) = ellipse_pcurve.parts();
             let cosine = t.cos();
             let sine = t.sin();
             (
@@ -7591,11 +7548,8 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        } => {
+        PcurveGeometry::Harmonic(harmonic_pcurve) => {
+            let (center, cosine, sine) = harmonic_pcurve.parts();
             let cosine_parameter = t.cos();
             let sine_parameter = t.sin();
             (
@@ -7613,33 +7567,26 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            focal_distance,
-        } if *focal_distance != 0.0 => (
-            offset2(
-                *vertex,
-                &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
-            ),
-            Point2::new(
-                t / (2.0 * focal_distance) * x_axis.u + y_axis.u,
-                t / (2.0 * focal_distance) * x_axis.v + y_axis.v,
-            ),
-            Point2::new(
-                x_axis.u / (2.0 * focal_distance),
-                x_axis.v / (2.0 * focal_distance),
-            ),
-        ),
-        PcurveGeometry::Parabola { .. } => return None,
-        PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            major_radius,
-            minor_radius,
-        } => {
+        PcurveGeometry::Parabola(parabola_pcurve) => {
+            let (vertex, x_axis, y_axis, focal_distance) = parabola_pcurve.parts();
+            (
+                offset2(
+                    *vertex,
+                    &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
+                ),
+                Point2::new(
+                    t / (2.0 * focal_distance) * x_axis.u + y_axis.u,
+                    t / (2.0 * focal_distance) * x_axis.v + y_axis.v,
+                ),
+                Point2::new(
+                    x_axis.u / (2.0 * focal_distance),
+                    x_axis.v / (2.0 * focal_distance),
+                ),
+            )
+        }
+
+        PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
+            let (center, x_axis, y_axis, major_radius, minor_radius) = hyperbola_pcurve.parts();
             let cosine = t.cosh();
             let sine = t.sinh();
             (
@@ -7660,11 +7607,8 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
+        PcurveGeometry::Hyperbolic(hyperbolic_pcurve) => {
+            let (center, cosine, sine) = hyperbolic_pcurve.parts();
             let cosine_parameter = t.cosh();
             let sine_parameter = t.sinh();
             (
@@ -7682,14 +7626,9 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::PolarHarmonic {
-            radial_center,
-            radial_cos,
-            radial_sin,
-            axial_origin,
-            axial_cos,
-            axial_sin,
-        } => {
+        PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve) => {
+            let (radial_center, radial_cos, radial_sin, axial_origin, axial_cos, axial_sin) =
+                polar_harmonic_pcurve.parts();
             let cosine = t.cos();
             let sine = t.sin();
             let x = radial_center.u + radial_cos.u * cosine + radial_sin.u * sine;
@@ -7788,12 +7727,9 @@ fn pcurve_uv_differential_inner(
                 acceleration,
             });
         }
-        PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin,
-            azimuth_rate,
-            plane_phase,
-            plane_slope,
-        } => {
+        PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
+            let (azimuth_origin, azimuth_rate, plane_phase, plane_slope) =
+                spherical_great_circle_pcurve.parts();
             let azimuth = azimuth_origin + azimuth_rate * t;
             let phase = azimuth - plane_phase;
             let cosine = phase.cos();
@@ -7846,10 +7782,11 @@ fn pcurve_uv_differential_inner(
                 acceleration,
             });
         }
-        PcurveGeometry::Trimmed { basis, .. } => {
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let (_, _, basis) = trimmed_pcurve.parts();
             return pcurve_uv_differential_inner(basis, t, depth + 1);
         }
-        PcurveGeometry::Offset { .. } => return None,
+        PcurveGeometry::Offset(_) => return None,
     };
     if !pair.0.u.is_finite() || !pair.0.v.is_finite() {
         return None;

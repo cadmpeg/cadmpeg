@@ -62,17 +62,16 @@ fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Opti
 
 fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match curve {
-        CurveGeometry::Line { origin, direction } => Some(Point3::new(
-            origin.x + parameter * direction.x * LEN_TO_MM,
-            origin.y + parameter * direction.y * LEN_TO_MM,
-            origin.z + parameter * direction.z * LEN_TO_MM,
-        )),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            Some(Point3::new(
+                origin.x + parameter * direction.x * LEN_TO_MM,
+                origin.y + parameter * direction.y * LEN_TO_MM,
+                origin.z + parameter * direction.z * LEN_TO_MM,
+            ))
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
                 center.x
@@ -83,13 +82,8 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             ))
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             let minor_direction = axis.cross(*major_direction);
             Some(Point3::new(
                 center.x
@@ -206,10 +200,13 @@ mod tests {
                 attr: 10,
                 offset: 100,
                 end: 120,
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    direction: Vector3::new(0.0, 1.0, 0.0),
-                },
+                geometry: CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
                 parameter_range: None,
             },
         );
@@ -221,7 +218,10 @@ mod tests {
         let decoded = scan(&wrapper(0.005, false), &carriers());
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
-        assert!(matches!(decoded[0].geometry, CurveGeometry::Line { .. }));
+        assert!(match decoded[0].geometry {
+            CurveGeometry::Line(_) => true,
+            _ => false,
+        });
         assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
     }
 

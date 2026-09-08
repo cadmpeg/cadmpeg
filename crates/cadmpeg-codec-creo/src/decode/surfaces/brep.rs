@@ -735,10 +735,10 @@ fn parameter_points_agree(first: [f64; 2], second: [f64; 2]) -> bool {
 
 fn curve_geometry_is_typed_nonlinear(geometry: &CurveGeometry) -> bool {
     match geometry {
-        CurveGeometry::Circle { .. }
-        | CurveGeometry::Ellipse { .. }
-        | CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. } => true,
+        CurveGeometry::Circle(_) => true,
+        CurveGeometry::Ellipse(_) => true,
+        CurveGeometry::Parabola(_) => true,
+        CurveGeometry::Hyperbola(_) => true,
         CurveGeometry::Transformed { basis, .. } => curve_geometry_is_typed_nonlinear(basis),
         _ => false,
     }
@@ -810,23 +810,13 @@ fn native_circle_loop_geometry(
         .expect("identity grammar");
     let first = exactly_one(model_curves.iter().filter(|curve| curve.id == first_id))?;
     let second = exactly_one(model_curves.iter().filter(|curve| curve.id == second_id))?;
-    let (
-        CurveGeometry::Circle {
-            center: first_center,
-            axis: first_axis,
-            radius: first_radius,
-            ..
-        },
-        CurveGeometry::Circle {
-            center: second_center,
-            axis: second_axis,
-            radius: second_radius,
-            ..
-        },
-    ) = (&first.geometry, &second.geometry)
+    let (CurveGeometry::Circle(circle_curve), CurveGeometry::Circle(circle_curve_2)) =
+        (&first.geometry, &second.geometry)
     else {
         return None;
     };
+    let (first_center, first_axis, _, first_radius) = circle_curve.parts();
+    let (second_center, second_axis, _, second_radius) = circle_curve_2.parts();
     if !first_radius.is_finite()
         || *first_radius <= 0.0
         || !scalar_values_agree(*first_radius, *second_radius)
@@ -851,9 +841,10 @@ fn ordered_two_edge_circle_loops<'a>(
     if loops.len() < 2 || loops.len() != polygons.len() {
         return None;
     }
-    let SurfaceGeometry::Plane { origin, normal, .. } = surface else {
+    let SurfaceGeometry::Plane(plane_surface) = surface else {
         return None;
     };
+    let (origin, normal, _) = plane_surface.parts();
     let circle_loops = loops
         .iter()
         .map(|lp| native_circle_loop_geometry(lp, model_curves))
@@ -1503,7 +1494,7 @@ pub(in super::super) fn transfer_native_brep(
                     .iter()
                     .filter(|candidate| candidate.id == curve),
             )
-            .is_some_and(|candidate| matches!(&candidate.geometry, CurveGeometry::Line { .. }));
+            .is_some_and(|candidate| matches!(&candidate.geometry, CurveGeometry::Line(_)));
         let param_range = if model_curve_count == 0 {
             None
         } else if derived_line {
@@ -1899,13 +1890,13 @@ pub(in super::super) fn transfer_native_brep(
                             )?;
                             unique_oriented_native_pcurve(&surface.geometry, candidates, traversal)
                         })
-                        .map(|(endpoints, offset)| {
-                            (
-                                line_pcurve(endpoints[0], endpoints[1]),
+                        .and_then(|(endpoints, offset)| {
+                            Some((
+                                line_pcurve(endpoints[0], endpoints[1])?,
                                 Some([0.0, 1.0]),
                                 offset,
                                 "native_endpoint_pcurve",
-                            )
+                            ))
                         })
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
@@ -2040,6 +2031,22 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+            Vector3::new(
+                frame.unit_vector()[0],
+                frame.unit_vector()[1],
+                frame.unit_vector()[2],
+            ),
+            Vector3::new(
+                frame.ref_direction[0],
+                frame.ref_direction[1],
+                frame.ref_direction[2],
+            ),
+            pair.radius_mm,
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -2050,20 +2057,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-                axis: Vector3::new(
-                    frame.unit_vector()[0],
-                    frame.unit_vector()[1],
-                    frame.unit_vector()[2],
-                ),
-                ref_direction: Vector3::new(
-                    frame.ref_direction[0],
-                    frame.ref_direction[1],
-                    frame.ref_direction[2],
-                ),
-                radius: pair.radius_mm,
-            },
+            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", pair.surface_id),
@@ -2101,6 +2095,22 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
             }
+            let Ok(circle_curve) = cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(center[0], center[1], center[2]),
+                Vector3::new(
+                    frame.unit_vector()[0],
+                    frame.unit_vector()[1],
+                    frame.unit_vector()[2],
+                ),
+                Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                pair.radius_mm,
+            ) else {
+                continue;
+            };
             annotate(
                 annotations,
                 &id,
@@ -2115,20 +2125,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             );
             ir.model.curves.push(Curve {
                 id,
-                geometry: CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(
-                        frame.unit_vector()[0],
-                        frame.unit_vector()[1],
-                        frame.unit_vector()[2],
-                    ),
-                    ref_direction: Vector3::new(
-                        frame.ref_direction[0],
-                        frame.ref_direction[1],
-                        frame.ref_direction[2],
-                    ),
-                    radius: pair.radius_mm,
-                },
+                geometry: CurveGeometry::Circle(circle_curve),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{curve_id}"),

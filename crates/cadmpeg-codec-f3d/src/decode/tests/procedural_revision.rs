@@ -821,10 +821,15 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 .iter_mut()
                 .find(|candidate| candidate.id == *curve)
                 .expect("vertex-blend boundary curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
-                direction: cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
+                    cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -1325,16 +1330,22 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             (support_ids, spine_id)
         });
     let support_geometry = [
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
     ];
     for (id, geometry) in support_ids.into_iter().zip(support_geometry) {
         source_less
@@ -1379,24 +1390,29 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .model
         .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
         .expect("rolling-ball carrier");
-    assert!(matches!(
-        round_trip
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == carrier_id)
-            .expect("rolling-ball carrier")
-            .geometry.solved_cache().expect("solved rolling-ball cache"),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } if *origin == Point3::new(2.0, 2.0, -4.0)
-            && *axis == Vector3::new(0.0, 0.0, 1.0)
-            && *radius == 2.0
-    ));
+    assert!(match round_trip
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| &surface.id == carrier_id)
+        .expect("rolling-ball carrier")
+        .geometry
+        .solved_cache()
+        .expect("solved rolling-ball cache")
+    {
+        SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(2.0, 2.0, -4.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *radius == 2.0
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 }
 
 #[test]

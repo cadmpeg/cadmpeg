@@ -1331,12 +1331,8 @@ fn legacy_decoded_curve_endpoints(
                 Point3([last.x, last.y, last.z]),
             ])
         }
-        CurveGeometry::Circle {
-            center,
-            ref_direction,
-            radius,
-            ..
-        } => {
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, _, ref_direction, radius) = circle_curve.parts();
             let endpoint = Point3([
                 center.x + ref_direction.x * radius,
                 center.y + ref_direction.y * radius,
@@ -1344,7 +1340,8 @@ fn legacy_decoded_curve_endpoints(
             ]);
             Ok([endpoint, endpoint])
         }
-        CurveGeometry::Degenerate { point } => {
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (point,) = degenerate_curve.parts();
             let point = Point3([point.x, point.y, point.z]);
             Ok([point, point])
         }
@@ -3043,12 +3040,15 @@ mod tests {
     #[test]
     fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
         let circle = crate::curves::DecodedCurve::leaf(
-            CurveGeometry::Circle {
-                center: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-            },
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
             Vec::new(),
         );
         assert_eq!(
@@ -3056,8 +3056,12 @@ mod tests {
             [Point3([3.0, 2.0, 3.0]); 2]
         );
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
-        let degenerate =
-            crate::curves::DecodedCurve::leaf(CurveGeometry::Degenerate { point }, Vec::new());
+        let degenerate = crate::curves::DecodedCurve::leaf(
+            CurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap(),
+            ),
+            Vec::new(),
+        );
         assert_eq!(
             legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
             [Point3([4.0, 5.0, 6.0]); 2]

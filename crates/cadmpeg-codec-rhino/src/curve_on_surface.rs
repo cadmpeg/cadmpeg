@@ -182,9 +182,10 @@ mod tests {
         let DecodedSurface::Typed { geometry, .. } = decoded.surface else {
             panic!("expected typed support surface");
         };
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = geometry else {
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = geometry else {
             panic!("expected plane support surface");
         };
+        let (origin, _, _) = plane_surface.parts();
         assert_eq!(origin.x, 10.0);
         assert_eq!(origin.y, 20.0);
         assert_eq!(origin.z, 30.0);

@@ -120,10 +120,10 @@ pub(crate) fn emit_annotation_records(
                 }
                 "straight" => derived_fields.push("geometry.direction"),
                 "ellipse" => match curve_geometries.get(entity_id.as_str()) {
-                    Some(CurveGeometry::Circle { .. }) => {
+                    Some(CurveGeometry::Circle(_)) => {
                         derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                     }
-                    Some(CurveGeometry::Ellipse { .. }) => {
+                    Some(CurveGeometry::Ellipse(_)) => {
                         derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
                     }
                     _ => {}

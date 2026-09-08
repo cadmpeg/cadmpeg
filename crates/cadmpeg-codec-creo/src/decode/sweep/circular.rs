@@ -34,7 +34,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -103,56 +103,66 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 annotations,
                 PcurveId::mint(format!("{prefix}:pcurve:{side}:cap")).expect("identity grammar"),
                 transform.offset,
-                circular_pcurve(section_center, radius, 0.0, std::f64::consts::TAU),
+                circular_pcurve(section_center, radius, 0.0, std::f64::consts::TAU).ok_or_else(
+                    || cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid"),
+                )?,
             );
             let side_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
                 PcurveId::mint(format!("{prefix}:pcurve:{side}:side")).expect("identity grammar"),
                 transform.offset,
-                line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]),
+                line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
+                })?,
             );
             ir.model.surfaces.push(Surface {
                 id: cap_surface.clone(),
-                geometry: SurfaceGeometry::Plane {
-                    origin: Point3::new(
-                        transform.origin[0] + offset * transform.normal[0],
-                        transform.origin[1] + offset * transform.normal[1],
-                        transform.origin[2] + offset * transform.normal[2],
-                    ),
-                    normal: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
-                    ),
-                    u_axis: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
-                    ),
-                },
+                geometry: SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(
+                            transform.origin[0] + offset * transform.normal[0],
+                            transform.origin[1] + offset * transform.normal[1],
+                            transform.origin[2] + offset * transform.normal[2],
+                        ),
+                        Vector3::new(
+                            transform.normal[0],
+                            transform.normal[1],
+                            transform.normal[2],
+                        ),
+                        Vector3::new(
+                            transform.u_axis[0],
+                            transform.u_axis[1],
+                            transform.u_axis[2],
+                        ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 source_object: None,
             });
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Circle {
-                    center: Point3::new(
-                        center[0] + offset * transform.normal[0],
-                        center[1] + offset * transform.normal[1],
-                        center[2] + offset * transform.normal[2],
-                    ),
-                    axis: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
-                    ),
-                    ref_direction: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
-                    ),
-                    radius,
-                },
+                geometry: CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(
+                            center[0] + offset * transform.normal[0],
+                            center[1] + offset * transform.normal[1],
+                            center[2] + offset * transform.normal[2],
+                        ),
+                        Vector3::new(
+                            transform.normal[0],
+                            transform.normal[1],
+                            transform.normal[2],
+                        ),
+                        Vector3::new(
+                            transform.u_axis[0],
+                            transform.u_axis[1],
+                            transform.u_axis[2],
+                        ),
+                        radius,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 source_object: None,
             });
             ir.model.points.push(Point {
@@ -226,20 +236,23 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let mut side_loops = Vec::new();
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(center[0], center[1], center[2]),
-                axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
-                ),
-                ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
-                ),
-                radius,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(center[0], center[1], center[2]),
+                    Vector3::new(
+                        transform.normal[0],
+                        transform.normal[1],
+                        transform.normal[2],
+                    ),
+                    Vector3::new(
+                        transform.u_axis[0],
+                        transform.u_axis[1],
+                        transform.u_axis[2],
+                    ),
+                    radius,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             source_object: None,
         });
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
@@ -308,7 +321,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn resolved_circular_extrusion_profile(
@@ -349,15 +362,10 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SurfaceGeometry,
 ) -> Option<([f64; 2], f64)> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        radius,
-        ..
-    } = geometry
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
         return None;
     };
+    let (origin, axis, _, radius) = cylinder_surface.parts();
     let axis = normalized([axis.x, axis.y, axis.z])?;
     (dot(axis, transform.normal).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
         && radius.is_finite()

@@ -287,13 +287,19 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             },
         }
     );
-    assert!(matches!(
-        sweep.geometry,
-        SurfaceGeometry::Cylinder { origin, axis, radius, .. }
-            if origin == Point3::new(-12.5, -4.0, 0.0)
-                && axis == Vector3::new(0.0, -1.0, 0.0)
-                && radius == 0.75
-    ));
+    assert!(match sweep.geometry {
+        SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(-12.5, -4.0, 0.0)
+                    && *axis == Vector3::new(0.0, -1.0, 0.0)
+                    && *radius == 0.75
+            } =>
+        {
+            true
+        }
+        _ => false,
+    });
 
     for entry in &mut scan.features.entity_tables[0].entries {
         if entry.entity_id == 831 {
@@ -620,11 +626,14 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(origin[0], origin[1], origin[2]),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -704,12 +713,15 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#11".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.5,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.5,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     scan.features
@@ -723,11 +735,14 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(x, 0.0, 0.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(x, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -735,11 +750,16 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
 
     if let Some(Surface {
-        geometry: SurfaceGeometry::Cylinder { radius, .. },
+        geometry: SurfaceGeometry::Cylinder(cylinder_surface),
         ..
     }) = ir.model.surfaces.first_mut()
     {
-        *radius = 0.75;
+        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+        let radius = 0.75;
+        *cylinder_surface =
+            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+                .unwrap();
     }
     assert_eq!(round_constant_radius(&scan, &ir, 913), None);
 }
@@ -766,12 +786,15 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -891,11 +914,14 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(origin[0], origin[1], origin[2]),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -944,12 +970,15 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -961,11 +990,14 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(origin[0], origin[1], origin[2]),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -1018,12 +1050,15 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -1035,11 +1070,14 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(origin[0], origin[1], origin[2]),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -1408,11 +1446,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     scan.surfaces.parameters.push(parameter);
     let plane = |id, y, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, y, 0.0),
-            normal,
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, y, 0.0),
+                normal,
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1421,12 +1462,15 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(2.0, 4.0, 0.0),
-                axis: Vector3::new(0.0, -1.0, 0.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(2.0, 4.0, 0.0),
+                    Vector3::new(0.0, -1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -1621,10 +1665,18 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     );
 
     let mut oblique = ir.clone();
-    let SurfaceGeometry::Plane { normal, .. } = &mut oblique.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = &mut oblique.model.surfaces[0].geometry else {
         panic!("plane");
     };
-    *normal = Vector3::new(0.0, 1.0, 1.0);
+    let (origin, _, _) = plane_surface.parts();
+
+    let normal = Vector3::new(
+        0.0,
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    );
+    let u_axis = Vector3::new(1.0, 0.0, 0.0);
+    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(*origin, normal, u_axis).unwrap();
     assert!(generated_bounded_cylinder_extent(&scan, &oblique, 7, None).is_none());
 
     let crate::surface::SurfaceParameterCarrier::Resolved(
@@ -1785,11 +1837,14 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     };
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(4.0, -2.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(4.0, -2.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
@@ -1844,11 +1899,14 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     ]);
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin,
+                normal,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut ir = CadIr::empty();

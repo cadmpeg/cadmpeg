@@ -227,16 +227,19 @@ pub fn compact_simple_hole_geometry(
         extent: LinearTermination::Blind {
             length: Length(length),
         },
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-            axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
-            ref_direction: Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
-            ),
-            radius: frame.radius,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                frame.radius,
+            )
+            .ok()?,
+        ),
     })
 }
 
@@ -270,12 +273,15 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
-        origin: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        radius,
-    })
+    Some(SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(center[0], center[1], center[2]),
+            Vector3::new(axis[0], axis[1], axis[2]),
+            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            radius,
+        )
+        .ok()?,
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq)]

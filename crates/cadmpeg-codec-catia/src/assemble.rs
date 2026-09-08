@@ -385,11 +385,11 @@ pub(crate) struct TypedCounts {
 impl TypedCounts {
     pub(crate) fn record(&mut self, g: &SurfaceGeometry) {
         match g {
-            SurfaceGeometry::Plane { .. } => self.plane += 1,
-            SurfaceGeometry::Cylinder { .. } => self.cylinder += 1,
-            SurfaceGeometry::Cone { .. } => self.cone += 1,
-            SurfaceGeometry::Sphere { .. } => self.sphere += 1,
-            SurfaceGeometry::Torus { .. } => self.torus += 1,
+            SurfaceGeometry::Plane(_) => self.plane += 1,
+            SurfaceGeometry::Cylinder(_) => self.cylinder += 1,
+            SurfaceGeometry::Cone(_) => self.cone += 1,
+            SurfaceGeometry::Sphere(_) => self.sphere += 1,
+            SurfaceGeometry::Torus(_) => self.torus += 1,
             _ => {}
         }
     }
@@ -828,11 +828,14 @@ mod route_tests {
     #[test]
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
         let sweep = 1e-200_f64;
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        );
         let range = circle_parameter_range_from_surface_branch(
             &surface,
             Point3::new(0.0, 0.0, 0.0),
@@ -850,11 +853,14 @@ mod route_tests {
 
     #[test]
     fn surface_circle_branch_rejects_nonfinite_or_degenerate_inputs() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        );
         let args = || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -973,10 +979,13 @@ mod route_tests {
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 0.0, f64::from(key)),
-                    direction: Vector3::new(1.0, 0.0, 0.0),
-                },
+                geometry: CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, f64::from(key)),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
                 source_object: None,
             });
         }
