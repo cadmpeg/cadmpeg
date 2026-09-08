@@ -11,7 +11,7 @@ use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
-    let mut transform = identity_matrix();
+    let mut transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     transform[0][3] = 1.0;
     transform[1][3] = 2.0;
     transform[2][3] = 3.0;
@@ -132,7 +132,7 @@ fn dispatcher_projects_referenced_work_plane_frame() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         10,
     );
-    referenced.with_work_plane_transform(identity_matrix().try_into().unwrap());
+    referenced.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     referenced.with_work_plane_reference(11);
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
@@ -179,7 +179,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         20,
     );
-    plane.with_work_plane_transform(identity_matrix().try_into().unwrap());
+    plane.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
             placement_record_index: 21,
@@ -216,7 +216,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             crate::records::feature::DesignFeatureKind::WorkPlane,
             record_index,
         );
-        scope.with_work_plane_transform(identity_matrix().try_into().unwrap());
+        scope.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
         scope
     });
     let input = |record_index, work_plane_scope_record_index| DesignWorkPointInput {
@@ -596,9 +596,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            source_transform: identity_matrix().try_into().unwrap(),
+            source_transform: crate::records::SketchPlacementMatrix::IDENTITY,
             source_transform_offset: 0,
-            copied_transform: identity_matrix().try_into().unwrap(),
+            copied_transform: crate::records::SketchPlacementMatrix::IDENTITY,
             copied_transform_offset: 0,
         });
     }
