@@ -132,7 +132,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let dialect_loss = crate::dialect::dialect_loss(&primary);
         let ir = CadIr::empty();
 
-        let mut body = DecodeBody::new(false);
+        let mut body = DecodeBody::new(if ctx.container_only() {
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::report::DecodeTransfer::full(false)
+        });
         body.notes = exchange
             .references
             .iter()
@@ -362,7 +366,7 @@ fn decode_exchange_mode(
     )?;
     session.charge_stage("step_tessellation_decode")?;
     let mut tessellation =
-        tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
+        tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir)?;
     session.charge_stage("step_pmi_decode")?;
     let mut pmi = pmi::decode(
         exchange,
@@ -387,7 +391,7 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.body.geometry_transferred = true;
+        session.body.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
     }
 
     // Keep the established report order while every pass contributes through

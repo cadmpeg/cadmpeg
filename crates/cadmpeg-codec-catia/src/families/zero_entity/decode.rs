@@ -923,7 +923,7 @@ pub(crate) fn try_decode_zero_entity(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            geometry_transferred: true,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage,
             losses: vec![topology_loss.note(topology_message)],
             notes: Vec::new(),

@@ -264,7 +264,11 @@ fn transform_surface(
         }
         SurfaceGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = transform.compose(*carrier),
+        } => {
+            *carrier = transform.compose(*carrier).map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+            })?;
+        }
     }
     Ok(())
 }
@@ -328,7 +332,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Composite { .. } => {}
         CurveGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = transform.compose(*carrier),
+        } => {
+            *carrier = transform.compose(*carrier).map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+            })?;
+        }
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "cannot bake a transform into a non-explicit curve".into(),

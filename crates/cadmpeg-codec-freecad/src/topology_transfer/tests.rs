@@ -415,9 +415,14 @@ fn edge_representation_selection_follows_family_rules() {
     ));
 
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
-    let selected = first_edge_representation(&matching_pcurves, |candidate| {
-        matches!(candidate, TextEdgeRepresentation::Pcurve { .. })
-    })
+    let selected = select_pcurve_representation(
+        &matching_pcurves,
+        &tables,
+        Transform::identity(),
+        0,
+        Transform::identity(),
+    )
+    .unwrap()
     .expect("first matching pcurve");
     assert_eq!(selected.0, 0);
 

@@ -302,8 +302,18 @@ impl RhinoLossCode {
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
     pub fn kind(self) -> LossKind {
-        LossKind::namespaced("rhino", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
+        cadmpeg_ir::report::NamespacedLossKind::new(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("rhino") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

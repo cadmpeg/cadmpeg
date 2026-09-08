@@ -2189,8 +2189,11 @@ impl<'a> F3dDecodeSession<'a> {
             mut admitted_entities,
             report_scope,
         } = session_state;
-        let mut report =
-            crate::report::build_decode_report(scan, false, true, geometry_losses(&brep));
+        let mut report = crate::report::build_decode_report(
+            scan,
+            cadmpeg_ir::report::DecodeTransfer::full(true),
+            geometry_losses(&brep),
+        );
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2264,7 +2267,11 @@ impl<'a> F3dDecodeSession<'a> {
             native: F3dNative::default(),
             ir,
             source_attributes,
-            report: crate::report::build_decode_report(scan, false, false, container_losses(scan)),
+            report: crate::report::build_decode_report(
+                scan,
+                cadmpeg_ir::report::DecodeTransfer::full(false),
+                container_losses(scan),
+            ),
             report_scope,
             unknowns,
             admitted_entities,
@@ -3028,8 +3035,11 @@ fn decode_scanned_document<'a>(
         annotate_docstruct(&mut source_attributes, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(scan);
-        let mut report =
-            crate::report::build_decode_report(scan, true, false, container_losses(scan));
+        let mut report = crate::report::build_decode_report(
+            scan,
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly,
+            container_losses(scan),
+        );
         if let Ok(Some(table)) = crate::xref::decode(scan) {
             apply_assembly_classification(&mut report, scan, &table);
         }
@@ -3653,7 +3663,7 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan,
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.geometry_transferred = true;
+    report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
     report
         .losses
         .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
@@ -3689,7 +3699,7 @@ pub(crate) fn apply_bodyless_design_classification(
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.geometry_transferred = true;
+    report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
     let message = match (sketch_entities, reference_images) {
         (0, reference_images) => format!(
             "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
@@ -3855,7 +3865,7 @@ fn populate_annotations(
         let stream = annotations.stream(crate::ids::native_scope(stream_name));
         for record in records {
             annotations
-                .note(&record.id, stream, record.offset)
+                .note(&record.id, &stream, record.offset)
                 .tag(record.tag.as_str());
             for field in &record.derived_fields {
                 annotations.derived(&record.id, *field);
@@ -3895,7 +3905,7 @@ fn populate_annotations(
     let native_stream = annotations.stream("f3d:native");
     let mut note = |id: &str, tag: &str| {
         let offset = trailing_offset(id);
-        annotations.note(id, native_stream, offset).tag(tag);
+        annotations.note(id, &native_stream, offset).tag(tag);
     };
     {
         for entity in &native.construction_recipes {
@@ -4067,13 +4077,13 @@ fn populate_annotations(
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
-                .note(appearance.id.as_str(), stream, 0)
+                .note(appearance.id.as_str(), &stream, 0)
                 .tag(appearance.schema.as_deref().unwrap_or("appearance"));
         }
     }
     for binding in &ir.model.appearance_bindings {
         annotations
-            .note(&binding.id, native_stream, 0)
+            .note(&binding.id, &native_stream, 0)
             .tag("appearance_binding");
     }
     if brep.is_none() {
@@ -4081,7 +4091,7 @@ fn populate_annotations(
             let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
             for unknown in unknowns {
                 annotations
-                    .note(unknown.id().as_str(), stream, unknown.offset())
+                    .note(unknown.id().as_str(), &stream, unknown.offset())
                     .tag("opaque_brep");
             }
         }

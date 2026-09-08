@@ -1376,8 +1376,8 @@ fn try_decode_standard_populations(
             .extend_rewritten(model, &mut rewriter)
             .ok()?;
         merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope);
-        if output.report.geometry_transferred {
-            merged.report.geometry_transferred = true;
+        if output.report.transfer.geometry_transferred() {
+            merged.report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
         }
     }
 

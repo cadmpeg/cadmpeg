@@ -25,8 +25,8 @@ use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::triangulation::TextTriangulation;
 use crate::brep::{
-    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve, TextCurve2d,
-    TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
+    location_transform_error, surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine,
+    TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
     TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
     TextTShapeGeometry,
 };
@@ -234,10 +234,15 @@ impl<'a> Builder<'a> {
         shape: usize,
         local: Transform,
         topology_id: String,
-    ) {
-        let key = SourceOccurrenceKey::new(shape, self.body_scope.compose(local));
+    ) -> Result<(), CodecError> {
+        let key = SourceOccurrenceKey::new(
+            shape,
+            self.body_scope
+                .compose(local)
+                .map_err(location_transform_error)?,
+        );
         let Some(source_index) = self.source_indices.get(&(kind, key)).copied() else {
-            return;
+            return Ok(());
         };
         self.occurrences.push(TopologyOccurrence {
             property: self.payload.property.clone(),
@@ -245,6 +250,7 @@ impl<'a> Builder<'a> {
             source_index,
             topology_id,
         });
+        Ok(())
     }
 
     fn emit_pcurves(&self, ir: &mut CadIr) {
@@ -425,7 +431,7 @@ impl<'a> Builder<'a> {
             }
             return Ok(());
         }
-        let body_key = self.topology_label(root.shape, Transform::identity());
+        let body_key = self.topology_label(root.shape, Transform::identity())?;
         let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
             .expect("identity grammar");
         self.current_body = Some(body_id.clone());
@@ -468,7 +474,7 @@ impl<'a> Builder<'a> {
                 root.shape,
                 Transform::identity(),
                 body_id.into_string(),
-            );
+            )?;
         }
         Ok(())
     }
@@ -496,14 +502,16 @@ impl<'a> Builder<'a> {
                     ir,
                     body,
                     child.shape,
-                    transform.compose(self.tables.location(child.location)?),
+                    transform
+                        .compose(self.tables.location(child.location)?)
+                        .map_err(location_transform_error)?,
                     reversed ^ is_reversed(child.orientation),
                     output,
                 )?;
             }
             return Ok(());
         }
-        let key = self.topology_label(shape_index, transform);
+        let key = self.topology_label(shape_index, transform)?;
         let region_id = RegionId::mint(crate::native::model_id("region", &self.payload.id, &key))
             .expect("identity grammar");
         let mut shells = Vec::new();
@@ -536,7 +544,7 @@ impl<'a> Builder<'a> {
                     shape_index,
                     transform,
                     region_id.as_str().to_owned(),
-                );
+                )?;
             }
             output.push(region_id);
         }
@@ -551,7 +559,9 @@ impl<'a> Builder<'a> {
         parent: Transform,
         reversed: bool,
     ) -> Result<Vec<ShellId>, CodecError> {
-        let transform = parent.compose(self.tables.location(shell_use.location)?);
+        let transform = parent
+            .compose(self.tables.location(shell_use.location)?)
+            .map_err(location_transform_error)?;
         self.append_shell_shape(
             ir,
             region,
@@ -570,7 +580,7 @@ impl<'a> Builder<'a> {
         reversed: bool,
     ) -> Result<Vec<ShellId>, CodecError> {
         let shape = self.shape(shape_index)?.clone();
-        let key = self.topology_label(shape_index, transform);
+        let key = self.topology_label(shape_index, transform)?;
         let shell_id = ShellId::mint(crate::native::model_id("shell", &self.payload.id, &key))
             .expect("identity grammar");
         if shape.kind() == TextShapeKind::Shell {
@@ -616,7 +626,7 @@ impl<'a> Builder<'a> {
                     shape_index,
                     transform,
                     component_id.as_str().to_owned(),
-                );
+                )?;
                 shell_ids.push(component_id);
             }
             return Ok(shell_ids);
@@ -686,7 +696,7 @@ impl<'a> Builder<'a> {
                 shape_index,
                 transform,
                 shell_id.as_str().to_owned(),
-            );
+            )?;
         }
         Ok(vec![shell_id])
     }
@@ -701,7 +711,9 @@ impl<'a> Builder<'a> {
         }
         let mut connectivity = Vec::with_capacity(face_uses.len());
         for face_use in face_uses {
-            let face_transform = parent.compose(self.tables.location(face_use.location)?);
+            let face_transform = parent
+                .compose(self.tables.location(face_use.location)?)
+                .map_err(location_transform_error)?;
             let face = self.shape(face_use.shape)?;
             let mut keys = HashSet::new();
             for wire_use in face
@@ -709,26 +721,35 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Wire)
             {
-                let wire_transform =
-                    face_transform.compose(self.tables.location(wire_use.location)?);
+                let wire_transform = face_transform
+                    .compose(self.tables.location(wire_use.location)?)
+                    .map_err(location_transform_error)?;
                 let wire = self.shape(wire_use.shape)?;
                 for edge_use in wire.children.iter().filter(|child| {
                     self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge
                 }) {
-                    let edge_transform =
-                        wire_transform.compose(self.tables.location(edge_use.location)?);
-                    let edge_key =
-                        OccurrenceKey::new(edge_use.shape, self.body_scope.compose(edge_transform));
+                    let edge_transform = wire_transform
+                        .compose(self.tables.location(edge_use.location)?)
+                        .map_err(location_transform_error)?;
+                    let edge_key = OccurrenceKey::new(
+                        edge_use.shape,
+                        self.body_scope
+                            .compose(edge_transform)
+                            .map_err(location_transform_error)?,
+                    );
                     keys.insert(format!("edge:{}", edge_key.0));
                     let edge = self.shape(edge_use.shape)?;
                     for vertex_use in edge.children.iter().filter(|child| {
                         self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Vertex
                     }) {
-                        let vertex_transform =
-                            edge_transform.compose(self.tables.location(vertex_use.location)?);
+                        let vertex_transform = edge_transform
+                            .compose(self.tables.location(vertex_use.location)?)
+                            .map_err(location_transform_error)?;
                         let vertex_key = OccurrenceKey::new(
                             vertex_use.shape,
-                            self.body_scope.compose(vertex_transform),
+                            self.body_scope
+                                .compose(vertex_transform)
+                                .map_err(location_transform_error)?,
                         );
                         keys.insert(format!("vertex:{}", vertex_key.0));
                     }
@@ -748,7 +769,9 @@ impl<'a> Builder<'a> {
         parent: Transform,
         reversed: bool,
     ) -> Result<Option<FaceId>, CodecError> {
-        let face_transform = parent.compose(self.tables.location(face_use.location)?);
+        let face_transform = parent
+            .compose(self.tables.location(face_use.location)?)
+            .map_err(location_transform_error)?;
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
         let shape = self.shape(face_use.shape)?.clone();
         let TextTShapeGeometry::Face {
@@ -761,8 +784,10 @@ impl<'a> Builder<'a> {
         else {
             return Ok(None);
         };
-        let surface_transform = face_transform.compose(self.tables.location(location)?);
-        let face_key = self.topology_label(face_use.shape, face_transform);
+        let surface_transform = face_transform
+            .compose(self.tables.location(location)?)
+            .map_err(location_transform_error)?;
+        let face_key = self.topology_label(face_use.shape, face_transform)?;
         let face_id = FaceId::mint(crate::native::model_id("face", &self.payload.id, &face_key))
             .expect("identity grammar");
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
@@ -861,7 +886,9 @@ impl<'a> Builder<'a> {
             .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Wire)
             .enumerate()
         {
-            let wire_transform = face_transform.compose(self.tables.location(wire_use.location)?);
+            let wire_transform = face_transform
+                .compose(self.tables.location(wire_use.location)?)
+                .map_err(location_transform_error)?;
             let wire = self.shape(wire_use.shape)?.clone();
             let mut edge_uses = wire
                 .children
@@ -893,10 +920,12 @@ impl<'a> Builder<'a> {
                 })
                 .collect::<Vec<_>>();
             for (index, edge_use) in edge_uses.iter().enumerate() {
-                let edge_transform =
-                    wire_transform.compose(self.tables.location(edge_use.location)?);
+                let edge_transform = wire_transform
+                    .compose(self.tables.location(edge_use.location)?)
+                    .map_err(location_transform_error)?;
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
-                let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
+                let pcurve =
+                    self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id = coedge_ids[index].clone();
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
@@ -930,7 +959,7 @@ impl<'a> Builder<'a> {
                 wire_use.shape,
                 wire_transform,
                 loop_id.as_str().to_owned(),
-            );
+            )?;
             loops.push(loop_id);
         }
         ir.model.faces.push(Face {
@@ -948,7 +977,7 @@ impl<'a> Builder<'a> {
             face_use.shape,
             face_transform,
             face_id.as_str().to_owned(),
-        );
+        )?;
         Ok(Some(face_id))
     }
 
@@ -958,15 +987,22 @@ impl<'a> Builder<'a> {
         edge_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<EdgeId, CodecError> {
-        let transform = parent.compose(self.tables.location(edge_use.location)?);
-        let key = OccurrenceKey::new(edge_use.shape, self.body_scope.compose(transform));
+        let transform = parent
+            .compose(self.tables.location(edge_use.location)?)
+            .map_err(location_transform_error)?;
+        let key = OccurrenceKey::new(
+            edge_use.shape,
+            self.body_scope
+                .compose(transform)
+                .map_err(location_transform_error)?,
+        );
         if let Some(id) = self.edges.get(&key).cloned() {
             self.bind_topology(
                 TextShapeKind::Edge,
                 edge_use.shape,
                 transform,
                 id.as_str().to_owned(),
-            );
+            )?;
             return Ok(id);
         }
         let shape = self.shape(edge_use.shape)?.clone();
@@ -988,7 +1024,7 @@ impl<'a> Builder<'a> {
         let id = EdgeId::mint(crate::native::model_id(
             "edge",
             &self.payload.id,
-            self.topology_label(edge_use.shape, transform),
+            self.topology_label(edge_use.shape, transform)?,
         ))
         .expect("identity grammar");
         let curve_representation =
@@ -1007,7 +1043,9 @@ impl<'a> Builder<'a> {
             },
         )) = curve_representation
         {
-            let carrier_transform = transform.compose(self.tables.location(*location)?);
+            let carrier_transform = transform
+                .compose(self.tables.location(*location)?)
+                .map_err(location_transform_error)?;
             Some(self.located_curve(ir, *curve, carrier_transform)?)
         } else if let Some((ordinal, representation)) = polygon_representation {
             Some(self.polygon_curve(ir, &id, ordinal, representation, transform)?)
@@ -1041,7 +1079,7 @@ impl<'a> Builder<'a> {
             edge_use.shape,
             transform,
             id.as_str().to_owned(),
-        );
+        )?;
         self.edges.insert(key, id.clone());
         Ok(id)
     }
@@ -1054,7 +1092,9 @@ impl<'a> Builder<'a> {
         representation: &TextEdgeRepresentation,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let carrier_transform = transform.compose(self.tables.location(representation.location())?);
+        let carrier_transform = transform
+            .compose(self.tables.location(representation.location())?)
+            .map_err(location_transform_error)?;
         let scale = uniform_scale(carrier_transform)?;
         let IndexedPolygon {
             nodes: points,
@@ -1183,15 +1223,22 @@ impl<'a> Builder<'a> {
         vertex_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<VertexId, CodecError> {
-        let transform = parent.compose(self.tables.location(vertex_use.location)?);
-        let key = OccurrenceKey::new(vertex_use.shape, self.body_scope.compose(transform));
+        let transform = parent
+            .compose(self.tables.location(vertex_use.location)?)
+            .map_err(location_transform_error)?;
+        let key = OccurrenceKey::new(
+            vertex_use.shape,
+            self.body_scope
+                .compose(transform)
+                .map_err(location_transform_error)?,
+        );
         if let Some(id) = self.vertices.get(&key).cloned() {
             self.bind_topology(
                 TextShapeKind::Vertex,
                 vertex_use.shape,
                 transform,
                 id.as_str().to_owned(),
-            );
+            )?;
             return Ok(id);
         }
         let shape = self.shape(vertex_use.shape)?;
@@ -1204,7 +1251,7 @@ impl<'a> Builder<'a> {
                 vertex_use.shape
             )));
         };
-        let label = self.topology_label(vertex_use.shape, transform);
+        let label = self.topology_label(vertex_use.shape, transform)?;
         let point_id = PointId::mint(crate::native::model_id("point", &self.payload.id, &label))
             .expect("identity grammar");
         let vertex_id = VertexId::mint(crate::native::model_id("vertex", &self.payload.id, &label))
@@ -1232,7 +1279,7 @@ impl<'a> Builder<'a> {
             vertex_use.shape,
             transform,
             vertex_id.as_str().to_owned(),
-        );
+        )?;
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
     }
@@ -1343,37 +1390,28 @@ impl<'a> Builder<'a> {
         edge_transform: Transform,
         surface: Option<crate::brep::TableRef<TextSurface>>,
         surface_transform: Transform,
-    ) -> Option<FacePcurve> {
+    ) -> Result<Option<FacePcurve>, CodecError> {
+        let Some(surface) = surface else {
+            return Ok(None);
+        };
         let TextTShapeGeometry::Edge {
             degenerated,
             representations,
             ..
         } = &self.tables.tshapes[edge_use.shape - 1].geometry
         else {
-            return None;
+            return Ok(None);
         };
-        let (index, representation) =
-            first_edge_representation(representations, |representation| match representation {
-                TextEdgeRepresentation::Pcurve {
-                    surface: candidate_surface,
-                    location,
-                    ..
-                }
-                | TextEdgeRepresentation::PcurvePair {
-                    surface: candidate_surface,
-                    location,
-                    ..
-                } => {
-                    Some(*candidate_surface) == surface.map(crate::brep::TableRef::index)
-                        && self.tables.location(*location).is_ok_and(|location| {
-                            exact_transforms_equal(
-                                edge_transform.compose(location),
-                                surface_transform,
-                            )
-                        })
-                }
-                _ => false,
-            })?;
+        let Some((index, representation)) = select_pcurve_representation(
+            representations,
+            &self.tables,
+            edge_transform,
+            surface.index(),
+            surface_transform,
+        )?
+        else {
+            return Ok(None);
+        };
         let reversed = is_reversed(edge_use.orientation);
         let (curve_index, parameter_range, secondary) = match representation {
             TextEdgeRepresentation::Pcurve {
@@ -1393,14 +1431,16 @@ impl<'a> Builder<'a> {
                     secondary,
                 )
             }
-            _ => return None,
+            _ => return Ok(None),
         };
-        let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1])?;
+        let Some(geometry) = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]) else {
+            return Ok(None);
+        };
         let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
-        Some((
+        Ok(Some((
             self.pcurve_id(edge_use.shape, index, secondary),
             bounded_pcurve_range(*degenerated, parameter_range),
-        ))
+        )))
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
@@ -1410,10 +1450,16 @@ impl<'a> Builder<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("missing TShape {index}")))
     }
 
-    fn topology_label(&self, shape: usize, local: Transform) -> String {
-        let label = occurrence_label(shape, self.body_scope.compose(local));
-        self.root_discriminator
-            .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}"))
+    fn topology_label(&self, shape: usize, local: Transform) -> Result<String, CodecError> {
+        let label = occurrence_label(
+            shape,
+            self.body_scope
+                .compose(local)
+                .map_err(location_transform_error)?,
+        );
+        Ok(self
+            .root_discriminator
+            .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}")))
     }
 }
 
@@ -1709,7 +1755,9 @@ fn source_topology_indices(
         for root in tables.roots {
             let mut stack = vec![(root.clone(), Transform::identity())];
             while let Some((shape_use, parent)) = stack.pop() {
-                let transform = parent.compose(tables.location(shape_use.location)?);
+                let transform = parent
+                    .compose(tables.location(shape_use.location)?)
+                    .map_err(location_transform_error)?;
                 let shape = &tables.tshapes[shape_use.shape - 1];
                 if shape.kind() == target {
                     let key = SourceOccurrenceKey::new(shape_use.shape, transform);
@@ -1845,17 +1893,40 @@ fn edge_endpoint_uses(
     })
 }
 
-fn first_edge_representation<Predicate>(
-    representations: &[TextEdgeRepresentation],
-    predicate: Predicate,
-) -> Option<(usize, &TextEdgeRepresentation)>
-where
-    Predicate: Fn(&TextEdgeRepresentation) -> bool,
-{
-    representations
-        .iter()
-        .enumerate()
-        .find(|(_, representation)| predicate(representation))
+fn select_pcurve_representation<'a>(
+    representations: &'a [TextEdgeRepresentation],
+    tables: &Tables<'_>,
+    edge_transform: Transform,
+    surface: usize,
+    surface_transform: Transform,
+) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError> {
+    let mut matched = None;
+    for (index, representation) in representations.iter().enumerate() {
+        match representation {
+            TextEdgeRepresentation::Pcurve {
+                surface: candidate_surface,
+                location,
+                ..
+            }
+            | TextEdgeRepresentation::PcurvePair {
+                surface: candidate_surface,
+                location,
+                ..
+            } if *candidate_surface == surface
+                && exact_transforms_equal(
+                    edge_transform
+                        .compose(tables.location(*location)?)
+                        .map_err(location_transform_error)?,
+                    surface_transform,
+                ) =>
+            {
+                matched = Some((index, representation));
+                break;
+            }
+            _ => {}
+        }
+    }
+    Ok(matched)
 }
 
 fn select_exact_curve_representation<'a>(

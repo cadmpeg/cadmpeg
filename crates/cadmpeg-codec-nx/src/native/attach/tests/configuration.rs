@@ -720,7 +720,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("one exact point use projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
@@ -746,7 +746,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             coordinate_pairs: &[],
         },
         &mut rejected_annotations,
-        rejected_stream,
+        &rejected_stream,
     )
     .is_none());
     assert!(rejected_ir.model.sketches.is_empty());
@@ -816,7 +816,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("a complete named payload point projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
@@ -1644,7 +1644,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
 
-    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
+    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
         .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
@@ -1687,7 +1687,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     let stream = annotations.stream("nx:container");
 
     assert!(
-        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream,)
+        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,)
             .is_none()
     );
     assert!(ir.model.bodies.is_empty());
