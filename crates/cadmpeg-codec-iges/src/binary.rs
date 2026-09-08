@@ -660,6 +660,7 @@ fn parameter_text(entity_type: i64, values: &[BinaryValue]) -> Result<Vec<u8>, C
     Ok(output)
 }
 
+#[derive(Debug, Clone, Copy)]
 enum FieldRendering {
     Plain,
     Label,
