@@ -60,6 +60,36 @@ fn resolved_body_binding(
 }
 
 #[test]
+fn protein_patching_reports_schema_rejections() {
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    archive
+        .start_file(
+            "Schemas/KnownSchema.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    archive
+        .write_all(br#"<Schema><UID val="KnownSchema"/></Schema>"#)
+        .unwrap();
+    let protein = archive.finish().unwrap().into_inner();
+    let mut logical = RECORD_MARKER.to_vec();
+    for value in ["MissingSchema", "asset-guid", "base", ""] {
+        super::push_lp(&mut logical, value).unwrap();
+    }
+    let mut instance = super::page_logical(&logical).unwrap();
+    let result = super::patch_instance_colors(
+        &protein,
+        &mut instance,
+        &std::collections::BTreeMap::new(),
+        &mut std::collections::BTreeSet::new(),
+    );
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::Malformed(message))
+        if message.contains("record 0 rejected") && message.contains("MissingSchema"))
+    );
+}
+
+#[test]
 fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker() {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -81,11 +111,11 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     lp(&mut logical, "");
 
     let paged = super::page_logical(&logical).expect("page catalog record");
-    let frames = cadmpeg_protein::record_frames(&paged).expect("frame catalog pages");
+    let frames = cadmpeg_protein::framing::record_frames(&paged).expect("frame catalog pages");
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
-    let decoded = super::decode_definition_catalog_record(&frame.bytes)
+    let decoded = super::decode_definition_catalog_record(frame.bytes())
         .expect("decode framed definition record");
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "Prism-001");
