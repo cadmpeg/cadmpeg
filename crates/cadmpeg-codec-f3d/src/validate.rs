@@ -7357,8 +7357,8 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             header.byte_offset == group.carrier_span.end()
                 && header.class_tag == group.paired_class_tag
         });
-        let source_offsets_valid = source_spec.is_some_and(|(_, source_reference_offset, _, _)| {
-            let Ok(source_reference_offset) = u64::try_from(source_reference_offset) else {
+        let source_offsets_valid = source_spec.is_some_and(|layout| {
+            let Ok(source_reference_offset) = u64::try_from(layout.source_reference_offset) else {
                 return false;
             };
             group
@@ -7378,8 +7378,8 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
         });
         let mut source_records = HashSet::new();
-        let source_members_valid = source_spec.is_some_and(|(source_count, _, _, _)| {
-            group.source_members.len() == source_count
+        let source_members_valid = source_spec.is_some_and(|layout| {
+            group.source_members.len() == layout.source_count
                 && group
                     .source_members
                     .iter()
