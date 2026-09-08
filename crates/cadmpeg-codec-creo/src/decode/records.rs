@@ -15,7 +15,7 @@ use crate::surface::{
 pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::{FeatureRelationTable, ReferencePlanes, VariableType};
+use crate::feature::definitions::{FeatureRelationTable, VariableType};
 use crate::feature::schema::SchemaClass;
 
 use super::coverage::{
@@ -35,12 +35,12 @@ use super::native_records::{
     CreoSketchCenteredLineSegment, CreoSketchCircleSegment, CreoSketchConicSegment,
     CreoSketchDimension, CreoSketchDimensionReference, CreoSketchDimensionReferenceTable,
     CreoSketchEquation, CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
-    CreoSketchReferenceLineSegment, CreoSketchReferencePlane, CreoSketchRelation,
-    CreoSketchRelationTriple, CreoSketchSavedEntity, CreoSketchSection3d,
-    CreoSketchSectionOrientation, CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp,
-    CreoSketchSkampItem, CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex,
-    CreoSketchVariable, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
-    CreoTorusRadiusOverrides, CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
+    CreoSketchReferenceLineSegment, CreoSketchRelation, CreoSketchRelationTriple,
+    CreoSketchSavedEntity, CreoSketchSection3d, CreoSketchSectionOrientation,
+    CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp, CreoSketchSkampItem,
+    CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex, CreoSketchVariable,
+    CreoTabulatedCylinderFrame, CreoTorusOutlineFrame, CreoTorusRadiusOverrides,
+    CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
 };
 use super::sketch::{
     resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
@@ -2166,21 +2166,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|section| CreoSketchSection3d {
                     sketch_plane_entity_id: section.sketch_plane_entity_id,
                     sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                    reference_plane_entity_ids: section.reference_planes.entity_ids().collect(),
-                    reference_plane_rows: match &section.reference_planes {
-                        ReferencePlanes::Named(_) => &[][..],
-                        ReferencePlanes::Positional(rows) => rows.as_slice(),
-                    }
-                    .iter()
-                    .map(|row| CreoSketchReferencePlane {
-                        plane_entity_id: row.plane_entity_id,
-                        reference_type: row.reference_type,
-                        external_reference_id: row.external_reference_id,
-                        segment_id: row.segment_id,
-                        sub_index: row.sub_index,
-                        reference_flip: row.reference_flip.map(binary_flag_value),
-                    })
-                    .collect(),
+                    reference_planes: section.reference_planes.clone(),
                     reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
                     orientation: CreoSketchSectionOrientation {
                         section_flip: section.orientation.section_flip.map(binary_flag_value),
