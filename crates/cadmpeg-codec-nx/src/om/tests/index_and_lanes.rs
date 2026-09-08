@@ -41,7 +41,7 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
 
 #[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
-    use crate::om::compact::NullableCompactIndex;
+    use crate::om::compact::{CompactIndexAtom, NullableCompactIndex};
 
     let bytes = [0x00, 0x7f, 0x80, 0x80, 0x81, 0x00, 0xfe, 0xff, 0xff];
     let mut at = 0;
@@ -49,7 +49,7 @@ fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     while at < bytes.len() {
         let token = NullableCompactIndex::read(&bytes, at).unwrap();
         at += token.raw().len();
-        values.push(token.atom.map(|atom| atom.value()));
+        values.push(token.atom.map(CompactIndexAtom::value));
     }
     assert_eq!(
         values,
