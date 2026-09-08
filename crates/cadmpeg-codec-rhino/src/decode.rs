@@ -4474,13 +4474,13 @@ fn scale_plane_pcurves(
             continue;
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
-            let scaled = nurbs
-                .control_points()
-                .iter()
-                .map(|pole| Point2::new(pole.u * scale, pole.v * scale))
-                .collect::<Vec<_>>();
             nurbs
-                .edit_control_points(|points| points.copy_from_slice(&scaled))
+                .edit_control_points(|points| {
+                    for pole in points {
+                        pole.u *= scale;
+                        pole.v *= scale;
+                    }
+                })
                 .map_err(|error| crate::curves::error(0, error.to_string()))?;
         }
     }
@@ -5145,14 +5145,12 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
     curve.geometry = match geometry {
         CurveGeometry::Nurbs(mut nurbs) => {
-            let transformed = nurbs
-                .control_points()
-                .iter()
-                .copied()
-                .map(|pole| transform.apply_point(pole))
-                .collect::<Vec<_>>();
             nurbs
-                .edit_control_points(|points| points.copy_from_slice(&transformed))
+                .edit_control_points(|points| {
+                    for pole in points {
+                        *pole = transform.apply_point(*pole);
+                    }
+                })
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Nurbs(nurbs)
         }
@@ -5173,14 +5171,12 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             );
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
-            let transformed = nurbs
-                .control_points()
-                .iter()
-                .copied()
-                .map(|pole| transform.apply_point(pole))
-                .collect::<Vec<_>>();
             nurbs
-                .edit_control_points(|points| points.copy_from_slice(&transformed))
+                .edit_control_points(|points| {
+                    for pole in points {
+                        *pole = transform.apply_point(*pole);
+                    }
+                })
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Nurbs(nurbs)
         }
@@ -5233,14 +5229,12 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     );
     surface.geometry = match geometry {
         SurfaceGeometry::Nurbs(mut nurbs) => {
-            let transformed = nurbs
-                .control_points()
-                .iter()
-                .copied()
-                .map(|pole| transform.apply_point(pole))
-                .collect::<Vec<_>>();
             nurbs
-                .edit_control_points(|points| points.copy_from_slice(&transformed))
+                .edit_control_points(|points| {
+                    for pole in points {
+                        *pole = transform.apply_point(*pole);
+                    }
+                })
                 .map_err(|error| error.to_string())?;
             SurfaceGeometry::Nurbs(nurbs)
         }

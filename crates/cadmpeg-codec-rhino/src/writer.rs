@@ -2317,16 +2317,13 @@ fn generated_projected_brep_c2_curve(
         }
         CurveGeometry::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
-            let projected_points = projected
-                .control_points()
-                .iter()
-                .map(|point| {
-                    let uv = plane_uv(*point, origin, u_axis, v_axis);
-                    cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0)
-                })
-                .collect::<Vec<_>>();
             projected
-                .edit_control_points(|points| points.copy_from_slice(&projected_points))
+                .edit_control_points(|points| {
+                    for point in points {
+                        let uv = plane_uv(*point, origin, u_axis, v_axis);
+                        *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                    }
+                })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[projected.degree() as usize]

@@ -998,10 +998,8 @@ pub(crate) fn join_nurbs_segments(
                 ));
             }
             *control_points.last_mut().expect("previous endpoint") = midpoint;
-            let mut adjusted = segment.control_points().to_vec();
-            adjusted[0] = midpoint;
             segment
-                .edit_control_points(|points| points.copy_from_slice(&adjusted))
+                .edit_control_points(|points| points[0] = midpoint)
                 .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
         }
         let skip = usize::from(index > 0);
@@ -1813,6 +1811,32 @@ mod tests {
             assert_eq!(curve.control_points().len(), 2);
             assert_eq!(curve.knots(), vec![10.0, 10.0, 12.0, 12.0]);
         }
+    }
+
+    #[test]
+    fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
+        let curve = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid test curve");
+        let mut decoded = DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new());
+        let error = scale_decoded_curve(&mut decoded, f64::MAX, 17)
+            .expect_err("scaling overflow must reject the NURBS curve");
+        assert!(error
+            .to_string()
+            .contains("scaled plane-space curve is invalid"));
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Nurbs(curve),
+            ..
+        } = decoded
+        else {
+            unreachable!("test retains the NURBS curve carrier");
+        };
+        assert_eq!(curve.control_points()[0], Point3::new(2.0, 0.0, 0.0));
     }
 
     #[test]
