@@ -16,7 +16,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         feature_id,
         root_schema_class: None,
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     };

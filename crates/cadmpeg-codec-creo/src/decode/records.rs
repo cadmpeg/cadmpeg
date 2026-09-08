@@ -989,10 +989,10 @@ pub(super) fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRec
         .map(|row| CreoFeatureRowRecord {
             id: format!("creo:allfeatur:feature_row#{}", row.offset),
             owner_feature_id: row.feature_id,
-            header: [row.body[0], row.body[1]],
+            header: row.body.header(),
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: row.body.clone(),
+            body: row.body.to_vec(),
             body_offset: row.body_offset,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
@@ -1010,7 +1010,7 @@ pub(super) fn depdb_recipe_row_records(scan: &ContainerScan) -> Vec<CreoFeatureR
             header: [0; 2],
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: row.body.clone(),
+            body: row.body.to_vec(),
             body_offset: row.body_offset,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
@@ -2757,4 +2757,21 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
         pointer: record.pointer,
         offset: record.offset,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlapping_feature_candidates_do_not_expose_short_headers() {
+        let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.features.rows = crate::feature::rows(&payload, &BTreeSet::from([1, 2]), 0);
+        let records = feature_row_records(&scan);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].owner_feature_id, 2);
+        assert_eq!(records[0].header, [0, 0]);
+        assert_eq!(records[0].body, payload[3..]);
+    }
 }
