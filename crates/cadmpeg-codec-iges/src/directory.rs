@@ -245,12 +245,15 @@ impl DirectoryDefect {
 pub(crate) struct QuarantinedDirectoryRecord {
     pub(crate) sequence: u32,
     pub(crate) source_offset: u64,
-    pub(crate) cards: usize,
     pub(crate) bytes: Vec<u8>,
     pub(crate) defect: DirectoryDefect,
 }
 
 impl QuarantinedDirectoryRecord {
+    pub(crate) fn cards(&self) -> usize {
+        self.bytes.len() / crate::card::CARD_WIDTH
+    }
+
     /// The stable native identity of this quarantined record.
     pub(crate) fn identity(&self) -> String {
         format!("iges:quarantine:directory#{}", self.sequence)
@@ -262,7 +265,7 @@ impl QuarantinedDirectoryRecord {
                 "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
                 self.sequence,
                 self.defect.describe(),
-                self.cards
+                self.cards()
             ))
         .with_provenance(
             SourceProvenance::in_stream("iges", "iges", self.source_offset)
@@ -406,7 +409,6 @@ fn quarantine(
     QuarantinedDirectoryRecord {
         sequence: first.0,
         source_offset: first.1.offset,
-        cards: rest.len() + 1,
         bytes: std::iter::once(first.1)
             .chain(rest.iter().map(|(_, line)| *line))
             .flat_map(|line| line.payload.iter().copied())
