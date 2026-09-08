@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::feature::definitions::{DecodedField, DimensionValue};
+use crate::feature::definitions::{DecodedField, DimensionValue, ScalarLane};
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchSectionPoint {
@@ -211,18 +211,43 @@ fn serialize_dimension_value<S: serde::Serializer>(
 pub(crate) struct CreoSketchVariable {
     pub(crate) variable_type: u32,
     pub(crate) key: u32,
-    pub(crate) value: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_variable_value")]
+    pub(crate) value: ScalarLane,
     pub(crate) value_body: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resolved_value: Option<f64>,
-    pub(crate) guess: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_variable_guess")]
+    pub(crate) guess: ScalarLane,
     pub(crate) guess_body: Vec<u8>,
-    pub(crate) guess_dimension_driven: bool,
     pub(crate) known: Option<u32>,
     pub(crate) homogeneity: Option<u32>,
     pub(crate) uvar_id: Option<u32>,
-    pub(crate) dimension_driven: bool,
     pub(crate) offset: usize,
+}
+
+fn serialize_variable_value<S: serde::Serializer>(
+    value: &ScalarLane,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("value", &value.value())?;
+    map.serialize_entry("dimension_driven", &(value == &ScalarLane::DimensionDriven))?;
+    map.end()
+}
+
+fn serialize_variable_guess<S: serde::Serializer>(
+    value: &ScalarLane,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("guess", &value.value())?;
+    map.serialize_entry(
+        "guess_dimension_driven",
+        &(value == &ScalarLane::DimensionDriven),
+    )?;
+    map.end()
 }
 
 #[derive(Serialize)]

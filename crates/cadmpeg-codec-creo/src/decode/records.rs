@@ -15,9 +15,7 @@ use crate::surface::{
 pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::{
-    FeatureRelationTable, ReferencePlanes, ScalarLane, VariableType,
-};
+use crate::feature::definitions::{FeatureRelationTable, ReferencePlanes, VariableType};
 use crate::feature::schema::SchemaClass;
 
 use super::coverage::{
@@ -2216,15 +2214,13 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     .map(|row| CreoSketchVariable {
                         variable_type: row.variable_type.code(),
                         key: row.key,
-                        value: row.value.value(),
+                        value: row.value,
                         value_body: row.value_body.clone(),
-                        guess: row.guess.value(),
+                        guess: row.guess,
                         guess_body: row.guess_body.clone(),
-                        guess_dimension_driven: row.guess == ScalarLane::DimensionDriven,
                         known: row.known,
                         homogeneity: row.homogeneity,
                         uvar_id: row.uvar_id,
-                        dimension_driven: row.value == ScalarLane::DimensionDriven,
                         resolved_value: match row.variable_type {
                             VariableType::U => resolved_coordinates
                                 .get(&row.key)
