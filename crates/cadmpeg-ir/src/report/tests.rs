@@ -425,10 +425,8 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 #[test]
 fn namespaced_loss_rejects_reserved_namespace() {
     assert_eq!(LossNamespace::new("shared"), Err(LossNamespaceError));
-    assert_eq!(
-        LossNamespace::new(&"shared".to_owned()),
-        Err(LossNamespaceError)
-    );
+    let namespace = String::from("shared");
+    assert_eq!(LossNamespace::new(&namespace), Err(LossNamespaceError));
     assert!(serde_json::from_value::<LossKind>(serde_json::json!({
         "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
     }))
