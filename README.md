@@ -39,19 +39,23 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/cadmpeg/cadmpeg/re
 
 ## Quick start
 
+Inspect a file:
+
 ```sh
-cadmpeg convert part.f3d -f step
+cadmpeg inspect part.sldprt
 ```
 
-Conversion reports check results and loss:
+Convert a file:
+
+```sh
+cadmpeg convert part.f3d -o part.step
+```
 
 ```text
-decode report (f3d): geometry_transferred=true
-losses:
-  [info/geometry] 22 spline surface record(s) were decoded into NURBS carriers.
-  ...
+decode report (f3d): geometry_transferred=true, container_only=false
+...
 check: OK (0 error(s), 0 warning(s))
-wrote part.step (2125 entities)
+wrote part.step (... entities)
 ```
 
 ## Format support
@@ -86,29 +90,6 @@ input file ──▶ container decoder ──▶ format decoder ──▶ IR ─
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
 - [Roadmap](docs/roadmap.md)
-
-## CLI
-
-Convert a native file to another format:
-
-```sh
-cadmpeg convert part.f3d -f step -o part.step
-```
-
-Inspect a native file:
-
-```sh
-cadmpeg inspect part.sldprt
-```
-
-```text
-format: sldprt (detected high)
-container: sldprt-blocks
-entries: 58
-...
-notes:
-  - active Parasolid B-rep candidate: Contents/Config-0-Partition
-```
 
 ## Contributing
 
