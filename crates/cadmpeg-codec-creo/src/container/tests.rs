@@ -363,7 +363,6 @@ fn scan_reads_legacy_geom_depend_first_quilt_discriminator() {
 #[test]
 fn legacy_geom_depend_discriminator_withholds_distinct_values() {
     let root = crate::legacy::ObjectRecord {
-        id: "root".to_string(),
         name: "Sld_GeomDepend".to_string(),
         attribute_id: 1,
         scope_offset: 0,
@@ -376,21 +375,21 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
         objects: vec![root],
         integer_values: vec![
             crate::legacy::IntegerRecord {
-                id: "first".to_string(),
+                kind: crate::legacy::ValueKind::Integer,
                 name: "first_quilt_ptr".to_string(),
                 attribute_id: 4,
                 scope_offset: 0,
-                parent: Some("root".to_string()),
+                parent: Some(0),
                 depth: 1,
                 payload: crate::legacy::NumericPayload::Scalar { value: 0 },
                 offset: 1,
             },
             crate::legacy::IntegerRecord {
-                id: "second".to_string(),
+                kind: crate::legacy::ValueKind::Integer,
                 name: "first_quilt_ptr".to_string(),
                 attribute_id: 4,
                 scope_offset: 0,
-                parent: Some("root".to_string()),
+                parent: Some(0),
                 depth: 1,
                 payload: crate::legacy::NumericPayload::Scalar { value: 7 },
                 offset: 2,

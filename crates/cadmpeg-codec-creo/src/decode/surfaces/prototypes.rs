@@ -36,17 +36,11 @@ pub(in super::super) fn prototype_vector_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Option<Vec<[f64; 3]>> {
-    let crate::surface::SurfaceNamedValue::ScalarArray {
-        dimensions,
-        count: 3,
-        values,
-        ..
-    } = &record.field(name)?.value
-    else {
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field(name)?.value else {
         return None;
     };
-    let vector_count = usize::try_from(*dimensions).ok()?;
-    (values.len() == vector_count.checked_mul(3)?).then_some(())?;
+    (array.count() == 3).then_some(())?;
+    let values = array.values();
     values
         .chunks_exact(3)
         .map(|coordinates| Some([coordinates[0]?, coordinates[1]?, coordinates[2]?]))
@@ -57,13 +51,11 @@ pub(in super::super) fn prototype_parameter_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Option<Vec<f64>> {
-    let crate::surface::SurfaceNamedValue::CountedScalarArray { count, values, .. } =
-        &record.field(name)?.value
+    let crate::surface::SurfaceNamedValue::CountedScalarArray(array) = &record.field(name)?.value
     else {
         return None;
     };
-    (values.len() == usize::try_from(*count).ok()?).then_some(())?;
-    values.iter().copied().collect()
+    array.values().iter().copied().collect()
 }
 
 pub(in super::super) fn prototype_spline_nurbs(
@@ -82,16 +74,12 @@ pub(in super::super) fn prototype_spline_nurbs(
 pub(in super::super) fn prototype_local_frame(
     record: &crate::surface::SurfacePrototypeRecord,
 ) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
-    let crate::surface::SurfaceNamedValue::ScalarArray {
-        dimensions: 4,
-        count: 3,
-        values,
-        ..
-    } = &record.field("local_sys")?.value
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field("local_sys")?.value
     else {
         return None;
     };
-    let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
+    (array.dimensions() == 4 && array.count() == 3).then_some(())?;
+    let slots = array.values().iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
     slots.iter().all(|value| value.is_finite()).then_some(())?;
     let first: [f64; 3] = slots[0..3].try_into().ok()?;
@@ -614,21 +602,16 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     radius: *radius,
                 }
             }
-            crate::legacy_geometry::LegacySurfaceGeometry::Spline {
-                points,
-                u_parameters,
-                v_parameters,
-                u_derivatives,
-                v_derivatives,
-                mixed_derivatives,
-            } if row.kind == crate::surface::SurfaceKind::Spline => {
+            crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
+                if row.kind == crate::surface::SurfaceKind::Spline =>
+            {
                 let Some(nurbs) = interpolation_spline_surface(
-                    points,
-                    u_parameters,
-                    v_parameters,
-                    u_derivatives,
-                    v_derivatives,
-                    mixed_derivatives,
+                    spline.points(),
+                    spline.u_parameters(),
+                    spline.v_parameters(),
+                    spline.u_derivatives(),
+                    spline.v_derivatives(),
+                    spline.mixed_derivatives(),
                 ) else {
                     continue;
                 };

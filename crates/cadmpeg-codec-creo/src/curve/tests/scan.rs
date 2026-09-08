@@ -162,7 +162,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.type_byte, 8);
     assert_eq!(parameters.scalar_values(), vec![0.0, 1.0, 3.0]);
     assert_eq!(parameters.scalar_tokens[2].offset, 5);
-    assert_eq!(parameters.scalar_tokens[2].length, 8);
+    assert_eq!(parameters.scalar_tokens[2].raw.len(), 8);
     assert_eq!(parameters.scalar_tokens[2].raw[0], 0x46);
     assert_eq!(parameters.skipped_references(), vec![256]);
     assert_eq!(parameters.references[0].entity_id, 256);

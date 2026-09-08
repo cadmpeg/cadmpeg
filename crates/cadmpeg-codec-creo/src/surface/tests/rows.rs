@@ -453,29 +453,38 @@ fn retains_named_spline_point_and_tangent_arrays() {
     );
     assert_eq!(
         records[0].field("i_points").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 2,
-            count: 2,
-            values: vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
-            tokens: Some(vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]]),
-        })
+        Some(&SurfaceNamedValue::ScalarArray(
+            crate::surface::arrays::DimensionedScalars::try_new(
+                2,
+                2,
+                vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
+                Some(vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]])
+            )
+            .expect("valid scalar array")
+        ))
     );
     assert_eq!(
         records[0].field("end_u_tangts").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 1,
-            count: 2,
-            values: vec![Some(0.0), Some(1.0)],
-            tokens: Some(vec![vec![0x0f], vec![0xe4]]),
-        })
+        Some(&SurfaceNamedValue::ScalarArray(
+            crate::surface::arrays::DimensionedScalars::try_new(
+                1,
+                2,
+                vec![Some(0.0), Some(1.0)],
+                Some(vec![vec![0x0f], vec![0xe4]])
+            )
+            .expect("valid scalar array")
+        ))
     );
     assert_eq!(
         records[0].field("u_params").map(|field| &field.value),
-        Some(&SurfaceNamedValue::CountedScalarArray {
-            count: 2,
-            values: vec![Some(0.0), Some(1.0)],
-            tokens: vec![vec![0x0f], vec![0xe4]],
-        })
+        Some(&SurfaceNamedValue::CountedScalarArray(
+            crate::surface::arrays::CountedScalars::try_new(
+                2,
+                vec![Some(0.0), Some(1.0)],
+                vec![vec![0x0f], vec![0xe4]]
+            )
+            .expect("valid scalar array")
+        ))
     );
 }
 
@@ -570,19 +579,22 @@ fn tabulated_cylinder_parameters_end_the_tangent_field() {
     assert_eq!(records.len(), 1);
     assert!(matches!(
         records[0].field("end_tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. }) if values.len() == 6
+        Some(SurfaceNamedValue::ScalarArray(array)) if array.values().len() == 6
     ));
     assert_eq!(
         records[0].field("params").map(|field| &field.value),
-        Some(&SurfaceNamedValue::CountedScalarArray {
-            count: 3,
-            values: vec![Some(0.0), Some(2.0), Some(3.0)],
-            tokens: vec![
-                vec![0x0f],
-                vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
-                vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
-            ],
-        })
+        Some(&SurfaceNamedValue::CountedScalarArray(
+            crate::surface::arrays::CountedScalars::try_new(
+                3,
+                vec![Some(0.0), Some(2.0), Some(3.0)],
+                vec![
+                    vec![0x0f],
+                    vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
+                    vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
+                ]
+            )
+            .expect("valid scalar array")
+        ))
     );
 }
 

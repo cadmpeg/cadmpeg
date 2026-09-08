@@ -458,7 +458,7 @@ pub(super) struct CreoPrimitiveScalarArrayRecord {
     pub(super) id: String,
     pub(super) field: String,
     pub(super) expanded_offset: usize,
-    pub(super) count: u32,
+    pub(super) count: usize,
     pub(super) values: Vec<f64>,
 }
 
@@ -1588,31 +1588,22 @@ fn serialize_surface_named_value<S: serde::Serializer>(
             Vec::new(),
             Vec::new(),
         ),
-        crate::surface::SurfaceNamedValue::ScalarArray {
-            dimensions,
-            count,
-            values,
-            tokens,
-        } => (
+        crate::surface::SurfaceNamedValue::ScalarArray(array) => (
             "scalar_array",
             Vec::new(),
-            Some(*dimensions),
-            Some(*count),
-            values.clone(),
-            tokens.clone().unwrap_or_default(),
+            Some(array.dimensions()),
+            Some(array.count()),
+            array.values().to_vec(),
+            array.tokens().unwrap_or_default().to_vec(),
             Vec::new(),
         ),
-        crate::surface::SurfaceNamedValue::CountedScalarArray {
-            count,
-            values,
-            tokens,
-        } => (
+        crate::surface::SurfaceNamedValue::CountedScalarArray(array) => (
             "counted_scalar_array",
             Vec::new(),
             None,
-            Some(*count),
-            values.clone(),
-            tokens.clone(),
+            Some(array.count()),
+            array.values().to_vec(),
+            array.tokens().to_vec(),
             Vec::new(),
         ),
         crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
@@ -1832,7 +1823,7 @@ pub(super) fn curve_parameter_records(
                     value: token.value,
                     raw: token.raw.clone(),
                     offset: token.offset,
-                    length: token.length,
+                    length: token.raw.len(),
                 })
                 .collect(),
             skipped_references: record.skipped_references(),
@@ -1851,7 +1842,7 @@ pub(super) fn curve_parameter_records(
                 .map(|span| CreoCurveParameterOpaqueSpan {
                     raw: span.raw.clone(),
                     offset: span.offset,
-                    length: span.length,
+                    length: span.raw.len(),
                 })
                 .collect(),
             reference_geometry: record.reference_geometry,
@@ -1897,7 +1888,7 @@ pub(super) fn cross_section_curve_row_records(
                     value: token.value,
                     raw: token.raw.clone(),
                     offset: token.offset,
-                    length: token.length,
+                    length: token.raw.len(),
                 })
                 .collect(),
             references: row
@@ -1915,7 +1906,7 @@ pub(super) fn cross_section_curve_row_records(
                 .map(|span| CreoCurveParameterOpaqueSpan {
                     raw: span.raw.clone(),
                     offset: span.offset,
-                    length: span.length,
+                    length: span.raw.len(),
                 })
                 .collect(),
             offset: row.offset,
