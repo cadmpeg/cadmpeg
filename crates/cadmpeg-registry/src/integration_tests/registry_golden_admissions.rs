@@ -19,7 +19,11 @@ fn compiled_read_admissions_match_registry_policy() {
     collect_json_files(&root.join("crates"), &mut snapshots);
     let mut observed = BTreeMap::<String, BTreeMap<&'static str, usize>>::new();
     for path in snapshots {
-        if !path.to_string_lossy().contains("/tests/golden/") {
+        if !path
+            .components()
+            .zip(path.components().skip(1))
+            .any(|(parent, child)| parent.as_os_str() == "tests" && child.as_os_str() == "golden")
+        {
             continue;
         }
         let bytes = std::fs::read(&path)
