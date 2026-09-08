@@ -146,6 +146,17 @@ impl Reference {
         }
     }
 
+    /// The owned target and inline type of a local reference.
+    pub(crate) fn into_local(self) -> Option<(u64, Option<String>)> {
+        match self {
+            Self::Local {
+                target,
+                inline_type_guid,
+            } => Some((target, inline_type_guid)),
+            _ => None,
+        }
+    }
+
     /// The target of a non-null reference.
     pub(crate) fn target(&self) -> Option<u64> {
         match self {

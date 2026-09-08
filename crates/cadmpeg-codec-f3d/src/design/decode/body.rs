@@ -395,8 +395,7 @@ fn local_reference_candidates(
     let mut candidates = Vec::new();
     let mut end = at;
     if let Some(reference) = take_reference(bytes, &mut end) {
-        if let Some((target, inline_type_guid)) = reference.local() {
-            let inline_type_guid = inline_type_guid.map(str::to_owned);
+        if let Some((target, inline_type_guid)) = reference.into_local() {
             candidates.push(LocalReferenceCandidate {
                 target,
                 end,

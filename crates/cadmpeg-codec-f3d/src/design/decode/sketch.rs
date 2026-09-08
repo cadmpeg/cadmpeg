@@ -2309,11 +2309,8 @@ fn take_local_sketch_reference(
     cursor: &mut usize,
 ) -> Option<(u32, Option<String>)> {
     let reference = take_reference(payload, cursor)?;
-    let (target, inline_type_guid) = reference.local()?;
-    Some((
-        u32::try_from(target).ok()?,
-        inline_type_guid.map(str::to_owned),
-    ))
+    let (target, inline_type_guid) = reference.into_local()?;
+    Some((u32::try_from(target).ok()?, inline_type_guid))
 }
 
 fn take_same_segment_sketch_reference(payload: &[u8], cursor: &mut usize) -> Option<u32> {
