@@ -1558,3 +1558,102 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             && cell_selections == &[cadmpeg_ir::features::BodySelection::Native(cell.id)]
     ));
 }
+
+#[test]
+fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
+    use crate::records::topology::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
+    let mut weight = parse_design_parameter(&parameter_record(
+        Some(1),
+        "1",
+        "TangencyWeight",
+        None,
+        "weight",
+        1.0,
+    ))
+    .unwrap();
+    weight.record_index = 11;
+    let mut radius = parse_design_parameter(&parameter_record(
+        Some(2),
+        "1 mm",
+        "Radius",
+        Some("mm"),
+        "radius",
+        1.0,
+    ))
+    .unwrap();
+    radius.record_index = 12;
+    let scope = DesignParameterScope::empty(
+        "f3d:native:scope#10",
+        crate::records::feature::DesignFeatureKind::Fillet,
+        10,
+    );
+    let laws = [
+        (
+            DesignFilletRadiusLaw::Constant {
+                radius_parameter_record_index: 11,
+            },
+            vec![(0, &weight)],
+        ),
+        (
+            DesignFilletRadiusLaw::Chordal {
+                chord_length_parameter_record_index: 11,
+            },
+            vec![(0, &weight)],
+        ),
+        (
+            DesignFilletRadiusLaw::Asymmetric {
+                offset_one_parameter_record_index: 11,
+                offset_two_parameter_record_index: 12,
+            },
+            vec![(0, &weight), (1, &radius)],
+        ),
+        (
+            DesignFilletRadiusLaw::Variable {
+                start_radius_parameter_record_index: 11,
+                end_radius_parameter_record_index: 12,
+                middle: Vec::new(),
+            },
+            vec![(0, &weight), (1, &radius)],
+        ),
+    ];
+    for (law, parameters) in laws {
+        let assignment = DesignFilletRadiusGroup {
+            id: "f3d:native:assignment#20".into(),
+            scope_record_index: 10,
+            group_ordinal: 0,
+            group_record_index: 20,
+            edge_operand_record_indices: Vec::new(),
+            law,
+            tangency_weight_parameter_record_index: None,
+        };
+        let inputs = crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &[],
+            timelines: &[],
+            construction_groups: &[],
+            fillet_radius_groups: std::slice::from_ref(&assignment),
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
+            placements: &[],
+            body_bindings: &[],
+            component_naming_spaces: &[],
+            histories: &[],
+        };
+        assert!(matches!(
+            crate::design::feature_project::project_fillet_arm(
+                &inputs,
+                &scope,
+                &parameters,
+                "f3d:native"
+            ),
+            FeatureDefinition::Native { .. }
+        ));
+    }
+}
