@@ -1855,3 +1855,38 @@ fn census_counts_overlapping_tombstone_and_terminal_trailer_once() {
     assert_eq!(census.bytes_decoded, stream.len());
     assert_eq!(census.covered_spans(), vec![(0, stream.len())]);
 }
+
+#[test]
+fn census_counts_record_owned_trailer_and_numeric_tail_bytes_once() {
+    let stream = deltas_intersection_curve_stream();
+    let census = crate::deltas::walk(&stream);
+    let record = census
+        .records
+        .iter()
+        .find(|record| record.offset == 145)
+        .unwrap();
+    let trailer = census.terminal_null_references.unwrap();
+    assert_eq!(record.end, 175);
+    assert_eq!((trailer.offset(), trailer.end()), (167, 175));
+    assert_eq!(census.covered_spans(), vec![(67, 175)]);
+    assert_eq!(census.bytes_decoded(), 78 + 30);
+
+    for stream in [
+        two_support_ext11_charted_intersection_curve_stream(false),
+        two_support_ext11_charted_intersection_curve_stream(true),
+        partial_ext11_charted_intersection_curve_stream(),
+    ] {
+        let deltas = ext11_intersection_deltas(&stream);
+        let census = crate::deltas::walk(&deltas);
+        let record = census
+            .records
+            .iter()
+            .find(|record| record.offset == 371)
+            .unwrap();
+        let tail = &census.term_use_numeric_tails[0];
+        assert_eq!(record.end, 444);
+        assert_eq!((tail.offset(), tail.end()), (371, 435));
+        assert_eq!(census.covered_spans(), vec![(67, 444)]);
+        assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73);
+    }
+}
