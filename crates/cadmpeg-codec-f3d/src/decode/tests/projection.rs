@@ -1322,7 +1322,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 1,
-        owner_entity_id: Some("0_1".into()),
+        owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
         auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: (Vec::new()).try_into().expect("uniform member resolution"),

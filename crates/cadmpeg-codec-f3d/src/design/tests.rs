@@ -315,8 +315,20 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         &mut relations,
     )
     .expect("stream-local sketch graphs bind independently");
-    assert_eq!(relations[0].owner_entity_id.as_deref(), Some("A_100"));
-    assert_eq!(relations[1].owner_entity_id.as_deref(), Some("B_100"));
+    assert_eq!(
+        relations[0]
+            .owner_entity_id
+            .as_ref()
+            .map(cadmpeg_ir::NonEmptyString::as_str),
+        Some("A_100")
+    );
+    assert_eq!(
+        relations[1]
+            .owner_entity_id
+            .as_ref()
+            .map(cadmpeg_ir::NonEmptyString::as_str),
+        Some("B_100")
+    );
 
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =

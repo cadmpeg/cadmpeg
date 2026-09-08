@@ -8304,7 +8304,7 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let owner_matches = matches!(
             (
                 sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
-                relation.owner_entity_id.as_deref(),
+                relation.owner_entity_id.as_ref().map(cadmpeg_ir::NonEmptyString::as_str),
             ),
             (Some(expected), Some(actual)) if *expected == actual
         );
