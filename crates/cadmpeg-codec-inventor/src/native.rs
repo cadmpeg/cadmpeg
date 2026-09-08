@@ -1509,7 +1509,8 @@ mod tests {
             (0x1003, "vector:0"),
             (0x999, "unknown"),
         ] {
-            let value = super::PropertyValueKind::from_wire(kind, Some(code)).unwrap();
+            let value = super::PropertyValueKind::from_wire(kind, Some(code))
+                .expect("kind matches the OLE type code");
             assert_eq!(value.to_string(), kind);
             assert_eq!(value.type_code(), Some(code));
             let wrong = if kind == "signed" {
