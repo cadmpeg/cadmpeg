@@ -330,16 +330,11 @@ fn validate_zero_entity_model_curve_construction(
         (
             Some([0x29, 0xb8]),
             None,
-            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-                angle_range,
-                center,
-                major,
-                minor,
-                pitch,
-                apex_factor,
-                axis,
-            }),
+            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload)),
         ) => {
+            let (angle_range, center, major, minor, pitch, apex_factor, axis) =
+                helix_payload.parts();
+
             angle_range.iter().copied().all(f64::is_finite)
                 && angle_range[0] < angle_range[1]
                 && [center.x, center.y, center.z]

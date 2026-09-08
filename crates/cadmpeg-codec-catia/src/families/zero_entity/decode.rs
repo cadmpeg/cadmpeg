@@ -1337,15 +1337,18 @@ mod tests {
         let construction_id =
             ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
                 .expect("identity grammar");
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(1.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 1.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.2,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                0.2,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: curve_id.clone(),

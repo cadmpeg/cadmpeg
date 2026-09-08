@@ -510,16 +510,20 @@ pub struct HelixDefinition {
 }
 
 impl HelixDefinition {
-    pub(crate) fn into_definition(self) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-            angle_range: self.angle_range,
-            center: self.center,
-            major: self.major,
-            minor: self.minor,
-            pitch: self.pitch,
-            apex_factor: self.apex_factor,
-            axis: self.axis,
-        }
+    pub(crate) fn into_definition(
+        self,
+    ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
+        Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                self.angle_range,
+                self.center,
+                self.major,
+                self.minor,
+                self.pitch,
+                self.apex_factor,
+                self.axis,
+            )?,
+        ))
     }
 }
 

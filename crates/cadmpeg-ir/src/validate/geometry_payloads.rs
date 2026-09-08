@@ -4,9 +4,7 @@
 
 use super::*;
 const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
-const EPS_HELIX_RADIUS: f64 = 1.0e-9;
 
-const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9: f64 = 1.0e-9;
 const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10: f64 = 1.0e-10;
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -908,51 +906,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Helix { construction } = procedural.definition() {
-            let path = &construction.path;
-            let finite = construction
-                .angle_range
-                .iter()
-                .chain(construction.dimension_range.iter())
-                .chain(path.angle_range.iter())
-                .all(|value| value.is_finite())
-                && [path.center.x, path.center.y, path.center.z]
-                    .into_iter()
-                    .chain([path.major.x, path.major.y, path.major.z])
-                    .chain([path.minor.x, path.minor.y, path.minor.z])
-                    .chain([path.pitch.x, path.pitch.y, path.pitch.z])
-                    .chain([path.axis.x, path.axis.y, path.axis.z])
-                    .chain(std::iter::once(path.apex_factor))
-                    .all(f64::is_finite);
-            let major_length =
-                (path.major.x.powi(2) + path.major.y.powi(2) + path.major.z.powi(2)).sqrt();
-            let minor_length =
-                (path.minor.x.powi(2) + path.minor.y.powi(2) + path.minor.z.powi(2)).sqrt();
-            let circular_path = major_length > 0.0
-                && (major_length - minor_length).abs()
-                    <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9 * major_length.max(1.0);
-            let profile_valid = match construction.profile {
-                crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
-                    length.is_finite() && radius.is_finite() && radius != 0.0
-                }
-                crate::geometry::HelixSurfaceProfile::Line { direction } => {
-                    direction.x.is_finite()
-                        && direction.y.is_finite()
-                        && direction.z.is_finite()
-                        && direction.x * direction.x
-                            + direction.y * direction.y
-                            + direction.z * direction.z
-                            > 0.0
-                }
-            };
-            if !finite || !circular_path || !profile_valid {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "helix surface construction payload is invalid",
-                );
-            }
-        }
         if let ProceduralSurfaceDefinition::Deformable { construction } = procedural.definition() {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
@@ -1579,48 +1532,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
             continue;
-        }
-        let ProceduralCurveDefinition::Helix {
-            angle_range,
-            center,
-            major,
-            minor,
-            pitch,
-            apex_factor,
-            axis,
-        } = procedural.definition()
-        else {
-            continue;
-        };
-        let finite = angle_range.iter().all(|value| value.is_finite())
-            && center.x.is_finite()
-            && center.y.is_finite()
-            && center.z.is_finite()
-            && [major, minor, pitch, axis]
-                .into_iter()
-                .flat_map(|vector| [vector.x, vector.y, vector.z])
-                .all(f64::is_finite)
-            && apex_factor.is_finite();
-        if !finite || angle_range[0] > angle_range[1] {
-            bounds_err(
-                findings,
-                procedural.id.as_str(),
-                "helix fields are not finite and ordered",
-            );
-        }
-        if degenerate(major) || degenerate(minor) || degenerate(axis) {
-            bounds_err(
-                findings,
-                procedural.id.as_str(),
-                "helix frame is degenerate",
-            );
-        }
-        if (major.norm() - minor.norm()).abs() > EPS_HELIX_RADIUS {
-            bounds_err(
-                findings,
-                procedural.id.as_str(),
-                "helix major and minor radii differ",
-            );
         }
     }
 }

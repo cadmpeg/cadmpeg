@@ -3546,8 +3546,8 @@ pub(crate) fn validate_procedural_curve_edits(
         let after = target[id];
         let definition = match (before.definition(), after.definition()) {
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
             ) if before.definition() != after.definition() => Some(after.definition().clone()),
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {

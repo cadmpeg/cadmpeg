@@ -1046,13 +1046,12 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         else {
             panic!("expected helix surface")
         };
-        assert_eq!(construction.angle_range, [-0.5, 0.5]);
-        assert_eq!(construction.path.center.z, 30.0);
-        assert_eq!(construction.path.pitch.z, 40.0);
-        assert_eq!(
-            circular,
-            matches!(construction.profile, HelixSurfaceProfile::Circle { .. })
-        );
+        let (angle_range, _, path, profile) = construction.parts();
+        let (_, center, _, _, pitch, _, _) = path.parts();
+        assert_eq!(*angle_range, [-0.5, 0.5]);
+        assert_eq!(center.z, 30.0);
+        assert_eq!(pitch.z, 40.0);
+        assert_eq!(circular, matches!(profile, HelixSurfaceProfile::Circle(_)));
 
         let surface_id = decoded
             .ir()

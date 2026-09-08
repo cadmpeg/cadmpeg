@@ -127,7 +127,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         }
         for procedural in &ir.model.procedural_curves {
             let resolved = match procedural.definition() {
-                ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => true,
+                ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => true,
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     context.sides().iter().all(|side| {
                         side.surface

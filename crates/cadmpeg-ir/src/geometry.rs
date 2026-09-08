@@ -4239,57 +4239,432 @@ pub struct DeformableSurfaceConstruction {
     pub discontinuity_flag: bool,
 }
 
-/// Inline path shared by helix curves and helix surfaces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+const EPS_HELIX_SURFACE_RADIUS_RELATIVE: f64 = 1.0e-9;
+const EPS_HELIX_CURVE_RADIUS: f64 = 1.0e-9;
+
+/// Finite circular path of a helix surface.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixPathConstructionWire")]
 pub struct HelixPathConstruction {
-    /// Native angular path interval.
-    pub angle_range: [f64; 2],
-    /// Axis origin at the path start.
-    pub center: Point3,
-    /// Major profile-radius vector.
-    pub major: Vector3,
-    /// Minor profile-radius vector.
-    pub minor: Vector3,
-    /// Axial rise vector per revolution.
-    pub pitch: Vector3,
-    /// Linear radial growth factor.
-    pub apex_factor: f64,
-    /// Unit helix axis direction.
-    pub axis: Vector3,
+    angle_range: [f64; 2],
+    center: Point3,
+    major: Vector3,
+    minor: Vector3,
+    pitch: Vector3,
+    apex_factor: f64,
+    axis: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HelixPathConstructionWire {
+    angle_range: [f64; 2],
+    center: Point3,
+    major: Vector3,
+    minor: Vector3,
+    pitch: Vector3,
+    apex_factor: f64,
+    axis: Vector3,
+}
+
+impl HelixPathConstruction {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(
+        angle_range: [f64; 2],
+        center: Point3,
+        major: Vector3,
+        minor: Vector3,
+        pitch: Vector3,
+        apex_factor: f64,
+        axis: Vector3,
+    ) -> Result<Self, &'static str> {
+        if !angle_range.iter().all(|value| value.is_finite())
+            || ![center.x, center.y, center.z]
+                .into_iter()
+                .chain(
+                    [major, minor, pitch, axis]
+                        .into_iter()
+                        .flat_map(|vector| [vector.x, vector.y, vector.z]),
+                )
+                .chain([apex_factor])
+                .all(f64::is_finite)
+        {
+            return Err("helix surface path fields must be finite");
+        }
+        let major_length = (major.x.powi(2) + major.y.powi(2) + major.z.powi(2)).sqrt();
+        let minor_length = (minor.x.powi(2) + minor.y.powi(2) + minor.z.powi(2)).sqrt();
+        if !(major_length > 0.0
+            && (major_length - minor_length).abs()
+                <= EPS_HELIX_SURFACE_RADIUS_RELATIVE * major_length.max(1.0))
+        {
+            return Err("helix surface path major and minor must define a circular path");
+        }
+
+        Ok(Self {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        })
+    }
+    /// Borrow the payload parameters in constructor order.
+    #[must_use]
+    pub fn parts(
+        &self,
+    ) -> (
+        &[f64; 2],
+        &Point3,
+        &Vector3,
+        &Vector3,
+        &Vector3,
+        &f64,
+        &Vector3,
+    ) {
+        (
+            &self.angle_range,
+            &self.center,
+            &self.major,
+            &self.minor,
+            &self.pitch,
+            &self.apex_factor,
+            &self.axis,
+        )
+    }
+}
+
+impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
+    type Error = &'static str;
+    fn try_from(wire: HelixPathConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.angle_range,
+            wire.center,
+            wire.major,
+            wire.minor,
+            wire.pitch,
+            wire.apex_factor,
+            wire.axis,
+        )
+    }
+}
+
+/// Finite ordered helix curve with a non-degenerate radial frame.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixCurveConstructionWire")]
+pub struct HelixCurveConstruction {
+    angle_range: [f64; 2],
+    center: Point3,
+    major: Vector3,
+    minor: Vector3,
+    pitch: Vector3,
+    apex_factor: f64,
+    axis: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HelixCurveConstructionWire {
+    angle_range: [f64; 2],
+    center: Point3,
+    major: Vector3,
+    minor: Vector3,
+    pitch: Vector3,
+    apex_factor: f64,
+    axis: Vector3,
+}
+
+impl HelixCurveConstruction {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(
+        angle_range: [f64; 2],
+        center: Point3,
+        major: Vector3,
+        minor: Vector3,
+        pitch: Vector3,
+        apex_factor: f64,
+        axis: Vector3,
+    ) -> Result<Self, &'static str> {
+        if !angle_range.iter().all(|value| value.is_finite())
+            || ![center.x, center.y, center.z]
+                .into_iter()
+                .chain(
+                    [major, minor, pitch, axis]
+                        .into_iter()
+                        .flat_map(|vector| [vector.x, vector.y, vector.z]),
+                )
+                .chain([apex_factor])
+                .all(f64::is_finite)
+        {
+            return Err("helix curve fields must be finite");
+        }
+        if angle_range[0] > angle_range[1] {
+            return Err("helix curve angle_range must be ordered");
+        }
+        if [major, minor, axis]
+            .iter()
+            .any(|vector| vector.norm() <= f64::EPSILON)
+        {
+            return Err("helix curve major, minor, and axis must be non-degenerate");
+        }
+        if (major.norm() - minor.norm()).abs() > EPS_HELIX_CURVE_RADIUS {
+            return Err("helix curve major and minor radii must agree");
+        }
+
+        Ok(Self {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        })
+    }
+    /// Borrow the payload parameters in constructor order.
+    #[must_use]
+    pub fn parts(
+        &self,
+    ) -> (
+        &[f64; 2],
+        &Point3,
+        &Vector3,
+        &Vector3,
+        &Vector3,
+        &f64,
+        &Vector3,
+    ) {
+        (
+            &self.angle_range,
+            &self.center,
+            &self.major,
+            &self.minor,
+            &self.pitch,
+            &self.apex_factor,
+            &self.axis,
+        )
+    }
+}
+
+impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
+    type Error = &'static str;
+    fn try_from(wire: HelixCurveConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.angle_range,
+            wire.center,
+            wire.major,
+            wire.minor,
+            wire.pitch,
+            wire.apex_factor,
+            wire.axis,
+        )
+    }
+}
+
+impl HelixCurveConstruction {
+    /// Reverse the native interval and signed path fields.
+    pub fn reverse_parameterization(&mut self) {
+        self.angle_range = [-self.angle_range[1], -self.angle_range[0]];
+        self.minor = Vector3::new(-self.minor.x, -self.minor.y, -self.minor.z);
+        self.pitch = Vector3::new(-self.pitch.x, -self.pitch.y, -self.pitch.z);
+        self.apex_factor = -self.apex_factor;
+    }
+
+    /// Scale lengths atomically and retain the old path when admission fails.
+    pub fn try_scale_lengths(&mut self, scale: f64) -> Result<(), &'static str> {
+        let vector =
+            |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
+        let candidate = Self::try_new(
+            self.angle_range,
+            Point3::new(
+                self.center.x * scale,
+                self.center.y * scale,
+                self.center.z * scale,
+            ),
+            vector(self.major),
+            vector(self.minor),
+            vector(self.pitch),
+            self.apex_factor,
+            self.axis,
+        )?;
+        *self = candidate;
+        Ok(())
+    }
+}
+
+/// Finite circular helix profile with a nonzero signed radius.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixCircleProfileWire")]
+pub struct HelixCircleProfile {
+    length: f64,
+    radius: f64,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HelixCircleProfileWire {
+    length: f64,
+    radius: f64,
+}
+
+impl HelixCircleProfile {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(length: f64, radius: f64) -> Result<Self, &'static str> {
+        if !length.is_finite() {
+            return Err("helix circle profile length must be finite");
+        }
+        if !radius.is_finite() || radius == 0.0 {
+            return Err("helix circle profile radius must be finite and nonzero");
+        }
+        Ok(Self { length, radius })
+    }
+    /// Native profile length.
+    #[must_use]
+    pub const fn length(&self) -> f64 {
+        self.length
+    }
+
+    /// Signed circular profile radius.
+    #[must_use]
+    pub const fn radius(&self) -> f64 {
+        self.radius
+    }
+}
+
+impl TryFrom<HelixCircleProfileWire> for HelixCircleProfile {
+    type Error = &'static str;
+    fn try_from(wire: HelixCircleProfileWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.length, wire.radius)
+    }
+}
+
+/// Finite non-degenerate linear helix profile.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixLineProfileWire")]
+pub struct HelixLineProfile {
+    direction: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HelixLineProfileWire {
+    direction: Vector3,
+}
+
+impl HelixLineProfile {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(direction: Vector3) -> Result<Self, &'static str> {
+        if ![direction.x, direction.y, direction.z]
+            .into_iter()
+            .all(f64::is_finite)
+            || direction.x * direction.x + direction.y * direction.y + direction.z * direction.z
+                <= 0.0
+        {
+            return Err("helix line profile direction must be finite and non-degenerate");
+        }
+        Ok(Self { direction })
+    }
+    /// Finite non-degenerate profile direction.
+    #[must_use]
+    pub const fn direction(&self) -> Vector3 {
+        self.direction
+    }
+}
+
+impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
+    type Error = &'static str;
+    fn try_from(wire: HelixLineProfileWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.direction)
+    }
 }
 
 /// Profile-specific tail of a helix surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HelixSurfaceProfile {
     /// Circular profile swept along the helix.
-    Circle {
-        /// Native length preceding the inline path.
-        length: f64,
-        /// Circular profile radius.
-        radius: f64,
-    },
+    Circle(HelixCircleProfile),
     /// Linear profile swept along a direction.
-    Line {
-        /// Native model-space profile direction.
-        direction: Vector3,
-    },
+    Line(HelixLineProfile),
 }
 
-/// Complete native helix-surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Complete helix-surface construction with finite native intervals.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelixSurfaceConstructionWire")]
 pub struct HelixSurfaceConstruction {
-    /// Native surface angular interval.
-    pub angle_range: [f64; 2],
-    /// Native secondary interval.
-    pub dimension_range: [f64; 2],
-    /// Inline helix path.
-    pub path: HelixPathConstruction,
-    /// Circular or linear profile tail.
-    pub profile: HelixSurfaceProfile,
+    angle_range: [f64; 2],
+    dimension_range: [f64; 2],
+    path: HelixPathConstruction,
+    profile: HelixSurfaceProfile,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HelixSurfaceConstructionWire {
+    angle_range: [f64; 2],
+    dimension_range: [f64; 2],
+    path: HelixPathConstruction,
+    profile: HelixSurfaceProfile,
+}
+
+impl HelixSurfaceConstruction {
+    /// Admit parameters that satisfy the helix payload contract.
+    pub fn try_new(
+        angle_range: [f64; 2],
+        dimension_range: [f64; 2],
+        path: HelixPathConstruction,
+        profile: HelixSurfaceProfile,
+    ) -> Result<Self, &'static str> {
+        if !angle_range
+            .iter()
+            .chain(dimension_range.iter())
+            .all(|value| value.is_finite())
+        {
+            return Err("helix surface angle_range and dimension_range must be finite");
+        }
+        Ok(Self {
+            angle_range,
+            dimension_range,
+            path,
+            profile,
+        })
+    }
+    /// Borrow the payload parameters in constructor order.
+    #[must_use]
+    pub fn parts(
+        &self,
+    ) -> (
+        &[f64; 2],
+        &[f64; 2],
+        &HelixPathConstruction,
+        &HelixSurfaceProfile,
+    ) {
+        (
+            &self.angle_range,
+            &self.dimension_range,
+            &self.path,
+            &self.profile,
+        )
+    }
+}
+
+impl TryFrom<HelixSurfaceConstructionWire> for HelixSurfaceConstruction {
+    type Error = &'static str;
+    fn try_from(wire: HelixSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.angle_range,
+            wire.dimension_range,
+            wire.path,
+            wire.profile,
+        )
+    }
 }
 
 /// A non-negative native subtype-table index.
@@ -10061,22 +10436,7 @@ pub enum ProceduralCurveDefinition {
     /// Ordered compound of native child curves with construction parameters.
     Compound(CompoundCurveConstruction),
     /// Circular or conical helix around an axis.
-    Helix {
-        /// Native angular parameter interval.
-        angle_range: [f64; 2],
-        /// Axis origin at the start of the helix.
-        center: Point3,
-        /// Major profile-radius vector.
-        major: Vector3,
-        /// Minor profile-radius vector; its orientation records handedness.
-        minor: Vector3,
-        /// Axial rise vector per full revolution.
-        pitch: Vector3,
-        /// Linear radial growth per revolution fraction; zero is cylindrical.
-        apex_factor: f64,
-        /// Unit helix axis direction.
-        axis: Vector3,
-    },
+    Helix(HelixCurveConstruction),
     /// Intersection of two support surfaces.
     Intersection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.

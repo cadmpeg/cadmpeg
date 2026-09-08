@@ -484,18 +484,8 @@ pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
 pub(crate) fn reverse_procedural_curve_definition(
     definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) {
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        minor,
-        pitch,
-        apex_factor,
-        ..
-    } = definition
-    {
-        *angle_range = [-angle_range[1], -angle_range[0]];
-        *minor = Vector3::new(-minor.x, -minor.y, -minor.z);
-        *pitch = Vector3::new(-pitch.x, -pitch.y, -pitch.z);
-        *apex_factor = -*apex_factor;
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
+        helix.reverse_parameterization();
     }
 }
 

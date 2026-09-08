@@ -55,9 +55,11 @@ pub(super) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for procedural in &mut ir.model.procedural_curves {
-        procedural.edit_definition(|definition| {
-            scale_procedural_curve_definition(definition, length_scale_mm);
-        });
+        procedural
+            .edit_definition(|definition| {
+                scale_procedural_curve_definition(definition, length_scale_mm)
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1246,22 +1248,11 @@ fn scale_procedural_surface_definition(
 fn scale_procedural_curve_definition(
     definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
     scale: f64,
-) {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
-
-    if let ProceduralCurveDefinition::Helix {
-        center,
-        major,
-        minor,
-        pitch,
-        ..
-    } = definition
-    {
-        scale_point3(center, scale);
-        scale_vector3(major, scale);
-        scale_vector3(minor, scale);
-        scale_vector3(pitch, scale);
+) -> Result<(), &'static str> {
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
+        helix.try_scale_lengths(scale)?;
     }
+    Ok(())
 }
 
 fn curve_parameter_scale(geometry: &CurveGeometry, length_scale_mm: f64) -> Option<f64> {
@@ -1766,15 +1757,18 @@ mod tests {
         let curve = cadmpeg_ir::geometry::ProceduralCurve::try_new(
             cadmpeg_ir::ids::ProceduralCurveId::mint("test:model:entity#curve-construction")
                 .expect("identity grammar"),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-                angle_range: [0.0, 1.0],
-                center: Point3::new(1.0, 2.0, 3.0),
-                major: Vector3::new(4.0, 5.0, 6.0),
-                minor: Vector3::new(7.0, 8.0, 9.0),
-                pitch: Vector3::new(10.0, 11.0, 12.0),
-                apex_factor: 0.25,
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                    [0.0, 1.0],
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(4.0, 5.0, 6.0),
+                    Vector3::new(-5.0, 4.0, 6.0),
+                    Vector3::new(10.0, 11.0, 12.0),
+                    0.25,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             Some(13.0),
         )
         .unwrap();
@@ -1810,21 +1804,16 @@ mod tests {
         );
 
         let curve = &ir.model.procedural_curves[0];
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-            center,
-            major,
-            minor,
-            pitch,
-            axis,
-            apex_factor,
-            ..
-        } = curve.definition()
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+            curve.definition()
         else {
             panic!("test curve construction changed family");
         };
+        let (_, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
         assert_point3(*center, [25.4, 50.8, 76.2]);
         assert_vector3(*major, [101.6, 127.0, 152.4]);
-        assert_vector3(*minor, [177.8, 203.2, 228.6]);
+        assert_vector3(*minor, [-127.0, 101.6, 152.4]);
         assert_vector3(*pitch, [254.0, 279.4, 304.8]);
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
         assert_close(*apex_factor, 0.25);

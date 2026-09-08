@@ -1342,16 +1342,11 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     let Some(plan) = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], [2.0, 0.0, 3.0], end) else {
         panic!("degree-one cylinder helix");
     };
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        pitch,
-        apex_factor,
-        ..
-    } = &plan.definition
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = &plan.definition else {
         unreachable!();
     };
+    let (angle_range, center, _, _, pitch, apex_factor, _) = helix_payload.parts();
+
     assert_eq!(*angle_range, [0.0, 2.0]);
     assert_eq!(*center, Point3::new(0.0, 0.0, 3.0));
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
@@ -1372,15 +1367,11 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     let trimmed_end = [2.0 * 1.5_f64.cos(), 2.0 * 1.5_f64.sin(), 6.0];
     let trimmed = cylinder_helix(&pcurve, &cylinder, [0.25, 0.75], trimmed_start, trimmed_end)
         .expect("trimmed physical edge helix");
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        pitch,
-        ..
-    } = trimmed.definition
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = trimmed.definition else {
         unreachable!();
     };
+    let (&angle_range, &center, _, _, &pitch, _, _) = helix_payload.parts();
+
     assert_eq!(angle_range, [0.0, 1.0]);
     assert_eq!(center.z, 4.0);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
@@ -1399,12 +1390,11 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         tiny_end,
     )
     .expect("tiny helix sweep");
-    let ProceduralCurveDefinition::Helix {
-        angle_range, pitch, ..
-    } = tiny_plan.definition
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = tiny_plan.definition else {
         unreachable!();
     };
+    let (&angle_range, _, _, _, &pitch, _, _) = helix_payload.parts();
+
     assert_eq!(angle_range, [0.0, tiny]);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 }

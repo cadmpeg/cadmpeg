@@ -1856,9 +1856,12 @@ fn native_cacheless_procedural_surface_definition(
     }
     if let ProceduralSurfaceDefinition::Helix { construction } = procedural.definition() {
         use cadmpeg_ir::geometry::HelixSurfaceProfile;
+        let (&angle_range, &dimension_range, path, &profile) = construction.parts();
+        let (&path_angle_range, &center, &major, &minor, &pitch, &apex_factor, &axis) =
+            path.parts();
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
-        let circular = matches!(construction.profile, HelixSurfaceProfile::Circle { .. });
+        let circular = matches!(profile, HelixSurfaceProfile::Circle(_));
         native_ident(
             bytes,
             if circular {
@@ -1867,31 +1870,27 @@ fn native_cacheless_procedural_surface_definition(
                 "helix_spl_line"
             },
         )?;
-        for value in construction.angle_range {
+        for value in angle_range {
             native_f64(bytes, value);
         }
-        for value in construction.dimension_range {
+        for value in dimension_range {
             native_f64(bytes, if circular { value / LEN_TO_MM } else { value });
         }
-        if let HelixSurfaceProfile::Circle { length, .. } = construction.profile {
-            native_f64(bytes, length / LEN_TO_MM);
+        if let HelixSurfaceProfile::Circle(circle) = profile {
+            native_f64(bytes, circle.length() / LEN_TO_MM);
         }
-        for value in construction.path.angle_range {
+        for value in path_angle_range {
             native_f64(bytes, value);
         }
         native_point(
             bytes,
             [
-                construction.path.center.x / LEN_TO_MM,
-                construction.path.center.y / LEN_TO_MM,
-                construction.path.center.z / LEN_TO_MM,
+                center.x / LEN_TO_MM,
+                center.y / LEN_TO_MM,
+                center.z / LEN_TO_MM,
             ],
         );
-        for vector in [
-            construction.path.major,
-            construction.path.minor,
-            construction.path.pitch,
-        ] {
+        for vector in [major, minor, pitch] {
             native_point(
                 bytes,
                 [
@@ -1901,21 +1900,15 @@ fn native_cacheless_procedural_surface_definition(
                 ],
             );
         }
-        native_f64(bytes, construction.path.apex_factor);
-        native_vector(
-            bytes,
-            [
-                construction.path.axis.x,
-                construction.path.axis.y,
-                construction.path.axis.z,
-            ],
-        );
+        native_f64(bytes, apex_factor);
+        native_vector(bytes, [axis.x, axis.y, axis.z]);
         for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
             native_ident(bytes, sentinel)?;
         }
-        match construction.profile {
-            HelixSurfaceProfile::Circle { radius, .. } => native_f64(bytes, radius / LEN_TO_MM),
-            HelixSurfaceProfile::Line { direction } => {
+        match profile {
+            HelixSurfaceProfile::Circle(circle) => native_f64(bytes, circle.radius() / LEN_TO_MM),
+            HelixSurfaceProfile::Line(line) => {
+                let direction = line.direction();
                 native_point(
                     bytes,
                     [
@@ -5180,15 +5173,9 @@ pub(crate) fn native_procedural_curve(
     let (angle_range, center, major, minor, pitch, apex_factor, axis) = match procedural
         .definition()
     {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-            angle_range,
-            center,
-            major,
-            minor,
-            pitch,
-            apex_factor,
-            axis,
-        } => (angle_range, center, major, minor, pitch, apex_factor, axis),
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) => {
+            helix_payload.parts()
+        }
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset { .. } => {
             return Err(CodecError::NotImplemented(format!(
@@ -5278,21 +5265,16 @@ pub(crate) fn native_cacheless_procedural_curve(
             procedural.id
         )));
     }
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+        procedural.definition()
     else {
         return Err(CodecError::NotImplemented(format!(
             "source-less F3D cannot serialize cacheless procedural curve {}",
             procedural.id
         )));
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     native_curve_base(bytes, "intcurve")?;
     bytes.push(0x0f);
     native_ident(bytes, "helix_int_cur")?;
