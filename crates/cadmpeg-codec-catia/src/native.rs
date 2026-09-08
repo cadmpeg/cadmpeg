@@ -2531,7 +2531,7 @@ where
             .map(|candidate| match candidate {
                 CatiaRelationDependencyCandidate::Reference(reference) => reference,
                 CatiaRelationDependencyCandidate::LegacyEntity(entity) => {
-                    CatiaEntityReference::from_parts(0, false, Some(entity), None)
+                    CatiaEntityReference::resolved_or_unresolved(0, Some(entity), None)
                 }
             })
             .collect()
@@ -2768,16 +2768,15 @@ pub enum CatiaEntityReference {
 }
 
 impl CatiaEntityReference {
-    pub fn from_parts(
+    /// Stored identity with optional same-graph resolution.
+    pub fn resolved_or_unresolved(
         entity_id: u32,
-        is_null: bool,
         entity: Option<String>,
         class_name: Option<String>,
     ) -> Self {
-        match (is_null, entity) {
-            (true, _) => Self::Null { entity_id },
-            (false, None) => Self::Unresolved { entity_id },
-            (false, Some(entity)) => Self::Resolved {
+        match entity {
+            None => Self::Unresolved { entity_id },
+            Some(entity) => Self::Resolved {
                 entity_id,
                 entity,
                 class_name,
@@ -4813,9 +4812,8 @@ fn entity_incidences(
                 .map(|reference| CatiaEntityIncomingReference {
                     object_record: record.id.clone(),
                     source_entity: record.entity_id().map(|entity_id| {
-                        CatiaEntityReference::from_parts(
+                        CatiaEntityReference::resolved_or_unresolved(
                             entity_id,
-                            false,
                             record.entity_record().map(str::to_owned),
                             record.class_name().map(str::to_owned),
                         )
@@ -4828,9 +4826,8 @@ fn entity_incidences(
             incoming_storage_references.push(CatiaEntityIncomingStorageReference {
                 object_record: record.id.clone(),
                 source_entity: record.entity_id().map(|entity_id| {
-                    CatiaEntityReference::from_parts(
+                    CatiaEntityReference::resolved_or_unresolved(
                         entity_id,
-                        false,
                         record.entity_record().map(str::to_owned),
                         record.class_name().map(str::to_owned),
                     )
@@ -5819,9 +5816,8 @@ fn semantic_entity_indices(
             .or_default()
             .entry(parameter.binding.value.clone())
             .or_default()
-            .push(CatiaEntityReference::from_parts(
+            .push(CatiaEntityReference::resolved_or_unresolved(
                 entity.entity_id,
-                false,
                 Some(entity.id.clone()),
                 entity_classes
                     .get(&(entity.object_graph.clone(), entity.entity_id))
