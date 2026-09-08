@@ -290,7 +290,7 @@ mod tests {
                     value_offset: 0,
                     content: cadmpeg_protein::property::PropertyContent::Value {
                         value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
-                        connections: Some(vec!["duplicate-texture".into()]),
+                        connections: vec!["duplicate-texture".into()],
                     },
                 },
             )]),
