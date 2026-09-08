@@ -102,7 +102,10 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .expect("neutral view");
     assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
     assert_eq!(
-        neutral_page.template.as_deref(),
+        neutral_page
+            .template
+            .as_ref()
+            .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
@@ -248,7 +251,10 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("neutral view");
     assert_eq!(
-        neutral_page.template.as_deref(),
+        neutral_page
+            .template
+            .as_ref()
+            .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
     assert_eq!(

@@ -198,7 +198,10 @@ pub(crate) fn transfer_neutral(
                 })
         } else {
             None
-        };
+        }
+        .map(DrawingId::mint)
+        .transpose()
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
         model.drawings.push(Drawing {
             id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
                 .expect("identity grammar"),

@@ -66,7 +66,7 @@ pub struct Drawing {
     pub relationships: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub template: Option<String>,
+    pub template: Option<DrawingId>,
     /// View origin on its page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<[f64; 2]>,
@@ -87,4 +87,28 @@ pub struct Drawing {
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
     pub native_ref: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
+        let value = serde_json::json!({"id": "page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "template", "native_ref": "native"});
+        let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
+        assert_eq!(
+            drawing.template.as_ref().map(DrawingId::as_str),
+            Some("template")
+        );
+        assert_eq!(
+            serde_json::to_value(drawing).expect("serialize drawing"),
+            value
+        );
+        for invalid in ["", "bad id"] {
+            let mut invalid_value = value.clone();
+            invalid_value["template"] = serde_json::json!(invalid);
+            assert!(serde_json::from_value::<Drawing>(invalid_value).is_err());
+        }
+    }
 }

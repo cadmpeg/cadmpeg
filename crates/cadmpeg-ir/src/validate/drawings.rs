@@ -18,7 +18,7 @@ pub(super) fn check_drawings(
             && drawing
                 .template
                 .as_ref()
-                .is_none_or(|id| all_ids.contains(id))
+                .is_none_or(|id| all_ids.contains(id.as_str()))
             && drawing.assets.iter().all(|id| all_ids.contains(id))
             && drawing
                 .relationships
