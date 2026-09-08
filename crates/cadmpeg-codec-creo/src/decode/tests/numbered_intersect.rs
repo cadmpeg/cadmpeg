@@ -825,13 +825,13 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     assert_eq!(
         feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
             .expect("complete result topology")
-            .faces,
+            .faces(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
         feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
             .expect("complete result topology")
-            .edges,
+            .edges(),
         vec!["curve#77"]
     );
 

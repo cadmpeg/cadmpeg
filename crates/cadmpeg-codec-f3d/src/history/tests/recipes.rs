@@ -372,7 +372,7 @@ fn feature_input_topology_projects_historical_vertices() {
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
-        projected[0].vertices,
+        projected[0].vertices.as_slice(),
         [
             crate::ids::history_input_vertex_id(&prefix, 43),
             crate::ids::history_input_vertex_id(&prefix, 59),
@@ -1882,10 +1882,10 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
+        bodies: (Vec::new()).try_into().unwrap(),
+        faces: (Vec::new()).try_into().unwrap(),
+        edges: (Vec::new()).try_into().unwrap(),
+        vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     }];
     let state = |state_id, transition| AsmDeltaState {
@@ -1956,7 +1956,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(faces.len(), 1);
-    assert_eq!(&input_topologies[0].faces, faces);
+    assert_eq!(input_topologies[0].faces.as_slice(), faces);
 }
 
 mod hem_carriers;

@@ -489,19 +489,22 @@ pub(in super::super) fn feature_result_topology(
         .map(|curve_id| format!("curve#{curve_id}"))
         .collect::<Vec<_>>();
     (!faces.is_empty() || !edges.is_empty()).then_some(())?;
-    Some(FeatureResultTopology {
-        id: FeatureResultTopologyId::mint(format!(
-            "creo:model:feature-result-topology#{feature_id}"
-        ))
-        .expect("identity grammar"),
-        output_of: IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
+    Some(
+        FeatureResultTopology::new(
+            FeatureResultTopologyId::mint(format!(
+                "creo:model:feature-result-topology#{feature_id}"
+            ))
             .expect("identity grammar"),
-        bodies: Vec::new(),
-        faces,
-        edges,
-        vertices: Vec::new(),
-        native_ref: None,
-    })
+            IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
+                .expect("identity grammar"),
+            Vec::new(),
+            faces,
+            edges,
+            Vec::new(),
+            None,
+        )
+        .ok()?,
+    )
 }
 
 pub(in super::super) fn generated_surface_face_refs(

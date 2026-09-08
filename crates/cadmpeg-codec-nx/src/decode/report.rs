@@ -469,7 +469,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .feature_result_topologies
         .iter()
-        .filter(|state| !state.bodies.is_empty())
+        .filter(|state| !state.bodies().is_empty())
         .map(|state| &state.output_of)
         .collect::<BTreeSet<_>>();
     for feature in &ir.model.features {

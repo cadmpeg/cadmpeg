@@ -966,18 +966,19 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("extrude (1)"));
 
-    ir.model
-        .feature_result_topologies
-        .push(FeatureResultTopology {
-            id: FeatureResultTopologyId::mint("test:model:feature-result#extrude")
+    ir.model.feature_result_topologies.push(
+        FeatureResultTopology::new(
+            FeatureResultTopologyId::mint("test:model:feature-result#extrude")
                 .expect("identity grammar"),
-            output_of: ir.model.features[0].id.clone(),
-            bodies: vec!["test:feature-local-body#0".into()],
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: Vec::new(),
-            native_ref: Some("test:native-body-writer#0".into()),
-        });
+            ir.model.features[0].id.clone(),
+            vec!["test:feature-local-body#0".into()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Some("test:native-body-writer#0".into()),
+        )
+        .unwrap(),
+    );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
@@ -1350,7 +1351,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         material: None,
         properties: Default::default(),
         parameter_overrides: Default::default(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        bodies: ConfigurationBodies::Resolved(Default::default()),
         parameter_values: Default::default(),
         feature_states: Default::default(),
         native_ref: None,
@@ -1361,7 +1362,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
-    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(bodies);
+    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved((bodies).try_into().unwrap());
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());

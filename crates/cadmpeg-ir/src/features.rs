@@ -223,7 +223,7 @@ impl PartialEq<String> for ConfigurationName {
 /// Resolution state of one configuration's complete body membership.
 pub enum ConfigurationBodies {
     /// Complete ordered body membership.
-    Resolved(Vec<BodyId>),
+    Resolved(DistinctMembers<BodyId>),
     /// Source configuration exists but its body membership is not established.
     #[default]
     Unresolved,
@@ -841,17 +841,17 @@ pub struct FeatureInputTopology {
     /// Feature evaluated from this state.
     pub input_of: FeatureId,
     /// Bodies present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<HistoricalBodyId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub bodies: DistinctMembers<HistoricalBodyId>,
     /// Faces present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub faces: Vec<HistoricalFaceId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub faces: DistinctMembers<HistoricalFaceId>,
     /// Edges present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<HistoricalEdgeId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub edges: DistinctMembers<HistoricalEdgeId>,
     /// Vertices present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertices: Vec<HistoricalVertexId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub vertices: DistinctMembers<HistoricalVertexId>,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -863,7 +863,7 @@ pub struct FeatureInputTopology {
 /// members of the saved current model topology. Generated feature selections
 /// address members through the producing feature and the corresponding local
 /// identity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureResultTopology {
     /// Globally unique result-state id.
@@ -872,19 +872,106 @@ pub struct FeatureResultTopology {
     pub output_of: FeatureId,
     /// Feature-local body identities in stable source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<String>,
+    bodies: Vec<String>,
     /// Feature-local face identities in stable source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub faces: Vec<String>,
+    faces: Vec<String>,
     /// Feature-local edge identities in stable source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<String>,
+    edges: Vec<String>,
     /// Feature-local vertex identities in stable source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertices: Vec<String>,
+    vertices: Vec<String>,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct FeatureResultTopologyWire {
+    id: FeatureResultTopologyId,
+    output_of: FeatureId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    bodies: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    faces: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    edges: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    vertices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native_ref: Option<String>,
+}
+
+impl FeatureResultTopology {
+    /// A nonempty result with distinct nonblank local identities in each arena.
+    pub fn new(
+        id: FeatureResultTopologyId,
+        output_of: FeatureId,
+        bodies: Vec<String>,
+        faces: Vec<String>,
+        edges: Vec<String>,
+        vertices: Vec<String>,
+        native_ref: Option<String>,
+    ) -> Result<Self, &'static str> {
+        if bodies.is_empty() && faces.is_empty() && edges.is_empty() && vertices.is_empty() {
+            return Err("feature result topology members must not be empty");
+        }
+        for (error, members) in [
+            ("bodies must be nonblank and distinct", &bodies),
+            ("faces must be nonblank and distinct", &faces),
+            ("edges must be nonblank and distinct", &edges),
+            ("vertices must be nonblank and distinct", &vertices),
+        ] {
+            if members.iter().any(|name| name.trim().is_empty())
+                || members.iter().collect::<HashSet<_>>().len() != members.len()
+            {
+                return Err(error);
+            }
+        }
+        Ok(Self {
+            id,
+            output_of,
+            bodies,
+            faces,
+            edges,
+            vertices,
+            native_ref,
+        })
+    }
+
+    /// Feature-local body identities.
+    pub fn bodies(&self) -> &[String] {
+        &self.bodies
+    }
+    /// Feature-local face identities.
+    pub fn faces(&self) -> &[String] {
+        &self.faces
+    }
+    /// Feature-local edge identities.
+    pub fn edges(&self) -> &[String] {
+        &self.edges
+    }
+    /// Feature-local vertex identities.
+    pub fn vertices(&self) -> &[String] {
+        &self.vertices
+    }
+}
+
+impl<'de> Deserialize<'de> for FeatureResultTopology {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = FeatureResultTopologyWire::deserialize(deserializer)?;
+        Self::new(
+            wire.id,
+            wire.output_of,
+            wire.bodies,
+            wire.faces,
+            wire.edges,
+            wire.vertices,
+            wire.native_ref,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 /// One item in a source feature's mixed-content sequence.
@@ -4391,6 +4478,72 @@ impl PartialEq<&str> for SelectionReference {
 impl<'de> Deserialize<'de> for SelectionReference {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Distinct members in source order, including an empty sequence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct DistinctMembers<T>(Vec<T>);
+
+impl<T> Default for DistinctMembers<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
+    type Error = &'static str;
+    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
+        if value.iter().collect::<HashSet<_>>().len() != value.len() {
+            return Err("members must be distinct");
+        }
+        Ok(Self(value))
+    }
+}
+
+impl<T: PartialEq> DistinctMembers<T> {
+    /// Inserts a member unless it is already present, and returns whether it was added.
+    pub fn insert(&mut self, value: T) -> bool {
+        if self.0.contains(&value) {
+            return false;
+        }
+        self.0.push(value);
+        true
+    }
+}
+
+impl<T> DistinctMembers<T> {
+    /// Whether the sequence contains no members.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The members in source order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> std::ops::Deref for DistinctMembers<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a DistinctMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for DistinctMembers<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 

@@ -534,12 +534,17 @@ impl_entity_schema!(
     id;
     id, input_of, bodies, faces, edges, vertices, native_ref
 );
-impl_entity_schema!(
-    crate::features::FeatureResultTopology,
-    FeatureResultTopology,
-    id;
-    id, output_of, bodies, faces, edges, vertices, native_ref
-);
+impl EntitySchema for crate::features::FeatureResultTopology {
+    const KIND: EntityKind = EntityKind::FeatureResultTopology;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
 impl_entity_schema!(
     crate::features::DesignConfiguration,
     DesignConfiguration,

@@ -2378,9 +2378,7 @@ fn bind_entity_face_groups(
         })
         .collect::<Vec<_>>();
     for face in &faces {
-        if !topology.faces.contains(face) {
-            topology.faces.push(face.clone());
-        }
+        topology.faces.insert(face.clone());
     }
     *selection = FaceSelection::Historical {
         state: state_id,
@@ -2435,9 +2433,7 @@ fn bind_hole_face_selection(
         format!("{}:{source}:{}", source.len(), candidate.face_slot)
     };
     let face = crate::ids::history_input_face_id(&prefix, discriminator);
-    if !topology.faces.contains(&face) {
-        topology.faces.push(face.clone());
-    }
+    topology.faces.insert(face.clone());
     *selection = FaceSelection::Historical {
         state: state_id,
         faces: vec![face],
@@ -2629,26 +2625,34 @@ pub(crate) fn project_feature_input_topologies(
                     previous_state_id,
                 ),
                 input_of: feature.id.clone(),
-                bodies: topology
+                bodies: (topology
                     .bodies
                     .iter()
                     .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                    .collect(),
-                faces: topology
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
+                faces: (topology
                     .faces
                     .iter()
                     .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
-                    .collect(),
-                edges: topology
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
+                edges: (topology
                     .edges
                     .iter()
                     .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
-                    .collect(),
-                vertices: topology
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
+                vertices: (topology
                     .vertices
                     .iter()
                     .map(|slot| crate::ids::history_input_vertex_id(&prefix, slot))
-                    .collect(),
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
                 native_ref: Some(state.id.clone()),
             })
         })
