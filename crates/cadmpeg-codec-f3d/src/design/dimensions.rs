@@ -350,20 +350,19 @@ fn project_all_dimension_constraints(
     };
     let native_operand =
         |scope: &str, field: &'static str, role: Option<u32>, record_index: u32| {
-            let (native_kind, _, native_ref) = native_geometry
-                .get(&(scope, record_index))
-                .copied()
-                .unwrap_or(("record", None, ""));
+            let geometry = native_geometry.get(&(scope, record_index)).copied();
             SketchNativeOperand {
-                native_kind: crate::design::literals::nonempty(native_kind),
+                native_kind: crate::design::literals::nonempty(
+                    geometry.map_or("record", |(kind, _, _)| kind),
+                ),
                 field: Some(NativeOperandField {
                     name: crate::design::literals::nonempty(field),
                     role,
                 }),
                 object_index: record_index,
-                native_ref: (!native_ref.is_empty()
-                    && !projected.contains_key(&(scope, record_index)))
-                .then(|| native_ref.to_owned()),
+                native_ref: geometry
+                    .filter(|_| !projected.contains_key(&(scope, record_index)))
+                    .map(|(_, _, native_ref)| native_ref.to_owned()),
             }
         };
     let native_definition = |scope: &str,
