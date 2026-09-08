@@ -1755,6 +1755,19 @@ impl SketchCircularPattern {
         {
             return None;
         }
+        let mut entities = std::collections::HashSet::new();
+        if !angle.0.is_finite()
+            || instances.first()?.angle.0 != 0.0
+            || instances.iter().any(|instance| {
+                !instance.angle.0.is_finite()
+                    || instance
+                        .entities
+                        .iter()
+                        .any(|entity| entity == &center || !entities.insert(entity))
+            })
+        {
+            return None;
+        }
         Some(Self {
             center,
             angle,

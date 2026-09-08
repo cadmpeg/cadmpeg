@@ -1240,25 +1240,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .all(|entity| entities.insert(entity))
                     })
             }
-            Constraint::CircularPattern { pattern } => {
-                let instances = pattern.instances();
-                let mut entities = HashSet::new();
-                pattern.angle().0.is_finite()
-                    && instances
-                        .first()
-                        .is_some_and(|instance| instance.angle.0 == 0.0)
-                    && !instances
-                        .iter()
-                        .flat_map(|instance| &instance.entities)
-                        .any(|entity| entity == pattern.center())
-                    && instances.iter().all(|instance| {
-                        instance.angle.0.is_finite()
-                            && instance
-                                .entities
-                                .iter()
-                                .all(|entity| entities.insert(entity))
-                    })
-            }
+            Constraint::CircularPattern { .. } => true,
             Constraint::TextFrame { text, frame } => {
                 matches!(
                     geometry.get(text).map(|geometry| geometry.definition()),
