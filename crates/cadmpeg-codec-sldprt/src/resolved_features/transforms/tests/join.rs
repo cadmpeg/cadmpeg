@@ -490,7 +490,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci {
             parameter,
             ..
-        }) if parameter.as_str() == "distance"
+        }) if parameter.as_str() == "synthetic:test:id#distance"
     ));
     let same_locus_relation = FeatureInputRelationInstance {
         operands: relation
