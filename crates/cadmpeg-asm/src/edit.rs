@@ -677,7 +677,15 @@ impl AsmEditSet {
                 silhouette,
                 *light_direction,
             ),
-            _ => Err(CodecError::NotImplemented(
+            ProceduralCurveDefinition::Exact
+            | ProceduralCurveDefinition::Law { .. }
+            | ProceduralCurveDefinition::TolerantIntersection { .. }
+            | ProceduralCurveDefinition::Deformable { .. }
+            | ProceduralCurveDefinition::Offset { .. }
+            | ProceduralCurveDefinition::SpatialOffset { .. }
+            | ProceduralCurveDefinition::Replica { .. }
+            | ProceduralCurveDefinition::BlendSpine { .. }
+            | ProceduralCurveDefinition::Unknown { .. } => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
             )),
         }
