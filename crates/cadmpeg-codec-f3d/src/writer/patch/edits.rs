@@ -3183,10 +3183,7 @@ pub(crate) fn validate_pcurve_edits(
             && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
             && after
                 .parameter_range()
-                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1])
-            && after
-                .fit_tolerance()
-                .is_none_or(|tolerance| tolerance.is_finite() && tolerance >= 0.0);
+                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1]);
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
@@ -3199,7 +3196,7 @@ pub(crate) fn validate_pcurve_edits(
             .flatten();
         let edit = match &before.metadata {
             cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
-                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance.is_none() =>
+                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
             {
                 PcurveEdit::Ref {
                     native_geometry: after_native,

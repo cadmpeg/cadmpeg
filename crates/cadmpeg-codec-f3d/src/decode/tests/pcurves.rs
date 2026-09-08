@@ -1008,7 +1008,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     inline.wrapper_reversed = true;
     inline.native_tail_flags = [false, true, false, true];
     inline.set_parameter_range([-2.0, 3.0]).unwrap();
-    inline.fit_tolerance = 0.0025;
+    inline.set_fit_tolerance(0.0025).unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1038,7 +1038,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
-    inline.fit_tolerance = 0.0025;
+    inline.set_fit_tolerance(0.0025).unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();

@@ -13472,8 +13472,8 @@ impl PcurveMetadata {
     /// Parameter-space fit tolerance following a solved UV cache.
     pub fn fit_tolerance(&self) -> Option<f64> {
         match self {
-            Self::AsmInline(inline) => Some(inline.fit_tolerance),
-            Self::General(general) => general.fit_tolerance,
+            Self::AsmInline(inline) => Some(inline.fit_tolerance()),
+            Self::General(general) => general.fit_tolerance(),
         }
     }
 }
@@ -13541,8 +13541,7 @@ pub struct PcurveInlineForm {
     /// Four native booleans following the inline subtype scope.
     pub native_tail_flags: [bool; 4],
     parameter_range: [f64; 2],
-    /// Parameter-space fit tolerance following the solved UV cache.
-    pub fit_tolerance: f64,
+    fit_tolerance: FitTolerance,
 }
 
 #[derive(Deserialize)]
@@ -13568,7 +13567,7 @@ impl TryFrom<PcurveInlineFormWire> for PcurveInlineForm {
 }
 
 impl PcurveInlineForm {
-    /// Admit inline metadata with finite parameter endpoints.
+    /// Admit inline metadata with finite parameter endpoints and a finite non-negative tolerance.
     pub fn try_new(
         wrapper_reversed: bool,
         native_tail_flags: [bool; 4],
@@ -13579,8 +13578,21 @@ impl PcurveInlineForm {
             wrapper_reversed,
             native_tail_flags,
             parameter_range: admit_pcurve_parameter_range(parameter_range)?,
-            fit_tolerance,
+            fit_tolerance: FitTolerance::try_new(fit_tolerance)
+                .map_err(|_| "pcurve fit_tolerance must be finite and non-negative")?,
         })
+    }
+
+    /// Parameter-space fit tolerance.
+    #[must_use]
+    pub const fn fit_tolerance(&self) -> f64 {
+        self.fit_tolerance.get()
+    }
+
+    /// Replace the fit tolerance while retaining its previous value on rejection.
+    pub fn set_fit_tolerance(&mut self, value: f64) -> Result<(), CacheFitToleranceError> {
+        self.fit_tolerance = FitTolerance::try_new(value)?;
+        Ok(())
     }
 
     /// Directed native parameter interval.
@@ -13606,9 +13618,8 @@ pub struct PcurveGeneralForm {
     pub wrapper_reversed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parameter_range: Option<[f64; 2]>,
-    /// Parameter-space fit tolerance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fit_tolerance: Option<f64>,
+    fit_tolerance: Option<FitTolerance>,
 }
 
 #[derive(Deserialize)]
@@ -13635,7 +13646,7 @@ impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
 }
 
 impl PcurveGeneralForm {
-    /// Admit general metadata with finite parameter endpoints.
+    /// Admit general metadata with finite parameter endpoints and a finite non-negative tolerance.
     pub fn try_new(
         wrapper_reversed: Option<bool>,
         parameter_range: Option<[f64; 2]>,
@@ -13646,8 +13657,23 @@ impl PcurveGeneralForm {
             parameter_range: parameter_range
                 .map(admit_pcurve_parameter_range)
                 .transpose()?,
-            fit_tolerance,
+            fit_tolerance: fit_tolerance
+                .map(FitTolerance::try_new)
+                .transpose()
+                .map_err(|_| "pcurve fit_tolerance must be finite and non-negative")?,
         })
+    }
+
+    /// Parameter-space fit tolerance.
+    #[must_use]
+    pub fn fit_tolerance(&self) -> Option<f64> {
+        self.fit_tolerance.map(FitTolerance::get)
+    }
+
+    /// Replace the fit tolerance while retaining its previous value on rejection.
+    pub fn set_fit_tolerance(&mut self, value: Option<f64>) -> Result<(), CacheFitToleranceError> {
+        self.fit_tolerance = value.map(FitTolerance::try_new).transpose()?;
+        Ok(())
     }
 
     /// Directed native parameter interval.
