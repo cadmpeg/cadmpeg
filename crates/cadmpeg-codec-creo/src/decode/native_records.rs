@@ -15,13 +15,174 @@ pub(crate) struct CreoSketchSectionPoint {
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchTableHeader {
-    pub(crate) kind: &'static str,
-    pub(crate) declared_count: Option<u32>,
-    pub(crate) entity_ref: Option<u32>,
-    pub(crate) entry_ref: Option<u32>,
-    pub(crate) buckets: Vec<CreoSketchBucketHeader>,
+    #[serde(flatten, serialize_with = "serialize_sketch_table_kind")]
+    pub(crate) kind: CreoSketchTableKind,
     pub(crate) row_count: usize,
     pub(crate) offset: usize,
+}
+
+/// Sketch table kind and its header fields.
+pub(crate) enum CreoSketchTableKind {
+    Variables {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Equations {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Segments {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Order {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Dimensions {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Relations {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    SolverIncidences {
+        declared_count: u32,
+        entity_ref: u32,
+    },
+    RelationTriples {
+        declared_count: u32,
+        entity_ref: u32,
+    },
+    TrimEntities {
+        declared_count: Option<u32>,
+        entity_ref: Option<u32>,
+        entry_ref: Option<u32>,
+        buckets: Vec<CreoSketchBucketHeader>,
+    },
+    TrimVertices {
+        declared_count: Option<u32>,
+        entity_ref: Option<u32>,
+        entry_ref: Option<u32>,
+        buckets: Vec<CreoSketchBucketHeader>,
+    },
+    SavedEntities,
+}
+
+fn serialize_sketch_table_kind<S: serde::Serializer>(
+    header: &CreoSketchTableKind,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let (kind, declared_count, entity_ref, entry_ref, buckets) = match header {
+        CreoSketchTableKind::Variables {
+            declared_count,
+            entity_ref,
+        } => (
+            "variables",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Equations {
+            declared_count,
+            entity_ref,
+        } => (
+            "equations",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Segments {
+            declared_count,
+            entity_ref,
+        } => (
+            "segments",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Order {
+            declared_count,
+            entity_ref,
+        } => ("order", Some(*declared_count), *entity_ref, None, &[][..]),
+        CreoSketchTableKind::Dimensions {
+            declared_count,
+            entity_ref,
+        } => (
+            "dimensions",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Relations {
+            declared_count,
+            entity_ref,
+        } => (
+            "relations",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::SolverIncidences {
+            declared_count,
+            entity_ref,
+        } => (
+            "solver_incidences",
+            Some(*declared_count),
+            Some(*entity_ref),
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::RelationTriples {
+            declared_count,
+            entity_ref,
+        } => (
+            "relation_triples",
+            Some(*declared_count),
+            Some(*entity_ref),
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::TrimEntities {
+            declared_count,
+            entity_ref,
+            entry_ref,
+            buckets,
+        } => (
+            "trim_entities",
+            *declared_count,
+            *entity_ref,
+            *entry_ref,
+            buckets.as_slice(),
+        ),
+        CreoSketchTableKind::TrimVertices {
+            declared_count,
+            entity_ref,
+            entry_ref,
+            buckets,
+        } => (
+            "trim_vertices",
+            *declared_count,
+            *entity_ref,
+            *entry_ref,
+            buckets.as_slice(),
+        ),
+        CreoSketchTableKind::SavedEntities => ("saved_entities", None, None, None, &[][..]),
+    };
+    let mut map = serializer.serialize_map(Some(5))?;
+    map.serialize_entry("kind", &kind)?;
+    map.serialize_entry("declared_count", &declared_count)?;
+    map.serialize_entry("entity_ref", &entity_ref)?;
+    map.serialize_entry("entry_ref", &entry_ref)?;
+    map.serialize_entry("buckets", &buckets)?;
+    map.end()
 }
 
 #[derive(Serialize)]
