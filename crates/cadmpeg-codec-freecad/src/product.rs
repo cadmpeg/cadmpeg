@@ -59,7 +59,10 @@ pub(crate) fn transfer(
         let placement = selected_placement(&owned)?;
         let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
-        let element_count = integer_property(&owned, "ElementCount")?;
+        let element_count = integer_property(&owned, "ElementCount")?
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_| malformed("negative ElementCount"))?;
         let claim_child = bool_property(&owned, "LinkClaimChild")?;
         let copy_on_change = copy_on_change_property(&owned)?;
         let copy_on_change_source = linked_object(
@@ -106,10 +109,14 @@ pub(crate) fn transfer(
                 external_document: prototype_link.and_then(|link| link.document.clone()),
                 local_transform,
                 placement_property,
-                element_count,
+                array: crate::native::LinkArray::try_new(
+                    element_count,
+                    parse_placement_list(&owned, entries)?,
+                    parse_vector_list(&owned, entries)?,
+                    element_objects,
+                )
+                .map_err(malformed)?,
                 link_transform,
-                element_transforms: parse_placement_list(&owned, entries)?,
-                element_scales: parse_vector_list(&owned, entries)?,
                 linked_subelements: prototype_link
                     .map(|link| {
                         link.subelements
@@ -128,7 +135,6 @@ pub(crate) fn transfer(
                 )
                 .map_err(malformed)?,
                 scale,
-                element_objects,
             }),
             ProductKind::Group => ProductNode::Group(ContainerNode {
                 members,
@@ -513,7 +519,10 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         .map(usize::try_from)
         .transpose()
         .map_err(|_| {
-            CodecError::malformed(format_args!("{} has negative element count", record.id))
+            CodecError::malformed(format_args!(
+                "{} element count exceeds addressable size",
+                record.id
+            ))
         })?;
     let count = declared_count.unwrap_or_else(|| {
         [
@@ -529,19 +538,6 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
     if count > 1_000_000 || u32::try_from(count).is_err() {
         return Err(CodecError::malformed(format_args!(
             "{} link-array count limit exceeded",
-            record.id
-        )));
-    }
-    if [
-        record.element_transforms().len(),
-        record.element_scales().len(),
-        record.element_objects().len(),
-    ]
-    .into_iter()
-    .any(|length| length != 0 && length != count)
-    {
-        return Err(CodecError::malformed(format_args!(
-            "{} has inconsistent link-array counts",
             record.id
         )));
     }
