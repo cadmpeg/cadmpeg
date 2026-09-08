@@ -17,8 +17,8 @@ use super::nurbs::{
 };
 use super::pcurves::add_extrusion_pcurve;
 use super::profiles::{
-    extrusion_cap_pcurve, extrusion_profile_signed_area, extrusion_side_uvs, line_pcurve,
-    ordered_extrusion_profiles, oriented_arc_parameterization, resolved_sketch_profiles,
+    extrusion_cap_pcurve, extrusion_side_uvs, line_pcurve, ordered_extrusion_profiles,
+    oriented_arc_parameterization, resolved_sketch_profiles,
 };
 use crate::container::ContainerScan;
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
@@ -136,25 +136,38 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 1) else {
             continue;
         };
-        let Some((profiles, outer_area)) = ordered_extrusion_profiles(profiles) else {
+        let Some(profiles) = ordered_extrusion_profiles(profiles) else {
             continue;
         };
-        if profiles.iter().flatten().any(|(geometry, _, start, end)| {
-            matches!(geometry, SketchGeometry::Line { .. }) && start == end
-        }) {
+        if profiles
+            .iter()
+            .flat_map(|profile| profile.entities())
+            .any(|entity| {
+                let geometry = entity.geometry();
+                let start = entity.start();
+                let end = entity.end();
+
+                matches!(geometry, SketchGeometry::Line { .. }) && start == end
+            })
+        {
             continue;
         }
         if profiles
             .iter()
-            .flatten()
-            .any(|(geometry, reversed, start, end)| {
-                extrusion_brep_side_surface(transform, geometry, *reversed, *start, *end, span)
+            .flat_map(|profile| profile.entities())
+            .any(|entity| {
+                let geometry = entity.geometry();
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
+                extrusion_brep_side_surface(transform, geometry, reversed, start, end, span)
                     .is_none()
             })
         {
             continue;
         }
-        let forward_caps = outer_area > 0.0;
+        let forward_caps = profiles[0].area() > 0.0;
 
         let prefix = format!("creo:feature:extrusion#{feature_id}");
         let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
@@ -204,16 +217,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
         let mut bottom_loops = Vec::new();
         let mut top_loops = Vec::new();
-        for (profile_index, profile) in profiles.iter().enumerate() {
+        for (profile_index, validated) in profiles.iter().enumerate() {
+            let profile = validated.entities();
             let count = profile.len();
             let mut bottom_vertices = Vec::new();
             let mut top_vertices = Vec::new();
-            for (index, (_, _, start, _)) in profile.iter().enumerate() {
+            for (index, entity) in profile.iter().enumerate() {
+                let start = entity.start();
+
                 for (side, offset, arena) in [
                     ("bottom", span.lower, &mut bottom_vertices),
                     ("top", span.upper, &mut top_vertices),
                 ] {
-                    let position = section_point_in_model(transform, *start);
+                    let position = section_point_in_model(transform, start);
                     let point_id =
                         PointId::mint(format!("{prefix}:point:{profile_index}:{index}:{side}"))
                             .expect("identity grammar");
@@ -241,7 +257,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let mut bottom_edges = Vec::new();
             let mut top_edges = Vec::new();
             let mut vertical_edges = Vec::new();
-            for (index, (geometry, reversed, start, end)) in profile.iter().enumerate() {
+            for (index, entity) in profile.iter().enumerate() {
+                let geometry = entity.geometry();
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
                 let next = (index + 1) % count;
                 for (side, offset, vertices, arena) in [
                     ("bottom", span.lower, &bottom_vertices, &mut bottom_edges),
@@ -255,8 +276,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             .expect("identity grammar");
                     let curve = match geometry {
                         SketchGeometry::Line { .. } => {
-                            let placed_start = section_point_in_model(transform, *start);
-                            let placed_end = section_point_in_model(transform, *end);
+                            let placed_start = section_point_in_model(transform, start);
+                            let placed_end = section_point_in_model(transform, end);
                             let Some(direction) = normalized(std::array::from_fn(|axis| {
                                 placed_end[axis] - placed_start[axis]
                             })) else {
@@ -274,7 +295,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         SketchGeometry::Arc { center, radius, .. }
                         | SketchGeometry::Circle { center, radius } => {
                             let center = section_point_in_model(transform, [center.u, center.v]);
-                            let (axis_sign, _) = oriented_arc_parameterization(*reversed, 0.0, 0.0);
+                            let (axis_sign, _) = oriented_arc_parameterization(reversed, 0.0, 0.0);
                             CurveGeometry::Circle {
                                 center: Point3::new(
                                     center[0] + offset * transform.normal[0],
@@ -295,7 +316,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             }
                         }
                         SketchGeometry::Nurbs { .. } => {
-                            let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, *reversed)
+                            let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, reversed)
                             else {
                                 continue;
                             };
@@ -330,13 +351,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             end_angle,
                             ..
                         } => Some(
-                            oriented_arc_parameterization(*reversed, start_angle.0, end_angle.0).1,
+                            oriented_arc_parameterization(reversed, start_angle.0, end_angle.0).1,
                         ),
                         SketchGeometry::Circle { .. } => Some(
-                            oriented_arc_parameterization(*reversed, 0.0, std::f64::consts::TAU).1,
+                            oriented_arc_parameterization(reversed, 0.0, std::f64::consts::TAU).1,
                         ),
                         SketchGeometry::Nurbs { .. } => {
-                            oriented_sketch_nurbs_curve(geometry, *reversed)
+                            oriented_sketch_nurbs_curve(geometry, reversed)
                                 .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
                         }
                         _ => None,
@@ -357,7 +378,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let edge_id =
                     EdgeId::mint(format!("{prefix}:edge:{profile_index}:{index}:vertical"))
                         .expect("identity grammar");
-                let origin = section_point_in_model(transform, *start);
+                let origin = section_point_in_model(transform, start);
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Line {
@@ -425,7 +446,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
                 let id = bottom_coedges[ring_index].clone();
-                let (geometry, reversed, start, end) = &profile[edge_index];
+                let entity = &profile[edge_index];
+                let geometry = entity.geometry();
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
                 let bottom_pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
@@ -434,7 +460,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(geometry, *reversed, *start, *end),
+                    extrusion_cap_pcurve(geometry, reversed, start, end),
                 );
                 ir.model.coedges.push(Coedge {
                     id,
@@ -453,7 +479,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     use_curve: None,
                 });
                 let id = top_coedges[ring_index].clone();
-                let (geometry, reversed, start, end) = &profile[ring_index];
+                let entity = &profile[ring_index];
+                let geometry = entity.geometry();
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
                 let top_pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
@@ -462,7 +493,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(geometry, *reversed, *start, *end),
+                    extrusion_cap_pcurve(geometry, reversed, start, end),
                 );
                 ir.model.coedges.push(Coedge {
                     id,
@@ -482,10 +513,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 });
             }
 
-            let forward_sides = extrusion_profile_signed_area(profile)
-                .expect("validated extrusion profile has nonzero area")
-                > 0.0;
-            for (index, (geometry, _, start, _)) in profile.iter().enumerate() {
+            let forward_sides = validated.area() > 0.0;
+            for (index, entity) in profile.iter().enumerate() {
+                let geometry = entity.geometry();
+                let start = entity.start();
+
                 let next = (index + 1) % count;
                 let surface_id =
                     SurfaceId::mint(format!("{prefix}:surface:{profile_index}:side:{index}"))
@@ -493,9 +525,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let Some(surface_geometry) = extrusion_brep_side_surface(
                     transform,
                     geometry,
-                    profile[index].1,
-                    *start,
-                    profile[index].3,
+                    profile[index].reversed(),
+                    start,
+                    profile[index].end(),
                     span,
                 ) else {
                     break;
@@ -539,8 +571,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     (top_edges[index].clone(), Sense::Reversed),
                     (vertical_edges[index].clone(), Sense::Reversed),
                 ];
-                let side_uvs =
-                    extrusion_side_uvs(geometry, profile[index].1, *start, profile[index].3, span);
+                let side_uvs = extrusion_side_uvs(
+                    geometry,
+                    profile[index].reversed(),
+                    start,
+                    profile[index].end(),
+                    span,
+                );
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => bottom_coedges[count - 1 - index].clone(),

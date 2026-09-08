@@ -31,6 +31,7 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
+use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::{
     circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
     extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
@@ -1793,12 +1794,12 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
         end: Point2::new(1.0, 0.0),
     };
     let counterclockwise = vec![
-        (arc.clone(), false, [1.0, 0.0], [-1.0, 0.0]),
-        (line.clone(), false, [-1.0, 0.0], [1.0, 0.0]),
+        ProfileEntity::new(arc.clone(), false).unwrap(),
+        ProfileEntity::new(line.clone(), false).unwrap(),
     ];
     let clockwise = vec![
-        (arc, true, [-1.0, 0.0], [1.0, 0.0]),
-        (line, true, [1.0, 0.0], [-1.0, 0.0]),
+        ProfileEntity::new(arc, true).unwrap(),
+        ProfileEntity::new(line, true).unwrap(),
     ];
     assert!(
         (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
@@ -1816,7 +1817,7 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
 
 #[test]
 fn full_turn_arc_remains_a_closed_extrusion_profile() {
-    let profile = vec![(
+    let profile = vec![ProfileEntity::new(
         SketchGeometry::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
@@ -1824,12 +1825,18 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
             end_angle: Angle(std::f64::consts::TAU),
         },
         false,
-        [2.0, 0.0],
-        [2.0, 0.0],
-    )];
-    let (profiles, area) = ordered_extrusion_profiles(vec![profile.clone()])
+    )
+    .unwrap()];
+    let profiles = ordered_extrusion_profiles(vec![profile.clone()])
         .expect("a full-turn arc is a closed profile");
-    assert_eq!(profiles, vec![profile]);
+    let area = profiles[0].area();
+    assert_eq!(
+        profiles
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        vec![profile]
+    );
     assert!((area - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
     assert_eq!(
         oriented_arc_parameterization(false, 0.0, std::f64::consts::TAU).1,
@@ -1870,9 +1877,19 @@ fn circle_remains_a_closed_extrusion_profile() {
     ));
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
-    assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);
-    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
-    assert_eq!(ordered, profiles);
+    assert_eq!(
+        profiles,
+        vec![vec![ProfileEntity::new(circle.clone(), false).unwrap()]]
+    );
+    let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
+    let area = ordered[0].area();
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        profiles
+    );
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
@@ -1903,7 +1920,7 @@ fn circle_remains_a_closed_extrusion_profile() {
             ]
         );
         assert_eq!(
-            profile_arc(&(circle.clone(), reversed, seam, seam)),
+            profile_arc(&ProfileEntity::new(circle.clone(), reversed).unwrap()),
             Some((
                 [1.0, -2.0],
                 3.0,
@@ -1918,7 +1935,7 @@ fn circle_remains_a_closed_extrusion_profile() {
     }
     assert!(point_on_profile_arc(
         seam,
-        profile_arc(&(circle, false, seam, seam)).expect("circle arc"),
+        profile_arc(&ProfileEntity::new(circle, false).unwrap()).expect("circle arc"),
         1.0e-9,
     ));
     assert_eq!(
