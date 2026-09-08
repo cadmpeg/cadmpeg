@@ -40,9 +40,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
-        with:
-          # Compare policy ceilings with the state before this PR or push.
-          fetch-depth: 0
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -69,15 +66,11 @@ jobs:
         # start. Catches a reference that names no paragraph or several.
         run: python3 scripts/check-doc-anchors.py
 
-      - name: Convergence ratchet
-        env:
-          RATCHET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        # Mechanical anti-pattern ceilings in docs/convergence-ledger.toml.
-        # Counts may only fall; a deliberate increase needs a [reasons] entry.
+      - name: Source policy
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_convergence_ratchet.py
-          python3 scripts/convergence-ratchet.py --base "$RATCHET_BASE"
+          python3 -m unittest -v scripts/test_check_source_policy.py
+          python3 scripts/check-source-policy.py
 
       - name: Golden coverage floors
         # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only

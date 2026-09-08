@@ -56,13 +56,13 @@ if git diff --cached --name-only \
   python3 scripts/render-format-support.py --check
 fi
 
-# Ratchet inputs include its ledger and checker, even without Rust edits.
-if git diff --cached --name-only | grep -qE '^scripts/(convergence-ratchet\.py|test_convergence_ratchet\.py)$'; then
-  python3 -m unittest -q scripts/test_convergence_ratchet.py
+# Source-policy rules apply to the current tree, including checker-only edits.
+if git diff --cached --name-only | grep -qE '^scripts/(check-source-policy\.py|test_check_source_policy\.py)$'; then
+  python3 -m unittest -q scripts/test_check_source_policy.py
 fi
-if git diff --cached --name-only | grep -qE '\.rs$|^docs/convergence-ledger\.toml$|^scripts/convergence-ratchet\.py$'; then
-  echo "pre-commit: scripts/convergence-ratchet.py"
-  python3 scripts/convergence-ratchet.py
+if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-source-policy\.py$'; then
+  echo "pre-commit: scripts/check-source-policy.py"
+  python3 scripts/check-source-policy.py
 fi
 
 # Only run the Rust gate when the commit stages files that can change its
