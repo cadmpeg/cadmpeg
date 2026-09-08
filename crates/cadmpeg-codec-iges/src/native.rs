@@ -1560,20 +1560,35 @@ struct OccurrenceDefinition {
 
 // The wire adapter receives the optional field by reference, including its absence.
 #[allow(clippy::ref_option)]
-fn serialize_parameter_lines<S: Serializer>(
-    lines: &Option<std::ops::Range<u32>>,
+fn serialize_parameter_record<S: Serializer>(
+    record: &Option<NativeParameterRecord>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     #[derive(Serialize)]
-    struct Wire {
+    struct Wire<'a> {
         parameter_line_start: Option<u32>,
         parameter_line_end: Option<u32>,
+        parameter_bytes: &'a [u8],
+        parameters: &'a [Token],
+        comment: &'a [u8],
     }
+    let record = record.as_ref();
     Wire {
-        parameter_line_start: lines.as_ref().map(|range| range.start),
-        parameter_line_end: lines.as_ref().map(|range| range.end),
+        parameter_line_start: record.map(|record| record.lines.start),
+        parameter_line_end: record.map(|record| record.lines.end),
+        parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
+        parameters: record.map_or(&[], |record| record.parameters.as_slice()),
+        comment: record.map_or(&[], |record| record.comment.as_slice()),
     }
     .serialize(serializer)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct NativeParameterRecord {
+    lines: std::ops::Range<u32>,
+    bytes: Vec<u8>,
+    parameters: Vec<Token>,
+    comment: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1597,13 +1612,10 @@ pub(crate) struct NativeEntity {
     reserved: [[u8; 8]; 2],
     label: [u8; 8],
     subscript: i64,
-    #[serde(flatten, serialize_with = "serialize_parameter_lines")]
-    parameter_lines: Option<std::ops::Range<u32>>,
-    parameter_bytes: Vec<u8>,
-    parameters: Vec<Token>,
+    #[serde(flatten, serialize_with = "serialize_parameter_record")]
+    parameter_record: Option<NativeParameterRecord>,
     association_links: Vec<String>,
     property_links: Vec<String>,
-    comment: Vec<u8>,
     links: Vec<String>,
     references: Vec<ReferenceEdge>,
 }
@@ -2150,19 +2162,14 @@ pub(crate) fn store(
                 reserved: entry.reserved,
                 label: entry.label,
                 subscript: entry.subscript,
-                parameter_lines: parameters.map(|record| record.line_range.clone()),
-                parameter_bytes: parameters
-                    .map(|record| record.bytes.clone())
-                    .unwrap_or_default(),
-                parameters: parameters
-                    .into_iter()
-                    .flat_map(|record| record.tokens().iter().cloned())
-                    .collect(),
+                parameter_record: parameters.map(|record| NativeParameterRecord {
+                    lines: record.line_range.clone(),
+                    bytes: record.bytes.clone(),
+                    parameters: record.tokens().to_vec(),
+                    comment: record.comment.clone(),
+                }),
                 association_links,
                 property_links,
-                comment: parameters
-                    .map(|record| record.comment.clone())
-                    .unwrap_or_default(),
                 links: references
                     .get(&entry.sequence)
                     .into_iter()
