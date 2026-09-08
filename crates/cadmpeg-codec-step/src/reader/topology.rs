@@ -56,7 +56,9 @@ fn topology_commit_error(context: &str, error: &DraftError) -> String {
         DraftError::IdentityCollision(identity) => format!(
             "{context} conflicts with decoded topology: identity collision at '{identity}': {error}"
         ),
-        _ => format!("{context} conflicts with decoded topology: {error}"),
+        DraftError::UnresolvedReference { .. } => {
+            format!("{context} conflicts with decoded topology: {error}")
+        }
     }
 }
 
