@@ -741,7 +741,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
-    );
+    )
+    .expect("valid source object identity");
 
     assert_eq!(counts.topological_point_count, 3);
     assert_eq!(counts.native_topological_edge_count, 0);
@@ -821,7 +822,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
-    );
+    )
+    .expect("valid source object identity");
 
     assert_eq!(counts.topological_point_count, 3);
     assert_eq!(counts.native_topological_edge_count, 3);

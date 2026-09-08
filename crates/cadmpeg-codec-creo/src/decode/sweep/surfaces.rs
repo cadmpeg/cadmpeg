@@ -223,7 +223,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -277,7 +277,12 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 geometry: CurveGeometry::Nurbs(placed),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("FeatDefs:saved_spline#{suffix}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "FeatDefs:saved_spline#{suffix}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -288,7 +293,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn revolved_nurbs_surface(
@@ -428,7 +433,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -500,7 +505,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{surface_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{surface_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -556,7 +566,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{native_surface_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{native_surface_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -633,7 +648,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry: CurveGeometry::Nurbs(directrix.clone()),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: format!("FeatDefs:saved_spline#{suffix}"),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                            "FeatDefs:saved_spline#{suffix}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
                         name: None,
                         color: None,
                         visible: None,
@@ -672,7 +694,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{native_surface_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{native_surface_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -700,7 +727,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]

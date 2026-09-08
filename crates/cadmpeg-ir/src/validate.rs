@@ -56,7 +56,7 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use subd::{check_procedural_surfaces, check_source_associations, check_subds};
+use subd::{check_procedural_surfaces, check_subds};
 use topology::{
     check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
     check_wire_topology,
@@ -107,7 +107,6 @@ fn validate_model_with_index(
     check_tessellations(ir, &mut findings);
     check_subds(ir, &mut findings);
     check_procedural_surfaces(ir, &mut findings);
-    check_source_associations(ir, &mut findings);
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);

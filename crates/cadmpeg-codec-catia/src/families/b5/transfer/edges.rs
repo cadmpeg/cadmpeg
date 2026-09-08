@@ -281,7 +281,7 @@ pub(super) fn emit_edges(
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-) -> HashMap<u32, EdgeId> {
+) -> Result<HashMap<u32, EdgeId>, cadmpeg_core::CodecError> {
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
@@ -324,7 +324,7 @@ pub(super) fn emit_edges(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: Some(cgm_source("edge", edge_id)),
+            source_object: Some(cgm_source("edge", edge_id)?),
         });
         let procedural = helix
             .as_ref()
@@ -397,5 +397,5 @@ pub(super) fn emit_edges(
             tolerance: edge_tolerance,
         });
     }
-    edge_id_map
+    Ok(edge_id_map)
 }

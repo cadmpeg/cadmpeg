@@ -445,7 +445,7 @@ pub(super) fn project(
                     CodecError::malformed(format_args!("copious-data curve: {error}"))
                 })?,
             ),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),

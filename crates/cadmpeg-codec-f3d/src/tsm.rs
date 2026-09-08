@@ -1488,7 +1488,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             symmetries,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
-                object_id: name.into(),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(name)
+                    .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
                 name: None,
                 color: None,
                 visible: None,

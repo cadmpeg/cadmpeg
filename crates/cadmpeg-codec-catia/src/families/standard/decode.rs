@@ -799,8 +799,9 @@ fn standard_extrusion_support_id(
     surfaces: &mut Vec<Surface>,
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     side: &crate::families::b5::transfer::ResolvedExtrusionSupport,
-) -> SurfaceId {
-    procedural_supports
+) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+    let source_object = cgm_source("surface", side.surface_object_id)?;
+    Ok(procedural_supports
         .entry(side.surface_object_id)
         .or_insert_with(|| {
             let id = SurfaceId::mint(format!(
@@ -819,11 +820,11 @@ fn standard_extrusion_support_id(
             surfaces.push(Surface {
                 id: id.clone(),
                 geometry: side.surface.clone(),
-                source_object: Some(cgm_source("surface", side.surface_object_id)),
+                source_object: Some(source_object),
             });
             id
         })
-        .clone()
+        .clone())
 }
 
 /// Emit one resolved object-stream extrusion construction in the standard family.
@@ -834,9 +835,9 @@ pub(crate) fn emit_standard_extrusion_definition(
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     extrusion_definitions: &mut HashMap<u32, ProceduralSurfaceDefinition>,
     extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
-) -> ProceduralSurfaceDefinition {
+) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     if let Some(definition) = extrusion_definitions.get(&extrusion.surface_object_id) {
-        return definition.clone();
+        return Ok(definition.clone());
     }
     let surface_object_id = extrusion.surface_object_id;
     let directrix_id = CurveId::mint(format!(
@@ -849,20 +850,24 @@ pub(crate) fn emit_standard_extrusion_definition(
             supports,
             cache_fit_tolerance,
         } => {
-            let sides = (*supports).map(|side| IntcurveSupportSide {
-                surface: Some(standard_extrusion_support_id(
-                    annotations,
-                    surfaces,
-                    procedural_supports,
-                    &side,
-                )),
-                pcurve: Some(SupportPcurve::new(
-                    side.pcurve,
-                    (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
-                )),
-            });
+            let [first, second] = *supports;
+            let mut build_side = |side: crate::families::b5::transfer::ResolvedExtrusionSupport| {
+                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
+                    surface: Some(standard_extrusion_support_id(
+                        annotations,
+                        surfaces,
+                        procedural_supports,
+                        &side,
+                    )?),
+                    pcurve: Some(SupportPcurve::new(
+                        side.pcurve,
+                        (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
+                            .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                            .flatten(),
+                    )),
+                })
+            };
+            let sides = [build_side(first)?, build_side(second)?];
             annotate(
                 annotations,
                 &directrix_id,
@@ -874,7 +879,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:standard:extrusion-directrix-procedure#{}",
@@ -920,7 +925,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: curve,
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::Offset {
@@ -946,7 +951,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: source_curve,
-                source_object: Some(cgm_source("curve", source_object_id)),
+                source_object: Some(cgm_source("curve", source_object_id)?),
             });
             annotate(
                 annotations,
@@ -959,7 +964,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:standard:extrusion-directrix-procedure#{}",
@@ -988,7 +993,7 @@ pub(crate) fn emit_standard_extrusion_definition(
                                 surfaces,
                                 procedural_supports,
                                 &support,
-                            )),
+                            )?),
                         },
                         range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
                             parameter_range: source_parameter_range,
@@ -1006,7 +1011,7 @@ pub(crate) fn emit_standard_extrusion_definition(
         revision_form: None,
     };
     extrusion_definitions.insert(surface_object_id, definition.clone());
-    definition
+    Ok(definition)
 }
 
 fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
@@ -1650,7 +1655,7 @@ fn try_decode_standard_population(
             surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
-                source_object: Some(cgm_source("carrier", *tag)),
+                source_object: Some(cgm_source("carrier", *tag).ok()?),
             });
             if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
                 procedural_surface_plans.push((i, id, *tag, procedure));
@@ -1704,7 +1709,7 @@ fn try_decode_standard_population(
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
-                    source_object: Some(cgm_source("carrier", prefix.target)),
+                    source_object: Some(cgm_source("carrier", prefix.target).ok()?),
                 });
             }
             None => {
@@ -1732,7 +1737,7 @@ fn try_decode_standard_population(
                                 .expect("identity grammar"),
                         ),
                     },
-                    source_object: Some(cgm_source("carrier", prefix.target)),
+                    source_object: Some(cgm_source("carrier", prefix.target).ok()?),
                 });
             }
         }
@@ -1790,6 +1795,7 @@ fn try_decode_standard_population(
             } => {
                 let support_id = match support {
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
+                        let source_object = cgm_source("surface", support_object_id).ok()?;
                         procedural_supports
                             .entry(support_object_id)
                             .or_insert_with(|| {
@@ -1808,7 +1814,7 @@ fn try_decode_standard_population(
                                 surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry: support,
-                                    source_object: Some(cgm_source("surface", support_object_id)),
+                                    source_object: Some(source_object),
                                 });
                                 id
                             })
@@ -1831,7 +1837,7 @@ fn try_decode_standard_population(
                         surfaces.push(Surface {
                             id: support_id.clone(),
                             geometry: SurfaceGeometry::Unknown { record: None },
-                            source_object: Some(cgm_source("surface", support_object_id)),
+                            source_object: Some(cgm_source("surface", support_object_id).ok()?),
                         });
                         let definition = emit_standard_extrusion_definition(
                             &mut ir,
@@ -1840,7 +1846,8 @@ fn try_decode_standard_population(
                             &mut procedural_supports,
                             &mut extrusion_definitions,
                             *extrusion,
-                        );
+                        )
+                        .ok()?;
                         let construction = ProceduralSurfaceId::mint(format!(
                             "catia:standard:procedural-support-definition#{support_object_id}"
                         ))
@@ -1904,7 +1911,8 @@ fn try_decode_standard_population(
                     &mut procedural_supports,
                     &mut extrusion_definitions,
                     *extrusion,
-                );
+                )
+                .ok()?;
                 (
                     "object_stream_b5_03_2c",
                     carrier,
@@ -2007,7 +2015,8 @@ fn try_decode_standard_population(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    );
+    )
+    .ok()?;
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId::mint(format!("catia:standard:pt#{i}")).expect("identity grammar");
@@ -2024,7 +2033,9 @@ fn try_decode_standard_population(
             position: *p,
             source_object: vertex_roster
                 .as_ref()
-                .map(|roster| cgm_source("vertex", roster[i])),
+                .map(|roster| cgm_source("vertex", roster[i]))
+                .transpose()
+                .ok()?,
         });
         let vertex_id = VertexId::mint(format!("catia:standard:v#{i}")).expect("identity grammar");
         annotate(
@@ -2086,8 +2097,8 @@ fn try_decode_standard_population(
         ir = topology_ir;
         annotations = topology_annotations;
     } else {
-        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, &curve_supports);
-        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, &curve_supports);
+        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, &curve_supports).ok()?;
+        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, &curve_supports).ok()?;
         if !ir.model.vertices.is_empty() {
             attach_free_vertices(
                 &mut ir,
@@ -2109,7 +2120,8 @@ fn try_decode_standard_population(
         &scan.data,
         &consolidated_records,
         &scan.surface_alias_tags,
-    );
+    )
+    .ok()?;
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
@@ -4853,7 +4865,8 @@ fn attach_standard_topology(
         &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
-    );
+    )
+    .map_err(|_| StandardTopologyFailure::InadmissibleNeutralModel)?;
     Ok(())
 }
 
@@ -4984,7 +4997,7 @@ fn emit_standard_topology(
     native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -5013,7 +5026,7 @@ fn emit_standard_topology(
             native_support,
             limit_curve_bindings[edge_index]
                 .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)),
-        );
+        )?;
         let reversed = param_range.is_some_and(|range| range[0] > range[1]);
         edge_reversed.push(reversed);
         let param_range = param_range.map(ordered_range);
@@ -5221,6 +5234,7 @@ fn emit_standard_topology(
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
+    Ok(())
 }
 
 pub(crate) fn standard_native_support_endpoint_pair(
@@ -7861,7 +7875,7 @@ pub(crate) fn build_standard_edge_curve(
     points: [usize; 2],
     native_support: Option<&StandardEdgeSupport>,
     limit_curve: Option<(&NurbsCurve, [f64; 2])>,
-) -> (Option<CurveId>, Option<[f64; 2]>) {
+) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let start = ir.model.points[points[0]].position;
@@ -7869,7 +7883,7 @@ pub(crate) fn build_standard_edge_curve(
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = delta.x.hypot(delta.y).hypot(delta.z);
             if !length.is_finite() || length == 0.0 {
-                return (None, None);
+                return Ok((None, None));
             }
             (
                 CurveGeometry::Line {
@@ -8077,7 +8091,7 @@ pub(crate) fn build_standard_edge_curve(
             Some(native) => {
                 match standard_oriented_native_support_pcurves(native, &ir.model.points, points) {
                     Some(pcurves) => Some(pcurves),
-                    None => return (None, None),
+                    None => return Ok((None, None)),
                 }
             }
             None => None,
@@ -8143,7 +8157,7 @@ pub(crate) fn build_standard_edge_curve(
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
-        source_object: Some(cgm_source("edge-support", support.tag)),
+        source_object: Some(cgm_source("edge-support", support.tag)?),
     });
     if matches!(
         &support.geometry,
@@ -8151,7 +8165,7 @@ pub(crate) fn build_standard_edge_curve(
     ) {
         let sides = if let Some(native) = native_support {
             let Some(pcurves) = oriented_native_support_pcurves.as_ref() else {
-                return (None, None);
+                return Ok((None, None));
             };
             let mut surfaces = Vec::with_capacity(2);
             for side in 0..2 {
@@ -8160,7 +8174,7 @@ pub(crate) fn build_standard_edge_curve(
                     annotations,
                     native.surface_object_ids[side],
                     &native.carriers[side],
-                ));
+                )?);
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
@@ -8220,7 +8234,7 @@ pub(crate) fn build_standard_edge_curve(
             }
         }
     }
-    (Some(id), param_range)
+    Ok((Some(id), param_range))
 }
 
 fn ensure_native_edge_support_surface(
@@ -8228,8 +8242,8 @@ fn ensure_native_edge_support_surface(
     annotations: &mut AnnotationBuilder,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
-) -> SurfaceId {
-    let source = cgm_source("surface", surface_object_id);
+) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+    let source = cgm_source("surface", surface_object_id)?;
     let source_matches = ir
         .model
         .surfaces
@@ -8238,10 +8252,10 @@ fn ensure_native_edge_support_surface(
         .map(|surface| surface.id.clone())
         .collect::<HashSet<_>>();
     if source_matches.len() == 1 {
-        return source_matches
+        return Ok(source_matches
             .into_iter()
             .next()
-            .expect("one identity-matched support surface");
+            .expect("one identity-matched support surface"));
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let geometry_matches = ir
@@ -8252,10 +8266,10 @@ fn ensure_native_edge_support_surface(
             .map(|surface| surface.id.clone())
             .collect::<HashSet<_>>();
         if source_matches.is_empty() && geometry_matches.len() == 1 {
-            return geometry_matches
+            return Ok(geometry_matches
                 .into_iter()
                 .next()
-                .expect("one geometry-matched support surface");
+                .expect("one geometry-matched support surface"));
         }
     }
     let id = SurfaceId::mint(format!(
@@ -8321,7 +8335,7 @@ fn ensure_native_edge_support_surface(
             None,
         ));
     }
-    id
+    Ok(id)
 }
 
 pub(crate) fn standard_circle_pair_solution_is_simple(
@@ -8917,7 +8931,7 @@ pub(crate) fn attach_standard_circles(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for support in supports {
         let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
             support.geometry
@@ -8967,9 +8981,10 @@ pub(crate) fn attach_standard_circles(
                 ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius,
             },
-            source_object: Some(cgm_source("edge-support", support.tag)),
+            source_object: Some(cgm_source("edge-support", support.tag)?),
         });
     }
+    Ok(())
 }
 
 fn circle_axis_from_endpoints(
@@ -9143,7 +9158,7 @@ pub(crate) fn attach_standard_lines(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for support in supports {
         if !matches!(
             support.geometry,
@@ -9178,9 +9193,10 @@ pub(crate) fn attach_standard_lines(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Line { origin, direction },
-            source_object: Some(cgm_source("edge-support", support.tag)),
+            source_object: Some(cgm_source("edge-support", support.tag)?),
         });
     }
+    Ok(())
 }
 
 fn plane_intersection_line(

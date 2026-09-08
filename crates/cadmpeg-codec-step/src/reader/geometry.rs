@@ -292,7 +292,10 @@ fn source_curve_parameter_scale(
     scale
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
+pub(super) fn decode(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+) -> Result<StageOutcome<GeometryData>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
         losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
@@ -421,7 +424,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         &mut typed,
         &mut warnings,
         &mut losses,
-    );
+    )?;
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record
@@ -495,25 +498,34 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }
         }
     }
-    ir.model
-        .points
-        .extend(point_carriers.into_iter().filter_map(|id| {
-            points.get(&id).copied().map(|position| Point {
-                source_object: apll_point_names
-                    .get(&id)
-                    .map(|name| SourceObjectAssociation {
+    for id in point_carriers {
+        let Some(position) = points.get(&id).copied() else {
+            continue;
+        };
+        ir.model.points.push(Point {
+            source_object: apll_point_names
+                .get(&id)
+                .map(|name| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: format!("#{id}"),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
                         name: name.clone(),
                         color: None,
                         visible: None,
                         layer: None,
                         instance_path: Vec::new(),
-                    }),
-                id: PointId::mint(ids::data("point", id)).expect("identity grammar"),
-                position,
-            })
-        }));
+                    })
+                })
+                .transpose()?,
+            id: PointId::mint(ids::data("point", id)).expect("identity grammar"),
+            position,
+        });
+    }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
             let record_scale = unit_scales.length([id]);
@@ -2019,7 +2031,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             typed.insert(id);
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: GeometryData {
             placements,
             transformation_operators,
@@ -2029,7 +2041,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn decode_tessellated_curve_sets(
@@ -2039,7 +2051,7 @@ fn decode_tessellated_curve_sets(
     typed: &mut HashSet<u64>,
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (&id, record) in &exchange.records {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
@@ -2100,7 +2112,12 @@ fn decode_tessellated_curve_sets(
                 geometry: CurveGeometry::Polyline(polyline),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
                     name: source_name.clone(),
                     color: None,
                     visible: None,
@@ -2111,6 +2128,7 @@ fn decode_tessellated_curve_sets(
         }
         typed.extend([id, coordinates_id]);
     }
+    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2164,7 +2182,7 @@ pub(super) fn associate_free_geometric_set_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for set in exchange.records.values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
@@ -2188,41 +2206,49 @@ pub(super) fn associate_free_geometric_set_members(
                     )
                 })
                 .filter(|name| !name.is_empty());
-            let association = || SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{member}"),
-                name: name.clone(),
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
+            let association = || -> Result<_, cadmpeg_core::CodecError> {
+                Ok(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{member}"))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                    name: name.clone(),
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                })
             };
             if let Some(index) = index.curves.get(&member) {
                 if owned.curves.contains(index) {
                     continue;
                 }
-                ir.model.curves[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                if ir.model.curves[index.0].source_object.is_none() {
+                    ir.model.curves[index.0].source_object = Some(association()?);
+                }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
-                ir.model.points[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                if ir.model.points[index.0].source_object.is_none() {
+                    ir.model.points[index.0].source_object = Some(association()?);
+                }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
-                ir.model.surfaces[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                if ir.model.surfaces[index.0].source_object.is_none() {
+                    ir.model.surfaces[index.0].source_object = Some(association()?);
+                }
             }
         }
     }
+    Ok(())
 }
 
 /// Associate carriers that are listed directly by a STEP representation but
@@ -2236,7 +2262,7 @@ pub(super) fn associate_free_representation_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for representation in exchange.records.values().filter(|record| {
         record
             .partials
@@ -2262,38 +2288,46 @@ pub(super) fn associate_free_representation_members(
                     )
                 })
                 .filter(|name| !name.is_empty());
-            let association = || SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{member}"),
-                name: source_name.clone(),
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
+            let association = || -> Result<_, cadmpeg_core::CodecError> {
+                Ok(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{member}"))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                    name: source_name.clone(),
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                })
             };
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
-                    ir.model.curves[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    if ir.model.curves[index.0].source_object.is_none() {
+                        ir.model.curves[index.0].source_object = Some(association()?);
+                    }
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
-                    ir.model.points[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    if ir.model.points[index.0].source_object.is_none() {
+                        ir.model.points[index.0].source_object = Some(association()?);
+                    }
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
-                    ir.model.surfaces[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    if ir.model.surfaces[index.0].source_object.is_none() {
+                        ir.model.surfaces[index.0].source_object = Some(association()?);
+                    }
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Associate geometry that is owned by presentation records rather than by a
@@ -2306,11 +2340,11 @@ pub(super) fn associate_free_presentation_carriers(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (style_id, target) in exchange.records.iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses);
+        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses)?;
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
         let mut targets = Vec::new();
@@ -2325,10 +2359,11 @@ pub(super) fn associate_free_presentation_carriers(
             if index.surfaces.contains_key(&target) {
                 associate_presentation_carrier(
                     exchange, ir, index, owned, target, plane_id, losses,
-                );
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 fn associate_presentation_carrier(
@@ -2339,7 +2374,7 @@ fn associate_presentation_carrier(
     target: u64,
     source_id: u64,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let name = exchange
         .records
         .get(&target)
@@ -2355,36 +2390,42 @@ fn associate_presentation_carrier(
             )
         })
         .filter(|name| !name.is_empty());
-    let association = || SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-        object_id: format!("#{source_id}"),
-        name: name.clone(),
-        color: None,
-        visible: None,
-        layer: None,
-        instance_path: Vec::new(),
+    let association = || -> Result<_, cadmpeg_core::CodecError> {
+        Ok(SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+            object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{source_id}"))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
+            name: name.clone(),
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        })
     };
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
-            ir.model.curves[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            if ir.model.curves[index.0].source_object.is_none() {
+                ir.model.curves[index.0].source_object = Some(association()?);
+            }
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
-            ir.model.points[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            if ir.model.points[index.0].source_object.is_none() {
+                ir.model.points[index.0].source_object = Some(association()?);
+            }
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
-            ir.model.surfaces[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            if ir.model.surfaces[index.0].source_object.is_none() {
+                ir.model.surfaces[index.0].source_object = Some(association()?);
+            }
         }
     }
+    Ok(())
 }
 
 fn collect_references(value: &Value, references: &mut Vec<u64>) {
@@ -2595,7 +2636,7 @@ pub(super) fn associate_topology_carriers(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (edge_id, edge) in exchange.entities("EDGE_CURVE") {
         let Some(curve_step) = edge_curve_geometry_reference(edge)
             .and_then(|curve| curve_carrier_record(curve, exchange))
@@ -2608,17 +2649,20 @@ pub(super) fn associate_topology_carriers(
         if owned.curves.contains(index) {
             continue;
         }
-        ir.model.curves[index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+        if ir.model.curves[index.0].source_object.is_none() {
+            ir.model.curves[index.0].source_object = Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{edge_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{edge_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
             });
+        }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
         let Some(surface_step) = face_surface_reference(face) else {
@@ -2630,17 +2674,20 @@ pub(super) fn associate_topology_carriers(
         if owned.surfaces.contains(index) {
             continue;
         }
-        ir.model.surfaces[index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+        if ir.model.surfaces[index.0].source_object.is_none() {
+            ir.model.surfaces[index.0].source_object = Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{face_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{face_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
             });
+        }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_step) = vertex_point_reference(vertex) else {
@@ -2652,18 +2699,22 @@ pub(super) fn associate_topology_carriers(
         if owned.points.contains(index) {
             continue;
         }
-        ir.model.points[index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+        if ir.model.points[index.0].source_object.is_none() {
+            ir.model.points[index.0].source_object = Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{vertex_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{vertex_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
             });
+        }
     }
+    Ok(())
 }
 
 /// Associate the basis carrier owned by each valid replica with that replica.
@@ -2672,7 +2723,11 @@ pub(super) fn associate_topology_carriers(
 /// separate IR geometry entry because the transformed geometry stores the
 /// basis inline. The basis is still a real STEP dependency and must not be
 /// reported as an unowned carrier by generic IR validation.
-pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
+pub(super) fn associate_replica_bases(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+) -> Result<(), cadmpeg_core::CodecError> {
     for (replica_id, record) in exchange.entities("CURVE_REPLICA") {
         let Some(parent_id) =
             named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
@@ -2682,17 +2737,20 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         let Some(parent_index) = index.curves.get(&parent_id).copied() else {
             continue;
         };
-        ir.model.curves[parent_index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+        if ir.model.curves[parent_index.0].source_object.is_none() {
+            ir.model.curves[parent_index.0].source_object = Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{replica_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{replica_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
             });
+        }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
         let Some(parent_id) =
@@ -2703,25 +2761,33 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         let Some(parent_index) = index.surfaces.get(&parent_id).copied() else {
             continue;
         };
-        ir.model.surfaces[parent_index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+        if ir.model.surfaces[parent_index.0].source_object.is_none() {
+            ir.model.surfaces[parent_index.0].source_object = Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{replica_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{replica_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
             });
+        }
     }
+    Ok(())
 }
 
 /// Associate surfaces referenced only as PCURVE supports with their STEP
 /// PCURVE records. The canonical pcurve stores its parameter-space geometry
 /// inline, so this source association preserves reachability of the separate
 /// support carrier.
-pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
+pub(super) fn associate_pcurve_supports(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+) -> Result<(), cadmpeg_core::CodecError> {
     let owned_pcurves = ir
         .model
         .coedges
@@ -2762,18 +2828,22 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
             continue;
         };
-        ir.model.surfaces[surface_index.0]
-            .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+        if ir.model.surfaces[surface_index.0].source_object.is_none() {
+            ir.model.surfaces[surface_index.0].source_object = Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: format!("#{pcurve_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{pcurve_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
             });
+        }
     }
+    Ok(())
 }
 
 /// Associate surfaces listed by retained `SURFACE_CURVE` records.
@@ -2790,7 +2860,7 @@ pub(super) fn associate_surface_curve_supports(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let retained = retained_surface_curve_ids(exchange, index, owned);
     for (surface_curve_id, record) in
         exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
@@ -2802,35 +2872,46 @@ pub(super) fn associate_surface_curve_supports(
             .and_then(|basis| index.curves.get(&basis))
             .copied()
         {
-            ir.model.curves[curve_index.0]
-                .source_object
-                .get_or_insert_with(|| SourceObjectAssociation {
+            if ir.model.curves[curve_index.0].source_object.is_none() {
+                ir.model.curves[curve_index.0].source_object = Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{surface_curve_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "#{surface_curve_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
                     layer: None,
                     instance_path: Vec::new(),
                 });
+            }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
             let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
                 continue;
             };
-            ir.model.surfaces[surface_index.0]
-                .source_object
-                .get_or_insert_with(|| SourceObjectAssociation {
+            if ir.model.surfaces[surface_index.0].source_object.is_none() {
+                ir.model.surfaces[surface_index.0].source_object = Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{surface_curve_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "#{surface_curve_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
                     layer: None,
                     instance_path: Vec::new(),
                 });
+            }
         }
     }
+    Ok(())
 }
 
 fn retained_surface_curve_ids(

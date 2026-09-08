@@ -314,7 +314,8 @@ fn source_association_is_a_free_carrier_root() {
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
             format: crate::CodecFormat::Rhino,
-            object_id: "00000000-0000-0000-0000-000000000000".into(),
+            object_id: crate::products::NonEmptyString::new("00000000-0000-0000-0000-000000000000")
+                .expect("nonempty source identity"),
             name: Some("curve".into()),
             color: None,
             visible: Some(true),

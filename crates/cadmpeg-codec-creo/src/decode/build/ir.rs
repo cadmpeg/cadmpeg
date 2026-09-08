@@ -184,7 +184,7 @@ fn transfer_reference_lines(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let line3d_id_counts =
         scan.references
             .lines
@@ -229,7 +229,12 @@ fn transfer_reference_lines(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:{family}:{native_identity}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "MdlRefInfo:{family}:{native_identity}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -238,13 +243,14 @@ fn transfer_reference_lines(
             }),
         });
     }
+    Ok(())
 }
 
 fn transfer_reference_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let circle_id_counts =
         scan.references
             .circles
@@ -283,7 +289,12 @@ fn transfer_reference_circles(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:arc_z:{native_identity}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "MdlRefInfo:arc_z:{native_identity}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -292,13 +303,14 @@ fn transfer_reference_circles(
             }),
         });
     }
+    Ok(())
 }
 
 fn transfer_reference_ellipses(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let ellipse_id_counts = scan.references.ellipses.iter().fold(
         BTreeMap::<u32, usize>::new(),
         |mut counts, ellipse| {
@@ -337,7 +349,12 @@ fn transfer_reference_ellipses(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:conic:{native_identity}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "MdlRefInfo:conic:{native_identity}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -346,6 +363,7 @@ fn transfer_reference_ellipses(
             }),
         });
     }
+    Ok(())
 }
 
 fn transfer_display_tessellations(
@@ -404,7 +422,7 @@ fn transfer_datum_plane_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
         let id = SurfaceId::mint(format!("creo:actdatums:surface#{}", plane.id))
@@ -432,7 +450,13 @@ fn transfer_datum_plane_surfaces(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("ActDatums:{}", plane.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "ActDatums:{}",
+                    plane.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -441,13 +465,14 @@ fn transfer_datum_plane_surfaces(
             }),
         });
     }
+    Ok(())
 }
 
 fn transfer_placed_plane_surfaces_into_ir(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
             .expect("identity grammar");
@@ -488,7 +513,12 @@ fn transfer_placed_plane_surfaces_into_ir(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{surface_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{surface_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -497,6 +527,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             }),
         });
     }
+    Ok(())
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
@@ -512,12 +543,12 @@ pub(in super::super) fn build_ir(
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
-    transfer_reference_lines(scan, &mut ir, &mut annotations);
-    transfer_reference_circles(scan, &mut ir, &mut annotations);
-    transfer_reference_ellipses(scan, &mut ir, &mut annotations);
+    transfer_reference_lines(scan, &mut ir, &mut annotations)?;
+    transfer_reference_circles(scan, &mut ir, &mut annotations)?;
+    transfer_reference_ellipses(scan, &mut ir, &mut annotations)?;
     transfer_display_tessellations(scan, &mut ir, &mut annotations);
-    transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations);
-    transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations);
+    transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations)?;
+    transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations)?;
     transfer_and_record_scanned_geometry(
         ctx,
         scan,

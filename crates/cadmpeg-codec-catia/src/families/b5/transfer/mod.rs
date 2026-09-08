@@ -221,10 +221,18 @@ fn transfer_complete(
     let Some(mut plan) = build_plan(graph, payload) else {
         return false;
     };
-    vertices::emit_vertices(ir, annotations, graph, &plan);
-    let surface_ids = surfaces::emit_surfaces(ir, annotations, graph, &mut plan);
+    if vertices::emit_vertices(ir, annotations, graph, &plan).is_err() {
+        return false;
+    }
+    let Ok(surface_ids) = surfaces::emit_surfaces(ir, annotations, graph, &mut plan) else {
+        return false;
+    };
     let pcurve_uses = pcurves::emit_pcurves(ir, annotations, graph, &plan);
-    let edge_id_map = edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids);
+    let Ok(edge_id_map) =
+        edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids)
+    else {
+        return false;
+    };
     if !faces::emit_faces(
         ir,
         annotations,

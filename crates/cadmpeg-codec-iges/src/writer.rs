@@ -4086,7 +4086,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = format!("D{sequence}");
         if !ir.model.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges && source.object_id == object_id
+                source.format == cadmpeg_ir::CodecFormat::Iges
+                    && source.object_id.as_str() == object_id
             })
         }) {
             return Err(CodecError::NotImplemented(format!(
@@ -4146,7 +4147,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = format!("D{sequence}");
         if !ir.model.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges && source.object_id == object_id
+                source.format == cadmpeg_ir::CodecFormat::Iges
+                    && source.object_id.as_str() == object_id
             })
         }) {
             return Err(CodecError::NotImplemented(format!(

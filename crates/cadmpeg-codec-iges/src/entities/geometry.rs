@@ -1172,10 +1172,15 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
         .with_provenance(entry.loss_provenance())
 }
 
-pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+pub(super) fn source_object(
+    entry: &DirectoryEntry,
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
-        object_id: format!("D{}", entry.sequence),
+        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("D{}", entry.sequence))
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+            })?,
         name: std::str::from_utf8(&entry.label)
             .ok()
             .map(str::trim)
@@ -1185,7 +1190,7 @@ pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
         visible: Some(entry.status.is_visible()),
         layer: Some(entry.level.to_string()),
         instance_path: Vec::new(),
-    }
+    })
 }
 
 pub(crate) fn project_geometry(
@@ -1448,7 +1453,7 @@ pub(crate) fn project_geometry(
                 ref_direction,
                 radius,
             },
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
@@ -1670,7 +1675,7 @@ pub(crate) fn project_geometry(
                 origin: start,
                 direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
             },
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         if entry.form != 0 {
             decoded.insert(entry.sequence);
@@ -2058,7 +2063,7 @@ pub(crate) fn project_geometry(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(nurbs),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),

@@ -993,7 +993,8 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Step,
-        object_id: "object-1".into(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("object-1")
+            .expect("nonempty source identity"),
         name: Some("exact carrier".into()),
         color: None,
         visible: Some(true),
