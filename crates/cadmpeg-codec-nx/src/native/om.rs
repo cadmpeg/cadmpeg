@@ -358,8 +358,8 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateTa
                 .collect();
             Some(OmRollForwardStateTable::from_frames(
                 section_ordinal,
-                link.id,
-                entry.name.clone(),
+                &link.id,
+                &entry.name,
                 table_footer,
                 table_end_offset,
                 frames,

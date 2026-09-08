@@ -126,8 +126,8 @@ pub(crate) struct OmRollForwardStateTable {
 impl OmRollForwardStateTable {
     pub(crate) fn from_frames(
         section_ordinal: usize,
-        section_link: String,
-        source_entry: String,
+        section_link: &str,
+        source_entry: &str,
         table_footer: GroupTableFooter,
         table_end_offset: u64,
         frames: Vec<OperationStateGroup<u64>>,
@@ -137,8 +137,8 @@ impl OmRollForwardStateTable {
                 let ordinal = u32::try_from(ordinal).ok()?;
                 Some(OmRollForwardStateGroup {
                     id: format!("nx:feature-history:roll-forward-state-group#{section_ordinal:010}-{ordinal:010}"),
-                    section_link: section_link.clone(), ordinal, frame, table_footer,
-                    source_entry: source_entry.clone(), table_end_offset,
+                    section_link: section_link.to_owned(), ordinal, frame, table_footer,
+                    source_entry: source_entry.to_owned(), table_end_offset,
                 })
             }).collect(),
         }
