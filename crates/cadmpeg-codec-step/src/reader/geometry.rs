@@ -1995,7 +1995,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         let mut geometry = geometry.clone();
-        if !geometry.try_scale_coordinates(*scales).is_ok() {
+        if geometry.try_scale_coordinates(*scales).is_err() {
             warnings.push(format!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
             ));
@@ -2039,7 +2039,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
         }) {
             warnings.push(format!("procedural surface {}: {error}", surface.id));
-        };
+        }
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
