@@ -4,6 +4,7 @@ use super::{
     marker_center_dimensioned_entity, relation_constraint_is_inactive, typed_relation_definition,
     typed_relation_definition_with_profile_axis, unique_locus,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
@@ -66,7 +67,7 @@ fn dynamic_relation(
             .map(|(index, entity_index)| FeatureInputOperand {
                 offset: index as u64,
                 reference_ref: format!("reference-{index}"),
-                kind: FeatureInputOperandKind::Native(0x812a),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                 entity_index,
                 entity_ref: None,
             })
@@ -371,8 +372,8 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
         Point2::new(-13.0, 7.0),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [8, 0]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(0x8124);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(0x812e);
+    relation.operands[0].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8124);
+    relation.operands[1].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_812E);
     let parameter = length_parameter(14.0);
 
     assert_eq!(
@@ -457,8 +458,8 @@ fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
         Point2::new(-28.0, 10.0),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 0]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(0x8124);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(0x812e);
+    relation.operands[0].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8124);
+    relation.operands[1].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_812E);
 
     assert_eq!(
         typed_relation_definition(
@@ -478,7 +479,7 @@ fn solver_point_relation_requires_materialized_positions() {
     let sketch = SketchId("sketch".into());
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [12, 13]);
     for operand in &mut relation.operands {
-        operand.kind = FeatureInputOperandKind::Native(0x8100);
+        operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100);
     }
     let parameter = length_parameter(7.0);
 

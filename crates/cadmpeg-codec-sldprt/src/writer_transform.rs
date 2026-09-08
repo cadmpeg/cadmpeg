@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     if !ir.model.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())

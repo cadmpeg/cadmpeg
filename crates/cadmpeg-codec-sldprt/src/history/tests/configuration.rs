@@ -1499,7 +1499,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 11,
                 trailing_fields: Vec::new(),
             },
