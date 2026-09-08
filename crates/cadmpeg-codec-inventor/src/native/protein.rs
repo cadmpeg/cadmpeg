@@ -303,15 +303,18 @@ mod tests {
                 compressed_size: 0,
                 uncompressed_size: 0,
             };
-            let mut wire = serde_json::to_value(&entry).unwrap();
+            let mut wire = serde_json::to_value(&entry).expect("Protein entry fixture serializes");
             assert_eq!(wire["compression"], compression.label());
             assert_eq!(
-                serde_json::from_value::<ProteinEntryRecord>(wire.clone()).unwrap(),
+                serde_json::from_value::<ProteinEntryRecord>(wire.clone())
+                    .expect("Protein entry fixture serializes"),
                 entry
             );
             wire["compression"] = serde_json::json!("banana");
             let mut namespace = NativeNamespace::default();
-            namespace.set_arena("protein_entries", &[wire]).unwrap();
+            namespace
+                .set_arena("protein_entries", &[wire])
+                .expect("Protein entry fixture serializes");
             assert!(namespace
                 .arena_as::<ProteinEntryRecord>("protein_entries")
                 .is_err());
