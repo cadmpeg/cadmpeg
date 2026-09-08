@@ -6570,44 +6570,13 @@ pub struct CatiaZeroEntityEndpointPairCandidate {
     pub model_midpoint: cadmpeg_ir::math::Point3,
 }
 
-/// Start or end of an oriented endpoint pair.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-pub enum CatiaZeroEntityEndpointIndex {
-    /// First oriented endpoint.
-    Start,
-    /// Second oriented endpoint.
-    End,
-}
-
-impl From<CatiaZeroEntityEndpointIndex> for u8 {
-    fn from(value: CatiaZeroEntityEndpointIndex) -> Self {
-        match value {
-            CatiaZeroEntityEndpointIndex::Start => 0,
-            CatiaZeroEntityEndpointIndex::End => 1,
-        }
-    }
-}
-
-impl TryFrom<u8> for CatiaZeroEntityEndpointIndex {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Start),
-            1 => Ok(Self::End),
-            other => Err(format!("endpoint_index {other} is not start or end")),
-        }
-    }
-}
-
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
     /// Start or end of that candidate's oriented endpoint pair.
-    pub endpoint_index: CatiaZeroEntityEndpointIndex,
+    pub endpoint_index: crate::families::zero_entity::topology::EdgeEnd,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
@@ -7888,6 +7857,10 @@ fn zero_entity_support_runs(
         .collect()
 }
 
+fn zero_entity_endpoint_pair_id(index: usize) -> String {
+    format!("catia:zero-entity:endpoint-pair-candidate#{index}")
+}
+
 fn zero_entity_endpoint_pair_candidates(
     candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate>,
 ) -> Vec<CatiaZeroEntityEndpointPairCandidate> {
@@ -7895,7 +7868,7 @@ fn zero_entity_endpoint_pair_candidates(
         .into_iter()
         .enumerate()
         .map(|(index, candidate)| CatiaZeroEntityEndpointPairCandidate {
-            id: format!("catia:zero-entity:endpoint-pair-candidate#{index}"),
+            id: zero_entity_endpoint_pair_id(index),
             face_records: candidate
                 .face_record_ordinals
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
@@ -7910,7 +7883,6 @@ fn zero_entity_endpoint_pair_candidates(
 
 fn zero_entity_endpoint_locus_candidates(
     candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointLocusCandidate>,
-    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
 ) -> Vec<CatiaZeroEntityEndpointLocusCandidate> {
     candidates
         .into_iter()
@@ -7922,11 +7894,8 @@ fn zero_entity_endpoint_locus_candidates(
                 .into_iter()
                 .map(
                     |(pair, endpoint_index)| CatiaZeroEntityEndpointPairEndpoint {
-                        endpoint_pair: endpoint_pairs[pair].id.clone(),
-                        endpoint_index: match endpoint_index {
-                            0 => CatiaZeroEntityEndpointIndex::Start,
-                            _ => CatiaZeroEntityEndpointIndex::End,
-                        },
+                        endpoint_pair: zero_entity_endpoint_pair_id(pair.ordinal()),
+                        endpoint_index,
                     },
                 )
                 .collect(),
@@ -9139,10 +9108,8 @@ impl CatiaNative {
             crate::families::zero_entity::topology::endpoint_locus_candidates(
                 &parsed_zero_entity_endpoint_pairs,
             );
-        let zero_entity_endpoint_locus_candidates = zero_entity_endpoint_locus_candidates(
-            parsed_zero_entity_endpoint_loci,
-            &zero_entity_endpoint_pair_candidates,
-        );
+        let zero_entity_endpoint_locus_candidates =
+            zero_entity_endpoint_locus_candidates(parsed_zero_entity_endpoint_loci);
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
