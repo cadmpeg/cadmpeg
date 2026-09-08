@@ -2828,12 +2828,12 @@ mod tests {
                 resource_guid: None,
                 authored_name: None,
                 groups: Vec::new(),
-                element_code: 4,
                 domain: crate::paramesh::MeshAttributeDomain::Corner,
-                item_size: Some(16),
-                values: (0..80).collect(),
+                elements: crate::paramesh::MeshElements::Float {
+                    width: crate::paramesh::FloatWidth::Quad,
+                    values: (0..80).collect(),
+                },
                 indices: Some(vec![0, 2]),
-                triangle_values: None,
             }],
         };
         let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
