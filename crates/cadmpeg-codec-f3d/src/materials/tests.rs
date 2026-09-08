@@ -71,12 +71,17 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
         for value in [schema, guid, "base", ""] {
             super::push_lp(&mut logical, value).unwrap();
         }
-        let paged = super::page_logical(&logical).unwrap();
         if instance.is_empty() {
-            instance.extend_from_slice(&paged);
-        } else {
-            instance.extend_from_slice(&paged[STREAM_HEADER_LEN..]);
+            instance.extend_from_slice(&(super::PAGE_SIZE as u32).to_le_bytes());
+            instance.extend_from_slice(&[0; STREAM_HEADER_LEN - 4]);
         }
+        let body = &logical[RECORD_MARKER.len()..];
+        let mut page = super::TERMINAL_MARKER.to_vec();
+        page.extend_from_slice(&u16::try_from(body.len()).unwrap().to_le_bytes());
+        page.extend_from_slice(&[0; 2]);
+        page.extend_from_slice(body);
+        page.resize(super::PAGE_SIZE, 0);
+        instance.extend_from_slice(&page);
     }
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
