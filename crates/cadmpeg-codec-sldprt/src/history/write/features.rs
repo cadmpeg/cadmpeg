@@ -73,7 +73,10 @@ pub(crate) fn synchronize_feature_input_names(
 }
 
 pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
-    format!("sldprt:generated:feature#{}", feature.as_str())
+    format!(
+        "sldprt:generated:feature#{}",
+        feature.as_str().replace('%', "%25").replace('#', "%23")
+    )
 }
 
 pub(crate) fn generated_feature_source_ids(
@@ -643,5 +646,25 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
                     .map(|(_, id)| FeatureContent::Feature(id.clone())),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{generated_feature_record_id, neutral_feature_id};
+    use cadmpeg_ir::features::FeatureId;
+
+    #[test]
+    fn generated_feature_identities_escape_embedded_separators() {
+        let feature =
+            FeatureId::mint("test:model:feature#original%23key").expect("fixture identity");
+        let record = generated_feature_record_id(&feature);
+        assert_eq!(
+            record,
+            "sldprt:generated:feature#test:model:feature%23original%2523key"
+        );
+        assert!(cadmpeg_ir::ids::is_valid_identity(&record));
+        let projected = neutral_feature_id(&record);
+        assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
     }
 }
