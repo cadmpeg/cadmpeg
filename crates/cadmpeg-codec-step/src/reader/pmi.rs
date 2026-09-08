@@ -175,6 +175,16 @@ pub(super) fn decode(
             })
             .flatten()
             .collect::<Vec<_>>();
+        let datum_references = match datum_references.try_into() {
+            Ok(references) => references,
+            Err(error) => {
+                losses.push(
+                    StepLossCode::PmiDatumSystemInvalid
+                        .note(format!("DATUM_SYSTEM #{id} omitted: {error}")),
+                );
+                continue;
+            }
+        };
         push_annotation(
             ir,
             &mut annotations,
@@ -198,9 +208,7 @@ pub(super) fn decode(
             )?,
             None,
             PmiDefinition::DatumSystem {
-                references: datum_references
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                references: datum_references,
             },
         );
         typed.insert(id);
