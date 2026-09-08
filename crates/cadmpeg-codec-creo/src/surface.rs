@@ -5,6 +5,8 @@
 //! boundary, and namespace links. A named prototype locates its adjacent first
 //! positional instance.
 
+pub(crate) mod arrays;
+
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
@@ -314,25 +316,9 @@ pub enum SurfaceNamedValue {
     /// Count consecutive entity IDs beginning at one stored reference.
     ContiguousEntityReferences(Vec<u32>),
     /// Dimensioned `f9` scalar body.
-    ScalarArray {
-        /// Stored dimension value.
-        dimensions: u32,
-        /// Stored element count.
-        count: u32,
-        /// Decoded slots with unresolved values retained.
-        values: Vec<Option<f64>>,
-        /// Exact token bytes for each declared slot when the spline lane applies.
-        tokens: Option<Vec<Vec<u8>>>,
-    },
+    ScalarArray(arrays::DimensionedScalars),
     /// Counted `f8` scalar body.
-    CountedScalarArray {
-        /// Stored element count.
-        count: u32,
-        /// Decoded slots with unresolved values retained.
-        values: Vec<Option<f64>>,
-        /// Exact token bytes for each declared slot.
-        tokens: Vec<Vec<u8>>,
-    },
+    CountedScalarArray(arrays::CountedScalars),
     /// One or more consecutive scalar tokens.
     ScalarSequence(Vec<f64>),
     /// Exact bytes of a wrapper that is not structurally defined.
@@ -378,18 +364,13 @@ impl SurfacePrototypeRecord {
         if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
             return None;
         }
-        let SurfaceNamedValue::ScalarArray {
-            dimensions: 4,
-            count: 3,
-            values,
-            ..
-        } = &self.field("local_sys")?.value
-        else {
+        let SurfaceNamedValue::ScalarArray(array) = &self.field("local_sys")?.value else {
             return None;
         };
-        if values.len() != 12 {
+        if array.dimensions() != 4 || array.count() != 3 {
             return None;
         }
+        let values = array.values();
         if values.iter().all(|value| value.is_some_and(f64::is_finite)) {
             return Some([values[9]?, values[10]?, values[11]?]);
         }
@@ -491,32 +472,28 @@ struct SplineReplayShape {
 }
 
 fn complete_spline_vector_count(prototype: &SurfacePrototypeRecord, name: &str) -> Option<usize> {
-    let SurfaceNamedValue::ScalarArray {
-        dimensions,
-        count: 3,
-        values,
-        ..
-    } = &prototype.field(name)?.value
-    else {
+    let SurfaceNamedValue::ScalarArray(array) = &prototype.field(name)?.value else {
         return None;
     };
-    let dimensions = usize::try_from(*dimensions).ok()?;
-    (values.len() == dimensions.checked_mul(3)?
-        && values.iter().all(|value| value.is_some_and(f64::is_finite)))
-    .then_some(dimensions)
+    (array.count() == 3).then_some(())?;
+    let dimensions = usize::try_from(array.dimensions()).ok()?;
+    let values = array.values();
+    values
+        .iter()
+        .all(|value| value.is_some_and(f64::is_finite))
+        .then_some(dimensions)
 }
 
 fn complete_spline_parameter_count(
     prototype: &SurfacePrototypeRecord,
     name: &str,
 ) -> Option<usize> {
-    let SurfaceNamedValue::CountedScalarArray { count, values, .. } = &prototype.field(name)?.value
-    else {
+    let SurfaceNamedValue::CountedScalarArray(array) = &prototype.field(name)?.value else {
         return None;
     };
-    let count = usize::try_from(*count).ok()?;
-    (values.len() == count
-        && values.iter().all(|value| value.is_some_and(f64::is_finite))
+    let count = usize::try_from(array.count()).ok()?;
+    let values = array.values();
+    (values.iter().all(|value| value.is_some_and(f64::is_finite))
         && values
             .iter()
             .copied()
@@ -3245,11 +3222,13 @@ fn named_surface_value(
                     slot_count,
                     cache,
                 );
-                return SurfaceNamedValue::CountedScalarArray {
+                return arrays::CountedScalars::try_new(
                     count,
-                    values: slots.iter().map(|slot| slot.0).collect(),
-                    tokens: slots.into_iter().map(|slot| slot.1).collect(),
-                };
+                    slots.iter().map(|slot| slot.0).collect(),
+                    slots.into_iter().map(|slot| slot.1).collect(),
+                )
+                .map(SurfaceNamedValue::CountedScalarArray)
+                .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()));
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3283,11 +3262,13 @@ fn named_surface_value(
                 else {
                     return SurfaceNamedValue::Opaque(body.to_vec());
                 };
-                return SurfaceNamedValue::CountedScalarArray {
+                return arrays::CountedScalars::try_new(
                     count,
-                    values: slots.iter().map(|slot| slot.0).collect(),
-                    tokens: slots.into_iter().map(|slot| slot.1).collect(),
-                };
+                    slots.iter().map(|slot| slot.0).collect(),
+                    slots.into_iter().map(|slot| slot.1).collect(),
+                )
+                .map(SurfaceNamedValue::CountedScalarArray)
+                .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()));
             }
         }
     }
@@ -3334,12 +3315,14 @@ fn named_surface_value(
         } else {
             scalar_slots(&body[values_start..], slot_count, cache)
         };
-        return SurfaceNamedValue::ScalarArray {
+        return arrays::DimensionedScalars::try_new(
             dimensions,
             count,
             values,
-            tokens: spline_slots.map(|slots| slots.into_iter().map(|slot| slot.1).collect()),
-        };
+            spline_slots.map(|slots| slots.into_iter().map(|slot| slot.1).collect()),
+        )
+        .map(SurfaceNamedValue::ScalarArray)
+        .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()));
     }
     if compact_integer_field {
         let (value, end) = compact_int(body, 0);
