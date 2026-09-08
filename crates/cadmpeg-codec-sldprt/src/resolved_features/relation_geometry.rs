@@ -3400,7 +3400,7 @@ mod relation_geometry_tests {
             marker
         }
 
-        const FEATURE: &str = "feature";
+        const FEATURE: &str = "synthetic:test:id#feature";
         const LANE: &str = "lane";
         let source_position = Point3::new(0.0, 16.0, 12.0);
 

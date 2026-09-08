@@ -869,8 +869,16 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         native_ref: None,
     };
     let parameters = [
-        parameter("synthetic:test:id#first-diameter", "first", 4.0),
-        parameter("synthetic:test:id#second-diameter", "second", 5.0),
+        parameter(
+            "synthetic:test:id#first-diameter",
+            "synthetic:test:id#first",
+            4.0,
+        ),
+        parameter(
+            "synthetic:test:id#second-diameter",
+            "synthetic:test:id#second",
+            5.0,
+        ),
     ];
     let mut sketches = [Sketch {
         id: sketch_id.clone(),

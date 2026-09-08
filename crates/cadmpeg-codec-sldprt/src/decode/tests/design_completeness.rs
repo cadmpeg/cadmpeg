@@ -102,7 +102,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         });
     };
     push(
-        "base",
+        "synthetic:test:id#base",
         0,
         Vec::new(),
         Vec::new(),
@@ -111,21 +111,21 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "stored",
+        "synthetic:test:id#stored",
         1,
         Vec::new(),
         vec![body.clone()],
         FeatureDefinition::StoredGeometry,
     );
     push(
-        "derived",
+        "synthetic:test:id#derived",
         2,
         vec![source.clone()],
         Vec::new(),
         FeatureDefinition::DerivedGeometry { source },
     );
     push(
-        "mirror",
+        "synthetic:test:id#mirror",
         3,
         Vec::new(),
         Vec::new(),
@@ -137,7 +137,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "sew",
+        "synthetic:test:id#sew",
         4,
         Vec::new(),
         Vec::new(),
@@ -147,7 +147,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "trim",
+        "synthetic:test:id#trim",
         5,
         Vec::new(),
         Vec::new(),
@@ -158,7 +158,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "import",
+        "synthetic:test:id#import",
         6,
         Vec::new(),
         Vec::new(),
@@ -168,7 +168,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "section",
+        "synthetic:test:id#section",
         7,
         Vec::new(),
         Vec::new(),

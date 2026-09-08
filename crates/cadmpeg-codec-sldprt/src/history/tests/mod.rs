@@ -62,7 +62,7 @@ fn design_configuration(
     native_ref: Option<&str>,
 ) -> DesignConfiguration {
     DesignConfiguration {
-        id: ConfigurationId::mint(id).expect("identity grammar"),
+        id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         active: false,
         source_index,
