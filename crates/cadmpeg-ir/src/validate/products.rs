@@ -70,13 +70,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
         let auxiliary_definitions = occurrence.link.as_ref().is_none_or(|link| {
             [
-                link.element_component.as_ref(),
-                link.copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.source.as_ref()),
-                link.copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.group.as_ref()),
+                link.element_component(),
+                link.copy_on_change().and_then(|copy| copy.source.as_ref()),
+                link.copy_on_change().and_then(|copy| copy.group.as_ref()),
             ]
             .into_iter()
             .flatten()

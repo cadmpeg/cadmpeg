@@ -4218,10 +4218,10 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|occurrence| {
                 let link_metadata = occurrence.link.as_ref().map_or(0, |link| {
-                    usize::from(!link.linked_subelements.is_empty())
-                        + usize::from(link.element_component.is_some())
-                        + usize::from(link.claim_child.is_some())
-                        + link.copy_on_change.as_ref().map_or(0, |copy| {
+                    usize::from(!link.linked_subelements().is_empty())
+                        + usize::from(link.element_component().is_some())
+                        + usize::from(link.claim_child().is_some())
+                        + link.copy_on_change().map_or(0, |copy| {
                             1 + usize::from(copy.source.is_some())
                                 + usize::from(copy.group.is_some())
                                 + usize::from(copy.touched.is_some())

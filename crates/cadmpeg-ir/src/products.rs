@@ -361,14 +361,51 @@ pub struct Occurrence {
 /// `FreeCAD` `App::Link`-specific occurrence state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkState {
+    linked_subelements: Vec<String>,
+    element_component: Option<ProductDefinitionId>,
+    claim_child: Option<bool>,
+    copy_on_change: Option<CopyOnChange>,
+}
+
+impl LinkState {
+    /// Nonempty link state, or absence when all members are empty.
+    pub fn new(
+        linked_subelements: Vec<String>,
+        element_component: Option<ProductDefinitionId>,
+        claim_child: Option<bool>,
+        copy_on_change: Option<CopyOnChange>,
+    ) -> Option<Self> {
+        (!linked_subelements.is_empty()
+            || element_component.is_some()
+            || claim_child.is_some()
+            || copy_on_change.is_some())
+        .then_some(Self {
+            linked_subelements,
+            element_component,
+            claim_child,
+            copy_on_change,
+        })
+    }
+
     /// Persisted prototype subelement selection.
-    pub linked_subelements: Vec<String>,
+    pub fn linked_subelements(&self) -> &[String] {
+        &self.linked_subelements
+    }
+
     /// Explicit application object representing this array element.
-    pub element_component: Option<ProductDefinitionId>,
+    pub fn element_component(&self) -> Option<&ProductDefinitionId> {
+        self.element_component.as_ref()
+    }
+
     /// Whether this link claims its prototype in the source tree.
-    pub claim_child: Option<bool>,
-    /// Copy-on-change ownership state, when enabled on the link.
-    pub copy_on_change: Option<CopyOnChange>,
+    pub fn claim_child(&self) -> Option<bool> {
+        self.claim_child
+    }
+
+    /// Copy-on-change ownership state.
+    pub fn copy_on_change(&self) -> Option<&CopyOnChange> {
+        self.copy_on_change.as_ref()
+    }
 }
 
 /// Copy-on-change ownership state carried by an `App::Link` occurrence.
@@ -517,16 +554,12 @@ mod link_state_wire {
                 ));
             }
         };
-        let present = !wire.linked_subelements.is_empty()
-            || wire.element_component.is_some()
-            || wire.claim_child.is_some()
-            || copy_on_change.is_some();
-        Ok(present.then_some(LinkState {
-            linked_subelements: wire.linked_subelements,
-            element_component: wire.element_component,
-            claim_child: wire.claim_child,
+        Ok(LinkState::new(
+            wire.linked_subelements,
+            wire.element_component,
+            wire.claim_child,
             copy_on_change,
-        }))
+        ))
     }
 }
 
@@ -705,15 +738,29 @@ mod tests {
     }
 
     #[test]
+    fn empty_link_state_is_absent() {
+        assert!(LinkState::new(Vec::new(), None, None, None).is_none());
+        assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
+        let plain = occurrence(
+            "test:model:occurrence#empty-link",
+            OccurrenceParent::Root,
+            0.0,
+        );
+        let wire = serde_json::to_value(&plain).unwrap();
+        assert!(serde_json::from_value::<Occurrence>(wire)
+            .unwrap()
+            .link
+            .is_none());
+    }
+
+    #[test]
     fn link_state_wire_preserves_the_legacy_fields_and_requires_a_copy_policy() {
         let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
-        linked.link = Some(LinkState {
-            linked_subelements: vec!["Face1".into()],
-            element_component: Some(
-                ProductDefinitionId::mint("test:model:product#element").expect("valid identity"),
-            ),
-            claim_child: Some(true),
-            copy_on_change: Some(CopyOnChange {
+        linked.link = LinkState::new(
+            vec!["Face1".into()],
+            Some(ProductDefinitionId::mint("test:model:product#element").expect("valid identity")),
+            Some(true),
+            Some(CopyOnChange {
                 policy: CopyOnChangePolicy::Owned,
                 source: Some(
                     ProductDefinitionId::mint("test:model:product#source").expect("valid identity"),
@@ -723,7 +770,7 @@ mod tests {
                 ),
                 touched: Some(true),
             }),
-        });
+        );
         let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
         assert_eq!(wire["linked_subelements"], serde_json::json!(["Face1"]));
         assert_eq!(
