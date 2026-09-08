@@ -1316,7 +1316,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 bodies: design_body_selection(
                                     scope,
                                     operation
-                                        .bodies
+                                        .bodies()
                                         .iter()
                                         .map(|body| u64::from(body.copied.value)),
                                     body_bindings,

@@ -1911,51 +1911,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let copy_paste_link = match scope.copy_paste_bodies_operation() {
             None => scope.kind() != crate::records::feature::DesignFeatureKind::CopyPasteBodies,
             Some(operation) => {
-                let body_count = operation.bodies.len();
                 let group_header =
                     records_by_index.get(&(native_stream, operation.body_group_record_index));
                 let relation_header =
                     records_by_index.get(&(native_stream, operation.relation_record_index));
-                body_count > 0
-                    && scope.reference_members.values().next()
-                        == Some(&operation.body_group_record_index)
+                scope.reference_members.values().next() == Some(&operation.body_group_record_index)
                     && scope
                         .reference_members
                         .values()
                         .skip(1)
                         .copied()
-                        .eq(operation.bodies.iter().map(|body| body.operand.value))
-                    && operation.bodies.first().map(|body| body.operand.offset)
-                        == Some(operation.body_group_byte_offset.saturating_add(26))
-                    && operation.bodies.windows(2).all(|pair| {
-                        pair[1].operand.offset == pair[0].operand.offset.saturating_add(11)
-                    })
-                    && operation.bodies.first().map(|body| body.source.offset)
-                        == Some(operation.relation_byte_offset.saturating_add(25))
-                    && operation
-                        .bodies
-                        .iter()
-                        .all(|body| body.copied.offset == body.source.offset.saturating_add(15))
-                    && operation.bodies.windows(2).all(|pair| {
-                        pair[1].source.offset == pair[0].source.offset.saturating_add(30)
-                    })
-                    && operation
-                        .bodies
-                        .iter()
-                        .flat_map(|body| [body.source.value, body.copied.value])
-                        .collect::<HashSet<_>>()
-                        .len()
-                        == body_count.saturating_mul(2)
+                        .eq(operation.bodies().iter().map(|body| body.operand.value))
                     && group_header.is_some_and(|header| {
-                        header.byte_offset == operation.body_group_byte_offset
+                        header.byte_offset == operation.body_group_byte_offset()
                             && header.class_tag == operation.body_group_class_tag
                     })
                     && relation_header.is_some_and(|header| {
-                        header.byte_offset == operation.relation_byte_offset
+                        header.byte_offset == operation.relation_byte_offset()
                             && header.class_tag == operation.relation_class_tag
                     })
                     && operation
-                        .bodies
+                        .bodies()
                         .iter()
                         .map(|body| body.source.value)
                         .all(|suffix| {
@@ -1965,7 +1941,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             })
                         })
                     && operation
-                        .bodies
+                        .bodies()
                         .iter()
                         .map(|body| body.copied.value)
                         .all(|suffix| {

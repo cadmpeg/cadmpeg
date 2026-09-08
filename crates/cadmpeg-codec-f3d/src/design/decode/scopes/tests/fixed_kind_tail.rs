@@ -274,20 +274,20 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     )
     .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
-    assert_eq!(operation.body_group_byte_offset, body_group_at as u64);
+    assert_eq!(operation.body_group_byte_offset(), body_group_at as u64);
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.operand.value)
             .collect::<Vec<_>>(),
         [66]
     );
     assert_eq!(operation.relation_record_index, 44);
-    assert_eq!(operation.relation_byte_offset, relation_at as u64);
+    assert_eq!(operation.relation_byte_offset(), relation_at as u64);
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.source.value)
             .collect::<Vec<_>>(),
@@ -295,7 +295,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.copied.value)
             .collect::<Vec<_>>(),

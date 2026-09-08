@@ -8772,19 +8772,19 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
     into = "DesignCopyPasteBodiesOperationWire"
 )]
 pub struct DesignCopyPasteBodiesOperation {
-    pub bodies: Vec<DesignCopiedBody>,
+    bodies: Vec<DesignCopiedBody>,
     /// Counted body-selection group named by the scope prefix and reference table.
     pub body_group_record_index: u32,
     /// Dynamic class tag of the body group's primary header.
     pub body_group_class_tag: DesignClassTag,
     /// Byte offset of the body group's primary header.
-    pub body_group_byte_offset: u64,
+    body_group_byte_offset: u64,
     /// Indexed source-to-copy relation record named by the scope prefix.
     pub relation_record_index: u32,
     /// Dynamic class tag of the relation record's primary header.
     pub relation_class_tag: DesignClassTag,
     /// Byte offset of the relation record's primary header.
-    pub relation_byte_offset: u64,
+    relation_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8821,6 +8821,59 @@ struct DesignCopyPasteBodiesOperationWire {
     copied_body_entity_suffixes: Vec<u32>,
     /// Byte offsets parallel to `copied_body_entity_suffixes`.
     copied_body_entity_suffix_offsets: Vec<u64>,
+}
+
+impl DesignCopyPasteBodiesOperation {
+    pub(crate) fn try_new(
+        bodies: Vec<DesignCopiedBody>,
+        body_group_record_index: u32,
+        body_group_class_tag: DesignClassTag,
+        body_group_byte_offset: u64,
+        relation_record_index: u32,
+        relation_class_tag: DesignClassTag,
+        relation_byte_offset: u64,
+    ) -> Result<Self, String> {
+        if bodies.is_empty() {
+            return Err("bodies must not be empty".into());
+        }
+        let mut suffixes = std::collections::HashSet::new();
+        let mut operand_offset = body_group_byte_offset.saturating_add(26);
+        let mut source_offset = relation_byte_offset.saturating_add(25);
+        for body in &bodies {
+            if !suffixes.insert(body.source.value) || !suffixes.insert(body.copied.value) {
+                return Err("source and copied body suffixes must be pairwise distinct".into());
+            }
+            if body.operand.offset != operand_offset
+                || body.source.offset != source_offset
+                || body.copied.offset != source_offset.saturating_add(15)
+            {
+                return Err(
+                    "bodies operand, source, and copied offsets must follow their record strides"
+                        .into(),
+                );
+            }
+            operand_offset = operand_offset.saturating_add(11);
+            source_offset = source_offset.saturating_add(30);
+        }
+        Ok(Self {
+            bodies,
+            body_group_record_index,
+            body_group_class_tag,
+            body_group_byte_offset,
+            relation_record_index,
+            relation_class_tag,
+            relation_byte_offset,
+        })
+    }
+    pub(crate) fn bodies(&self) -> &[DesignCopiedBody] {
+        &self.bodies
+    }
+    pub(crate) fn body_group_byte_offset(&self) -> u64 {
+        self.body_group_byte_offset
+    }
+    pub(crate) fn relation_byte_offset(&self) -> u64 {
+        self.relation_byte_offset
+    }
 }
 
 impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperation {
@@ -8882,15 +8935,15 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 },
             )
             .collect();
-        Ok(Self {
+        Self::try_new(
             bodies,
-            body_group_record_index: wire.body_group_record_index,
-            body_group_class_tag: wire.body_group_class_tag.try_into()?,
-            body_group_byte_offset: wire.body_group_byte_offset,
-            relation_record_index: wire.relation_record_index,
-            relation_class_tag: wire.relation_class_tag.try_into()?,
-            relation_byte_offset: wire.relation_byte_offset,
-        })
+            wire.body_group_record_index,
+            wire.body_group_class_tag.try_into()?,
+            wire.body_group_byte_offset,
+            wire.relation_record_index,
+            wire.relation_class_tag.try_into()?,
+            wire.relation_byte_offset,
+        )
     }
 }
 impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire {

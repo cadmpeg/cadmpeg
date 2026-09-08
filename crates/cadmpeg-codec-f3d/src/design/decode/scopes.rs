@@ -5588,24 +5588,18 @@ pub(crate) fn exact_copy_paste_bodies_operation(
             },
         });
     }
-    if bodies
-        .iter()
-        .flat_map(|body| [body.source.value, body.copied.value])
-        .collect::<HashSet<_>>()
-        .len()
-        != reference_count
-    {
-        return None;
-    }
-    Some(DesignCopyPasteBodiesOperation {
-        bodies,
-        body_group_record_index,
-        body_group_class_tag: body_group_class_tag.try_into().ok()?,
-        body_group_byte_offset: u64::try_from(body_group_at).ok()?,
-        relation_record_index,
-        relation_class_tag: relation_class_tag.try_into().ok()?,
-        relation_byte_offset: u64::try_from(relation_at).ok()?,
-    })
+    Some(
+        DesignCopyPasteBodiesOperation::try_new(
+            bodies,
+            body_group_record_index,
+            body_group_class_tag.try_into().ok()?,
+            u64::try_from(body_group_at).ok()?,
+            relation_record_index,
+            relation_class_tag.try_into().ok()?,
+            u64::try_from(relation_at).ok()?,
+        )
+        .ok()?,
+    )
 }
 
 pub(crate) fn exact_base_feature_construction(
