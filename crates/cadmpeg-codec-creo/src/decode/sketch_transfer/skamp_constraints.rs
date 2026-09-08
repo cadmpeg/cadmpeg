@@ -370,9 +370,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             SketchCoordinateAxis::U
                         };
                         SketchConstraintDefinition::SameCoordinate {
-                            first,
-                            second,
-                            axis,
+                            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                first, second, axis,
+                            )
+                            .ok()?,
                         }
                     }
                     (37, [source, result])
@@ -441,9 +442,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             section_skamp_same_coordinate(definition, sketch, skamp, active)
                         {
                             SketchConstraintDefinition::SameCoordinate {
-                                first,
-                                second,
-                                axis,
+                                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                    first, second, axis,
+                                )
+                                .ok()?,
                             }
                         } else if !active {
                             let [first, second] = skamp.items.as_slice() else {
@@ -455,11 +457,16 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 section_skamp_same_coordinate_axis(skamp),
                             ) {
                                 (Some(first), Some(second), Some(axis)) => {
-                                    SketchConstraintDefinition::SameCoordinate {
+                                    match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                         first,
                                         second,
-                                        axis: [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
+                                        [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
                                             [axis.index()],
+                                    ) {
+                                        Ok(relation) => {
+                                            SketchConstraintDefinition::SameCoordinate { relation }
+                                        }
+                                        Err(_) => native_constraint()?,
                                     }
                                 }
                                 _ => native_constraint()?,
@@ -582,8 +589,10 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinition::Text { elements: loci, .. } => {
             loci.iter().all(locus_compatible)
         }
-        SketchConstraintDefinition::SameCoordinate { first, second, .. }
-        | SketchConstraintDefinition::TangentLoci { first, second }
+        SketchConstraintDefinition::SameCoordinate { relation } => {
+            locus_compatible(relation.first()) && locus_compatible(relation.second())
+        }
+        SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
         | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
         | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }

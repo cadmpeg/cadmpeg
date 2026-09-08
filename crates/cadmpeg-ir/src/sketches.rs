@@ -1707,6 +1707,108 @@ mod internal_alignment_wire {
     }
 }
 
+/// Ordered polygon members with at least three distinct identities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchPolygonWire")]
+pub struct SketchPolygon {
+    entities: Vec<SketchEntityId>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPolygonWire {
+    entities: Vec<SketchEntityId>,
+}
+
+impl TryFrom<SketchPolygonWire> for SketchPolygon {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchPolygonWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.entities)
+    }
+}
+
+impl SketchPolygon {
+    /// Admits at least three distinct polygon members.
+    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, &'static str> {
+        if entities.len() < 3
+            || entities
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != entities.len()
+        {
+            return Err("entities requires at least three distinct polygon members");
+        }
+        Ok(Self { entities })
+    }
+
+    /// Returns the ordered polygon members.
+    pub fn entities(&self) -> &[SketchEntityId] {
+        &self.entities
+    }
+}
+
+/// Two distinct loci aligned on one sketch coordinate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchSameCoordinateWire")]
+pub struct SketchSameCoordinate {
+    first: SketchLocus,
+    second: SketchLocus,
+    axis: SketchCoordinateAxis,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchSameCoordinateWire {
+    first: SketchLocus,
+    second: SketchLocus,
+    axis: SketchCoordinateAxis,
+}
+
+impl TryFrom<SketchSameCoordinateWire> for SketchSameCoordinate {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchSameCoordinateWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.first, wire.second, wire.axis)
+    }
+}
+
+impl SketchSameCoordinate {
+    /// Admits two distinct loci and their shared coordinate axis.
+    pub fn try_new(
+        first: SketchLocus,
+        second: SketchLocus,
+        axis: SketchCoordinateAxis,
+    ) -> Result<Self, &'static str> {
+        if first == second {
+            return Err("first and second require distinct loci");
+        }
+        Ok(Self {
+            first,
+            second,
+            axis,
+        })
+    }
+
+    /// Returns the first locus.
+    pub fn first(&self) -> &SketchLocus {
+        &self.first
+    }
+
+    /// Returns the second locus.
+    pub fn second(&self) -> &SketchLocus {
+        &self.second
+    }
+
+    /// Returns the shared coordinate axis.
+    pub fn axis(&self) -> SketchCoordinateAxis {
+        self.axis
+    }
+}
+
 /// Neutral geometric and dimensional sketch relations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1721,8 +1823,9 @@ pub enum SketchConstraintDefinition {
     },
     /// Entities participate in one native polygon relation.
     Polygon {
-        /// Ordered polygon members.
-        entities: Vec<SketchEntityId>,
+        /// Checked polygon members.
+        #[serde(flatten)]
+        polygon: SketchPolygon,
     },
     /// A spline's defining entities grouped by one native spline relation.
     SplineGroup {
@@ -1765,12 +1868,9 @@ pub enum SketchConstraintDefinition {
     },
     /// Two loci share one sketch-space coordinate.
     SameCoordinate {
-        /// First aligned locus.
-        first: SketchLocus,
-        /// Second aligned locus.
-        second: SketchLocus,
-        /// Shared sketch coordinate.
-        axis: SketchCoordinateAxis,
+        /// Checked coordinate relation.
+        #[serde(flatten)]
+        relation: SketchSameCoordinate,
     },
     /// A point locus lies on another sketch entity.
     PointOnObject {

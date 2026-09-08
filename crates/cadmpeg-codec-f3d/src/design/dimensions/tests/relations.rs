@@ -322,7 +322,12 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     assert_eq!(
         exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]),
         Some(SketchConstraintDefinition::Polygon {
-            entities: vec![first.id().clone(), second.id().clone(), third.id().clone()]
+            polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(vec![
+                first.id().clone(),
+                second.id().clone(),
+                third.id().clone()
+            ])
+            .unwrap()
         })
     );
     assert!(exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second]).is_none());

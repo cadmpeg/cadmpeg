@@ -158,13 +158,14 @@ fn point_relation_ignores_auxiliary_relation_links() {
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &loci),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(
-                SketchEntityId::mint("synthetic:test:id#first-point").unwrap()
-            ),
-            second: SketchLocus::Entity(
-                SketchEntityId::mint("synthetic:test:id#second-point").unwrap()
-            ),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#second-point").unwrap()
+                ),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
 }
@@ -249,13 +250,14 @@ fn axis_relation_expands_intermediate_relation_handle() {
     assert_eq!(
         typed_marker_relation_definition(&horizontal, &markers, &loci),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(
-                SketchEntityId::mint("synthetic:test:id#first-point").unwrap()
-            ),
-            second: SketchLocus::Entity(
-                SketchEntityId::mint("synthetic:test:id#second-point").unwrap()
-            ),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#second-point").unwrap()
+                ),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
 
@@ -289,13 +291,16 @@ fn axis_relation_expands_intermediate_relation_handle() {
             &HashMap::new(),
         ),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(
-                SketchEntityId::mint("synthetic:test:id#first-entity").unwrap()
-            ),
-            second: SketchLocus::Entity(
-                SketchEntityId::mint("synthetic:test:id#second-entity").unwrap()
-            ),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#first-entity").unwrap()
+                ),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#second-entity").unwrap()
+                ),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
     let mut ambiguous_entities = entities.clone();
@@ -405,9 +410,12 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
             &loci,
         ),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id().clone()),
-            second: SketchLocus::Entity(second_entity.id().clone()),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(first_entity.id().clone()),
+                SketchLocus::Entity(second_entity.id().clone()),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
 }
@@ -465,9 +473,12 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
     assert_eq!(
         definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_id),
-            second: second_locus,
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(first_id),
+                second_locus,
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         }
     );
     assert!(marker_relation_is_inactive(
@@ -1128,10 +1139,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
             .expect("typed horizontal-points relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::V,
-            ..
-        }
+        SketchConstraintDefinition::SameCoordinate { ref relation } if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(marker_relation_is_inactive(
         &relation,
@@ -1165,10 +1173,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     .expect("typed legacy horizontal relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::V,
-            ..
-        }
+        SketchConstraintDefinition::SameCoordinate { ref relation } if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(marker_relation_is_inactive(
         &swapped_relation,
@@ -1225,10 +1230,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     .expect("typed owner horizontal relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::V,
-            ..
-        }
+        SketchConstraintDefinition::SameCoordinate { ref relation } if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(marker_relation_is_inactive(
         &owner_relation,
@@ -1296,9 +1298,12 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     assert_eq!(
         definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id().clone()),
-            second: SketchLocus::Entity(second_entity.id().clone()),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(first_entity.id().clone()),
+                SketchLocus::Entity(second_entity.id().clone()),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         }
     );
     assert!(!marker_relation_is_inactive(

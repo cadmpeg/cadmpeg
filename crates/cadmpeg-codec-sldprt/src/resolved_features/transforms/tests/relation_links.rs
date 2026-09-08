@@ -178,9 +178,12 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
             &HashMap::new(),
         ),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id().clone()),
-            second: SketchLocus::Entity(second_entity.id().clone()),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(first_entity.id().clone()),
+                SketchLocus::Entity(second_entity.id().clone()),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
 }

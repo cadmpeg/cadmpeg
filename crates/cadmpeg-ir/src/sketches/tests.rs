@@ -122,7 +122,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         id: constraint.clone(),
         sketch,
         definition: SketchConstraintDefinition::Polygon {
-            entities: members.clone(),
+            polygon: crate::sketches::SketchPolygon::try_new(members.clone()).unwrap(),
         },
         name: None,
         driving: None,
@@ -142,15 +142,6 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         round_trip.model.sketch_constraints,
         ir.model.sketch_constraints
     );
-
-    ir.model.sketch_constraints[0].definition = SketchConstraintDefinition::Polygon {
-        entities: vec![members[0].clone(), members[1].clone(), members[0].clone()],
-    };
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(constraint.0.as_str())
-            && finding.message.contains("three distinct members")
-    }));
 }
 
 #[test]
@@ -247,9 +238,12 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             parameter: parameter.clone(),
         },
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-            axis: crate::sketches::SketchCoordinateAxis::V,
+            relation: crate::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(entity.clone()),
+                SketchLocus::End(entity.clone()),
+                crate::sketches::SketchCoordinateAxis::V,
+            )
+            .unwrap(),
         },
         SketchConstraintDefinition::VerticalDistance {
             first: SketchLocus::Start(entity.clone()),
@@ -257,9 +251,12 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             parameter: parameter.clone(),
         },
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-            axis: crate::sketches::SketchCoordinateAxis::U,
+            relation: crate::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(entity.clone()),
+                SketchLocus::End(entity.clone()),
+                crate::sketches::SketchCoordinateAxis::U,
+            )
+            .unwrap(),
         },
         SketchConstraintDefinition::RepeatedDistance {
             measurements: vec![SketchDistanceMeasurement::Horizontal {
@@ -1289,9 +1286,12 @@ fn same_coordinate_accepts_legacy_relation_tags() {
         assert_eq!(
             constraint.definition,
             SketchConstraintDefinition::SameCoordinate {
-                first: first.clone(),
-                second: second.clone(),
-                axis,
+                relation: crate::sketches::SketchSameCoordinate::try_new(
+                    first.clone(),
+                    second.clone(),
+                    axis
+                )
+                .unwrap()
             }
         );
         let wire = serde_json::to_value(constraint).unwrap();
@@ -1563,4 +1563,58 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         serde_json::from_value::<SpatialSketchGeometry>(wire).unwrap(),
         geometry
     );
+}
+
+#[test]
+fn polygon_membership_is_checked_at_admission() {
+    use crate::sketches::{SketchConstraintDefinition, SketchEntityId, SketchPolygon};
+
+    let members = (0..3)
+        .map(|index| SketchEntityId::mint(format!("test:sketch:entity#{index}")).unwrap())
+        .collect::<Vec<_>>();
+    for entities in [
+        Vec::new(),
+        members[..1].to_vec(),
+        members[..2].to_vec(),
+        vec![members[0].clone(), members[1].clone(), members[0].clone()],
+    ] {
+        assert!(SketchPolygon::try_new(entities.clone()).is_err());
+        let wire = serde_json::json!({"kind": "polygon", "entities": entities});
+        assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
+    }
+    let wire = serde_json::json!({"kind": "polygon", "entities": members});
+    let definition = SketchConstraintDefinition::Polygon {
+        polygon: SketchPolygon::try_new(members).unwrap(),
+    };
+    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire).unwrap(),
+        definition
+    );
+}
+
+#[test]
+fn coordinate_locus_distinctness_is_checked_at_admission() {
+    use crate::sketches::{
+        SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchLocus,
+        SketchSameCoordinate,
+    };
+
+    let entity = SketchEntityId::mint("test:sketch:entity#0").unwrap();
+    let first = SketchLocus::Start(entity.clone());
+    for axis in [SketchCoordinateAxis::U, SketchCoordinateAxis::V] {
+        assert!(SketchSameCoordinate::try_new(first.clone(), first.clone(), axis).is_err());
+        let mut wire = serde_json::json!({"kind": "same_coordinate", "first": first, "second": first, "axis": axis});
+        assert!(serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).is_err());
+        let second = SketchLocus::End(entity.clone());
+        wire["second"] = serde_json::to_value(&second).unwrap();
+        let definition = SketchConstraintDefinition::SameCoordinate {
+            relation: SketchSameCoordinate::try_new(first.clone(), second, axis).unwrap(),
+        };
+        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<SketchConstraintDefinition>(wire).unwrap(),
+            definition
+        );
+    }
 }

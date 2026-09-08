@@ -631,11 +631,7 @@ offset: 30,
         } else {
             SketchCoordinateAxis::U
         };
-        let expected = SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(expected_entity.clone()),
-            second: SketchLocus::End(expected_entity),
-            axis,
-        };
+        let expected = SketchConstraintDefinition::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::Start(expected_entity.clone()),SketchLocus::End(expected_entity),axis).unwrap() };
         assert_eq!(
             section_skamp_constraints(&oriented_arc, &SketchId::mint("creo:model:sketch#917").unwrap())[0]
                 .0
@@ -1307,15 +1303,11 @@ offset: 30,
     );
     assert_eq!(
         inactive[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::End(SketchEntityId::mint(
+        SketchConstraintDefinition::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::End(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:13".to_string()
-            ).unwrap()),
-            second: SketchLocus::Center(SketchEntityId::mint(
+            ).unwrap()),SketchLocus::Center(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:13".to_string()
-            ).unwrap()),
-            axis: SketchCoordinateAxis::U,
-        }
+            ).unwrap()),SketchCoordinateAxis::U).unwrap() }
     );
     assert_eq!(inactive[0].0.active, Some(false));
     point_coincidence_definition
@@ -1347,15 +1339,11 @@ offset: 30,
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::End(SketchEntityId::mint(
+        SketchConstraintDefinition::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::End(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:99".to_string()
-            ).unwrap()),
-            second: SketchLocus::Start(SketchEntityId::mint(
+            ).unwrap()),SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:13".to_string()
-            ).unwrap()),
-            axis: SketchCoordinateAxis::U,
-        }
+            ).unwrap()),SketchCoordinateAxis::U).unwrap() }
     );
     point_coincidence_definition
         .relations
@@ -3415,15 +3403,11 @@ offset: 30,
     );
     assert_eq!(
         constraints[14].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId::mint(
+        SketchConstraintDefinition::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:12".to_string()
-            ).unwrap()),
-            second: SketchLocus::Start(SketchEntityId::mint(
+            ).unwrap()),SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:15".to_string()
-            ).unwrap()),
-            axis: SketchCoordinateAxis::V,
-        }
+            ).unwrap()),SketchCoordinateAxis::V).unwrap() }
     );
     let mut fixed_y_coordinate = definition.clone();
     fixed_y_coordinate
@@ -3491,15 +3475,11 @@ offset: 30,
         )[14]
             .0
             .definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId::mint(
+        SketchConstraintDefinition::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:12".to_string()
-            ).unwrap()),
-            second: SketchLocus::Start(SketchEntityId::mint(
+            ).unwrap()),SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:15".to_string()
-            ).unwrap()),
-            axis: SketchCoordinateAxis::U,
-        }
+            ).unwrap()),SketchCoordinateAxis::U).unwrap() }
     );
     unsolved_same_coordinate
         .relations
@@ -5810,15 +5790,11 @@ offset: 30,
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId::mint(
+        SketchConstraintDefinition::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:99".to_string()
-            ).unwrap()),
-            second: SketchLocus::Start(SketchEntityId::mint(
+            ).unwrap()),SketchLocus::Start(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:12".to_string()
-            ).unwrap()),
-            axis: SketchCoordinateAxis::U,
-        }
+            ).unwrap()),SketchCoordinateAxis::U).unwrap() }
     );
     let mut duplicate_saved = saved_definition
         .saved_section

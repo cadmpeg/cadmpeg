@@ -212,13 +212,16 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     assert_eq!(
         constraints[0].0.definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
-            ),
-            second: SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
-            ),
-            axis: SketchCoordinateAxis::V,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
+                ),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+                ),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         }
     );
     assert_eq!(
@@ -259,13 +262,16 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     assert_eq!(
         constraints[0].0.definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
-            ),
-            second: SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
-            ),
-            axis: SketchCoordinateAxis::U,
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",).unwrap()
+                ),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+                ),
+                SketchCoordinateAxis::U
+            )
+            .unwrap()
         }
     );
     assert_eq!(

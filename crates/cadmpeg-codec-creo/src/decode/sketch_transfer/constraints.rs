@@ -109,8 +109,10 @@ pub(in super::super) fn reconcile_constraint_entity_references(
             entities.iter().all(|entity| emitted.contains(entity))
         }
         SketchConstraintDefinition::CoincidentLoci { loci } => loci.iter().all(locus_emitted),
-        SketchConstraintDefinition::SameCoordinate { first, second, .. }
-        | SketchConstraintDefinition::TangentLoci { first, second }
+        SketchConstraintDefinition::SameCoordinate { relation } => {
+            locus_emitted(relation.first()) && locus_emitted(relation.second())
+        }
+        SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
         | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
         | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
@@ -1380,9 +1382,10 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
                     )?,
                     sketch: sketch.clone(),
                     definition: SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis,
+                        relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                            first, second, axis,
+                        )
+                        .ok()?,
                     },
                     name: None,
                     driving: None,

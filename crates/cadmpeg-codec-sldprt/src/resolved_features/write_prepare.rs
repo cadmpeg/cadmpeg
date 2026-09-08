@@ -401,11 +401,10 @@ fn validate_generated_marker_constraint(
         )));
     }
     match &constraint.definition {
-        SketchConstraintDefinition::SameCoordinate {
-            first,
-            second,
-            axis,
-        } => {
+        SketchConstraintDefinition::SameCoordinate { relation } => {
+            let first = relation.first();
+            let second = relation.second();
+            let axis = relation.axis();
             let first_point = constraint_locus_point(ir, constraint, first)?;
             let second_point = constraint_locus_point(ir, constraint, second)?;
             let delta = match axis {
@@ -1659,13 +1658,12 @@ mod source_less_lane_tests {
             id: SketchConstraintId::mint("synthetic:test:id#horizontal").unwrap(),
             sketch: sketch.id,
             definition: SketchConstraintDefinition::SameCoordinate {
-                first: SketchLocus::Entity(
-                    SketchEntityId::mint("synthetic:test:id#first").unwrap(),
-                ),
-                second: SketchLocus::Entity(
-                    SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-                ),
-                axis: SketchCoordinateAxis::V,
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
+                    SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
+                    SketchCoordinateAxis::V,
+                )
+                .unwrap(),
             },
             name: None,
             driving: None,
