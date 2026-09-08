@@ -1657,3 +1657,25 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         ));
     }
 }
+
+#[test]
+fn fillet_unit_conversion_rejects_finite_overflow() {
+    let parameter = |kind| {
+        parse_design_parameter(&parameter_record(
+            Some(1),
+            "1 mm",
+            kind,
+            Some("mm"),
+            "radius",
+            1.0,
+        ))
+        .unwrap()
+    };
+    let mut start = parameter("StartRadius");
+    start.evaluated_value = f64::MAX;
+    let end = parameter("EndRadius");
+    assert!(crate::design::feature_project::design_length(&start).is_none());
+    assert!(
+        crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()
+    );
+}
