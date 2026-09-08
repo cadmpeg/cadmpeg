@@ -34,9 +34,12 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             let DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense,
-                v_sense,
-                extension,
+                layout:
+                    crate::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy {
+                        u_sense,
+                        v_sense,
+                        extension: flags,
+                    },
             } = decoded.definition
             else {
                 panic!("expected legacy offset surface");
@@ -50,11 +53,8 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                         && (origin.z - 15.0).abs() < f64::EPSILON
             ));
             assert!((distance - -2.5).abs() < f64::EPSILON);
-            assert_eq!(u_sense, Some(2));
-            assert_eq!(v_sense, Some(3));
-            let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
-                panic!("expected legacy offset extension")
-            };
+            assert_eq!(u_sense, 2);
+            assert_eq!(v_sense, 3);
             assert_eq!(
                 flags.wire_values(),
                 if name == "off_spl_sur" {
