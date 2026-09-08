@@ -927,7 +927,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             for frame in frames {
                 candidates.push((
                     frame.reference_record_index,
-                    frame.transform,
+                    frame.transform.rows(),
                     frame.transform_offset,
                     None,
                 ));
@@ -1112,7 +1112,7 @@ fn exact_assembly_axial_operand_target(
     let mut origins = scopes.iter().filter(|scope| {
         scope.kind() == crate::records::feature::DesignFeatureKind::JointOrigin
             && scope.record_index == frame.reference_record_index
-            && scope.joint_origin_transform() == Some(frame.transform)
+            && scope.joint_origin_transform() == Some(frame.transform.rows())
     });
     let root = match (origins.next(), origins.next()) {
         (Some(origin), None) => Some(DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
@@ -1171,7 +1171,7 @@ fn exact_assembly_axial_component_operand_at(
     let construction_paired_class_tag =
         exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
     let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
-    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
+    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform.rows() {
         return None;
     }
     let (first_axis_record_index, first_axis_record_index_offset) =
@@ -1809,12 +1809,13 @@ pub(crate) fn exact_assembly_alignment(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
+    let generation = crate::design::assembly::AssemblyScopeGeneration::new(
+        scope.frame_length,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    );
     let legacy_class_388 = matches!(
-        crate::design::assembly::operand_frame_variant(
-            scope.frame_length,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        ),
+        generation.operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     );
     if legacy_class_388 {
@@ -1841,21 +1842,11 @@ pub(crate) fn exact_assembly_alignment(
     }
     let (angle, offset, owners) = {
         if matches!(scope.frame_length, 671 | 744 | 748)
-            && crate::design::assembly::operand_frame_variant(
-                scope.frame_length,
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .is_none()
+            && generation.operand_frame_variant().is_none()
         {
             return None;
         }
-        let (alignment_start, alignment_end) = crate::design::assembly::alignment_lane_bounds(
-            scope.frame_length,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-            lanes.len(),
-        )?;
+        let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
         let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
@@ -2100,7 +2091,7 @@ pub(crate) fn exact_derived_instance_construction(
         carrier_record_index,
         component_guid: carrier.component_guid.clone(),
         occurrence_guid: carrier.occurrence_guid.clone(),
-        transform,
+        transform: transform.try_into().ok()?,
         transform_offset: u64::try_from(transform_offset).ok()?,
     })
 }
@@ -2374,7 +2365,7 @@ pub(crate) fn exact_component_insert_construction(
             (Some(offset), carrier_offset) => {
                 Some(crate::records::feature::DesignComponentInsertMatrix {
                     scope: crate::records::Located {
-                        value: transform,
+                        value: transform.try_into().ok()?,
                         offset: u64::try_from(offset).ok()?,
                     },
                     carrier_offset: carrier_offset.map(u64::try_from).transpose().ok()?,
@@ -2919,9 +2910,9 @@ fn exact_copy_paste_component_operation(
         component_guid: copied.component_guid.clone(),
         source_occurrence_guid: source.occurrence_guid.clone(),
         copied_occurrence_guid: copied.occurrence_guid.clone(),
-        source_transform,
+        source_transform: source_transform.try_into().ok()?,
         source_transform_offset: u64::try_from(start + 38).ok()?,
-        copied_transform,
+        copied_transform: copied_transform.try_into().ok()?,
         copied_transform_offset: u64::try_from(start + 194).ok()?,
     })
 }
@@ -3035,11 +3026,12 @@ fn exact_assembly_operand_frames(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let frame_variant = crate::design::assembly::operand_frame_variant(
+    let frame_variant = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
+    )
+    .operand_frame_variant()?;
     let frame_offsets = match frame_variant {
         crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388 => (
             class_388_assemble::FIRST_OPERAND_REFERENCE,
@@ -3155,7 +3147,7 @@ fn exact_assembly_operand_frames(
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset: (reference_at + 1) as u64,
-            transform,
+            transform: transform.try_into().ok()?,
             transform_offset: transform_at as u64,
         })
     };
@@ -3518,7 +3510,7 @@ fn exact_legacy_class_383_operand_path(
         ) == Some(scope.record_index),
         carrier_paired_at == carrier_at.checked_add(class_383_carrier::LEN)?,
         rigid_transform_at(bytes, carrier_at.checked_add(class_383_carrier::TRANSFORM)?)?
-            == frame.transform,
+            == frame.transform.rows(),
     ];
     if structural_checks.iter().any(|check| !check) {
         return None;
@@ -3657,11 +3649,12 @@ fn exact_legacy_class_388_operand_paths(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !matches!(
-        crate::design::assembly::operand_frame_variant(
+        crate::design::assembly::AssemblyScopeGeneration::new(
             scope.frame_length,
             scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        ),
+            scope.paired_class_tag.as_str()
+        )
+        .operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
@@ -3950,7 +3943,7 @@ fn exact_as_built_operand_frames(
         Some(DesignAssemblyOperandFrame {
             reference_record_index: marked_record_reference(bytes, reference_at)?,
             reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            transform: rigid_transform_at(bytes, transform_at)?,
+            transform: rigid_transform_at(bytes, transform_at)?.try_into().ok()?,
             transform_offset: u64::try_from(transform_at).ok()?,
         })
     });
@@ -3969,11 +3962,12 @@ fn exact_assembly_operand_paths(
     let search_start = usize::try_from(scope.paired_byte_offset)
         .ok()?
         .checked_add(11)?;
-    let locator_offsets = crate::design::assembly::operand_path_locator_offsets(
+    let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
+    )
+    .operand_path_locator_offsets()?;
     let count_at = scope_at
         .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
     if View::u32_le_at(bytes, count_at)? != 2 {

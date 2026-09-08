@@ -601,7 +601,7 @@ fn parse_snapshot_body_map_frame(
                 !entity_has_type(
                     meta,
                     body_entity,
-                    crate::design::body::SNAPSHOT_BODY_RECORD_TYPE_GUID,
+                    crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                 )
             })
         }) {
@@ -615,7 +615,7 @@ fn parse_snapshot_body_map_frame(
             if !reference_has_type(
                 meta,
                 &container,
-                crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             ) || !bytes
                 .get(container.end..reserved_end)
                 .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
@@ -928,7 +928,7 @@ fn parse_body_map_frame(
             reference_has_type(
                 meta,
                 reference,
-                crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             )
         })
         .filter_map(|reference| decode_name(reference.end));
@@ -1327,7 +1327,7 @@ mod tests {
         push_snapshot_reference(
             &mut out,
             700,
-            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             1,
         );
         out.push(0);
@@ -1366,7 +1366,7 @@ mod tests {
                     ]),
                 },
                 presentation_type(
-                    crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                    crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
@@ -1423,7 +1423,7 @@ mod tests {
         push_snapshot_reference(
             &mut out,
             700,
-            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             form,
         );
         if form == 2 {
@@ -1462,14 +1462,14 @@ mod tests {
                     vec![901],
                 ),
                 presentation_type(
-                    crate::design::body::SNAPSHOT_BODY_RECORD_TYPE_GUID,
+                    crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
                     vec![500],
                 ),
                 presentation_type(
-                    crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                    crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
@@ -1571,7 +1571,7 @@ mod tests {
             1,
             1,
             "BREP.snapshot.smb",
-            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
         );
         assert!(
             snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
