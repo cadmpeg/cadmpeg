@@ -20,7 +20,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// string form (via [`SldprtLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SldprtLossCode {
+pub(crate) enum SldprtLossCode {
     /// Active configuration identity does not resolve to exactly one record.
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
@@ -124,7 +124,7 @@ pub enum SldprtLossCode {
 
 impl SldprtLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [SldprtLossCode] = &[
+    pub(crate) const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -174,7 +174,7 @@ impl SldprtLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
@@ -226,7 +226,7 @@ impl SldprtLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
@@ -266,7 +266,7 @@ impl SldprtLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced("sldprt", self.code(), self.shared_taxonomy())
     }
 
@@ -275,7 +275,7 @@ impl SldprtLossCode {
     /// The structured code is `sldprt/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }

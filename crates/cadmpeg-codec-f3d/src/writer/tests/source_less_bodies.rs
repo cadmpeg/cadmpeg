@@ -181,7 +181,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
         ref_b: 0,
-        sense: Some(1),
+        sense: Some(crate::records::SketchLinkSense::try_from(1).unwrap()),
         role: 2,
         closure: 3,
     }];
@@ -318,7 +318,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
-    assert_eq!(native.sketch_curve_links[0].sense, Some(1));
+    assert_eq!(native.sketch_curve_links[0].sense.map(i64::from), Some(1));
     assert_eq!(native.sketch_curve_links[0].role, 2);
     assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
@@ -372,7 +372,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
             target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
             ref_b: 0,
-            sense: Some(1),
+            sense: Some(crate::records::SketchLinkSense::try_from(1).unwrap()),
             role: 2,
             closure: 3,
         })

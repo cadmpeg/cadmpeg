@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -1155,14 +1156,14 @@ fn roster_point_line_distance_materializes_one_solver_line() {
             FeatureInputOperand {
                 offset: 101,
                 reference_ref: "point-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81dd),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 0,
                 entity_ref: Some("point-0".into()),
             },
             FeatureInputOperand {
                 offset: 102,
                 reference_ref: "line-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81e7),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 2,
                 entity_ref: None,
             },
@@ -1334,14 +1335,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
             FeatureInputOperand {
                 offset: 101,
                 reference_ref: "point-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81dd),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 4,
                 entity_ref: Some("point-4".into()),
             },
             FeatureInputOperand {
                 offset: 102,
                 reference_ref: "line-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81e7),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 1,
                 entity_ref: None,
             },

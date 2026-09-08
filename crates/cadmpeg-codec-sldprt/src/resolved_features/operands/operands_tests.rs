@@ -1,6 +1,7 @@
 //! Tests for the `operands` module.
 
 use super::*;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
     SketchInputLink, SketchRelationKind,
@@ -26,7 +27,7 @@ fn qualified_operand_falls_back_to_marker_family_ordinal() {
             links: None,
         })
         .collect::<Vec<_>>();
-    let kind = FeatureInputOperandKind::Native(0x8386);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
     assert_eq!(
         resolve_operand_marker(&markers, kind, 4).map(|marker| marker.id.as_str()),
         Some("marker-4")
@@ -79,13 +80,20 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
     let markers = [&endpoints[0], &endpoints[1], &handle];
 
     assert_eq!(
-        resolve_operand_marker(markers, FeatureInputOperandKind::Native(0x8386), 16,)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
+            16,
+        )
+        .map(|marker| marker.id.as_str()),
         Some("line-handle")
     );
-    assert!(
-        resolve_operand_marker(markers, FeatureInputOperandKind::Native(0x8dda), 16,).is_none()
-    );
+    assert!(resolve_operand_marker(
+        markers,
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
+        16,
+    )
+    .is_none());
 }
 
 #[test]
@@ -108,8 +116,12 @@ fn qualified_operand_selects_one_coordinate_marker_in_a_reused_local_id() {
         marker("geometry", Some([1.0, 2.0])),
     ];
     assert_eq!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x837b), 7,)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            &markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
+            7,
+        )
+        .map(|marker| marker.id.as_str()),
         Some("geometry")
     );
 }
@@ -133,7 +145,7 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
         assert_eq!(
             resolve_operand_marker(
                 std::slice::from_ref(&marker),
-                FeatureInputOperandKind::Native(tag),
+                FeatureInputOperandKind::Native(tag.try_into().unwrap()),
                 16,
             )
             .map(|resolved| resolved.id.as_str()),
@@ -156,8 +168,12 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
     }));
     markers[0].local_id = Some(1);
     assert_eq!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc7c), 1)
-            .map(|resolved| resolved.id.as_str()),
+        resolve_operand_marker(
+            &markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
+            1
+        )
+        .map(|resolved| resolved.id.as_str()),
         Some("point-1")
     );
 }
@@ -212,13 +228,21 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
     ];
 
     assert_eq!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc7c), 0)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            &markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
+            0
+        )
+        .map(|marker| marker.id.as_str()),
         Some("indexed-curve-locus")
     );
     assert_eq!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc87), 0)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            &markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC87),
+            0
+        )
+        .map(|marker| marker.id.as_str()),
         Some("indexed-curve-locus")
     );
 }
@@ -250,23 +274,29 @@ fn roster_point_operand_uses_coordinate_point_order() {
     ];
 
     assert_eq!(
-        resolve_operand_marker(markers.iter(), FeatureInputOperandKind::Native(0x81dd), 1,)
-            .map(|entity| entity.id.as_str()),
+        resolve_operand_marker(
+            markers.iter(),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
+            1,
+        )
+        .map(|entity| entity.id.as_str()),
         Some("second")
     );
     assert!(resolve_operand_marker_excluding(
         markers.iter(),
-        FeatureInputOperandKind::Native(0x81dd),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
         0,
         &HashSet::from([String::from("first")]),
     )
     .is_none());
-    assert!(
-        resolve_operand_marker(markers.iter(), FeatureInputOperandKind::Native(0x81e7), 0,)
-            .is_none()
-    );
+    assert!(resolve_operand_marker(
+        markers.iter(),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
+        0,
+    )
+    .is_none());
     assert!(operand_accepts_marker(
-        FeatureInputOperandKind::Native(0x81e7),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
         SketchInputKind::LineOrCircle,
     ));
 }
@@ -291,8 +321,8 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
     let markers = [&indexed, &local];
 
     for kind in [
-        FeatureInputOperandKind::Native(0x814c),
-        FeatureInputOperandKind::Native(0x8152),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
     ] {
         assert_eq!(
             resolve_operand_marker(markers.iter().copied(), kind, 7)
@@ -303,14 +333,17 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
 
     let duplicate = point("duplicate", 7, 101);
     for kind in [
-        FeatureInputOperandKind::Native(0x814c),
-        FeatureInputOperandKind::Native(0x8152),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
     ] {
         assert!(resolve_operand_marker([&indexed, &duplicate], kind, 7).is_none());
     }
-    assert!(
-        resolve_operand_marker([&local], FeatureInputOperandKind::Native(0x814c), 7,).is_none()
-    );
+    assert!(resolve_operand_marker(
+        [&local],
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C),
+        7,
+    )
+    .is_none());
 }
 
 #[test]
@@ -349,9 +382,9 @@ fn relation_point_operands_use_object_index_before_local_identifier() {
     let markers = [&indexed, &local, &colliding_line, &relation];
 
     for kind in [
-        FeatureInputOperandKind::Native(0x80ac),
-        FeatureInputOperandKind::Native(0x80d5),
-        FeatureInputOperandKind::Native(0x8138),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80AC),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8138),
     ] {
         assert_eq!(
             resolve_operand_marker(markers.iter().copied(), kind, 7)
@@ -384,9 +417,9 @@ fn relation_point_operand_rejects_ambiguous_indexed_points() {
     let first = marker("first");
     let second = marker("second");
     for kind in [
-        FeatureInputOperandKind::Native(0x80ac),
-        FeatureInputOperandKind::Native(0x80d5),
-        FeatureInputOperandKind::Native(0x8138),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80AC),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8138),
     ] {
         assert!(resolve_operand_marker([&first, &second], kind, 7).is_none());
     }
@@ -498,8 +531,12 @@ fn curve_operand_selects_an_arc_by_local_identifier() {
         },
     ];
     assert_eq!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8dda), 3,)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            &markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
+            3,
+        )
+        .map(|marker| marker.id.as_str()),
         Some("arc-3")
     );
 }
@@ -554,8 +591,12 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
         },
     ];
     assert_eq!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8dda), 3,)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            &markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
+            3,
+        )
+        .map(|marker| marker.id.as_str()),
         Some("arc-8")
     );
 }
@@ -604,13 +645,16 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             ),
         },
     ];
-    assert!(
-        resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8386), 10).is_none()
-    );
+    assert!(resolve_operand_marker(
+        &markers,
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
+        10
+    )
+    .is_none());
     assert_eq!(
         resolve_operand_marker_excluding(
             &markers,
-            FeatureInputOperandKind::Native(0x8386),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             10,
             &HashSet::from(["curve-7".into()]),
         )
@@ -638,7 +682,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
     assert_eq!(
         resolve_operand_marker_excluding(
             &markers,
-            FeatureInputOperandKind::Native(0xbc7c),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             3,
             &HashSet::from(["first".into()]),
         )
@@ -674,7 +718,7 @@ fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
     assert_eq!(
         resolve_operand_marker(
             std::slice::from_ref(&curve),
-            FeatureInputOperandKind::Native(0x8386),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             13,
         )
         .map(|marker| marker.id.as_str()),
@@ -718,7 +762,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
     assert_eq!(
         resolve_operand_marker(
             markers.iter().copied(),
-            FeatureInputOperandKind::Native(0x810f),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
             7,
         )
         .map(|marker| marker.id.as_str()),
@@ -727,7 +771,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
     assert_eq!(
         resolve_operand_marker(
             markers.iter().copied(),
-            FeatureInputOperandKind::Native(0x810f),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
             8,
         )
         .map(|marker| marker.id.as_str()),
@@ -736,7 +780,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
     assert_eq!(
         resolve_operand_marker(
             markers.iter().copied(),
-            FeatureInputOperandKind::Native(0x810f),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
             9,
         )
         .map(|marker| marker.id.as_str()),
@@ -752,7 +796,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
     );
     assert!(resolve_operand_marker(
         [&line, &second_line],
-        FeatureInputOperandKind::Native(0x810f),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F),
         7,
     )
     .is_none());
@@ -803,8 +847,12 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
     let markers = [&endpoints[0], &endpoints[1], &handle];
 
     assert_eq!(
-        resolve_operand_marker(markers, FeatureInputOperandKind::Native(0x8386), 5)
-            .map(|marker| marker.id.as_str()),
+        resolve_operand_marker(
+            markers,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
+            5
+        )
+        .map(|marker| marker.id.as_str()),
         Some("relation-line-handle")
     );
 }

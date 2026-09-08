@@ -122,7 +122,8 @@ pub(crate) fn write_seekable(
     let notes = vec![
         format!(
             "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-            document.schema_version, document.file_version
+            document.schema_version,
+            document.file_version.as_str()
         ),
         "unsupported retained entries and unedited XML records were preserved".into(),
     ];
@@ -228,10 +229,10 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
     let source_text = std::str::from_utf8(source)
         .map_err(|_| CodecError::Malformed("retained Document.xml is not UTF-8".into()))?;
     let mut ordered = properties.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|property| property.byte_start);
+    ordered.sort_by_key(|property| property.xml.start());
     if ordered
         .windows(2)
-        .any(|pair| pair[0].byte_end > pair[1].byte_start)
+        .any(|pair| pair[0].xml.end() > pair[1].xml.start())
     {
         return Err(CodecError::Malformed(
             "overlapping retained FCStd property spans".into(),
@@ -240,11 +241,11 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
     let mut result = Vec::with_capacity(source.len());
     let mut cursor = 0usize;
     for property in ordered {
-        let start = usize::try_from(property.byte_start)
+        let start = usize::try_from(property.xml.start())
             .map_err(|_| CodecError::Malformed("property start exceeds address space".into()))?;
-        let end = usize::try_from(property.byte_end)
+        let end = usize::try_from(property.xml.end())
             .map_err(|_| CodecError::Malformed("property end exceeds address space".into()))?;
-        if start < cursor || end > source.len() || start >= end {
+        if start < cursor || end > source.len() {
             return Err(CodecError::malformed(format_args!(
                 "invalid retained span for property {}",
                 property.id
@@ -256,7 +257,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
                 property.id
             ))
         })?;
-        if retained != property.raw_xml {
+        if retained != property.xml.text() {
             return Err(CodecError::malformed(format_args!(
                 "retained bytes disagree with property {} provenance",
                 property.id
@@ -272,8 +273,8 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
 
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
     validate_property_wrapper(property)?;
-    let mut replacement = property.raw_xml.clone();
-    let wrapped = format!("<Root>{}</Root>", property.raw_xml);
+    let mut replacement = property.xml.text().to_owned();
+    let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;
@@ -300,7 +301,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         if serialized == value.raw_xml {
             continue;
         }
-        if property.raw_xml[start..end] != value.raw_xml {
+        if property.xml.text()[start..end] != value.raw_xml {
             return Err(CodecError::malformed(format_args!(
                 "property {} retained value {} disagrees with provenance",
                 property.id, value.order
@@ -322,7 +323,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
 }
 
 fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
-    let wrapped = format!("<Root>{}</Root>", property.raw_xml);
+    let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;

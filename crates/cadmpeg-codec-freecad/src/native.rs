@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned FCStd-native records.
 
+pub(crate) mod frame;
 pub(crate) mod joint;
+
+use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::products::NonEmptyString;
@@ -45,6 +48,223 @@ fn encode_id_key(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn string_table_admission_requires_distinct_backward_references() {
+        let entry = |id, components| serde_json::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
+        for (entries, valid) in [
+            (vec![entry(1, vec![]), entry(2, vec![1])], true),
+            (vec![entry(1, vec![]), entry(1, vec![])], false),
+            (vec![entry(1, vec![1])], false),
+            (vec![entry(1, vec![2]), entry(2, vec![])], false),
+            (vec![entry(1, vec![9])], false),
+        ] {
+            let wire = serde_json::json!({"id":"table","index":0,"owner_property":null,"save_all":false,"threshold":0,"declared_count":entries.len(),"source_entry":null,"entries":entries});
+            let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
+            assert_eq!(result.is_ok(), valid);
+            if let Ok(record) = result {
+                assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            }
+        }
+    }
+
+    #[test]
+    fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
+        for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
+            let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
+            let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
+            assert_eq!(
+                serde_json::from_value::<super::ArchiveSpan>(physical).is_ok(),
+                valid
+            );
+            assert_eq!(
+                serde_json::from_value::<super::LogicalSpan>(logical).is_ok(),
+                valid
+            );
+        }
+    }
+
+    #[test]
+    fn gui_state_order_is_derived_from_collection_position() {
+        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
+        let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
+        assert!(
+            serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("order")
+        );
+        wire["states"][1]["order"] = serde_json::json!(1);
+        let mut record = serde_json::from_value::<super::GuiDocumentRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        record.states.remove(0);
+        let moved = serde_json::to_value(record).unwrap();
+        assert_eq!(moved["states"][0]["order"], 0);
+    }
+
+    #[test]
+    fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut matrix = crate::product::identity();
+            matrix[0][3] = bad;
+            for offset in [false, true] {
+                let wire = super::AttachmentRecordWire {
+                    id: "attachment".into(),
+                    object: "object".into(),
+                    supports: vec![],
+                    map_mode: None,
+                    placement: (!offset).then_some(matrix),
+                    offset: offset.then_some(matrix),
+                    effective_frame: matrix,
+                };
+                let error = super::AttachmentRecord::try_from(wire).unwrap_err();
+                assert!(error.contains(if offset { "offset" } else { "placement" }));
+            }
+            for field in [
+                "element_transforms",
+                "element_scales",
+                "local_transform",
+                "scale",
+            ] {
+                let mut wire: super::ProductNodeRecordWire = serde_json::from_value(serde_json::json!({
+                    "id":"link", "object":"object", "kind":"occurrence", "members":[],
+                    "element_transforms":[], "element_scales":[], "linked_subelements":[], "element_visibility":[], "element_objects":[]
+                })).unwrap();
+                match field {
+                    "element_transforms" => wire.element_transforms.push(matrix),
+                    "element_scales" => wire.element_scales.push([bad, 1.0, 1.0]),
+                    "local_transform" => wire.local_transform = Some(matrix),
+                    _ => wire.scale = Some([bad, 1.0, 1.0]),
+                }
+                assert!(super::ProductNodeRecord::try_from(wire)
+                    .unwrap_err()
+                    .contains(field));
+            }
+        }
+    }
+
+    #[test]
+    fn file_version_preserves_spelling_and_rejects_invalid_wire() {
+        let wire = serde_json::json!({"id":"document", "schema_version":"4", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
+        let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(record.file_version.value(), 1);
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        for spelling in ["-1", "", "abc", "184467440737095516160"] {
+            let mut invalid = wire.clone();
+            invalid["file_version"] = serde_json::json!(spelling);
+            assert!(serde_json::from_value::<super::DocumentFacts>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("file_version"));
+        }
+    }
+
+    #[test]
+    fn gui_provider_object_rejects_empty_wire_identity() {
+        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
+        assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
+        for object in [serde_json::Value::Null, serde_json::json!("object")] {
+            wire["object"] = object;
+            let record =
+                serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn retained_xml_records_reject_invalid_wire_spans() {
+        let bases = [
+            serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
+            serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
+            serde_json::json!({"id":"object", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
+            serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
+        ];
+        for (kind, base) in bases.into_iter().enumerate() {
+            for (start, end, valid) in [
+                (10, 14, true),
+                (10, 10, false),
+                (10, 9, false),
+                (10, 15, false),
+            ] {
+                let mut wire = base.clone();
+                wire["raw_xml"] = serde_json::json!("<A/>");
+                wire["byte_start"] = serde_json::json!(start);
+                wire["byte_end"] = serde_json::json!(end);
+                let admitted = match kind {
+                    0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
+                    1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
+                    2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
+                    _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
+                };
+                assert_eq!(
+                    admitted.is_ok(),
+                    valid,
+                    "kind={kind}, span={start}..{end}: {admitted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn document_kind_wire_must_match_domains_and_count() {
+        let mut wire = serde_json::json!({"id":"document", "schema_version":"4",
+            "file_version":"1", "program_version":null, "root_name":"Document",
+            "object_count":1, "domains":["Part"], "document_kind":"empty"});
+        assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
+        wire["document_kind"] = serde_json::json!("part");
+        let facts = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(facts).unwrap(), wire);
+    }
+
+    #[test]
+    fn link_array_wire_rejects_negative_and_mismatched_counts() {
+        let base = serde_json::json!({
+            "id": "link", "object": "object", "kind": "occurrence",
+            "members": [], "element_transforms": [], "element_scales": [],
+            "linked_subelements": [], "element_visibility": [], "element_objects": []
+        });
+        let mut negative = base.clone();
+        negative["element_count"] = serde_json::json!(-1);
+        assert!(serde_json::from_value::<super::ProductNodeRecord>(negative).is_err());
+        for field in ["element_transforms", "element_scales", "element_objects"] {
+            let mut wire = base.clone();
+            wire["element_count"] = serde_json::json!(2);
+            wire[field] = match field {
+                "element_transforms" => serde_json::json!([[
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ]]),
+                "element_scales" => serde_json::json!([[1.0, 1.0, 1.0]]),
+                _ => serde_json::json!(["object"]),
+            };
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["element_count"] = serde_json::json!(1);
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
+        }
+    }
+
+    #[test]
+    fn copy_on_change_payload_requires_policy_on_wire() {
+        for (field, value) in [
+            ("copy_on_change_source", serde_json::json!("source")),
+            ("copy_on_change_group", serde_json::json!("group")),
+            ("copy_on_change_touched", serde_json::json!(false)),
+        ] {
+            let mut wire = serde_json::json!({
+                "id": "link", "object": "object", "kind": "occurrence",
+                "members": [], "element_transforms": [], "element_scales": [],
+                "linked_subelements": [], "element_visibility": [], "element_objects": []
+            });
+            wire[field] = value;
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = serde_json::json!("Owned");
+            let admitted =
+                serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
+        }
+    }
 
     #[test]
     fn element_map_nodes_require_root_on_wire() {
@@ -158,15 +378,51 @@ pub struct AttachmentRecord {
     /// Persisted attachment-map mode.
     pub map_mode: Option<String>,
     /// Persisted resolved object placement.
-    pub placement: Option<[[f64; 4]; 4]>,
+    placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
-    pub offset: Option<[[f64; 4]; 4]>,
+    offset: Option<FiniteFrame>,
 }
 
 impl AttachmentRecord {
+    pub(crate) fn try_new(
+        id: String,
+        object: String,
+        supports: Vec<LinkTarget>,
+        map_mode: Option<String>,
+        placement: Option<[[f64; 4]; 4]>,
+        offset: Option<[[f64; 4]; 4]>,
+    ) -> Result<Self, String> {
+        let record = Self {
+            id,
+            object,
+            supports,
+            map_mode,
+            placement: placement
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("placement: {error}"))?,
+            offset: offset
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("offset: {error}"))?,
+        };
+        FiniteFrame::try_from(record.effective_frame())
+            .map_err(|error| format!("effective_frame: {error}"))?;
+        Ok(record)
+    }
+    pub(crate) fn placement(&self) -> Option<FiniteFrame> {
+        self.placement
+    }
+    pub(crate) fn offset(&self) -> Option<FiniteFrame> {
+        self.offset
+    }
+
     /// Effective frame used for neutral geometry.
     pub fn effective_frame(&self) -> [[f64; 4]; 4] {
-        crate::attachment::effective_frame(self.placement, self.offset)
+        crate::attachment::effective_frame(
+            self.placement().map(FiniteFrame::rows),
+            self.offset().map(FiniteFrame::rows),
+        )
     }
 }
 
@@ -189,8 +445,8 @@ impl From<AttachmentRecord> for AttachmentRecordWire {
             object: value.object,
             supports: value.supports,
             map_mode: value.map_mode,
-            placement: value.placement,
-            offset: value.offset,
+            placement: value.placement.map(FiniteFrame::rows),
+            offset: value.offset.map(FiniteFrame::rows),
             effective_frame,
         }
     }
@@ -200,14 +456,14 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     type Error = String;
 
     fn try_from(wire: AttachmentRecordWire) -> Result<Self, Self::Error> {
-        let record = Self {
-            id: wire.id,
-            object: wire.object,
-            supports: wire.supports,
-            map_mode: wire.map_mode,
-            placement: wire.placement,
-            offset: wire.offset,
-        };
+        let record = Self::try_new(
+            wire.id,
+            wire.object,
+            wire.supports,
+            wire.map_mode,
+            wire.placement,
+            wire.offset,
+        )?;
         if wire.effective_frame != record.effective_frame() {
             return Err(
                 "attachment effective_frame disagrees with placement and offset".to_owned(),
@@ -217,8 +473,86 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     }
 }
 
+/// A nonempty half-open byte interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByteSpan {
+    start: u64,
+    end: u64,
+}
+
+impl ByteSpan {
+    pub(crate) fn try_new(start: u64, end: u64) -> Result<Self, String> {
+        if start >= end {
+            return Err("byte span start must be less than end".to_owned());
+        }
+        Ok(Self { start, end })
+    }
+    pub(crate) fn start(self) -> u64 {
+        self.start
+    }
+    pub(crate) fn end(self) -> u64 {
+        self.end
+    }
+}
+
+/// Exact XML text paired with its nonempty source interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RetainedXmlWire", into = "RetainedXmlWire")]
+pub struct RetainedXml {
+    text: String,
+    span: ByteSpan,
+}
+
+impl RetainedXml {
+    pub(crate) fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
+        let span = ByteSpan::try_new(start, end)?;
+        if end - start != text.len() as u64 {
+            return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
+        }
+        Ok(Self { text, span })
+    }
+    pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
+        let end = start
+            .checked_add(text.len() as u64)
+            .ok_or("raw_xml byte_end overflow")?;
+        Self::try_new(text, start, end)
+    }
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+    pub(crate) fn start(&self) -> u64 {
+        self.span.start()
+    }
+    pub(crate) fn end(&self) -> u64 {
+        self.span.end()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RetainedXmlWire {
+    raw_xml: String,
+    byte_start: u64,
+    byte_end: u64,
+}
+impl TryFrom<RetainedXmlWire> for RetainedXml {
+    type Error = String;
+    fn try_from(wire: RetainedXmlWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)
+    }
+}
+impl From<RetainedXml> for RetainedXmlWire {
+    fn from(value: RetainedXml) -> Self {
+        Self {
+            raw_xml: value.text,
+            byte_start: value.span.start(),
+            byte_end: value.span.end(),
+        }
+    }
+}
+
 /// Document-level GUI state outside application-object view providers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "GuiDocumentRecordWire", into = "GuiDocumentRecordWire")]
 pub struct GuiDocumentRecord {
     /// Stable GUI document identity.
     pub id: String,
@@ -237,20 +571,67 @@ pub struct GuiStateRecord {
     pub id: String,
     /// Persisted XML element name.
     pub kind: String,
-    /// Source order among document-level state elements.
-    pub order: usize,
     /// Exact element attributes.
     pub attributes: BTreeMap<String, String>,
     /// Ordered descendant value elements.
     pub values: Vec<ValueRecord>,
     /// Referenced display assets.
     pub side_entries: Vec<String>,
-    /// Exact state XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `GuiDocument.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `GuiDocument.xml`.
-    pub byte_end: u64,
+    /// Retained XML and its byte span.
+    #[serde(flatten)]
+    pub xml: RetainedXml,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GuiStateRecordWire {
+    order: usize,
+    #[serde(flatten)]
+    state: GuiStateRecord,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GuiDocumentRecordWire {
+    id: String,
+    schema_version: Option<String>,
+    attributes: BTreeMap<String, String>,
+    states: Vec<GuiStateRecordWire>,
+}
+impl From<GuiDocumentRecord> for GuiDocumentRecordWire {
+    fn from(value: GuiDocumentRecord) -> Self {
+        Self {
+            id: value.id,
+            schema_version: value.schema_version,
+            attributes: value.attributes,
+            states: value
+                .states
+                .into_iter()
+                .enumerate()
+                .map(|(order, state)| GuiStateRecordWire { order, state })
+                .collect(),
+        }
+    }
+}
+impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
+    type Error = String;
+    fn try_from(wire: GuiDocumentRecordWire) -> Result<Self, Self::Error> {
+        let states = wire
+            .states
+            .into_iter()
+            .enumerate()
+            .map(|(order, wire)| {
+                if wire.order != order {
+                    return Err("GUI state order disagrees with its states position".to_owned());
+                }
+                Ok(wire.state)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            id: wire.id,
+            schema_version: wire.schema_version,
+            attributes: wire.attributes,
+            states,
+        })
+    }
 }
 
 /// A supported semantic annotation runtime type.
@@ -510,7 +891,7 @@ pub struct ContainerNode {
     /// Ordered contained application objects.
     pub members: Vec<String>,
     /// Local placement as a row-major affine matrix.
-    pub local_transform: Option<[[f64; 4]; 4]>,
+    pub local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
     pub placement_property: Option<String>,
 }
@@ -525,33 +906,98 @@ pub struct LinkOccurrence {
     /// External document token when the prototype is not local.
     pub external_document: Option<ExternalDocument>,
     /// Local occurrence placement as a row-major affine matrix.
-    pub local_transform: Option<[[f64; 4]; 4]>,
+    pub local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
     pub placement_property: Option<String>,
-    /// Number of array elements requested by the link.
-    pub element_count: Option<i64>,
+    /// Admitted link-array values.
+    pub array: LinkArray,
     /// Whether the prototype transform participates in occurrence placement.
     pub link_transform: Option<bool>,
-    /// Ordered per-element placements for a link array.
-    pub element_transforms: Vec<[[f64; 4]; 4]>,
-    /// Ordered per-element scale vectors for a link array.
-    pub element_scales: Vec<[f64; 3]>,
     /// Subelement paths selected on the linked prototype.
     pub linked_subelements: Vec<String>,
     /// Whether the link claims its prototype as a tree child.
     pub claim_child: Option<bool>,
-    /// Persisted copy-on-change policy name or numeric code.
-    pub copy_on_change: Option<String>,
-    /// Original object tracked by copy-on-change.
-    pub copy_on_change_source: Option<String>,
-    /// Internal ownership group for copy-on-change copies.
-    pub copy_on_change_group: Option<String>,
-    /// Whether the tracked source has changed.
-    pub copy_on_change_touched: Option<bool>,
+    /// Copy-on-change policy and its payload.
+    pub copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
-    pub scale: Option<[f64; 3]>,
-    /// Explicit per-element application objects in array order.
-    pub element_objects: Vec<String>,
+    pub scale: Option<FiniteVec3>,
+}
+
+/// Independently optional array carriers with a common element count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkArray {
+    count: Option<u64>,
+    transforms: Vec<[[f64; 4]; 4]>,
+    scales: Vec<[f64; 3]>,
+    objects: Vec<String>,
+}
+
+impl LinkArray {
+    pub(crate) fn try_new(
+        count: Option<u64>,
+        transforms: Vec<[[f64; 4]; 4]>,
+        scales: Vec<[f64; 3]>,
+        objects: Vec<String>,
+    ) -> Result<Self, String> {
+        for transform in &transforms {
+            FiniteFrame::try_from(*transform)
+                .map_err(|error| format!("element_transforms: {error}"))?;
+        }
+        for scale in &scales {
+            FiniteVec3::try_from(*scale).map_err(|error| format!("element_scales: {error}"))?;
+        }
+        let lengths = [
+            transforms.len() as u64,
+            scales.len() as u64,
+            objects.len() as u64,
+        ];
+        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(1));
+        if lengths
+            .into_iter()
+            .any(|length| length != 0 && length != effective)
+        {
+            return Err("element_count has inconsistent link-array counts".to_owned());
+        }
+        Ok(Self {
+            count,
+            transforms,
+            scales,
+            objects,
+        })
+    }
+}
+
+/// Copy-on-change policy and its dependent payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CopyOnChange {
+    /// Persisted policy name or numeric code.
+    pub policy: String,
+    /// Original tracked object.
+    pub source: Option<String>,
+    /// Internal ownership group.
+    pub group: Option<String>,
+    /// Whether the tracked source changed.
+    pub touched: Option<bool>,
+}
+
+impl CopyOnChange {
+    pub(crate) fn from_wire(
+        policy: Option<String>,
+        source: Option<String>,
+        group: Option<String>,
+        touched: Option<bool>,
+    ) -> Result<Option<Self>, String> {
+        match policy {
+            Some(policy) => Ok(Some(Self {
+                policy,
+                source,
+                group,
+                touched,
+            })),
+            None if source.is_none() && group.is_none() && touched.is_none() => Ok(None),
+            None => Err("copy_on_change payload requires copy_on_change policy".to_owned()),
+        }
+    }
 }
 
 impl ProductNodeRecord {
@@ -584,8 +1030,8 @@ impl ProductNodeRecord {
             | ProductNode::Part(node)
             | ProductNode::LinkGroup {
                 container: node, ..
-            } => node.local_transform,
-            ProductNode::Occurrence(node) => node.local_transform,
+            } => node.local_transform.map(FiniteFrame::rows),
+            ProductNode::Occurrence(node) => node.local_transform.map(FiniteFrame::rows),
         }
     }
 
@@ -621,8 +1067,8 @@ impl ProductNodeRecord {
     }
 
     /// Number of array elements requested by the link.
-    pub fn element_count(&self) -> Option<i64> {
-        self.occurrence().and_then(|node| node.element_count)
+    pub fn element_count(&self) -> Option<u64> {
+        self.occurrence().and_then(|node| node.array.count)
     }
 
     /// Whether the prototype transform participates in occurrence placement.
@@ -633,13 +1079,13 @@ impl ProductNodeRecord {
     /// Ordered per-element placements for a link array.
     pub fn element_transforms(&self) -> &[[[f64; 4]; 4]] {
         self.occurrence()
-            .map_or(&[], |node| node.element_transforms.as_slice())
+            .map_or(&[], |node| node.array.transforms.as_slice())
     }
 
     /// Ordered per-element scale vectors for a link array.
     pub fn element_scales(&self) -> &[[f64; 3]] {
         self.occurrence()
-            .map_or(&[], |node| node.element_scales.as_slice())
+            .map_or(&[], |node| node.array.scales.as_slice())
     }
 
     /// Subelement paths selected on the linked prototype.
@@ -656,30 +1102,36 @@ impl ProductNodeRecord {
     /// Persisted copy-on-change policy name or numeric code.
     pub fn copy_on_change(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .map(|copy| copy.policy.as_str())
     }
 
     /// Original object tracked by copy-on-change.
     pub fn copy_on_change_source(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_source.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.source.as_deref())
     }
 
     /// Internal ownership group for copy-on-change copies.
     pub fn copy_on_change_group(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_group.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.group.as_deref())
     }
 
     /// Whether the tracked source has changed.
     pub fn copy_on_change_touched(&self) -> Option<bool> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_touched)
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.touched)
     }
 
     /// Base scale vector applied to every occurrence element.
     pub fn scale(&self) -> Option<[f64; 3]> {
-        self.occurrence().and_then(|node| node.scale)
+        self.occurrence()
+            .and_then(|node| node.scale)
+            .map(FiniteVec3::values)
     }
 
     /// Explicit per-element application objects in array order.
@@ -688,7 +1140,7 @@ impl ProductNodeRecord {
             ProductNode::LinkGroup {
                 element_objects, ..
             } => element_objects,
-            ProductNode::Occurrence(node) => &node.element_objects,
+            ProductNode::Occurrence(node) => &node.array.objects,
             ProductNode::Group(_) | ProductNode::Part(_) => &[],
         }
     }
@@ -705,7 +1157,7 @@ struct ProductNodeRecordWire {
     external_document_attribute: Option<String>,
     local_transform: Option<[[f64; 4]; 4]>,
     placement_property: Option<String>,
-    element_count: Option<i64>,
+    element_count: Option<u64>,
     link_transform: Option<bool>,
     element_transforms: Vec<[[f64; 4]; 4]>,
     element_scales: Vec<[f64; 3]>,
@@ -791,7 +1243,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
             "group" | "part" | "link_group" => {
                 let container = ContainerNode {
                     members: wire.members,
-                    local_transform: wire.local_transform,
+                    local_transform: wire
+                        .local_transform
+                        .map(FiniteFrame::try_from)
+                        .transpose()
+                        .map_err(|error| format!("local_transform: {error}"))?,
                     placement_property: wire.placement_property,
                 };
                 match wire.kind.as_str() {
@@ -810,20 +1266,32 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     wire.external_document,
                     wire.external_document_attribute.as_deref(),
                 )?,
-                local_transform: wire.local_transform,
+                local_transform: wire
+                    .local_transform
+                    .map(FiniteFrame::try_from)
+                    .transpose()
+                    .map_err(|error| format!("local_transform: {error}"))?,
                 placement_property: wire.placement_property,
-                element_count: wire.element_count,
+                array: LinkArray::try_new(
+                    wire.element_count,
+                    wire.element_transforms,
+                    wire.element_scales,
+                    wire.element_objects,
+                )?,
                 link_transform: wire.link_transform,
-                element_transforms: wire.element_transforms,
-                element_scales: wire.element_scales,
                 linked_subelements: wire.linked_subelements,
                 claim_child: wire.claim_child,
-                copy_on_change: wire.copy_on_change,
-                copy_on_change_source: wire.copy_on_change_source,
-                copy_on_change_group: wire.copy_on_change_group,
-                copy_on_change_touched: wire.copy_on_change_touched,
-                scale: wire.scale,
-                element_objects: wire.element_objects,
+                copy_on_change: CopyOnChange::from_wire(
+                    wire.copy_on_change,
+                    wire.copy_on_change_source,
+                    wire.copy_on_change_group,
+                    wire.copy_on_change_touched,
+                )?,
+                scale: wire
+                    .scale
+                    .map(FiniteVec3::try_from)
+                    .transpose()
+                    .map_err(|error| format!("scale: {error}"))?,
             }),
             _ => return Err("unknown product node kind".to_owned()),
         };
@@ -841,7 +1309,7 @@ pub struct GuiViewProviderRecord {
     /// Stable native identity.
     pub id: String,
     /// Application object identity, or `None` for a GUI-only provider.
-    pub object: Option<String>,
+    pub object: Option<NonEmptyString>,
     /// Persisted provider name.
     pub name: String,
     /// Persisted tree-expansion state.
@@ -871,12 +1339,9 @@ pub struct GuiPropertyRecord {
     pub values: Vec<ValueRecord>,
     /// Referenced archive entries.
     pub side_entries: Vec<String>,
-    /// Exact property XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `GuiDocument.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `GuiDocument.xml`.
-    pub byte_end: u64,
+    /// Retained XML and its byte span.
+    #[serde(flatten)]
+    pub xml: RetainedXml,
 }
 
 /// ZIP physical-ledger role stored on one archive span.
@@ -1005,10 +1470,8 @@ impl ArchiveSpanRole {
 pub struct ArchiveSpan {
     /// Stable span identity.
     pub id: String,
-    /// Inclusive byte offset.
-    pub start: u64,
-    /// Exclusive byte offset.
-    pub end: u64,
+    /// Nonempty byte interval.
+    pub span: ByteSpan,
     /// Structural role.
     pub role: ArchiveSpanRole,
 }
@@ -1026,8 +1489,8 @@ impl From<ArchiveSpan> for ArchiveSpanWire {
     fn from(value: ArchiveSpan) -> Self {
         Self {
             id: value.id,
-            start: value.start,
-            end: value.end,
+            start: value.span.start(),
+            end: value.span.end(),
             role: value.role.as_str().to_owned(),
             entry: value.role.entry().map(str::to_owned),
         }
@@ -1040,8 +1503,7 @@ impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
     fn try_from(wire: ArchiveSpanWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
-            start: wire.start,
-            end: wire.end,
+            span: ByteSpan::try_new(wire.start, wire.end)?,
             role: ArchiveSpanRole::from_label(&wire.role, wire.entry)?,
         })
     }
@@ -1079,25 +1541,111 @@ impl DocumentKind {
     }
 }
 
+/// Parsed file version with its exact source spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileVersion {
+    spelling: String,
+    value: usize,
+}
+impl TryFrom<String> for FileVersion {
+    type Error = String;
+    fn try_from(spelling: String) -> Result<Self, Self::Error> {
+        let value = spelling
+            .parse()
+            .map_err(|_| "file_version must parse as usize".to_owned())?;
+        Ok(Self { spelling, value })
+    }
+}
+impl FileVersion {
+    pub(crate) fn value(&self) -> usize {
+        self.value
+    }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.spelling
+    }
+}
+
 /// Metadata read from the persistence document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DocumentFactsWire", into = "DocumentFactsWire")]
 pub struct DocumentFacts {
     /// Stable document-record identity.
     pub id: String,
     /// Persistence schema version.
     pub schema_version: String,
     /// Persistence file version.
-    pub file_version: String,
+    pub file_version: FileVersion,
     /// Producing application version, when carried.
     pub program_version: Option<String>,
     /// XML document element name.
     pub root_name: String,
     /// Number of declared application objects.
     pub object_count: usize,
-    /// Structural document-kind classification.
-    pub document_kind: DocumentKind,
     /// Application domains present in object declarations.
     pub domains: Vec<String>,
+}
+
+impl DocumentFacts {
+    /// Structural document-kind classification.
+    pub fn document_kind(&self) -> DocumentKind {
+        if self.domains.iter().any(|domain| domain == "Assembly") {
+            DocumentKind::Assembly
+        } else if self.domains.iter().any(|domain| domain == "TechDraw") {
+            DocumentKind::Drawing
+        } else if self.domains.iter().any(|domain| domain == "PartDesign") {
+            DocumentKind::PartDesign
+        } else if self.domains.iter().any(|domain| domain == "Part") {
+            DocumentKind::Part
+        } else if self.object_count == 0 {
+            DocumentKind::Empty
+        } else {
+            DocumentKind::ApplicationDocument
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DocumentFactsWire {
+    id: String,
+    schema_version: String,
+    file_version: String,
+    program_version: Option<String>,
+    root_name: String,
+    object_count: usize,
+    domains: Vec<String>,
+    document_kind: DocumentKind,
+}
+impl From<DocumentFacts> for DocumentFactsWire {
+    fn from(value: DocumentFacts) -> Self {
+        Self {
+            document_kind: value.document_kind(),
+            id: value.id,
+            schema_version: value.schema_version,
+            file_version: value.file_version.spelling,
+            program_version: value.program_version,
+            root_name: value.root_name,
+            object_count: value.object_count,
+            domains: value.domains,
+        }
+    }
+}
+impl TryFrom<DocumentFactsWire> for DocumentFacts {
+    type Error = String;
+    fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            schema_version: wire.schema_version,
+            file_version: wire.file_version.try_into()?,
+            program_version: wire.program_version,
+            root_name: wire.root_name,
+            object_count: wire.object_count,
+            domains: wire.domains,
+        };
+        if wire.document_kind != value.document_kind() {
+            return Err("document_kind disagrees with domains and object_count".to_owned());
+        }
+        Ok(value)
+    }
 }
 
 /// One declared application object and its persistence state.
@@ -1123,18 +1671,7 @@ pub struct ObjectRecord {
     /// Source-order index.
     pub order: usize,
     /// Exact object-data XML and its source span, when present.
-    pub data: Option<ObjectData>,
-}
-
-/// Object-data XML and the source span that produced it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ObjectData {
-    /// Exact object-data XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset of object-data XML.
-    pub byte_start: u64,
-    /// Exclusive byte offset of object-data XML.
-    pub byte_end: u64,
+    pub data: Option<RetainedXml>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1157,9 +1694,9 @@ impl From<ObjectRecord> for ObjectRecordWire {
     fn from(value: ObjectRecord) -> Self {
         let (raw_xml, byte_start, byte_end) = match value.data {
             Some(data) => (
-                Some(data.raw_xml),
-                Some(data.byte_start),
-                Some(data.byte_end),
+                Some(data.text),
+                Some(data.span.start()),
+                Some(data.span.end()),
             ),
             None => (None, None, None),
         };
@@ -1187,11 +1724,9 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
         let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
-            (Some(raw_xml), Some(byte_start), Some(byte_end)) => Some(ObjectData {
-                raw_xml,
-                byte_start,
-                byte_end,
-            }),
+            (Some(raw_xml), Some(byte_start), Some(byte_end)) => {
+                Some(RetainedXml::try_new(raw_xml, byte_start, byte_end)?)
+            }
             (None, None, None) => None,
             _ => {
                 return Err(
@@ -1436,12 +1971,8 @@ pub struct PropertyRecord {
     pub body: PropertyBody,
     /// Source-order index within the owner.
     pub order: usize,
-    /// Exact property XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `Document.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `Document.xml`.
-    pub byte_end: u64,
+    /// Retained XML and its byte span.
+    pub xml: RetainedXml,
 }
 
 impl PropertyRecord {
@@ -1525,9 +2056,9 @@ impl From<PropertyRecord> for PropertyRecordWire {
             values,
             links,
             side_entries,
-            raw_xml: value.raw_xml,
-            byte_start: value.byte_start,
-            byte_end: value.byte_end,
+            raw_xml: value.xml.text,
+            byte_start: value.xml.span.start(),
+            byte_end: value.xml.span.end(),
         }
     }
 }
@@ -1565,9 +2096,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             status: wire.status,
             body,
             order: wire.order,
-            raw_xml: wire.raw_xml,
-            byte_start: wire.byte_start,
-            byte_end: wire.byte_end,
+            xml: RetainedXml::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)?,
         })
     }
 }
@@ -1690,10 +2219,8 @@ pub struct LogicalSpan {
     pub id: String,
     /// Owning archive entry.
     pub entry: String,
-    /// Inclusive logical byte offset.
-    pub start: u64,
-    /// Exclusive logical byte offset.
-    pub end: u64,
+    /// Nonempty byte interval.
+    pub span: ByteSpan,
     /// Span family and owner.
     pub classification: LogicalClassification,
 }
@@ -1751,8 +2278,8 @@ impl From<LogicalSpan> for LogicalSpanWire {
         Self {
             id: value.id,
             entry: value.entry,
-            start: value.start,
-            end: value.end,
+            start: value.span.start(),
+            end: value.span.end(),
             classification,
             owner,
         }
@@ -1778,8 +2305,7 @@ impl TryFrom<LogicalSpanWire> for LogicalSpan {
         Ok(Self {
             id: wire.id,
             entry: wire.entry,
-            start: wire.start,
-            end: wire.end,
+            span: ByteSpan::try_new(wire.start, wire.end)?,
             classification,
         })
     }
@@ -1825,13 +2351,45 @@ pub struct StringTableRecord {
     /// Referenced side entry, or `None` for inline data.
     pub source_entry: Option<String>,
     /// Parsed records in serialized order.
-    pub entries: Vec<StringTableEntry>,
+    entries: Vec<StringTableEntry>,
 }
 
 impl StringTableRecord {
+    pub(crate) fn try_new(
+        id: String,
+        index: usize,
+        owner_property: Option<String>,
+        save_all: bool,
+        threshold: i64,
+        source_entry: Option<String>,
+        entries: Vec<StringTableEntry>,
+    ) -> Result<Self, String> {
+        let mut seen = std::collections::HashSet::new();
+        for entry in &entries {
+            if entry.components.iter().any(|id| !seen.contains(id)) {
+                return Err("entries.components must reference earlier string_id values".to_owned());
+            }
+            if !seen.insert(entry.string_id) {
+                return Err("entries.string_id values must be distinct".to_owned());
+            }
+        }
+        Ok(Self {
+            id,
+            index,
+            owner_property,
+            save_all,
+            threshold,
+            source_entry,
+            entries,
+        })
+    }
+    pub(crate) fn entries(&self) -> &[StringTableEntry] {
+        &self.entries
+    }
+
     /// Declared number of serialized entries, equal to `entries.len()`.
     pub fn declared_count(&self) -> usize {
-        self.entries.len()
+        self.entries().len()
     }
 }
 
@@ -1870,15 +2428,15 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
         if wire.declared_count != wire.entries.len() {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
-        Ok(Self {
-            id: wire.id,
-            index: wire.index,
-            owner_property: wire.owner_property,
-            save_all: wire.save_all,
-            threshold: wire.threshold,
-            source_entry: wire.source_entry,
-            entries: wire.entries,
-        })
+        Self::try_new(
+            wire.id,
+            wire.index,
+            wire.owner_property,
+            wire.save_all,
+            wire.threshold,
+            wire.source_entry,
+            wire.entries,
+        )
     }
 }
 

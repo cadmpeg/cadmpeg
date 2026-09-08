@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink,
@@ -200,7 +201,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 operands: vec![FeatureInputOperand {
                     offset: 91,
                     reference_ref: "reference".into(),
-                    kind: FeatureInputOperandKind::Native(0x929d),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
                     entity_index: 0,
                     entity_ref: Some(relation_point.id.clone()),
                 }],
@@ -223,14 +224,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     FeatureInputOperand {
                         offset: 95,
                         reference_ref: "qualified-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x837b),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 16,
                         entity_ref: Some(qualified_curve.id.clone()),
                     },
                     FeatureInputOperand {
                         offset: 96,
                         reference_ref: "point-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x837b),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 17,
                         entity_ref: Some(relation_point.id.clone()),
                     },
@@ -253,7 +254,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 operands: vec![FeatureInputOperand {
                     offset: 93,
                     reference_ref: "line-reference".into(),
-                    kind: FeatureInputOperandKind::Native(0x8386),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                     entity_index: 0,
                     entity_ref: Some(support_handle.id.clone()),
                 }],
@@ -276,14 +277,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     FeatureInputOperand {
                         offset: 98,
                         reference_ref: "coincident-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x837b),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 18,
                         entity_ref: Some(coincident_point.id.clone()),
                     },
                     FeatureInputOperand {
                         offset: 99,
                         reference_ref: "coincident-pair-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x837b),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 17,
                         entity_ref: Some(relation_point.id.clone()),
                     },
@@ -307,14 +308,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     FeatureInputOperand {
                         offset: 101,
                         reference_ref: "self-linked-curve-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x8386),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 18,
                         entity_ref: Some(self_linked_curve.id.clone()),
                     },
                     FeatureInputOperand {
                         offset: 102,
                         reference_ref: "support-curve-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x8386),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 19,
                         entity_ref: Some(support_handle.id.clone()),
                     },
@@ -338,14 +339,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     FeatureInputOperand {
                         offset: 104,
                         reference_ref: "forward-linked-curve-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x8386),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 20,
                         entity_ref: Some(forward_linked_curve.id.clone()),
                     },
                     FeatureInputOperand {
                         offset: 105,
                         reference_ref: "forward-support-reference".into(),
-                        kind: FeatureInputOperandKind::Native(0x8386),
+                        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 21,
                         entity_ref: Some(support_handle.id.clone()),
                     },

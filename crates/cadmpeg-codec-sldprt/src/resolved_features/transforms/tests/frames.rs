@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
@@ -26,7 +27,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
     let operand = |index, marker: &str| FeatureInputOperand {
         offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x929d),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
         entity_index: index,
         entity_ref: Some(marker.into()),
     };
@@ -218,7 +219,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let mut directional_entities = vec![point("hint-a", 0.0), point("hint-b", 1.0)];
     let mut projected_relation = relation.clone();
     for operand in &mut projected_relation.operands {
-        operand.kind = FeatureInputOperandKind::Native(0xbc7c);
+        operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C);
     }
     loci.insert(
         super::qualified_point_marker_key(&hint_a.id),
@@ -801,7 +802,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         operands: vec![FeatureInputOperand {
             offset: 81,
             reference_ref: "circle-reference".into(),
-            kind: FeatureInputOperandKind::Native(0x8ab6),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
             entity_index: 0,
             entity_ref: Some("circle-center".into()),
         }],
@@ -862,7 +863,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     let (resolved, radius) = implicit_circle_marker(
         std::slice::from_ref(&implicit_lane),
         "feature-native",
-        FeatureInputOperandKind::Native(0x83fe),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
     )
@@ -872,7 +873,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     assert!(implicit_circle_marker(
         std::slice::from_ref(&implicit_lane),
         "feature-native",
-        FeatureInputOperandKind::Native(0x8ab6),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
         0,
         5.0,
     )
@@ -930,7 +931,7 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     let (resolved, radius) = implicit_circle_marker(
         &lanes,
         "feature-native",
-        FeatureInputOperandKind::Native(0x83fe),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
     )
@@ -975,7 +976,7 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
     let (resolved, radius) = implicit_circle_marker(
         &lanes,
         "feature-native",
-        FeatureInputOperandKind::Native(0x83fe),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
     )
@@ -987,7 +988,7 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 
 #[test]
 fn declared_entity_handle_uses_one_linked_center_radial_pair() {
-    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1196,7 +1197,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         pmi: None,
         native_ref: Some("parameter-scalar".into()),
     };
-    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
     let operand = FeatureInputOperand {
         offset: 300,
         reference_ref: "reference".into(),

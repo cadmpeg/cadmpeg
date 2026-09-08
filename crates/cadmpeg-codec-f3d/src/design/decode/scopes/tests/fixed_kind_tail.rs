@@ -11,6 +11,7 @@ use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
 
 #[test]
@@ -1239,43 +1240,49 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             _ => {}
         }
     }
-    let thicken_group = DesignConstructionOperandGroup {
-        id: "thicken-group".into(),
-        scope_record_index: thicken_scope.record_index,
-        scope_reference_ordinal: 0,
-        record_index: 200,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 201,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 202,
+    let thicken_group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "thicken-group".into(),
+            scope_record_index: thicken_scope.record_index,
+            scope_reference_ordinal: 0,
+            record_index: 200,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 201,
                 offset: 0,
             }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X5,
-        ),
-        role_offset: 0,
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![crate::records::Located {
+                        value: 202,
+                        offset: 0,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::ROLE_0X5,
+            ),
+            role_offset: 0,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
+            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            paired_byte_offset: 0,
+        },
+    )
+    .unwrap();
     assert!(matches!(
         crate::design::feature_project::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group)),
         Some(cadmpeg_ir::features::FeatureDefinition::Thicken {

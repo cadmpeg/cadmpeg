@@ -30,14 +30,18 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense,
-                v_sense,
-                extension,
-            } = decoded.definition
+                layout:
+                    crate::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy {
+                        u_sense,
+                        v_sense,
+                        extension: flags,
+                    },
+            } = definition
             else {
                 panic!("expected legacy offset surface");
             };
@@ -50,11 +54,8 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                         && (origin.z - 15.0).abs() < f64::EPSILON
             ));
             assert!((distance - -2.5).abs() < f64::EPSILON);
-            assert_eq!(u_sense, Some(2));
-            assert_eq!(v_sense, Some(3));
-            let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
-                panic!("expected legacy offset extension")
-            };
+            assert_eq!(u_sense, 2);
+            assert_eq!(v_sense, 3);
             assert_eq!(
                 flags.wire_values(),
                 if name == "off_spl_sur" {
@@ -158,15 +159,14 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
-        assert!(
-            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
-                < f64::EPSILON * 10.0
-        );
-        let DecodedProceduralSurfaceDefinition::Deformable(construction) = decoded.definition
-        else {
+        assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Deformable(construction) = definition else {
             panic!("expected deformable surface");
         };
-        let Some(revision_form) = construction.revision_form else {
+        let crate::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Revision(revision_form) =
+            construction.layout
+        else {
             panic!("expected revision form");
         };
         assert_eq!(revision_form.revision, 22_506);
@@ -253,7 +253,8 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Taper {
                 reference,
                 pcurve,
@@ -261,7 +262,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 taper,
                 revision_form: None,
                 ..
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected legacy taper surface");
             };
@@ -343,8 +344,9 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-        let DecodedProceduralSurfaceDefinition::Compound { components } = decoded.definition else {
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Compound { components } = definition else {
             panic!("expected compound surface");
         };
 
@@ -433,18 +435,29 @@ fn loft_surface_walks_bridge_to_direct_cache() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-            let DecodedProceduralSurfaceDefinition::Loft(loft) = decoded.definition else {
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
+            let DecodedProceduralSurfaceDefinition::Loft(loft) = definition else {
                 panic!("expected legacy loft surface");
             };
 
             assert!(loft.sections.iter().all(Vec::is_empty));
-            assert_eq!(loft.closures, [1, 2]);
-            assert_eq!(loft.singularities, [3, 4]);
-            assert_eq!(loft.mode, 7);
-            assert_eq!(loft.bridge.len(), 5);
+            let crate::nurbs::proc_surface::EmbeddedLoftLayout::Legacy {
+                closures,
+                singularities,
+                mode,
+                bridge,
+                ..
+            } = loft.layout
+            else {
+                panic!("expected legacy loft layout")
+            };
+            assert_eq!(closures, [1, 2]);
+            assert_eq!(singularities, [3, 4]);
+            assert_eq!(mode, 7);
+            assert_eq!(bridge.len(), 5);
             assert!(matches!(
-                loft.bridge.as_slice(),
+                bridge.as_slice(),
                 [
                     cadmpeg_ir::geometry::LoftBridgeToken::Boolean(true),
                     cadmpeg_ir::geometry::LoftBridgeToken::Integer(11),
@@ -511,10 +524,11 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension },
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected legacy exact surface");
             };
@@ -583,16 +597,15 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
-        let DecodedProceduralSurfaceDefinition::Ruled { first, second } = decoded.definition else {
+        let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Ruled { first, second } = definition else {
             panic!("expected ruled surface");
         };
 
         assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
         assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
-        assert!(
-            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
-                < f64::EPSILON * 10.0
-        );
+        assert!((cache_fit_tolerance.expect("fit tolerance") - 0.01).abs() < f64::EPSILON * 10.0);
     }
 }
 
@@ -641,13 +654,14 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Sum {
             first,
             second,
             basepoint,
             revision_form: None,
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected legacy sum surface");
         };
@@ -713,7 +727,8 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revolution surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
             directrix,
             axis_origin,
@@ -721,7 +736,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             angular_interval,
             parameter_interval,
             revision_form: None,
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected legacy revolution surface");
         };
@@ -797,12 +812,13 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
             angular_interval,
             parameter_interval,
             revision_form: Some(_),
             ..
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected revision revolution surface");
         };
@@ -1190,14 +1206,16 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         )
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
-            EmbeddedSurfaceCurve::Blend {
-                context,
-                tail: Some(tail),
-            },
+            EmbeddedSurfaceCurve::Blend(
+                crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst { context, flags },
+            ),
         ) = decoded.construction
         else {
             panic!("blend surface-curve family")
         };
+        let (context, form) = context.into_intersection(
+            crate::nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve).unwrap(),
+        );
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
@@ -1210,8 +1228,8 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         ));
         assert!(context.pcurves[0].is_some());
         assert!(context.pcurves[1].is_none());
-        assert_eq!(tail.tail.extension, 7);
-        assert!(tail.flags);
+        assert_eq!(form.extension, 7);
+        assert!(flags);
     }
 }
 
@@ -1262,10 +1280,9 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         )
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
-            EmbeddedSurfaceCurve::Parametric {
-                context,
-                tail: Some(tail),
-            },
+            EmbeddedSurfaceCurve::Parametric(
+                crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst { context, flags },
+            ),
         ) = decoded.construction
         else {
             panic!("parametric surface-curve family")
@@ -1281,9 +1298,9 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
-        assert_eq!(tail.tail.extension, 7);
-        assert!(!tail.flags.flag);
-        assert_eq!(tail.flags.second_flag, Some(false));
+        assert_eq!(context.form.extension, 7);
+        assert!(!flags.flag);
+        assert_eq!(flags.second_flag, Some(false));
     }
 }
 

@@ -61,13 +61,14 @@ fn extrusion_definition_decodes_without_a_solved_surface_cache() {
 
         let decoded = crate::nurbs::blend::cyl_spl_sur(&lex_test_span(&bytes, int_width), None)
             .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
-        assert_eq!(decoded.cache_fit_tolerance, None);
+        assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Extrusion {
             parameter_interval,
             direction,
             native_position,
             ..
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected extrusion definition")
         };
@@ -180,7 +181,8 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
 
         let decoded = crate::nurbs::proc_surface::helix_spl_sur(&lex_test_span(&bytes, int_width))
             .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
-        let DecodedProceduralSurfaceDefinition::Helix(construction) = decoded.definition else {
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Helix(construction) = definition else {
             panic!("expected helix surface definition")
         };
         assert_eq!(construction.path.pitch, Vector3::new(0.0, 0.0, 40.0));

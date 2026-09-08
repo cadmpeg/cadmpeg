@@ -848,7 +848,7 @@ fn append_spreadsheet(
             object.id
         ))
     })?;
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
     })?;
     let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
@@ -976,7 +976,7 @@ fn spreadsheet_dimensions(
     else {
         return Ok(Vec::new());
     };
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid spreadsheet dimension {}: {error}",
             property.id
@@ -1365,7 +1365,7 @@ fn parse_sketch(
                 geometry.id, geometry.type_name
             )));
         }
-        let xml = roxmltree::Document::parse(&geometry.raw_xml).map_err(|error| {
+        let xml = roxmltree::Document::parse(geometry.xml.text()).map_err(|error| {
             CodecError::malformed(format_args!(
                 "invalid sketch geometry {}: {error}",
                 geometry.id
@@ -1416,7 +1416,7 @@ fn parse_sketch(
                 external_geometry.id, external_geometry.type_name
             )));
         }
-        let xml = roxmltree::Document::parse(&external_geometry.raw_xml).map_err(|error| {
+        let xml = roxmltree::Document::parse(external_geometry.xml.text()).map_err(|error| {
             CodecError::malformed(format_args!(
                 "invalid external sketch geometry {}: {error}",
                 external_geometry.id
@@ -1611,7 +1611,7 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
     let Some(property) = property(properties, "Constraints") else {
         return (false, false, false);
     };
-    let Ok(xml) = roxmltree::Document::parse(&property.raw_xml) else {
+    let Ok(xml) = roxmltree::Document::parse(property.xml.text()) else {
         return (false, false, false);
     };
     let mut horizontal = false;
@@ -1895,7 +1895,7 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
                 .first()
                 .and_then(|link| link.object().map(str::to_owned))
                 .or_else(|| scalar_text(property))
-                .unwrap_or_else(|| property.raw_xml.clone());
+                .unwrap_or_else(|| property.xml.text().to_owned());
             (property.name.clone(), value)
         })
         .collect()
@@ -2036,7 +2036,7 @@ fn parse_constraints(
             property.id, property.type_name
         )));
     }
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid sketch constraints {}: {error}",
             property.id
@@ -4365,7 +4365,7 @@ fn direct_root_attributes(
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Option<BTreeMap<String, String>> {
-    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
     let roots = document
         .root_element()
         .children()
@@ -5253,7 +5253,7 @@ fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<Strin
     if property.type_name != "App::PropertyEnumeration" {
         return None;
     }
-    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return None;

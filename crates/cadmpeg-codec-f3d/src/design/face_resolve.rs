@@ -44,8 +44,8 @@ pub(crate) fn resolved_face_group(
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let stream = native_stream(&group.id)?;
-    let mut faces = Vec::with_capacity(group.members.len());
-    for record_index in group.members.iter().map(|member| &member.value) {
+    let mut faces = Vec::with_capacity(group.members().len());
+    for record_index in group.members().iter().map(|member| &member.value) {
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -90,8 +90,8 @@ pub(crate) fn resolved_explicit_bounded_face_group(
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let stream = native_stream(&group.id)?;
-    let mut faces = Vec::with_capacity(group.members.len());
-    for record_index in group.members.iter().map(|member| &member.value) {
+    let mut faces = Vec::with_capacity(group.members().len());
+    for record_index in group.members().iter().map(|member| &member.value) {
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -197,7 +197,7 @@ pub(crate) fn resolved_body_recipe_selection(
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     if group.scope_record_index != scope.record_index
         || group.extrude_role().is_some()
-        || group.members.is_empty()
+        || group.members().is_empty()
     {
         return None;
     }
@@ -208,7 +208,12 @@ pub(crate) fn resolved_body_recipe_selection(
     let mut faces = Vec::new();
     let mut state_id = None;
     let mut member_records = HashSet::new();
-    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| &member.value)
+        .enumerate()
+    {
         if !member_records.insert(*record_index) {
             return None;
         }
@@ -320,7 +325,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     }
     let mut parent_by_child = HashMap::new();
     for parent in &profile_groups {
-        for member in parent.members.iter().map(|member| &member.value) {
+        for member in parent.members().iter().map(|member| &member.value) {
             let Some(child) = groups_by_record.get(member) else {
                 continue;
             };
@@ -360,7 +365,7 @@ fn visit_extrude_profile_group(
 ) -> bool {
     visited.insert(group.record_index)
         && group
-            .members
+            .members()
             .iter()
             .map(|member| &member.value)
             .all(|member| {
@@ -419,11 +424,16 @@ fn collect_extrude_profile_group_operands(
     operands: &[DesignFaceOperand],
     visited_groups: &mut HashSet<u32>,
 ) -> Option<Vec<usize>> {
-    if group.members.is_empty() || !visited_groups.insert(group.record_index) {
+    if group.members().is_empty() || !visited_groups.insert(group.record_index) {
         return None;
     }
-    let mut indices = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
+    let mut indices = Vec::with_capacity(group.members().len());
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| &member.value)
+        .enumerate()
+    {
         let ordinal = u32::try_from(ordinal).ok()?;
         let direct = operands
             .iter()
@@ -475,9 +485,9 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
     let Some(stream) = native_stream(&root.id) else {
         return false;
     };
-    !root.members.is_empty()
+    !root.members().is_empty()
         && root
-            .members
+            .members()
             .iter()
             .map(|member| &member.value)
             .all(|record_index| {
@@ -497,7 +507,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
                 let [crate::records::Located {
                     value: operand_record_index,
                     ..
-                }] = child.members.as_slice()
+                }] = child.members()
                 else {
                     return false;
                 };
@@ -615,7 +625,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
             group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
         )
-        || group.members.is_empty()
+        || group.members().is_empty()
         || !group.lost_edge_references.is_empty()
     {
         return None;
@@ -625,7 +635,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     let group_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
     let mut member_ids = HashSet::new();
     if group
-        .members
+        .members()
         .iter()
         .map(|member| &member.value)
         .any(|member| !member_ids.insert(*member))
@@ -636,7 +646,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
         return None;
     }
     let member_operands = group
-        .members
+        .members()
         .iter()
         .map(|member| &member.value)
         .enumerate()
@@ -670,7 +680,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
             Some(operand)
         })
         .collect::<Option<Vec<_>>>()?;
-    let face_slot = loft_edge_profile_face_slot(group.members.len(), &member_operands)?;
+    let face_slot = loft_edge_profile_face_slot(group.members().len(), &member_operands)?;
     let selection = historical_face_selection(scope, group, vec![face_slot])?;
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
@@ -947,7 +957,7 @@ fn split_face_updated_target_slots(
     if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
         || updated_face_slots.is_empty()
-        || updated_face_slots.len() != group.members.len()
+        || updated_face_slots.len() != group.members().len()
     {
         return None;
     }
@@ -958,7 +968,12 @@ fn split_face_updated_target_slots(
     let stream = native_stream(&group.id)?;
     let mut represented = HashSet::new();
     let mut faces = Vec::new();
-    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| &member.value)
+        .enumerate()
+    {
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -997,9 +1012,14 @@ fn historical_face_group_slots(
     members: FaceGroupMembers,
 ) -> Option<Vec<i64>> {
     let stream = native_stream(&group.id)?;
-    let mut faces = Vec::with_capacity(group.members.len());
+    let mut faces = Vec::with_capacity(group.members().len());
     let mut contributing_members = 0;
-    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| &member.value)
+        .enumerate()
+    {
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -1711,7 +1731,7 @@ fn extrude_start_plane_geometry_candidates(
     let [crate::records::Located {
         value: record_index,
         ..
-    }] = group.members.as_slice()
+    }] = group.members()
     else {
         return None;
     };
@@ -1802,7 +1822,7 @@ pub(crate) fn bind_extrude_start_planes(
             continue;
         };
         let mut candidates = Vec::new();
-        for record_index in group.members.iter().map(|member| &member.value) {
+        for record_index in group.members().iter().map(|member| &member.value) {
             let mut matching_operands = resolution.operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == group.scope_record_index
@@ -1982,7 +2002,7 @@ fn extrude_target_plane_candidate(
     let [crate::records::Located {
         value: record_index,
         ..
-    }] = group.members.as_slice()
+    }] = group.members()
     else {
         return None;
     };
@@ -2044,7 +2064,7 @@ pub(crate) fn retain_face_operand_resolution(
         native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == group.scope_record_index
             && group
-                .members
+                .members()
                 .iter()
                 .any(|member| member.value == operand.record_index)
             && (face_operand_candidates(operand).contains(face)
@@ -2126,12 +2146,10 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
 
 pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
     (parameter
-        .unit
-        .as_ref()
+        .unit()
         .map(|field| field.value.as_str())
-        .is_some_and(design_angle_unit)
-        && parameter.evaluated_value.is_finite())
-    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
+        .is_some_and(design_angle_unit))
+    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value()))
 }
 
 pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
@@ -2284,9 +2302,9 @@ mod tests {
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role_offset": 0,
@@ -2452,13 +2470,13 @@ mod tests {
             "byte_offset": 0,
             "class_tag": "262",
             "members": [200, 201, 202],
-            "member_offsets": [0, 0, 0],
+            "member_offsets": [0, 11, 22],
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 0x0000_0010_0000_0000_u64,
@@ -2701,13 +2719,13 @@ mod tests {
             "byte_offset": 0,
             "class_tag": "267",
             "members": [1, 2, 3],
-            "member_offsets": [0, 0, 0],
+            "member_offsets": [0, 11, 22],
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 252,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 287_762_808_832_i64,
@@ -3013,10 +3031,10 @@ mod tests {
             "member_offsets": [0],
             "frame": {
                 "member_count_offset": 0,
-                "opaque_index": 0,
-                "opaque_index_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role_offset": 0,
@@ -3190,10 +3208,10 @@ mod tests {
                 "trailing_transforms": [],
                 "trailing_dual_transforms": [],
                 "trailing_flags": [],
-                "opaque_index": 0,
-                "opaque_index_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": DesignOperandRole::FACES.raw(),
