@@ -228,7 +228,8 @@ pub struct Face {
     pub color: Option<Color>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(deserialize_with = "deserialize_tolerance")]
+    pub tolerance: Option<crate::units::PositiveScalar>,
 }
 
 impl Face {
@@ -1169,7 +1170,8 @@ pub struct Edge {
     pub param_range: Option<[f64; 2]>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(deserialize_with = "deserialize_tolerance")]
+    pub tolerance: Option<crate::units::PositiveScalar>,
 }
 
 /// A vertex: a topological point referencing a position carrier.
@@ -1182,7 +1184,8 @@ pub struct Vertex {
     pub point: PointId,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(deserialize_with = "deserialize_tolerance")]
+    pub tolerance: Option<crate::units::PositiveScalar>,
 }
 
 /// A position carrier for a vertex.
@@ -1196,6 +1199,12 @@ pub struct Point {
     /// Source object carrying this free point, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
+}
+
+fn deserialize_tolerance<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::PositiveScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "tolerance")
 }
 
 #[cfg(test)]

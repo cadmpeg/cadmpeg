@@ -2011,7 +2011,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((&edge.id, edge.tolerance?)))
+        .filter_map(|edge| Some((&edge.id, edge.tolerance?.get())))
         .collect::<BTreeMap<_, _>>();
     let coedge_candidates = ir
         .model

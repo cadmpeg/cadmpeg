@@ -609,14 +609,20 @@ fn transfer_neutral_presentation(
             .and_then(|value| value.parse::<f64>().ok());
         let point_size = property_value("PointSize", "App::PropertyFloatConstraint")
             .and_then(|value| value.parse::<f64>().ok());
-        if line_width.is_some_and(|value| value < 0.0)
-            || point_size.is_some_and(|value| value < 0.0)
-        {
-            return Err(CodecError::malformed(format_args!(
-                "ViewProvider {} has a negative line or point size",
-                provider.name
-            )));
-        }
+        let line_width = line_width
+            .map(|value| {
+                cadmpeg_ir::units::NonNegativeScalar::new(value).ok_or_else(|| {
+                    CodecError::malformed("line_width must be finite and nonnegative")
+                })
+            })
+            .transpose()?;
+        let point_size = point_size
+            .map(|value| {
+                cadmpeg_ir::units::NonNegativeScalar::new(value).ok_or_else(|| {
+                    CodecError::malformed("point_size must be finite and nonnegative")
+                })
+            })
+            .transpose()?;
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::mint(crate::native::model_id(
                 "presentation-view",
@@ -669,21 +675,19 @@ fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError>
         position,
         orientation,
     } = parse_camera_settings(settings)?;
-    if position.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
-        return Err(CodecError::Malformed(
-            "GUI camera settings position contains a non-finite component".into(),
-        ));
-    }
-    if orientation.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
-        return Err(CodecError::Malformed(
-            "GUI camera settings orientation contains a non-finite component".into(),
-        ));
-    }
-    if orientation.is_some_and(|value| value.iter().all(|component| *component == 0.0)) {
-        return Err(CodecError::Malformed(
-            "GUI camera settings orientation must be nonzero".into(),
-        ));
-    }
+    let position = position
+        .map(|value| {
+            cadmpeg_ir::units::FiniteVector::new(value)
+                .ok_or_else(|| CodecError::malformed("camera position must be finite"))
+        })
+        .transpose()?;
+    let orientation = orientation
+        .map(|value| {
+            cadmpeg_ir::units::NonzeroVector::new(value).ok_or_else(|| {
+                CodecError::malformed("camera orientation must be finite and nonzero")
+            })
+        })
+        .transpose()?;
     Ok(CameraState {
         position,
         orientation,

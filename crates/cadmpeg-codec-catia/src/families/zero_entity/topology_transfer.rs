@@ -395,7 +395,12 @@ pub(crate) fn transfer_closed_face_topology(
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
-            tolerance: Some(MODEL_POINT_TOLERANCE),
+            tolerance: Some(
+                const {
+                    cadmpeg_ir::units::PositiveScalar::new(MODEL_POINT_TOLERANCE)
+                        .expect("positive finite tolerance")
+                },
+            ),
         });
     }
 
@@ -486,7 +491,12 @@ pub(crate) fn transfer_closed_face_topology(
             start: oriented_vertices[0].clone(),
             end: oriented_vertices[1].clone(),
             param_range,
-            tolerance: Some(MODEL_POINT_TOLERANCE),
+            tolerance: Some(
+                const {
+                    cadmpeg_ir::units::PositiveScalar::new(MODEL_POINT_TOLERANCE)
+                        .expect("positive finite tolerance")
+                },
+            ),
         });
         edge_ids.push(edge_id);
         debug_assert_eq!(edge_index, edge_ids.len() - 1);

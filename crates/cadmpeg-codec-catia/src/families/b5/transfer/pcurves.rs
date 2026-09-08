@@ -125,7 +125,13 @@ pub(super) fn oriented_line_plan(
             direction: vector(direction),
         },
         parameter_range: Some(range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::units::PositiveScalar::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }
@@ -215,7 +221,13 @@ pub(super) fn oriented_circle_plan(
     Some(CurvePlan {
         geometry,
         parameter_range: Some(parameter_range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::units::PositiveScalar::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }
@@ -297,7 +309,13 @@ pub(super) fn oriented_nurbs_range(
     Some(CurvePlan {
         geometry,
         parameter_range: Some(range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::units::PositiveScalar::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }

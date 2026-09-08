@@ -312,8 +312,12 @@ fn decode_with_occurrence_limits(
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
+    let mut invalid_resolution = false;
     if let Some(context) = &length_context {
-        ir.tolerances.linear = context.minimum_resolution_mm();
+        match cadmpeg_ir::units::PositiveScalar::new(context.minimum_resolution_mm()) {
+            Some(value) => ir.tolerances.linear = value,
+            None => invalid_resolution = true,
+        }
     }
     let projection = match length_context.filter(|_| !ctx.container_only()) {
         Some(context) => {
@@ -361,6 +365,15 @@ fn decode_with_occurrence_limits(
     source_fidelity.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
+    if invalid_resolution
+        && !losses.iter().any(|loss| {
+            loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
+        })
+    {
+        losses.push(IgesLossCode::GlobalSemanticContextSubstituted.note(
+            "minimum resolution must be positive and finite; the default linear tolerance is used",
+        ));
+    }
     losses.extend(projection.losses);
     losses.extend(graph::losses(
         &parse.references,

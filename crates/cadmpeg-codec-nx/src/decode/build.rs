@@ -376,7 +376,7 @@ pub(crate) fn try_decode_geometry(
             graph,
             &view.offset_surfaces,
             &surfaces_by_xmt,
-            ir.tolerances.linear,
+            ir.tolerances.linear.get(),
             &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
@@ -873,7 +873,8 @@ pub(crate) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance());
+                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
+                            .map(cadmpeg_ir::units::PositiveScalar::get);
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
                                 metadata.fit_tolerance = fit_tolerance;

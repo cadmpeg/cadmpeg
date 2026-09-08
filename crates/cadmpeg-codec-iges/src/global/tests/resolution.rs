@@ -338,7 +338,10 @@ fn a_negative_minimum_resolution_decodes_with_the_semantic_context_loss() {
         .unwrap();
 
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().tolerances.linear, 0.0);
+    assert_eq!(
+        result.ir().tolerances.linear,
+        cadmpeg_ir::units::Tolerances::default().linear
+    );
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         report_code_count(

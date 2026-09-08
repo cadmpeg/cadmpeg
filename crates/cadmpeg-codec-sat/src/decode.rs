@@ -65,7 +65,7 @@ fn decode_asm_binary(
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
-    );
+    )?;
     let mut attributes = BTreeMap::new();
     header_attributes(header, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
@@ -118,7 +118,7 @@ fn decode_acis_binary(
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
-    );
+    )?;
     let mut attributes = BTreeMap::new();
     header_attributes(header, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
@@ -159,7 +159,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
-    );
+    )?;
     build_result(
         ctx,
         brep,
@@ -195,10 +195,14 @@ fn build_result(
         attributes,
     ));
     if let Some(linear) = header.linear {
-        ir.tolerances.linear = linear;
+        ir.tolerances.linear = cadmpeg_ir::units::PositiveScalar::new(linear)
+            .ok_or_else(|| CodecError::malformed("linear tolerance must be positive and finite"))?;
     }
     if let Some(angular) = header.angular {
-        ir.tolerances.angular = angular;
+        ir.tolerances.angular =
+            cadmpeg_ir::units::PositiveScalar::new(angular).ok_or_else(|| {
+                CodecError::malformed("angular tolerance must be positive and finite")
+            })?;
     }
 
     let AsmTransferRemainder {

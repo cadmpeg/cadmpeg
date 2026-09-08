@@ -60,10 +60,10 @@ pub(super) fn normalize_model_lengths(
         scale_point3(&mut point.position, length_scale_mm);
     }
     for face in &mut ir.model.faces {
-        scale_optional(&mut face.tolerance, length_scale_mm);
+        scale_tolerance(&mut face.tolerance, length_scale_mm)?;
     }
     for vertex in &mut ir.model.vertices {
-        scale_optional(&mut vertex.tolerance, length_scale_mm);
+        scale_tolerance(&mut vertex.tolerance, length_scale_mm)?;
     }
 
     let curve_parameter_scales = ir
@@ -76,7 +76,7 @@ pub(super) fn normalize_model_lengths(
         })
         .collect::<BTreeMap<_, _>>();
     for edge in &mut ir.model.edges {
-        scale_optional(&mut edge.tolerance, length_scale_mm);
+        scale_tolerance(&mut edge.tolerance, length_scale_mm)?;
         if let (Some(range), Some(scale)) = (
             edge.param_range.as_mut(),
             edge.curve
@@ -151,6 +151,19 @@ pub(super) fn normalize_model_lengths(
     }
     for constraint in &mut ir.model.spatial_sketch_constraints {
         scale_spatial_sketch_constraint_definition(&mut constraint.definition, length_scale_mm);
+    }
+    Ok(())
+}
+
+fn scale_tolerance(
+    value: &mut Option<cadmpeg_ir::units::PositiveScalar>,
+    scale: f64,
+) -> Result<(), CodecError> {
+    if let Some(current) = value {
+        *current =
+            cadmpeg_ir::units::PositiveScalar::new(current.get() * scale).ok_or_else(|| {
+                CodecError::malformed("scaled topology tolerance must be positive and finite")
+            })?;
     }
     Ok(())
 }

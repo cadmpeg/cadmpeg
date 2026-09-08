@@ -1469,8 +1469,8 @@ fn transformed_pcurve_geometry(
     }
 }
 
-fn positive_tolerance(value: f64) -> Option<f64> {
-    (value.is_finite() && value > 0.0).then_some(value)
+fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
+    cadmpeg_ir::units::PositiveScalar::new(value)
 }
 
 pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {

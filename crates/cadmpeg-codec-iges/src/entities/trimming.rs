@@ -209,6 +209,8 @@ fn create_boundary_vertices(
         .map(|endpoint| endpoint.position)
         .collect::<Vec<_>>();
     let clusters = cluster_boundary_positions(&positions, tolerance)?;
+    let checked_tolerance = cadmpeg_ir::units::PositiveScalar::new(tolerance)
+        .ok_or(BoundaryVertexClusterError::InvalidTolerance)?;
     let mut vertex_ids = (0..positions.len())
         .map(|_| None)
         .collect::<Vec<Option<VertexId>>>();
@@ -226,7 +228,7 @@ fn create_boundary_vertices(
         candidate.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: Some(tolerance),
+            tolerance: Some(checked_tolerance),
         });
         let source_endpoints = cluster
             .members
@@ -2176,6 +2178,13 @@ pub(super) fn project(
                     break;
                 }
             };
+            let Some(checked_sewing_tolerance) =
+                cadmpeg_ir::units::PositiveScalar::new(sewing_tolerance)
+            else {
+                losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
+                valid = false;
+                break;
+            };
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id = EdgeId::mint(format!(
@@ -2190,7 +2199,7 @@ pub(super) fn project(
                     start: start_vertex,
                     end: end_vertex,
                     param_range: item.source_edge.param_range,
-                    tolerance: Some(sewing_tolerance),
+                    tolerance: Some(checked_sewing_tolerance),
                 });
                 let pcurve_uses = item
                     .pcurves
@@ -2300,6 +2309,15 @@ pub(super) fn project(
         } else {
             surface_id
         };
+        let checked_face_tolerance = if face_tolerance > 0.0 {
+            let Some(value) = cadmpeg_ir::units::PositiveScalar::new(face_tolerance) else {
+                losses.push(entity_loss(entry, "face tolerance is invalid"));
+                continue;
+            };
+            Some(value)
+        } else {
+            None
+        };
         candidate.model_mut().faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -2315,7 +2333,7 @@ pub(super) fn project(
             },
             name: None,
             color: None,
-            tolerance: (face_tolerance > 0.0).then_some(face_tolerance),
+            tolerance: checked_face_tolerance,
         });
         candidate.model_mut().shells.push(Shell {
             id: shell_id.clone(),

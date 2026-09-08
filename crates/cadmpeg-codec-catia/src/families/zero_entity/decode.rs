@@ -294,7 +294,12 @@ fn transfer_closed_wire_loops(
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
-                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
+                    tolerance: Some(
+                        const {
+                            cadmpeg_ir::units::PositiveScalar::new(ZERO_ENTITY_WIRE_TOLERANCE)
+                                .expect("positive finite tolerance")
+                        },
+                    ),
                 });
                 vertex_ids.push(vertex_id);
                 counts.points += 1;
@@ -506,7 +511,12 @@ fn transfer_closed_wire_loops(
                     start: vertex_ids[index].clone(),
                     end: vertex_ids[(index + 1) % member_count].clone(),
                     param_range,
-                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
+                    tolerance: Some(
+                        const {
+                            cadmpeg_ir::units::PositiveScalar::new(ZERO_ENTITY_WIRE_TOLERANCE)
+                                .expect("positive finite tolerance")
+                        },
+                    ),
                 });
                 if param_range.is_some() {
                     annotations.derived(&edge_id, "param_range");

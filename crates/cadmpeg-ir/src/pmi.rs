@@ -71,9 +71,51 @@ pub enum PmiTarget {
 pub struct PmiValue {
     /// Numeric value in millimeters, radians, or unitless ratio as selected by
     /// `quantity`.
-    pub value: f64,
+    #[serde(deserialize_with = "deserialize_pmi_value")]
+    pub value: crate::units::FiniteScalar,
     /// Physical quantity and canonical unit of `value`.
     pub quantity: PmiQuantity,
+}
+
+fn deserialize_pmi_value<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::units::FiniteScalar, D::Error> {
+    crate::units::deserialize_named(deserializer, "value")
+}
+
+impl PmiValue {
+    /// Construct a finite semantic quantity.
+    pub fn new(value: f64, quantity: PmiQuantity) -> Option<Self> {
+        Some(Self {
+            value: crate::units::FiniteScalar::new(value)?,
+            quantity,
+        })
+    }
+}
+
+/// A nonnegative finite geometric-tolerance magnitude.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct PmiMagnitude(PmiValue);
+
+impl PmiMagnitude {
+    /// Construct a nonnegative tolerance magnitude.
+    pub fn new(value: PmiValue) -> Option<Self> {
+        crate::units::NonNegativeScalar::new(value.value.get()).map(|_| Self(value))
+    }
+
+    /// Return the finite semantic quantity.
+    pub const fn get(self) -> PmiValue {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PmiMagnitude {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(crate::units::deserialize_named(deserializer, "magnitude")?)
+            .ok_or_else(|| serde::de::Error::custom("magnitude must be nonnegative"))
+    }
 }
 
 /// Physical quantity carried by a PMI value.
@@ -257,7 +299,7 @@ pub enum PmiDefinition {
         /// Tolerance characteristic.
         tolerance: GeometricToleranceKind,
         /// Tolerance-zone magnitude.
-        magnitude: PmiValue,
+        magnitude: PmiMagnitude,
         /// Explicit tolerance-zone unit size.
         defined_unit: Option<PmiValue>,
         /// Explicit area-unit shape for the tolerance zone.
@@ -307,7 +349,7 @@ enum PmiDefinitionWire {
     },
     GeometricTolerance {
         tolerance: GeometricToleranceKind,
-        magnitude: PmiValue,
+        magnitude: PmiMagnitude,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         defined_unit: Option<PmiValue>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -590,19 +632,10 @@ mod tests {
     fn dimension_wire_keeps_the_flat_tolerance_fields() {
         let definition = PmiDefinition::Dimension {
             dimension: DimensionKind::Size,
-            nominal: Some(PmiValue {
-                value: 12.0,
-                quantity: PmiQuantity::Length,
-            }),
+            nominal: Some(PmiValue::new(12.0, PmiQuantity::Length).expect("finite value")),
             tolerance: Some(DimensionTolerance::PlusMinus {
-                lower: PmiValue {
-                    value: -0.1,
-                    quantity: PmiQuantity::Length,
-                },
-                upper: PmiValue {
-                    value: 0.2,
-                    quantity: PmiQuantity::Length,
-                },
+                lower: PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value"),
+                upper: PmiValue::new(0.2, PmiQuantity::Length).expect("finite value"),
             }),
         };
 
@@ -705,10 +738,7 @@ mod tests {
             targets: vec![PmiTarget::Curve { curve }],
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: Some(PmiValue {
-                    value: 1.0,
-                    quantity: PmiQuantity::Length,
-                }),
+                nominal: Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
                 tolerance: None,
             },
         });
@@ -750,10 +780,7 @@ mod tests {
             targets: Vec::new(),
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: Some(PmiValue {
-                    value: 1.0,
-                    quantity: PmiQuantity::Length,
-                }),
+                nominal: Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
                 tolerance: None,
             },
         });
@@ -778,10 +805,10 @@ mod tests {
             targets: Vec::new(),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: GeometricToleranceKind::Position,
-                magnitude: PmiValue {
-                    value: 0.1,
-                    quantity: PmiQuantity::Length,
-                },
+                magnitude: PmiMagnitude::new(
+                    PmiValue::new(0.1, PmiQuantity::Length).expect("finite value"),
+                )
+                .expect("nonnegative magnitude"),
                 defined_unit: None,
                 defined_area_unit: None,
                 defined_area_second_unit: None,
@@ -798,5 +825,22 @@ mod tests {
                 .count()
                 >= 2
         );
+    }
+    #[test]
+    fn pmi_magnitude_admission_keeps_signed_dimensions_and_zero_angles() {
+        let negative = PmiValue::new(-1.0, PmiQuantity::Length).expect("signed dimension");
+        assert!(PmiMagnitude::new(negative).is_none());
+        assert!(PmiValue::new(f64::INFINITY, PmiQuantity::Length).is_none());
+        let zero = PmiMagnitude::new(PmiValue::new(0.0, PmiQuantity::Angle).expect("zero angle"))
+            .expect("zero magnitude");
+        let wire = serde_json::to_string(&zero).expect("serialize");
+        assert_eq!(wire, r#"{"value":0.0,"quantity":"angle"}"#);
+        assert_eq!(
+            serde_json::from_str::<PmiMagnitude>(&wire).expect("deserialize"),
+            zero
+        );
+        let error = serde_json::from_str::<PmiMagnitude>(r#"{"value":-1.0,"quantity":"length"}"#)
+            .expect_err("negative magnitude");
+        assert!(error.to_string().contains("magnitude"));
     }
 }

@@ -1669,7 +1669,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
             + text_point[0] * DIMENSION_PLANE_X[2]
             + text_point[1] * DIMENSION_PLANE_Y[2],
     ];
-    let position = annotation.position.expect("authored text point");
+    let position = annotation.position.expect("authored text point").get();
     for axis in 0..3 {
         assert!(
             (position[axis] - expected[axis]).abs() < 1.0e-12,
@@ -1679,7 +1679,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
 
     // The linear measurement is |definition_point.x| * distance_scale, with the
     // family's 3.0 and the record's 2.0 scale.
-    let value = annotation.value.expect("persisted measurement");
+    let value = annotation.value.expect("persisted measurement").get();
     assert!(
         (value - 3.0 * 2.0 * MILLIMETERS_PER_UNIT).abs() < 1.0e-12,
         "{value}"

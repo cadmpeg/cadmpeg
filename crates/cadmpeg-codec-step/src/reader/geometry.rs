@@ -321,7 +321,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
     match linear_uncertainty(exchange) {
-        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
+        LinearUncertainty::Value(uncertainty) => match cadmpeg_ir::units::PositiveScalar::new(uncertainty) {
+            Some(value) => ir.tolerances.linear = value,
+            None => losses.push(StepLossCode::UncertaintyLengthUnresolved.note("linear uncertainty must be positive and finite; the linear tolerance was not transferred")),
+        },
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
                 losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
@@ -330,7 +333,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }
         }
         LinearUncertainty::Ambiguous { values, unresolved } => {
-            let default_linear = ir.tolerances.linear;
+            let default_linear = ir.tolerances.linear.get();
             let listed = values
                 .iter()
                 .map(|value| format!("{value:?}"))
@@ -975,7 +978,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     angle_scale: record_angle_scale,
                     linear_parameter_scale,
                     parameter_offset,
-                    tolerance: ir.tolerances.linear,
+                    tolerance: ir.tolerances.linear.get(),
                     master_representation,
                     record_id: id,
                     warnings: &mut warnings,

@@ -2,6 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -479,7 +480,10 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
+    pub(crate) fn new(
+        scan: &'a Scan<'a>,
+        expand: crate::mesh::MeshExpand<'a>,
+    ) -> Result<Self, CodecError> {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = object.identity() {
@@ -492,7 +496,7 @@ impl<'a> DecodeContext<'a> {
         let mut context = Self {
             scan,
             expand,
-            ir: build_ir(scan),
+            ir: build_ir(scan)?,
             annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             opaque_records: Vec::new(),
@@ -517,7 +521,7 @@ impl<'a> DecodeContext<'a> {
         };
         context.retain_object_records();
         context.retain_opaque_records();
-        context
+        Ok(context)
     }
 
     #[cfg(test)]
@@ -1056,13 +1060,19 @@ impl<'a> DecodeContext<'a> {
                         continue;
                     };
                     let object = Self::mint_unknown_id(source_order).to_string();
-                    let (annotation, unresolved) = crate::dimensions::project(
+                    let (annotation, unresolved) = match crate::dimensions::project(
                         &dimension,
                         &key,
                         (!identity.name.is_empty()).then(|| identity.name.clone()),
                         &object,
                         order,
-                    );
+                    ) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.scan_warning(source_order, &error.to_string());
+                            continue;
+                        }
+                    };
                     if dimension.override_present {
                         self.report.typed_losses.push(
                             RhinoLossCode::DimensionOverrideDropped.note(format!(
@@ -4793,13 +4803,20 @@ fn finite_tolerance(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
-fn scaled_tolerance(value: f64, scale: f64) -> Result<Option<f64>, crate::curves::GeometryError> {
+fn scaled_tolerance(
+    value: f64,
+    scale: f64,
+) -> Result<Option<cadmpeg_ir::units::PositiveScalar>, crate::curves::GeometryError> {
     if !value.is_finite() || value <= 0.0 {
         return Ok(None);
     }
     let scaled = crate::wire::scaled_coordinate(value, scale)
         .ok_or_else(|| crate::curves::error(0, "scaled tolerance is invalid"))?;
-    Ok(Some(scaled))
+    Ok(Some(
+        cadmpeg_ir::units::PositiveScalar::new(scaled).ok_or_else(|| {
+            crate::curves::error(0, "scaled tolerance must be positive and finite")
+        })?,
+    ))
 }
 
 fn face_components(raw: &crate::brep::RawBrep) -> Vec<usize> {
@@ -5345,8 +5362,11 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome<'_>) -> SourceProvenance 
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> Decoded {
-    let mut context = DecodeContext::new(scan, expand);
+pub(crate) fn decode(
+    scan: &Scan<'_>,
+    expand: crate::mesh::MeshExpand<'_>,
+) -> Result<Decoded, CodecError> {
+    let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
@@ -5399,7 +5419,7 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             &format!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    context.commit()
+    Ok(context.commit())
 }
 
 #[cfg(test)]
@@ -5424,7 +5444,9 @@ pub(crate) fn with_expand<R>(
 
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
-    with_expand(scan, |expand| seal_for_test(decode(scan, expand), false))
+    with_expand(scan, |expand| {
+        seal_for_test(decode(scan, expand).expect("valid tolerances"), false)
+    })
 }
 
 #[cfg(test)]
@@ -5472,15 +5494,21 @@ pub(crate) fn seal_for_test(
     .expect("test decode result satisfies the sealed codec contract")
 }
 
-fn build_ir(scan: &Scan<'_>) -> CadIr {
+fn build_ir(scan: &Scan<'_>) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
-            ir.tolerances.linear = linear;
+            ir.tolerances.linear =
+                cadmpeg_ir::units::PositiveScalar::new(linear).ok_or_else(|| {
+                    CodecError::malformed("linear tolerance must be positive and finite")
+                })?;
         }
-        ir.tolerances.angular = source_units.angular_tolerance;
+        ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(
+            source_units.angular_tolerance,
+        )
+        .ok_or_else(|| CodecError::malformed("angular tolerance must be positive and finite"))?;
     }
-    ir
+    Ok(ir)
 }
 
 /// Builds the path-specific facts available after full decoding.

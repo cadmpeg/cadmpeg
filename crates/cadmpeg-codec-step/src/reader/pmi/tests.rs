@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+const EPS_PMI_NUMERIC: f64 = 1.0e-12;
+
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -49,9 +51,9 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     else {
         panic!("width is not a dimension")
     };
-    assert_eq!(nominal.value, 12.0);
-    assert_eq!(lower.value, -0.1);
-    assert_eq!(upper.value, 0.2);
+    assert_eq!(nominal.value.get(), 12.0);
+    assert_eq!(lower.value.get(), -0.1);
+    assert_eq!(upper.value.get(), 0.2);
     assert_eq!(fit.form_variance, "H");
     assert_eq!(fit.zone_variance, "");
     assert_eq!(fit.grade, "7");
@@ -89,13 +91,10 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::Flatness,
-            magnitude: cadmpeg_ir::PmiValue {
-                value: 0.05,
-                quantity: PmiQuantity::Length,
-            },
+            magnitude,
             datum_system: None,
             ..
-        }
+        } if magnitude.get().value.get() == 0.05 && magnitude.get().quantity == PmiQuantity::Length
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -154,16 +153,16 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         annotation.definition,
         PmiDefinition::Dimension {
             nominal: Some(cadmpeg_ir::PmiValue {
-                value: 12.0,
+                value: nominal,
                 quantity: PmiQuantity::Length,
             }),
             tolerance: Some(DimensionTolerance::PlusMinusFit {
-                lower: cadmpeg_ir::PmiValue { value: -0.1, .. },
-                upper: cadmpeg_ir::PmiValue { value: 0.2, .. },
+                lower: cadmpeg_ir::PmiValue { value: lower, .. },
+                upper: cadmpeg_ir::PmiValue { value: upper, .. },
                 ..
             }),
             ..
-        }
+        } if nominal.get() == 12.0 && lower.get() == -0.1 && upper.get() == 0.2
     )));
 }
 
@@ -303,11 +302,11 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
         PmiDefinition::Dimension {
             dimension: DimensionKind::Location,
             nominal: Some(cadmpeg_ir::pmi::PmiValue {
-                value: 5.0,
+                value,
                 quantity: PmiQuantity::Length,
             }),
             ..
-        }
+        } if value.get() == 5.0
     ));
     assert_eq!(
         dimension.targets,
@@ -344,7 +343,7 @@ fn dimensional_characteristic_selects_the_named_nominal_measure() {
             dimension: DimensionKind::Size,
             nominal: Some(PmiValue { value, quantity: PmiQuantity::Length }),
             ..
-        } if (value - 12.0).abs() < 1.0e-12
+        } if (value.get() - 12.0).abs() < EPS_PMI_NUMERIC
     )));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
@@ -370,7 +369,7 @@ fn dimensional_nominal_selection_ignores_set_order_and_rejects_ambiguity() {
             else {
                 return None;
             };
-            Some(*value)
+            Some(value.get())
         })
     };
 
@@ -441,12 +440,9 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::Flatness,
-            magnitude: cadmpeg_ir::PmiValue {
-                value: 0.05,
-                quantity: PmiQuantity::Length,
-            },
+            magnitude,
             ..
-        }
+        } if magnitude.get().value.get() == 0.05 && magnitude.get().quantity == PmiQuantity::Length
     ));
     let PmiDefinition::GeometricTolerance {
         defined_unit,
@@ -459,10 +455,7 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     };
     assert_eq!(
         defined_unit,
-        &Some(cadmpeg_ir::PmiValue {
-            value: 0.05,
-            quantity: PmiQuantity::Length,
-        })
+        &Some(cadmpeg_ir::PmiValue::new(0.05, PmiQuantity::Length).expect("finite value"))
     );
     assert_eq!(defined_area_unit.as_deref(), Some("circular"));
     assert!(defined_area_second_unit.is_none());
@@ -548,8 +541,8 @@ fn geometric_tolerance_kind_uses_exact_leaf_and_retains_abstract_base_opaque() {
             panic!("complex flatness tolerance has the wrong definition")
         };
         assert_eq!(kind, &GeometricToleranceKind::Flatness);
-        assert_eq!(magnitude.quantity, PmiQuantity::Length);
-        assert_eq!(magnitude.value, 0.05);
+        assert_eq!(magnitude.get().quantity, PmiQuantity::Length);
+        assert_eq!(magnitude.get().value.get(), 0.05);
         assert_eq!(modifiers, &["free_state"]);
         assert_eq!(
             result
@@ -1106,7 +1099,7 @@ pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
         PmiDefinition::Dimension {
             nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
             ..
-        } if (value - 127.0).abs() < 1.0e-12
+        } if (value.get() - 127.0).abs() < EPS_PMI_NUMERIC
     )));
 }
 
@@ -1138,7 +1131,7 @@ fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
         PmiDefinition::Dimension {
             nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
             ..
-        } if (value - 0.4).abs() < 1.0e-12
+        } if (value.get() - 0.4).abs() < EPS_PMI_NUMERIC
     )));
 }
 
@@ -1187,10 +1180,10 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     unsupported.id = PmiId::mint("test:pmi:tolerance#other").expect("identity grammar");
     unsupported.definition = PmiDefinition::GeometricTolerance {
         tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
-        magnitude: cadmpeg_ir::PmiValue {
-            value: 0.1,
-            quantity: cadmpeg_ir::PmiQuantity::Length,
-        },
+        magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(
+            cadmpeg_ir::PmiValue::new(0.1, cadmpeg_ir::PmiQuantity::Length).expect("finite value"),
+        )
+        .expect("nonnegative magnitude"),
         datum_system: None,
         defined_unit: None,
         defined_area_unit: None,

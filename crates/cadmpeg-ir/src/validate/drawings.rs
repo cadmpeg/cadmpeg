@@ -25,24 +25,8 @@ pub(super) fn check_drawings(
                 .values()
                 .flatten()
                 .all(|target| target.local_target().is_none_or(|id| all_ids.contains(id)));
-        let numeric_valid = drawing
-            .position
-            .iter()
-            .flatten()
-            .chain(drawing.direction.iter().flatten())
-            .chain(drawing.rotation_degrees.iter())
-            .chain(drawing.scale.iter())
-            .all(|value| value.is_finite())
-            && drawing.scale.is_none_or(|value| value > 0.0)
-            && drawing.direction.is_none_or(|value| {
-                value
-                    .iter()
-                    .map(|component| component * component)
-                    .sum::<f64>()
-                    > f64::EPSILON
-            });
         let order_valid = orders.insert(drawing.order);
-        if !refs_valid || !numeric_valid || !order_valid {
+        if !refs_valid || !order_valid {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,

@@ -772,7 +772,7 @@ fn project_datum(
 
 struct ProjectedTolerance {
     kind: GeometricToleranceKind,
-    magnitude: PmiValue,
+    magnitude: cadmpeg_ir::pmi::PmiMagnitude,
     references: Vec<DatumReference>,
 }
 
@@ -784,7 +784,7 @@ fn project_tolerance(
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
     Some(ProjectedTolerance {
         kind,
-        magnitude: length(magnitude),
+        magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
         references: datum_references(entity, datum_ids),
     })
 }
@@ -807,7 +807,7 @@ fn project_lower_profile_tier(
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
-            magnitude: length(magnitude),
+            magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
             defined_unit: None,
             defined_area_unit: None,
             defined_area_second_unit: None,
@@ -844,8 +844,8 @@ fn project_dimension(
         deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
     ) {
         (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
-            lower: pmi_value(lower, quantity),
-            upper: pmi_value(upper, quantity),
+            lower: pmi_value(lower, quantity)?,
+            upper: pmi_value(upper, quantity)?,
         }),
         _ => None,
     };
@@ -856,7 +856,10 @@ fn project_dimension(
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Dimension {
             dimension,
-            nominal: nominal.map(|value| pmi_value(value, quantity)),
+            nominal: match nominal {
+                Some(value) => Some(pmi_value(value, quantity)?),
+                None => None,
+            },
             tolerance,
         },
     })
@@ -2190,14 +2193,14 @@ fn defined_area(entity: &Entity) -> (Option<PmiValue>, Option<String>, Option<Pm
                 .get("PerUnitAreaLength")
                 .copied()
                 .and_then(finite_positive)
-                .map(length),
+                .and_then(length),
             Some("rectangular".into()),
             entity
                 .doubles
                 .get("PerUnitAreaWidth")
                 .copied()
                 .and_then(finite_positive)
-                .map(length),
+                .and_then(length),
         ),
         Some(1) => (
             entity
@@ -2205,7 +2208,7 @@ fn defined_area(entity: &Entity) -> (Option<PmiValue>, Option<String>, Option<Pm
                 .get("PerUnitAreaDiameter")
                 .copied()
                 .and_then(finite_positive)
-                .map(length),
+                .and_then(length),
             Some("circular".into()),
             None,
         ),
@@ -2285,12 +2288,12 @@ fn finite_positive(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
-fn length(value: f64) -> PmiValue {
+fn length(value: f64) -> Option<PmiValue> {
     pmi_value(value, PmiQuantity::Length)
 }
 
-fn pmi_value(value: f64, quantity: PmiQuantity) -> PmiValue {
-    PmiValue { value, quantity }
+fn pmi_value(value: f64, quantity: PmiQuantity) -> Option<PmiValue> {
+    PmiValue::new(value, quantity)
 }
 
 #[cfg(test)]

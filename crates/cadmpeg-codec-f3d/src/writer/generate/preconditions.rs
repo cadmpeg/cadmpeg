@@ -117,15 +117,6 @@ pub(crate) fn validate_source_less_topology_tolerances(
             face.id
         )));
     }
-    if let Some(edge) = target.model.edges.iter().find(|edge| {
-        edge.tolerance
-            .is_some_and(|tolerance| !tolerance.is_finite() || tolerance < 0.0)
-    }) {
-        return Err(CodecError::InvalidInput(format!(
-            "F3D edge {} tolerance must be finite and nonnegative",
-            edge.id
-        )));
-    }
     let tolerant = native
         .tolerant_coedge_parameters
         .iter()

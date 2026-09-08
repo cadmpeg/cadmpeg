@@ -318,8 +318,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.bodies[0].visible = Some(false);
-    source_less.model.vertices[0].tolerance = Some(0.025);
-    source_less.model.edges[0].tolerance = Some(0.035);
+    source_less.model.vertices[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.025).expect("positive finite tolerance"));
+    source_less.model.edges[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.035).expect("positive finite tolerance"));
     let tangent_edge = source_less.model.edges[0].id.clone();
     let visible_body = source_less.model.bodies[0].id.clone();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
@@ -485,8 +487,18 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir().model.coedges.len(), 3);
     assert_eq!(round_trip.ir().model.edges.len(), 3);
     assert_eq!(round_trip.ir().model.vertices.len(), 3);
-    assert_eq!(round_trip.ir().model.vertices[0].tolerance, Some(0.025));
-    assert_eq!(round_trip.ir().model.edges[0].tolerance, Some(0.035));
+    assert_eq!(
+        round_trip.ir().model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.025)
+    );
+    assert_eq!(
+        round_trip.ir().model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.035)
+    );
     assert_eq!(
         f3d_native(round_trip.ir()).tolerant_edge_tails[0].entity_revision,
         22800
@@ -532,8 +544,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 
     let (mut edited, _, fidelity) = round_trip.into_parts();
     edited.model.bodies[0].visible = Some(true);
-    edited.model.vertices[0].tolerance = Some(0.05);
-    edited.model.edges[0].tolerance = Some(0.06);
+    edited.model.vertices[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.05).expect("positive finite tolerance"));
+    edited.model.edges[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.06).expect("positive finite tolerance"));
     {
         let mut native = f3d_native_mut(&mut edited);
         native.body_native_keys[0].asm_body_key = Some(84);
@@ -551,8 +565,18 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         f3d_native(retained.ir()).face_sidedness[0].containment,
         Some(cadmpeg_asm::brep::records::FaceContainment::Out)
     );
-    assert_eq!(retained.ir().model.vertices[0].tolerance, Some(0.05));
-    assert_eq!(retained.ir().model.edges[0].tolerance, Some(0.06));
+    assert_eq!(
+        retained.ir().model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.05)
+    );
+    assert_eq!(
+        retained.ir().model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.06)
+    );
     assert_eq!(
         f3d_native(retained.ir()).tolerant_edge_tails[0].entity_revision,
         22800
@@ -596,8 +620,10 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        source_less.model.vertices[0].tolerance = Some(0.025);
-        source_less.model.edges[0].tolerance = Some(0.035);
+        source_less.model.vertices[0].tolerance =
+            Some(cadmpeg_ir::units::PositiveScalar::new(0.025).expect("positive finite tolerance"));
+        source_less.model.edges[0].tolerance =
+            Some(cadmpeg_ir::units::PositiveScalar::new(0.035).expect("positive finite tolerance"));
         let tolerant_vertex = source_less.model.vertices[0].id.clone();
         let tolerant_edge = source_less.model.edges[0].id.clone();
         {
@@ -878,8 +904,10 @@ fn generated_source_less_writes_document_tolerance_contract() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.tolerances.linear = 2.5e-7;
-    source_less.tolerances.angular = 4.0e-11;
+    source_less.tolerances.linear =
+        cadmpeg_ir::units::PositiveScalar::new(2.5e-7).expect("positive finite tolerance");
+    source_less.tolerances.angular =
+        cadmpeg_ir::units::PositiveScalar::new(4.0e-11).expect("positive finite tolerance");
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -902,7 +930,8 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
-    source_less.model.faces[0].tolerance = Some(0.02);
+    source_less.model.faces[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.02).expect("positive finite tolerance"));
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -913,7 +942,8 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     );
 
     source_less.model.faces[0].tolerance = None;
-    source_less.model.edges[0].tolerance = Some(0.03);
+    source_less.model.edges[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -922,10 +952,16 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("supported tolerant edge round trip");
-    assert_eq!(round_trip.ir().model.edges[0].tolerance, Some(0.03));
+    assert_eq!(
+        round_trip.ir().model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.03)
+    );
 
     source_less.model.edges[0].tolerance = None;
-    source_less.model.vertices[0].tolerance = Some(0.04);
+    source_less.model.vertices[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.04).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -934,7 +970,12 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("supported tolerant vertex round trip");
-    assert_eq!(round_trip.ir().model.vertices[0].tolerance, Some(0.04));
+    assert_eq!(
+        round_trip.ir().model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.04)
+    );
 }
 
 #[test]

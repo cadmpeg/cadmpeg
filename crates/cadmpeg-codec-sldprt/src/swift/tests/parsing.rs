@@ -108,7 +108,7 @@ fn parses_and_projects_semantic_graph() {
     else {
         panic!("position definition");
     };
-    assert_eq!(*magnitude, length(0.25));
+    assert_eq!(magnitude.get(), length(0.25).expect("finite length"));
     assert_eq!(
         datum_system.as_ref().map(cadmpeg_ir::ids::PmiId::as_str),
         Some("sldprt:model:pmi#A20:datum-system")
@@ -156,10 +156,7 @@ fn parses_and_projects_semantic_graph() {
     };
     assert_eq!(
         *nominal,
-        PmiValue {
-            value: 0.0,
-            quantity: PmiQuantity::Angle,
-        }
+        PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")
     );
 }
 
