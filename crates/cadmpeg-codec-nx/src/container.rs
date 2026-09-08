@@ -285,14 +285,15 @@ impl<'a> Container<'a> {
         let complete_len = byte_len / index_row::LEN * index_row::LEN;
         let rows = payload[..complete_len]
             .chunks_exact(index_row::LEN)
-            .map(|row| SegmentIndexRow {
-                type_code: View::u32_le_at(row, index_row::TYPE_CODE)
-                    .expect("complete segment-index row"),
-                subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)
-                    .expect("complete segment-index row"),
-                value: View::u32_le_at(row, index_row::VALUE).expect("complete segment-index row"),
+            .map(|row| {
+                let row: &[u8; index_row::LEN] = row.try_into().ok()?;
+                Some(SegmentIndexRow {
+                    type_code: View::u32_le_at(row, index_row::TYPE_CODE)?,
+                    subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)?,
+                    value: View::u32_le_at(row, index_row::VALUE)?,
+                })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()?;
         Some((
             entry,
             SegmentIndex {
