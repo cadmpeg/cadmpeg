@@ -116,7 +116,8 @@ fn read_walks_a_record_array_with_an_explicit_stride() {
             file.to_str().unwrap(),
             "--type",
             "u16",
-            "--be",
+            "--endian",
+            "be",
             "--count",
             "3",
             "--stride",
@@ -168,7 +169,8 @@ fn find_reports_pattern_string_and_wildcard_hits() {
             "inspect",
             "find",
             file.to_str().unwrap(),
-            "--hex",
+            "--encoding",
+            "hex",
             "4d5a??00",
         ])
         .assert()
@@ -184,7 +186,8 @@ fn find_reports_pattern_string_and_wildcard_hits() {
             "inspect",
             "find",
             file.to_str().unwrap(),
-            "--ascii",
+            "--encoding",
+            "ascii",
             "prefix",
         ])
         .assert()
@@ -196,7 +199,8 @@ fn find_reports_pattern_string_and_wildcard_hits() {
             "inspect",
             "find",
             file.to_str().unwrap(),
-            "--utf16le",
+            "--encoding",
+            "utf16le",
             "Part",
         ])
         .assert()
@@ -205,7 +209,7 @@ fn find_reports_pattern_string_and_wildcard_hits() {
 }
 
 #[test]
-fn find_rejects_a_positional_pattern_and_names_the_three_flags() {
+fn find_requires_an_explicit_encoding() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "hits.bin", b"prefix");
 
@@ -213,11 +217,7 @@ fn find_rejects_a_positional_pattern_and_names_the_three_flags() {
         .args(["inspect", "find", file.to_str().unwrap(), "prefix"])
         .assert()
         .code(2)
-        .stderr(
-            predicate::str::contains("--hex prefix")
-                .and(predicate::str::contains("--ascii prefix"))
-                .and(predicate::str::contains("--utf16le prefix")),
-        );
+        .stderr(predicate::str::contains("--encoding <ENCODING>"));
 }
 
 #[test]
@@ -231,7 +231,8 @@ fn find_notes_truncation_after_the_last_hit() {
             "inspect",
             "find",
             file.to_str().unwrap(),
-            "--ascii",
+            "--encoding",
+            "ascii",
             "a",
             "--max",
             "2",
@@ -243,7 +244,14 @@ fn find_notes_truncation_after_the_last_hit() {
         ));
 
     cadmpeg()
-        .args(["inspect", "find", file.to_str().unwrap(), "--ascii", "a"])
+        .args([
+            "inspect",
+            "find",
+            file.to_str().unwrap(),
+            "--encoding",
+            "ascii",
+            "a",
+        ])
         .assert()
         .success()
         .stdout(
@@ -350,7 +358,14 @@ fn find_rejects_a_malformed_pattern_and_a_missing_needle() {
     let file = write(dir.path(), "empty.bin", b"");
 
     cadmpeg()
-        .args(["inspect", "find", file.to_str().unwrap(), "--hex", "4d5"])
+        .args([
+            "inspect",
+            "find",
+            file.to_str().unwrap(),
+            "--encoding",
+            "hex",
+            "4d5",
+        ])
         .assert()
         .code(2);
 
@@ -876,7 +891,6 @@ fn input_flag_reaches_the_same_file_as_the_positional() {
         vec!["inspect", "read", "--type", "u8", "-n", "2"],
         vec!["inspect", "strings", "--min", "1"],
         vec!["inspect", "struct", "--layout", "u8:a"],
-        vec!["inspect", "find", "--hex", "05"],
     ] {
         let positional = cadmpeg().args(&args).arg(path).output().unwrap();
         let mut flagged = args.clone();
@@ -902,24 +916,20 @@ fn input_flag_and_positional_together_conflict() {
 }
 
 #[test]
-fn find_with_input_flag_still_teaches_a_misplaced_pattern() {
-    let dir = tempdir().unwrap();
-    let file = write(dir.path(), "some.bin", b"document here");
-    let path = file.to_str().unwrap();
-    for extra in [vec!["document"], vec![]] {
-        let mut args = vec!["inspect", "find", "--input", path];
-        args.extend(&extra);
-        let assert = cadmpeg().args(&args).assert();
-        if extra.is_empty() {
-            assert
-                .code(2)
-                .stderr(predicate::str::contains("--hex, --ascii, or --utf16le"));
-        } else {
-            assert.code(2).stderr(predicate::str::contains(
-                "`document` is an extra positional argument",
-            ));
-        }
-    }
+fn find_requires_a_positional_file() {
+    cadmpeg()
+        .args([
+            "inspect",
+            "find",
+            "--input",
+            "some.bin",
+            "--encoding",
+            "ascii",
+            "document",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument '--input'"));
 }
 
 #[test]
@@ -1057,21 +1067,21 @@ fn read_type_text_and_hex_guesses_teach_the_right_tool() {
 }
 
 #[test]
-fn find_type_guess_names_the_encoding_flags() {
-    let dir = tempdir().unwrap();
-    let file = write(dir.path(), "some.bin", b"x");
-    let path = file.to_str().unwrap();
-    for (guess, flag) in [
-        ("ascii", "--ascii TEXT"),
-        ("hex", "--hex PATTERN"),
-        ("utf16", "--utf16le TEXT"),
-    ] {
-        cadmpeg()
-            .args(["inspect", "find", path, "--type", guess])
-            .assert()
-            .code(2)
-            .stderr(predicate::str::contains(flag));
-    }
+fn find_rejects_unknown_encodings() {
+    cadmpeg()
+        .args([
+            "inspect",
+            "find",
+            "some.bin",
+            "--encoding",
+            "utf16",
+            "needle",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "possible values: hex, ascii, utf16le",
+        ));
 }
 
 #[test]
@@ -1081,7 +1091,7 @@ fn find_context_prints_a_window_around_each_hit() {
     let path = file.to_str().unwrap();
 
     cadmpeg()
-        .args(["inspect", "find", path, "--ascii", "needle"])
+        .args(["inspect", "find", path, "--encoding", "ascii", "needle"])
         .assert()
         .success()
         .stdout(
@@ -1095,7 +1105,8 @@ fn find_context_prints_a_window_around_each_hit() {
             "inspect",
             "find",
             path,
-            "--ascii",
+            "--encoding",
+            "ascii",
             "needle",
             "--context",
             "4",
@@ -1119,7 +1130,8 @@ fn find_json_emits_the_envelope() {
             "inspect",
             "find",
             file.to_str().unwrap(),
-            "--ascii",
+            "--encoding",
+            "ascii",
             "needle",
             "--max",
             "0",

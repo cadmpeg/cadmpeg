@@ -65,7 +65,7 @@ pub fn ascii_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
     }
     if !text.is_ascii() {
         return Err(format!(
-            "`{text}` is not ASCII; use --utf16le or --hex for other encodings"
+            "`{text}` is not ASCII; use --encoding utf16le or --encoding hex for other encodings"
         ));
     }
     Ok(text.bytes().map(Some).collect())

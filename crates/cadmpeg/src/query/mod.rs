@@ -58,7 +58,7 @@ pub enum QueryView {
     Item(ItemArgs),
     /// Fields of an entity type.
     ///
-    /// With no FILE this prints what this binary's IR types allow — every
+    /// `query schema types ARENA` prints what this binary's IR types allow — every
     /// field of an arena's element type, which fields are optional, and
     /// every variant of a tagged union (`FaceSelection`'s `value` is
     /// absent, a string, an array, or an object depending on `kind`; the
@@ -67,7 +67,7 @@ pub enum QueryView {
     /// arena and its element type; `sidecar` prints the
     /// `<stem>.fidelity.json` decode-sidecar shape.
     ///
-    /// Native arena records are per-document. `query schema FILE ARENA`
+    /// Native arena records are per-document. `query schema file FILE ARENA`
     /// infers each dotted path's presence, JSON type, an example, and a
     /// `relation` column (`id` / `ref` / `refs`) from the records
     /// (`layout_prefix  435/710  array`). Unknown arena names
@@ -86,7 +86,7 @@ pub enum QueryView {
     /// array of objects uses the nested field path without indices
     /// (`pcurves.pcurve`). `--follow PATH,...` keeps only those field
     /// paths (exact match). `--reverse` walks incoming references.
-    /// Discover follow paths with `query schema FILE ARENA` (`relation`
+    /// Discover follow paths with `query schema file FILE ARENA` (`relation`
     /// column). Arena names come from `query counts`. `--max-paths`
     /// (default 10000) caps explosion: a truncated walk prints a note on
     /// standard error and still exits 0. A record with no string `id`
@@ -100,7 +100,7 @@ pub enum QueryView {
     /// anti-join. `--mode all` keeps every left record with matching
     /// rights as an array. `--right-file` joins two documents by key
     /// value only. Arena names match `query item`. Discover key paths
-    /// with `query schema FILE ARENA`. This is not SQL: no expressions,
+    /// with `query schema file FILE ARENA`. This is not SQL: no expressions,
     /// no WHERE, no three-way join.
     Join(JoinArgs),
     /// Retained source bytes.

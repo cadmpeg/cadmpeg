@@ -131,8 +131,8 @@ not. Every offset and length argument accepts `0x` hexadecimal or decimal, and
 cadmpeg inspect hex part.prt --offset 0x40 --len 0x80   # dump with an ASCII gutter
 cadmpeg inspect read part.prt --type u32 --offset 0x40  # one scalar, decimal and hex
 cadmpeg inspect read part.prt --type f64 --offset 0x100 --count 8 --stride 24
-cadmpeg inspect find part.prt --hex '4d5a??00'          # `??` is a byte wildcard
-cadmpeg inspect find part.prt --utf16le Extrude
+cadmpeg inspect find part.prt --encoding hex '4d5a??00'          # `??` is a byte wildcard
+cadmpeg inspect find part.prt --encoding utf16le Extrude
 cadmpeg inspect strings part.prt --min 6 --encoding both
 cadmpeg inspect struct part.prt --offset 0x100 --count 4 \
   --layout 'u32le:id,pad4,f64le:x,f64le:y,f64le:z'
@@ -141,18 +141,17 @@ cadmpeg inspect extract part.f3d 'Design/Streams.dat' -o streams.dat
 cadmpeg inspect cmp probe-a.prt probe-b.prt             # positional byte compare
 ```
 
-`--le` and `--be` select the byte order for `read`; little-endian is the
+`--endian le` and `--endian be` select the byte order for `read`; little-endian is the
 default. `read --count N` walks a record array, stepping `--stride` bytes and
 defaulting to the scalar width.
 
 Common alternative spellings are accepted: `--length` for `--len`, `--min-len`
 and `--min-length` for `--min`, `--start` for `--offset`, `--step` for
 `--stride`, `-n` for `--count`, and `--input FILE` for the positional file on
-every single-input tool. `cadmpeg inspect bytes <tool>` runs the same tool as
-`cadmpeg inspect <tool>`. `find` needs its pattern on `--hex`, `--ascii`, or
-`--utf16le`, because a bare word does not say how to encode it; a guessed
-`--type` on `find`, or a text or hex value on `read --type`, gets an error that
-names the right flag or tool. `find` stops at `--max` hits and says so,
+single-input tools except `find`. `cadmpeg inspect bytes <tool>` runs the same tool as
+`cadmpeg inspect <tool>`. `find FILE NEEDLE --encoding hex|ascii|utf16le`
+selects the encoding of the positional pattern. Text or hex values on
+`read --type` produce an error that names the corresponding tool. `find` stops at `--max` hits and says so,
 `--max 0` reports every hit, and `--context N` dumps `N` bytes around each
 hit.
 
@@ -269,8 +268,8 @@ cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
-cadmpeg query schema model.features    # the arena's IR record type (no FILE)
-cadmpeg query schema part.cadir.json native.nx.class_definitions  # inferred native fields
+cadmpeg query schema types model.features    # the arena's IR record type (no FILE)
+cadmpeg query schema file part.cadir.json native.nx.class_definitions  # inferred native fields
 cadmpeg query graph bracket.cadir.json model.features ID --hops 1
 cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --reverse
 cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \

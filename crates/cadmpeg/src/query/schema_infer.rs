@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Per-document field inventory for `cadmpeg query schema FILE ARENA`.
+//! Per-document field inventory for `cadmpeg query schema file FILE ARENA`.
 //!
 //! Native arena records have no compile-time JSON Schema in this binary.
 //! This view walks every record in the named arena and reports each dotted
@@ -300,7 +300,7 @@ fn format_inventory(addressable: &[(String, u64)]) -> String {
 fn need_arena_message(addressable: &[(String, u64)]) -> String {
     format!(
         "`query schema` on a CADIR document needs an arena name. Addressable \
-         arenas in this document:\n{}example: cadmpeg query schema FILE \
+         arenas in this document:\n{}example: cadmpeg query schema file FILE \
          native.<codec>.<arena>",
         format_inventory(addressable)
     )
@@ -309,7 +309,7 @@ fn need_arena_message(addressable: &[(String, u64)]) -> String {
 fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     format!(
         "unknown arena {}; addressable arenas in this document:\n{}infer fields \
-         with `cadmpeg query schema FILE ARENA` using a name from the table",
+         with `cadmpeg query schema file FILE ARENA` using a name from the table",
         target.dotted(),
         format_inventory(addressable)
     )
