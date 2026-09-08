@@ -7,12 +7,16 @@ use crate::report::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+const EPS_SPATIAL_LINE_BOUNDARY: f64 = 1.0e-12;
+const EPS_SPATIAL_FRAME_BOUNDARY: f64 = 1.0e-9;
+
 #[test]
 fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     use crate::math::{Point2, Point3};
     use crate::sketches::{
         SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
-        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchGeometryDefinition, SpatialSketchId,
     };
 
     let planar = SketchEntity::new(
@@ -43,9 +47,10 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     let spatial = SpatialSketchEntity::new(
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap(),
         SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        SpatialSketchGeometry::Point {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
             position: Point3::new(1.0, 2.0, 3.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("native-spatial".into()))
@@ -538,7 +543,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
         OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
+        SpatialSketchId, SpatialSketchProfile,
     };
 
     let mut ir = unit_cube();
@@ -566,12 +572,13 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .push(SpatialSketchEntity::new(
             circle.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Circle {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
                 center: Point3::new(1.0, 2.0, 3.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
                 reference_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: Length(4.0),
-            },
+            })
+            .unwrap(),
         ));
     let parallel_line =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#parallel-line").unwrap();
@@ -579,10 +586,11 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         SpatialSketchEntity::new(
             parallel_line.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Line {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                 start: Point3::new(0.0, 2.0f64.sqrt(), -2.0f64.sqrt()),
                 end: Point3::new(1.0, 1.0 + 2.0f64.sqrt(), 1.0 - 2.0f64.sqrt()),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true),
     );
@@ -592,10 +600,11 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         SpatialSketchEntity::new(
             collinear_line.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Line {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                 start: Point3::new(2.0, 2.0, 2.0),
                 end: Point3::new(3.0, 3.0, 3.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true),
     );
@@ -606,10 +615,11 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         SpatialSketchEntity::new(
             repeated_parallel_line.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Line {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                 start: Point3::new(2.0, 2.0 + 2.0f64.sqrt(), 2.0 - 2.0f64.sqrt()),
                 end: Point3::new(3.0, 3.0 + 2.0f64.sqrt(), 3.0 - 2.0f64.sqrt()),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true),
     );
@@ -650,7 +660,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .push(SpatialSketchEntity::new(
             surface.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::NurbsSurface {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
                 surface: crate::geometry::BsplineSurface::new(
                     1,
                     1,
@@ -662,7 +672,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                     ],
                 )
                 .unwrap(),
-            },
+            })
+            .unwrap(),
         ));
     let surface_point =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#surface-point").unwrap();
@@ -671,19 +682,21 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .push(SpatialSketchEntity::new(
             surface_point.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Point {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                 position: Point3::new(0.5, 0.5, 0.0),
-            },
+            })
+            .unwrap(),
         ));
     let line = SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
             line.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Line {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                 start: Point3::new(0.0, 0.0, 0.0),
                 end: Point3::new(1.0, 1.0, 1.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true),
     );
@@ -693,9 +706,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .push(SpatialSketchEntity::new(
             point.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Point {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                 position: Point3::new(0.5, 0.5, 0.5),
-            },
+            })
+            .unwrap(),
         ));
     let measured_point =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#measured-point").unwrap();
@@ -704,9 +718,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .push(SpatialSketchEntity::new(
             measured_point.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Point {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                 position: Point3::new(0.5, 0.5, 2.5),
-            },
+            })
+            .unwrap(),
         ));
     let coincident_point =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#coincident-point")
@@ -716,9 +731,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .push(SpatialSketchEntity::new(
             coincident_point.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Point {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                 position: Point3::new(0.5, 0.5, 0.5),
-            },
+            })
+            .unwrap(),
         ));
     ir.model
         .spatial_sketch_constraints
@@ -944,7 +960,12 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .model
         .spatial_sketch_entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SpatialSketchGeometry::Point { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SpatialSketchGeometryDefinition::Point { .. }
+            )
+        })
         .expect("spatial point")
         .id
         .clone();
@@ -1558,7 +1579,9 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
 #[test]
 fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
     use crate::geometry::NurbsCurve;
-    use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
+    use crate::sketches::{
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve,
+    };
 
     let curve = NurbsCurve::new(
         1,
@@ -1576,7 +1599,8 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         .edit_control_points(|points| points[0].x = f64::NAN)
         .is_err());
     assert_eq!(curve, before);
-    let geometry = SpatialSketchGeometry::Nurbs { curve };
+    let geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs { curve }).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
     assert_eq!(
         serde_json::from_value::<SpatialSketchGeometry>(wire).unwrap(),
@@ -1807,4 +1831,139 @@ fn sketch_text_style_admits_only_nonempty_names_and_three_integer_weights() {
         invalid[field] = serde_json::json!("");
         assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
     }
+}
+
+#[test]
+fn spatial_analytic_geometry_checks_separation_frames_and_angles() {
+    use crate::features::{Angle, Length};
+    use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition as Definition};
+
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let normal = Vector3::new(0.0, 0.0, 1.0);
+    let reference_direction = Vector3::new(1.0, 0.0, 0.0);
+    for definition in [
+        Definition::Point {
+            position: Point3::new(0.0, f64::NAN, 0.0),
+        },
+        Definition::Line {
+            start: origin,
+            end: origin,
+        },
+        Definition::Line {
+            start: origin,
+            end: Point3::new(EPS_SPATIAL_LINE_BOUNDARY, 0.0, 0.0),
+        },
+        Definition::Circle {
+            center: origin,
+            normal,
+            reference_direction,
+            radius: Length(0.0),
+        },
+        Definition::Circle {
+            center: origin,
+            normal: Vector3::new(0.0, 0.0, 2.0),
+            reference_direction,
+            radius: Length(1.0),
+        },
+        Definition::Circle {
+            center: origin,
+            normal,
+            reference_direction: normal,
+            radius: Length(1.0),
+        },
+        Definition::Arc {
+            center: origin,
+            normal,
+            reference_direction,
+            radius: Length(1.0),
+            start_angle: Angle(1.0),
+            end_angle: Angle(1.0),
+        },
+        Definition::Arc {
+            center: origin,
+            normal,
+            reference_direction,
+            radius: Length(1.0),
+            start_angle: Angle(f64::INFINITY),
+            end_angle: Angle(1.0),
+        },
+    ] {
+        assert!(SpatialSketchGeometry::try_from(definition).is_err());
+    }
+    for definition in [
+        Definition::Line {
+            start: origin,
+            end: Point3::new(2.0 * EPS_SPATIAL_LINE_BOUNDARY, 0.0, 0.0),
+        },
+        Definition::Line {
+            start: Point3::new(-f64::MAX, 0.0, 0.0),
+            end: Point3::new(f64::MAX, 0.0, 0.0),
+        },
+        Definition::Circle {
+            center: origin,
+            normal: Vector3::new(0.0, 0.0, 1.0 + 0.5 * EPS_SPATIAL_FRAME_BOUNDARY),
+            reference_direction,
+            radius: Length(1.0),
+        },
+        Definition::Circle {
+            center: origin,
+            normal,
+            reference_direction: Vector3::new(1.0, 0.0, 0.5 * EPS_SPATIAL_FRAME_BOUNDARY),
+            radius: Length(1.0),
+        },
+    ] {
+        assert!(SpatialSketchGeometry::try_from(definition).is_ok());
+    }
+}
+
+#[test]
+fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
+    use crate::features::Angle;
+    use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition};
+
+    let wire = serde_json::json!({
+        "kind":"arc", "center":{"x":1.0,"y":2.0,"z":3.0},
+        "normal":{"x":0.0,"y":0.0,"z":1.0}, "reference_direction":{"x":1.0,"y":0.0,"z":0.0},
+        "radius":2.0, "start_angle":-1.0, "end_angle":-2.0
+    });
+    let mut geometry = serde_json::from_value::<SpatialSketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for (field, value) in [
+        ("radius", serde_json::json!(-1.0)),
+        ("normal", serde_json::json!({"x":0.0,"y":0.0,"z":2.0})),
+        (
+            "reference_direction",
+            serde_json::json!({"x":0.0,"y":0.0,"z":1.0}),
+        ),
+        ("end_angle", serde_json::json!(-1.0)),
+        ("start_angle", serde_json::Value::Null),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err());
+    }
+    let before = geometry.clone();
+    assert!(geometry
+        .edit(|definition| {
+            let SpatialSketchGeometryDefinition::Arc {
+                start_angle,
+                end_angle,
+                ..
+            } = definition
+            else {
+                panic!("arc")
+            };
+            *end_angle = *start_angle;
+        })
+        .is_err());
+    assert_eq!(geometry, before);
+    geometry
+        .edit(|definition| {
+            let SpatialSketchGeometryDefinition::Arc { end_angle, .. } = definition else {
+                panic!("arc")
+            };
+            *end_angle = Angle(-3.0);
+        })
+        .unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap()["end_angle"], -3.0);
 }

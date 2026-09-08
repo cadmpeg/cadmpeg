@@ -16,7 +16,7 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::sketches::SpatialSketchGeometry;
+use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 use std::collections::BTreeMap;
 
 fn current_compact_spatial_point_marker(
@@ -369,14 +369,12 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[0].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, 15.0, 5.0)
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[1].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
@@ -474,14 +472,12 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[0].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, 15.0, 5.0)
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[1].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(

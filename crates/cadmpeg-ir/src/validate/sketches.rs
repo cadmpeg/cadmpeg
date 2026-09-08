@@ -7,7 +7,7 @@ use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
     SketchConstraintDefinition as Constraint, SketchDistancePair, SketchGeometry,
     SketchGeometryDefinition, SketchLocus, SpatialSketchConstraintDefinition as SpatialConstraint,
-    SpatialSketchGeometry,
+    SpatialSketchGeometry, SpatialSketchGeometryDefinition,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -20,7 +20,6 @@ const EPS_DISTANCE_VALUE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_POLAR_ANGLE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_POLAR_ZERO: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 const SPATIAL_LINE_DEGENERACY_EPSILON: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
-const EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
@@ -44,27 +43,13 @@ fn finite3(point: crate::math::Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
 
-fn valid_spatial_circle_frame(
-    normal: crate::math::Vector3,
-    reference: crate::math::Vector3,
-) -> bool {
-    let normal_length = normal.norm();
-    let reference_length = reference.norm();
-    normal_length.is_finite()
-        && reference_length.is_finite()
-        && (normal_length - 1.0).abs() <= EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9
-        && (reference_length - 1.0).abs() <= EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9
-        && (normal.x * reference.x + normal.y * reference.y + normal.z * reference.z).abs()
-            <= EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9
-}
-
 fn spatial_oriented_endpoints(
     geometry: &SpatialSketchGeometry,
     reversed: bool,
 ) -> Option<(crate::math::Point3, crate::math::Point3)> {
-    let endpoints = match geometry {
-        SpatialSketchGeometry::Line { start, end } => (*start, *end),
-        SpatialSketchGeometry::Arc {
+    let endpoints = match geometry.definition() {
+        SpatialSketchGeometryDefinition::Line { start, end } => (*start, *end),
+        SpatialSketchGeometryDefinition::Arc {
             center,
             normal,
             reference_direction,
@@ -92,7 +77,7 @@ fn spatial_oriented_endpoints(
             };
             (at(start_angle.0), at(end_angle.0))
         }
-        SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.control_points().len()];
             (
@@ -345,15 +330,15 @@ fn spatial_parallel_line_distance(
     second: &SpatialSketchGeometry,
 ) -> Option<f64> {
     let (
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         return None;
     };
@@ -398,7 +383,7 @@ fn spatial_parallel_line_distance(
 }
 
 fn spatial_line_length(geometry: &SpatialSketchGeometry) -> Option<f64> {
-    let SpatialSketchGeometry::Line { start, end } = geometry else {
+    let SpatialSketchGeometryDefinition::Line { start, end } = geometry.definition() else {
         return None;
     };
     Some((end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z)))
@@ -408,8 +393,10 @@ fn spatial_point_line_distance(
     point: &SpatialSketchGeometry,
     line: &SpatialSketchGeometry,
 ) -> Option<f64> {
-    let (SpatialSketchGeometry::Point { position }, SpatialSketchGeometry::Line { start, end }) =
-        (point, line)
+    let (
+        SpatialSketchGeometryDefinition::Point { position },
+        SpatialSketchGeometryDefinition::Line { start, end },
+    ) = (point.definition(), line.definition())
     else {
         return None;
     };
@@ -441,15 +428,15 @@ fn spatial_parallel_line_span_distance(
 ) -> Option<f64> {
     let distance = spatial_parallel_line_distance(first, second)?;
     let (
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         unreachable!("parallel line distance requires line geometry")
     };
@@ -647,8 +634,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             if profile.boundary.len() == 1 {
                 if !matches!(
-                    spatial_geometry.get(&profile.boundary[0].entity),
-                    Some((_, SpatialSketchGeometry::Circle { .. }))
+                    spatial_geometry
+                        .get(&profile.boundary[0].entity)
+                        .map(|(sketch, geometry)| (sketch, geometry.definition())),
+                    Some((_, SpatialSketchGeometryDefinition::Circle { .. }))
                 ) {
                     finding(
                         findings,
@@ -700,71 +689,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "spatial sketch entity references a missing spatial sketch",
             );
         }
-        match &entity.geometry {
-            SpatialSketchGeometry::Point { position } => {
-                if !finite3(*position) {
-                    finding(
-                        findings,
-                        Check::Bounds,
-                        id,
-                        "non-finite spatial sketch point",
-                    );
-                }
-            }
-            SpatialSketchGeometry::Line { start, end } => {
-                let distance = (end.x - start.x)
-                    .hypot(end.y - start.y)
-                    .hypot(end.z - start.z);
-                if !finite3(*start) || !finite3(*end) || distance <= EPS_SKETCHES_CHECK_SKETCHES_E12
-                {
-                    finding(findings, Check::Bounds, id, "invalid spatial sketch line");
-                }
-            }
-            SpatialSketchGeometry::Circle {
-                center,
-                normal,
-                reference_direction,
-                radius,
-            }
-            | SpatialSketchGeometry::Arc {
-                center,
-                normal,
-                reference_direction,
-                radius,
-                ..
-            } => {
-                if !finite3(*center)
-                    || nonpositive(radius.0)
-                    || !valid_spatial_circle_frame(*normal, *reference_direction)
-                {
-                    finding(
-                        findings,
-                        Check::Bounds,
-                        id,
-                        "invalid spatial circular sketch geometry",
-                    );
-                }
-                if let SpatialSketchGeometry::Arc {
-                    start_angle,
-                    end_angle,
-                    ..
-                } = &entity.geometry
-                {
-                    if !start_angle.0.is_finite()
-                        || !end_angle.0.is_finite()
-                        || start_angle == end_angle
-                    {
-                        finding(
-                            findings,
-                            Check::ParameterDomain,
-                            id,
-                            "invalid spatial sketch arc interval",
-                        );
-                    }
-                }
-            }
-            SpatialSketchGeometry::Nurbs { .. } => {}
-            SpatialSketchGeometry::NurbsSurface { surface } => {
+        match entity.geometry.definition() {
+            SpatialSketchGeometryDefinition::Point { .. }
+            | SpatialSketchGeometryDefinition::Line { .. }
+            | SpatialSketchGeometryDefinition::Circle { .. }
+            | SpatialSketchGeometryDefinition::Arc { .. }
+            | SpatialSketchGeometryDefinition::Nurbs { .. } => {}
+            SpatialSketchGeometryDefinition::NurbsSurface { surface } => {
                 if surface.u_degree() == 0
                     || surface.v_degree() == 0
                     || surface.u_knots().iter().any(|value| !value.is_finite())
@@ -785,7 +716,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SpatialSketchGeometry::Native { native_kind } => {
+            SpatialSketchGeometryDefinition::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(
                         findings,
@@ -909,11 +840,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
                 if !matches!(
-                    spatial_geometry.get(first),
-                    Some(SpatialSketchGeometry::Point { .. })
+                    spatial_geometry
+                        .get(first)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(second),
-                    Some(SpatialSketchGeometry::Point { .. })
+                    spatial_geometry
+                        .get(second)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) =>
             {
                 finding(
@@ -929,14 +864,20 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 axis,
             } => {
                 let solved = match (
-                    spatial_geometry.get(first),
-                    spatial_geometry.get(second),
-                    spatial_geometry.get(axis),
+                    spatial_geometry
+                        .get(first)
+                        .map(|geometry| geometry.definition()),
+                    spatial_geometry
+                        .get(second)
+                        .map(|geometry| geometry.definition()),
+                    spatial_geometry
+                        .get(axis)
+                        .map(|geometry| geometry.definition()),
                 ) {
                     (
-                        Some(SpatialSketchGeometry::Point { position: first }),
-                        Some(SpatialSketchGeometry::Point { position: second }),
-                        Some(SpatialSketchGeometry::Line { start, end }),
+                        Some(SpatialSketchGeometryDefinition::Point { position: first }),
+                        Some(SpatialSketchGeometryDefinition::Point { position: second }),
+                        Some(SpatialSketchGeometryDefinition::Line { start, end }),
                     ) => crate::eval::spatial_points_are_reflections(*first, *second, *start, *end),
                     _ => false,
                 };
@@ -951,11 +892,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SpatialConstraint::Midpoint { point, entity }
                 if !matches!(
-                    spatial_geometry.get(point),
-                    Some(SpatialSketchGeometry::Point { .. })
+                    spatial_geometry
+                        .get(point)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(entity),
-                    Some(SpatialSketchGeometry::Line { .. })
+                    spatial_geometry
+                        .get(entity)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Line { .. })
                 ) =>
             {
                 finding(
@@ -967,11 +912,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SpatialConstraint::PointOnSurface { point, surface }
                 if !matches!(
-                    spatial_geometry.get(point),
-                    Some(SpatialSketchGeometry::Point { .. })
+                    spatial_geometry
+                        .get(point)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(surface),
-                    Some(SpatialSketchGeometry::NurbsSurface { .. })
+                    spatial_geometry
+                        .get(surface)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::NurbsSurface { .. })
                 ) =>
             {
                 finding(
@@ -983,20 +932,24 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SpatialConstraint::Tangent { first, second }
                 if !matches!(
-                    spatial_geometry.get(first),
+                    spatial_geometry
+                        .get(first)
+                        .map(|geometry| geometry.definition()),
                     Some(
-                        SpatialSketchGeometry::Line { .. }
-                            | SpatialSketchGeometry::Circle { .. }
-                            | SpatialSketchGeometry::Arc { .. }
-                            | SpatialSketchGeometry::Nurbs { .. }
+                        SpatialSketchGeometryDefinition::Line { .. }
+                            | SpatialSketchGeometryDefinition::Circle { .. }
+                            | SpatialSketchGeometryDefinition::Arc { .. }
+                            | SpatialSketchGeometryDefinition::Nurbs { .. }
                     )
                 ) || !matches!(
-                    spatial_geometry.get(second),
+                    spatial_geometry
+                        .get(second)
+                        .map(|geometry| geometry.definition()),
                     Some(
-                        SpatialSketchGeometry::Line { .. }
-                            | SpatialSketchGeometry::Circle { .. }
-                            | SpatialSketchGeometry::Arc { .. }
-                            | SpatialSketchGeometry::Nurbs { .. }
+                        SpatialSketchGeometryDefinition::Line { .. }
+                            | SpatialSketchGeometryDefinition::Circle { .. }
+                            | SpatialSketchGeometryDefinition::Arc { .. }
+                            | SpatialSketchGeometryDefinition::Nurbs { .. }
                     )
                 ) =>
             {
@@ -1059,10 +1012,17 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 second,
                 parameter,
             } => {
-                let measured = match (spatial_geometry.get(first), spatial_geometry.get(second)) {
+                let measured = match (
+                    spatial_geometry
+                        .get(first)
+                        .map(|geometry| geometry.definition()),
+                    spatial_geometry
+                        .get(second)
+                        .map(|geometry| geometry.definition()),
+                ) {
                     (
-                        Some(SpatialSketchGeometry::Point { position: first }),
-                        Some(SpatialSketchGeometry::Point { position: second }),
+                        Some(SpatialSketchGeometryDefinition::Point { position: first }),
+                        Some(SpatialSketchGeometryDefinition::Point { position: second }),
                     ) => Some(
                         ((second.x - first.x).powi(2)
                             + (second.y - first.y).powi(2)
@@ -1096,11 +1056,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 parameter,
             } => {
                 if !matches!(
-                    spatial_geometry.get(point),
-                    Some(SpatialSketchGeometry::Point { .. })
+                    spatial_geometry
+                        .get(point)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(line),
-                    Some(SpatialSketchGeometry::Line { .. })
+                    spatial_geometry
+                        .get(line)
+                        .map(|geometry| geometry.definition()),
+                    Some(SpatialSketchGeometryDefinition::Line { .. })
                 ) {
                     finding(
                         findings,
@@ -1222,11 +1186,11 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let curves_match = sources.iter().chain(results).all(|entity| {
                     spatial_geometry.get(entity).is_some_and(|geometry| {
                         matches!(
-                            geometry,
-                            SpatialSketchGeometry::Line { .. }
-                                | SpatialSketchGeometry::Circle { .. }
-                                | SpatialSketchGeometry::Arc { .. }
-                                | SpatialSketchGeometry::Nurbs { .. }
+                            (geometry).definition(),
+                            SpatialSketchGeometryDefinition::Line { .. }
+                                | SpatialSketchGeometryDefinition::Circle { .. }
+                                | SpatialSketchGeometryDefinition::Arc { .. }
+                                | SpatialSketchGeometryDefinition::Nurbs { .. }
                         )
                     })
                 });
@@ -1260,7 +1224,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SpatialConstraint::ParallelToDirection { entity, direction } => {
                 let direction_norm = direction.norm();
-                let Some(SpatialSketchGeometry::Line { start, end }) = spatial_geometry.get(entity)
+                let Some(SpatialSketchGeometryDefinition::Line { start, end }) = spatial_geometry
+                    .get(entity)
+                    .map(|geometry| geometry.definition())
                 else {
                     finding(
                         findings,

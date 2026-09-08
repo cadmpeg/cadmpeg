@@ -10,7 +10,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-    SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 
 use super::super::*;
@@ -926,23 +926,26 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     let entity = SpatialSketchEntity::new(
         SpatialSketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch_id.clone(),
-        SpatialSketchGeometry::Point { position: point },
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point { position: point })
+            .unwrap(),
     )
     .with_native_ref(Some("authored-point".into()));
     let same_axis_endpoint = SpatialSketchEntity::new(
         SpatialSketchEntityId::mint("synthetic:test:id#same-axis-endpoint").unwrap(),
         sketch_id.clone(),
-        SpatialSketchGeometry::Point {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
             position: Point3::new(12.0, 23.0, 20.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("same-axis-endpoint".into()));
     let construction_point = SpatialSketchEntity::new(
         SpatialSketchEntityId::mint("synthetic:test:id#construction-point").unwrap(),
         sketch_id,
-        SpatialSketchGeometry::Point {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
             position: Point3::new(100.0, 100.0, 100.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("construction-point".into()));
@@ -1041,7 +1044,10 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
             SpatialSketchEntity::new(
                 SpatialSketchEntityId::mint(format!("synthetic:test:id#point-{index}")).unwrap(),
                 sketch_id.clone(),
-                SpatialSketchGeometry::Point { position },
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                    position,
+                })
+                .unwrap(),
             )
         })
         .collect::<Vec<_>>();
@@ -1144,7 +1150,8 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     let entity = SpatialSketchEntity::new(
         SpatialSketchEntityId::mint("synthetic:test:id#relation-locus").unwrap(),
         sketch_id,
-        SpatialSketchGeometry::Point { position: locus },
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point { position: locus })
+            .unwrap(),
     )
     .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {

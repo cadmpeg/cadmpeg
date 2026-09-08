@@ -11,20 +11,23 @@ use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry::Line;
+    use cadmpeg_ir::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition::Line};
 
-    let first = Line {
+    let first = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 10.0, 0.0),
-    };
-    let second = Line {
+    })
+    .unwrap();
+    let second = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(3.0, 0.0, 4.0),
         end: Point3::new(3.0, -5.0, 4.0),
-    };
-    let crossing = Line {
+    })
+    .unwrap();
+    let crossing = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(1.0, 0.0, 0.0),
-    };
+    })
+    .unwrap();
 
     assert!(spatial_parallel_line_distance_matches(&first, &second, 5.0));
     assert!(!spatial_parallel_line_distance_matches(
@@ -37,18 +40,24 @@ fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
 
 #[test]
 fn spatial_point_distance_requires_point_geometry_and_exact_value() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry::{Line, Point};
+    use cadmpeg_ir::sketches::{
+        SpatialSketchGeometry,
+        SpatialSketchGeometryDefinition::{Line, Point},
+    };
 
-    let first = Point {
+    let first = SpatialSketchGeometry::try_from(Point {
         position: Point3::new(1.0, 2.0, 3.0),
-    };
-    let second = Point {
+    })
+    .unwrap();
+    let second = SpatialSketchGeometry::try_from(Point {
         position: Point3::new(4.0, 6.0, 3.0),
-    };
-    let line = Line {
+    })
+    .unwrap();
+    let line = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(1.0, 2.0, 3.0),
         end: Point3::new(4.0, 6.0, 3.0),
-    };
+    })
+    .unwrap();
 
     assert!(spatial_point_distance_matches(&first, &second, 5.0));
     assert!(!spatial_point_distance_matches(&first, &second, 4.0));

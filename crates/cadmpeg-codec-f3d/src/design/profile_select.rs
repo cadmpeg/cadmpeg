@@ -1286,8 +1286,8 @@ fn spatial_polyline_profile_containing_points(
                 let entity = entities
                     .iter()
                     .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
-                let cadmpeg_ir::sketches::SpatialSketchGeometry::Line { start, end } =
-                    &entity.geometry
+                let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } =
+                    entity.geometry.definition()
                 else {
                     return None;
                 };
@@ -2111,22 +2111,22 @@ fn coincident_spatial_profile_geometry(
     linear_tolerance: f64,
     angular_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let (
-        SpatialSketchGeometry::Circle {
+        SpatialSketchGeometryDefinition::Circle {
             center: first_center,
             normal: first_normal,
             radius: first_radius,
             ..
         },
-        SpatialSketchGeometry::Circle {
+        SpatialSketchGeometryDefinition::Circle {
             center: second_center,
             normal: second_normal,
             radius: second_radius,
             ..
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         return false;
     };

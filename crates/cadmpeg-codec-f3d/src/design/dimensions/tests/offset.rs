@@ -7,8 +7,8 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::sketches::SketchOffsetPair;
+use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
@@ -342,25 +342,28 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         .with_native_ref(Some(format!("{stream}:sketch-curve#{record_index}")))
     };
     let sources = [
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
             start: Point3::new(-20.0, 5.0, 8.0),
             end: Point3::new(-15.0, 5.0, 8.0),
-        },
-        SpatialSketchGeometry::Arc {
+        })
+        .unwrap(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Arc {
             center: Point3::new(30.0, -12.0, 9.0),
             normal: Vector3::new(1.0, 0.0, 0.0),
             reference_direction: Vector3::new(0.0, 1.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-        SpatialSketchGeometry::Circle {
+        })
+        .unwrap(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
             center: Point3::new(50.0, 40.0, -7.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: Length(4.0),
-        },
-        SpatialSketchGeometry::Nurbs {
+        })
+        .unwrap(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
             curve: cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -371,7 +374,8 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             .unwrap()
             .try_into()
             .unwrap(),
-        },
+        })
+        .unwrap(),
     ]
     .into_iter()
     .enumerate()
@@ -388,7 +392,8 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .map(|(index, (start, end))| {
         entity(
             index as u32 + 11,
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         )
     })
     .collect::<Vec<_>>();
@@ -532,10 +537,11 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .is_none());
     let outside_source = entity(
         99,
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
             start: Point3::new(-100.0, 0.0, 0.0),
             end: Point3::new(-90.0, 0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     by_record.insert((stream, 99), &outside_source);
     let mut non_permutation = operands.clone();

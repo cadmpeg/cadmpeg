@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-    SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -44,7 +44,8 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         .push(SpatialSketchEntity::new(
             entity_id,
             sketch_id.clone(),
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         ));
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
@@ -85,10 +86,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .0;
     let replacement_start = Point3::new(-7.5, 8.25, 9.0);
     let replacement_end = Point3::new(10.0, -11.5, 12.75);
-    decoded.model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Line {
-        start: replacement_start,
-        end: replacement_end,
-    };
+    decoded.model.spatial_sketch_entities[0].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+            start: replacement_start,
+            end: replacement_end,
+        })
+        .unwrap();
 
     let mut second_encoding = Vec::new();
     SldprtCodec
@@ -101,11 +104,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .into_parts()
         .0;
 
-    assert!(matches!(
-        regenerated.model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == replacement_start && end == replacement_end
-    ));
+    assert!(
+        matches!(*regenerated.model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == replacement_start && end == replacement_end
+        )
+    );
 }
 
 #[test]
