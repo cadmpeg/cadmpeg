@@ -1151,9 +1151,9 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
     let subd = &result.ir().model.subds[0];
-    assert_eq!(subd.vertices[2].point.x, 7.0);
-    assert_eq!(subd.edges[0].sharpness, [0.25, 0.25]);
-    assert_eq!(subd.edges[0].sector_coefficients, [0.125, 0.875]);
+    assert_eq!(subd.cage.vertices()[2].point.x, 7.0);
+    assert_eq!(subd.cage.edges()[0].sharpness, [0.25, 0.25]);
+    assert_eq!(subd.cage.edges()[0].sector_coefficients, [0.125, 0.875]);
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 

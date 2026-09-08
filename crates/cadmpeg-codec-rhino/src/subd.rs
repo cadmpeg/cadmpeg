@@ -1170,9 +1170,8 @@ fn materialize(
         .faces
         .into_iter()
         .map(|face| {
-            Ok(SubdFace {
-                edges: face
-                    .edges
+            SubdFace::new(
+                face.edges
                     .into_iter()
                     .map(|edge| {
                         Ok(SubdEdgeUse {
@@ -1183,17 +1182,16 @@ fn materialize(
                         })
                     })
                     .collect::<Result<Vec<_>, SubdError>>()?,
-            })
+            )
+            .map_err(|error| malformed(0, &error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     Ok(SubdSurface {
         id,
         scheme: SubdScheme::CatmullClark,
-        vertices,
-        edges,
-        faces,
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
+            .map_err(|error| malformed(0, &error.to_string()))?,
     })
 }
 

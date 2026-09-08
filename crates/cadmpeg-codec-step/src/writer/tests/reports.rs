@@ -1271,11 +1271,8 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     ir.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: Some(source_object.clone()),
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     });
     ir.model.tessellations.push(
         Tessellation::from_decoded(

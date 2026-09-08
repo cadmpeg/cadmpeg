@@ -641,8 +641,8 @@ fn preserves_directed_reversed_face_edge_use() {
     .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert!(surface.faces[0].edges[1].reversed);
-    assert_eq!(surface.edges[1].vertices, [2, 1]);
+    assert!(surface.cage.faces()[0].edges()[1].reversed);
+    assert_eq!(surface.cage.edges()[1].vertices, [2, 1]);
 }
 
 #[test]
@@ -690,9 +690,9 @@ fn preserves_vertex_edge_tags_and_sector_coefficients() {
     .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert_eq!(surface.vertices[0].tag, SubdVertexTag::Dart);
-    assert_eq!(surface.edges[0].tag, SubdEdgeTag::SmoothX);
-    assert_eq!(surface.edges[0].sector_coefficients, [0.125, 0.875]);
+    assert_eq!(surface.cage.vertices()[0].tag, SubdVertexTag::Dart);
+    assert_eq!(surface.cage.edges()[0].tag, SubdEdgeTag::SmoothX);
+    assert_eq!(surface.cage.edges()[0].sector_coefficients, [0.125, 0.875]);
 }
 
 #[test]
@@ -702,7 +702,7 @@ fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
     else {
         panic!("expected old surface");
     };
-    assert_eq!(surface.edges[0].sharpness, [0.25, 0.25]);
+    assert_eq!(surface.cage.edges()[0].sharpness, [0.25, 0.25]);
     let Some(DecodedSubd { surface, .. }) = decode_fixture(
         Fixture {
             archive: ArchiveVersion::V8,
@@ -714,7 +714,7 @@ fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
     .expect("required invariant") else {
         panic!("expected V8 surface");
     };
-    assert_eq!(surface.edges[0].sharpness, [0.25, 0.75]);
+    assert_eq!(surface.cage.edges()[0].sharpness, [0.25, 0.75]);
 }
 
 #[test]
@@ -759,9 +759,12 @@ fn scales_control_points_once_without_scaling_edge_metadata() {
     else {
         panic!("expected surface");
     };
-    assert_eq!(surface.vertices[2].point, Point3::new(25.4, 25.4, 0.0));
-    assert_eq!(surface.edges[0].sharpness, [0.25, 0.25]);
-    assert_eq!(surface.edges[0].sector_coefficients, [0.125, 0.875]);
+    assert_eq!(
+        surface.cage.vertices()[2].point,
+        Point3::new(25.4, 25.4, 0.0)
+    );
+    assert_eq!(surface.cage.edges()[0].sharpness, [0.25, 0.25]);
+    assert_eq!(surface.cage.edges()[0].sector_coefficients, [0.125, 0.875]);
 }
 
 #[test]
@@ -823,7 +826,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     assert_eq!(result.ir().model.subds.len(), 1);
     let subd = &result.ir().model.subds[0];
     assert!(subd.source_object.is_some());
-    assert_eq!(subd.vertices[2].point.x, 25.4);
+    assert_eq!(subd.cage.vertices()[2].point.x, 25.4);
     assert_eq!(
         result
             .source_fidelity()
