@@ -182,6 +182,14 @@ pub(super) fn unique_relation_declaration_candidates<'a>(
         .collect()
 }
 
+struct RelationGroup<'a> {
+    feature_ref: String,
+    family: FeatureInputRelationFamily,
+    class_ref: String,
+    operands: Vec<FeatureInputOperand>,
+    scalars: Vec<(usize, &'a FeatureInputScalar)>,
+}
+
 pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
@@ -213,13 +221,6 @@ pub(super) fn relation_instances(
         .into_iter()
         .filter_map(|(scalar, count)| (count > 1).then_some(scalar))
         .collect::<HashSet<_>>();
-    struct RelationGroup<'a> {
-        feature_ref: String,
-        family: FeatureInputRelationFamily,
-        class_ref: String,
-        operands: Vec<FeatureInputOperand>,
-        scalars: Vec<(usize, &'a FeatureInputScalar)>,
-    }
     let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
         let Some(feature_ref) = scalar
