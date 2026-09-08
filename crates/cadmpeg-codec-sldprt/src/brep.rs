@@ -499,13 +499,11 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         }
         i += 1;
     }
-    for (attr, carrier) in spline::scan_curve_carriers(body) {
-        debug_assert_eq!(attr, carrier.attr);
-        out.curves.insert(attr, carrier);
+    for carrier in spline::scan_curve_carriers(body).into_values() {
+        out.insert(Carrier::Curve(carrier));
     }
-    for (attr, carrier) in spline::scan_surface_carriers(body) {
-        debug_assert_eq!(attr, carrier.attr);
-        out.surfaces.insert(attr, carrier);
+    for carrier in spline::scan_surface_carriers(body).into_values() {
+        out.insert(Carrier::Surface(carrier));
     }
     for carrier in subset::scan(body, &out) {
         out.curves.insert(carrier.attr, carrier);
@@ -513,8 +511,8 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     out.sweeps = sweep::scan_sweep_carriers(body);
     (out.blends, out.blend_support_pairs) = blend::scan(body);
     out.offsets = offset::scan(body);
-    for (attr, intersection) in intersection::scan_intersection_carriers(body) {
-        debug_assert_eq!(attr, intersection.carrier.attr);
+    for intersection in intersection::scan_intersection_carriers(body).into_values() {
+        let attr = intersection.carrier.attr;
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
             entry.insert(intersection.carrier);
             out.derived_curves.insert(attr);

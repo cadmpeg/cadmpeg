@@ -418,16 +418,64 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
 
 /// The topology record tables of one stream, each keyed by `attr`.
 #[derive(Default)]
-pub struct Tables {
-    pub bridges: HashMap<u16, Bridge>,
-    pub loops: HashMap<u16, Loop>,
-    pub edge_uses: HashMap<u16, EdgeUse>,
-    pub coedges: HashMap<u16, Coedge>,
-    pub vertex_uses: HashMap<u16, VertexUse>,
-    pub points: HashMap<u16, Point>,
+pub(crate) struct Tables {
+    bridges: HashMap<u16, Bridge>,
+    loops: HashMap<u16, Loop>,
+    edge_uses: HashMap<u16, EdgeUse>,
+    coedges: HashMap<u16, Coedge>,
+    vertex_uses: HashMap<u16, VertexUse>,
+    points: HashMap<u16, Point>,
 }
 
 impl Tables {
+    pub(crate) fn bridges(&self) -> &HashMap<u16, Bridge> {
+        &self.bridges
+    }
+
+    pub(crate) fn insert_bridge(&mut self, record: Bridge) {
+        self.bridges.insert(record.attr, record);
+    }
+
+    pub(crate) fn loops(&self) -> &HashMap<u16, Loop> {
+        &self.loops
+    }
+
+    pub(crate) fn insert_loop(&mut self, record: Loop) {
+        self.loops.insert(record.attr, record);
+    }
+
+    pub(crate) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
+        &self.edge_uses
+    }
+
+    pub(crate) fn insert_edge_use(&mut self, record: EdgeUse) {
+        self.edge_uses.insert(record.attr, record);
+    }
+
+    pub(crate) fn coedges(&self) -> &HashMap<u16, Coedge> {
+        &self.coedges
+    }
+
+    pub(crate) fn insert_coedge(&mut self, record: Coedge) {
+        self.coedges.insert(record.attr, record);
+    }
+
+    pub(crate) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
+        &self.vertex_uses
+    }
+
+    pub(crate) fn insert_vertex_use(&mut self, record: VertexUse) {
+        self.vertex_uses.insert(record.attr, record);
+    }
+
+    pub(crate) fn points(&self) -> &HashMap<u16, Point> {
+        &self.points
+    }
+
+    pub(crate) fn insert_point(&mut self, record: Point) {
+        self.points.insert(record.attr, record);
+    }
+
     /// Merge deltas without replacing partition topology membership.
     ///
     /// Preserve partition topology for shared identities and add only deltas
@@ -752,7 +800,7 @@ fn scan_with_point_framing(
                         excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
                     let carries_loop = record.refs[2] > 1;
                     if !excluded || carries_loop {
-                        t.bridges.insert(record.attr, record);
+                        t.insert_bridge(record);
                     }
                 }
             }
@@ -765,7 +813,7 @@ fn scan_with_point_framing(
             0x11 => insert_candidates(&mut coedge_candidates, parse_coedge_candidates(body, i)),
             0x12 => {
                 if let Some(record) = parse_vertex_use(body, i) {
-                    t.vertex_uses.insert(record.attr, record);
+                    t.insert_vertex_use(record);
                 }
             }
             0x1d => {
@@ -775,7 +823,7 @@ fn scan_with_point_framing(
                     parse_point(body, i, false)
                 };
                 if let Some(record) = record {
-                    t.points.insert(record.attr, record);
+                    t.insert_point(record);
                 }
             }
             _ => {}
@@ -783,7 +831,7 @@ fn scan_with_point_framing(
         i += 1;
     }
 
-    for (attr, candidates) in &coedge_candidates {
+    for candidates in coedge_candidates.values() {
         if let Some(record) = select_coedge(
             candidates,
             &loop_candidates,
@@ -792,12 +840,12 @@ fn scan_with_point_framing(
             &edge_candidates,
             &coedge_candidates,
         ) {
-            t.coedges.insert(*attr, record);
+            t.insert_coedge(record);
         }
     }
-    for (attr, candidates) in edge_candidates {
+    for candidates in edge_candidates.into_values() {
         if let Some(record) = select_edge_use(&candidates, &t.coedges, curve_attrs) {
-            t.edge_uses.insert(attr, record);
+            t.insert_edge_use(record);
         }
     }
     for record in loop_candidates {
@@ -808,7 +856,7 @@ fn scan_with_point_framing(
                 .get(&first)
                 .is_some_and(|coedge| coedge.refs[1] == record.attr)
         {
-            t.loops.insert(record.attr, record);
+            t.insert_loop(record);
         }
     }
     t
