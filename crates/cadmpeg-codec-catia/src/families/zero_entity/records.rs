@@ -279,13 +279,13 @@ impl ZeroEntityOrientedUsePair {
     }
 
     /// Positional side number for the zero-based use slot.
-    pub const fn side(&self, index: usize) -> u32 {
+    pub const fn side(index: usize) -> u32 {
         [1, 2][index]
     }
 
     /// Allocation columns for the zero-based use slot.
     pub const fn allocations(&self, index: usize) -> [u32; 2] {
-        let side = self.side(index);
+        let side = Self::side(index);
         [self.base_columns[0] + side, self.base_columns[1] + side]
     }
 }
