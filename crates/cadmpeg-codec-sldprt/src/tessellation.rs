@@ -683,8 +683,7 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
                 surface: *surfaces.get(&face.surface)?,
                 tolerance: face
                     .tolerance
-                    .map(cadmpeg_ir::units::PositiveScalar::get)
-                    .unwrap_or(0.0),
+                    .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
                 inverse,
                 trim: analytic_trim(
                     face,
@@ -1481,8 +1480,7 @@ fn planar_trim(
     let frame = plane_frame(surface)?;
     let tolerance = face
         .tolerance
-        .map(cadmpeg_ir::units::PositiveScalar::get)
-        .unwrap_or(0.0)
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
         .max(EPS_DISPLAY_QUANTIZATION);
     let coordinate_scale = points
         .values()
@@ -1638,8 +1636,7 @@ fn planar_hole_trim(
     let frame = plane_frame(surface)?;
     let tolerance = face
         .tolerance
-        .map(cadmpeg_ir::units::PositiveScalar::get)
-        .unwrap_or(0.0)
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
         .max(EPS_DISPLAY_QUANTIZATION);
     let face_loops = face
         .loops
@@ -1701,8 +1698,7 @@ fn cylindrical_trim(
     }
     let tolerance = face
         .tolerance
-        .map(cadmpeg_ir::units::PositiveScalar::get)
-        .unwrap_or(0.0)
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
         .max(EPS_DISPLAY_QUANTIZATION);
     let mut axial_bounds = None::<(f64, f64)>;
     for coedge_id in loop_.coedges() {
@@ -1820,8 +1816,7 @@ fn conical_trim(
     }
     let tolerance = face
         .tolerance
-        .map(cadmpeg_ir::units::PositiveScalar::get)
-        .unwrap_or(0.0)
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
         .max(EPS_DISPLAY_QUANTIZATION);
     let mut axial_bounds = None::<(f64, f64)>;
     let mut angles = Vec::new();

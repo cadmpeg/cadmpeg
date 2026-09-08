@@ -227,9 +227,8 @@ fn transfer_complete(
     let Ok(surface_ids) = surfaces::emit_surfaces(ir, annotations, graph, &mut plan) else {
         return false;
     };
-    let pcurve_uses = match pcurves::emit_pcurves(ir, annotations, graph, &plan) {
-        Ok(value) => value,
-        Err(_) => return false,
+    let Ok(pcurve_uses) = pcurves::emit_pcurves(ir, annotations, graph, &plan) else {
+        return false;
     };
     let Ok(edge_id_map) =
         edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids)

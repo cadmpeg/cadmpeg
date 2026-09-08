@@ -16,11 +16,18 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use super::sketch_edges::{circle_contains_point, ellipse_contains_point};
 
+/// Sketches and their projected entities and constraints.
+pub(crate) struct ProjectedSketches {
+    pub(crate) sketches: Vec<Sketch>,
+    pub(crate) entities: Vec<SketchEntity>,
+    pub(crate) constraints: Vec<SketchConstraint>,
+}
+
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
 pub fn sketches(
     scan: &ContainerScan,
     annotations: &mut Annotations,
-) -> Result<(Vec<Sketch>, Vec<SketchEntity>, Vec<SketchConstraint>), cadmpeg_core::CodecError> {
+) -> Result<ProjectedSketches, cadmpeg_core::CodecError> {
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
@@ -53,7 +60,11 @@ pub fn sketches(
             );
         }
     }
-    Ok((sketches, entities, constraints))
+    Ok(ProjectedSketches {
+        sketches,
+        entities,
+        constraints,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

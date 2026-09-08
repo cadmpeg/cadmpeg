@@ -8,7 +8,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
@@ -17,6 +17,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
+use super::pcurves::PcurveUses;
 use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::UnionFind;
 
@@ -217,7 +218,7 @@ fn b5_planar_loop_points(
     loop_id: u32,
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &PcurveUses,
 ) -> Option<Vec<Point3>> {
     let surface = ir
         .model
@@ -298,7 +299,7 @@ fn b5_boundary_roles(
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &PcurveUses,
 ) -> Option<Vec<LoopBoundaryRole>> {
     if face.loops.len() == 1 {
         return Some(vec![LoopBoundaryRole::Outer]);
@@ -353,7 +354,7 @@ pub(super) fn emit_faces(
     graph: &B5Graph,
     plan: &TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &PcurveUses,
     edge_id_map: &HashMap<u32, EdgeId>,
 ) -> bool {
     let ownership = &plan.ownership;
@@ -539,10 +540,10 @@ pub(super) fn emit_faces(
                 .get(loop_position)
                 .copied()
                 .unwrap_or_default();
-            if boundary_role != LoopBoundaryRole::Unspecified {
-                if annotations.derived(&loop_id, "boundary_role").is_err() {
-                    return false;
-                }
+            if boundary_role != LoopBoundaryRole::Unspecified
+                && annotations.derived(&loop_id, "boundary_role").is_err()
+            {
+                return false;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
             else {

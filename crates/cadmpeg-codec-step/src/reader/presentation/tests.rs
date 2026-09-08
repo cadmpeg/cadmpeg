@@ -928,7 +928,7 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .model
         .appearances
         .iter()
-        .filter_map(|appearance| appearance.base_color.map(|color| color.a()))
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
         .collect::<Vec<_>>();
     assert_eq!(alphas.len(), 2);
     assert!(alphas.iter().any(|alpha| (*alpha - 0.75).abs() < EPS_ALPHA));

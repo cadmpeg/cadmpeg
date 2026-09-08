@@ -2256,7 +2256,11 @@ impl<'a> F3dDecodeSession<'a> {
             admitted_entities,
             report_scope,
         } = session_state;
-        let (ir, source_attributes, unknowns) = build_metadata_ir(scan)?;
+        let MetadataIr {
+            ir,
+            source_attributes,
+            unknowns,
+        } = build_metadata_ir(scan)?;
         Ok(Self {
             ctx,
             scan,
@@ -3024,7 +3028,11 @@ fn decode_scanned_document<'a>(
     )?;
 
     if ctx.container_only() {
-        let (ir, mut source_attributes, unknowns) = build_metadata_ir(scan)?;
+        let MetadataIr {
+            ir,
+            mut source_attributes,
+            unknowns,
+        } = build_metadata_ir(scan)?;
         annotate_docstruct(&mut source_attributes, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(scan);
@@ -4976,16 +4984,13 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
     losses
 }
 
-fn build_metadata_ir(
-    scan: &ContainerScan,
-) -> Result<
-    (
-        CadIr,
-        std::collections::BTreeMap<String, String>,
-        Vec<UnknownRecord>,
-    ),
-    CodecError,
-> {
+struct MetadataIr {
+    ir: CadIr,
+    source_attributes: std::collections::BTreeMap<String, String>,
+    unknowns: Vec<UnknownRecord>,
+}
+
+fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 
@@ -5036,7 +5041,11 @@ fn build_metadata_ir(
         ));
     }
 
-    Ok((ir, attributes, unknowns))
+    Ok(MetadataIr {
+        ir,
+        source_attributes: attributes,
+        unknowns,
+    })
 }
 
 /// Build geometry and topology loss notes from the container state.
