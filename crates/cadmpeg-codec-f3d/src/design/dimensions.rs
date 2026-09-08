@@ -526,7 +526,7 @@ fn project_all_dimension_constraints(
         if group.state == 0 {
             let counted_definition = counted_role_relation_at_tolerance(
                 &locus_entities,
-                group.owner_role,
+                &group.owner_kinds(),
                 linear_tolerance,
             );
             if let Some(definition) = counted_definition {
@@ -2992,7 +2992,11 @@ fn spatial_reflection_symmetry(
     if owners.next().is_some() {
         return None;
     }
-    if operand_role(owner) != Some(0x400) {
+    if !operand_role(owner).is_some_and(|role| {
+        crate::records::constraint_kinds_from_state(u64::from(role))
+            .0
+            .contains(&SketchConstraintKind::Symmetry)
+    }) {
         return None;
     }
     let scope = native_stream(native_ref?)?;
@@ -4789,25 +4793,25 @@ pub(crate) fn two_locus_distance_dimension(
 #[cfg(test)]
 pub(crate) fn counted_role_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-    owner_role: u32,
+    owner_role: u64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    counted_role_relation_at_tolerance(entities, owner_role, 0.0)
+    counted_role_relation_at_tolerance(
+        entities,
+        &crate::records::constraint_kinds_from_state(owner_role).0,
+        0.0,
+    )
 }
 
 pub(crate) fn counted_role_relation_at_tolerance(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-    owner_role: u32,
+    owner_kinds: &[SketchConstraintKind],
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
     };
-
-    match owner_role {
-        0x40 | 0x80 => {
-            let [entity] = entities else {
-                return None;
-            };
+    owner_kinds.iter().find_map(|kind| match (kind, entities) {
+        (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical, [entity]) => {
             let Geometry::Line { start, end } = &entity.geometry else {
                 return None;
             };
@@ -4817,16 +4821,18 @@ pub(crate) fn counted_role_relation_at_tolerance(
             if length <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E12 {
                 return None;
             }
-            match owner_role {
-                0x40 if dv.abs()
-                    <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
+            match kind {
+                SketchConstraintKind::Horizontal
+                    if dv.abs()
+                        <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
                     Some(Definition::Horizontal {
                         entity: entity.id().clone(),
                     })
                 }
-                0x80 if du.abs()
-                    <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
+                SketchConstraintKind::Vertical
+                    if du.abs()
+                        <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
                     Some(Definition::Vertical {
                         entity: entity.id().clone(),
@@ -4835,29 +4841,23 @@ pub(crate) fn counted_role_relation_at_tolerance(
                 _ => None,
             }
         }
-        0x100
+        (SketchConstraintKind::Tangent, [first, second])
             if exact_line_arc_tangency(entities, linear_tolerance)
                 || exact_circular_tangency(entities, linear_tolerance) =>
         {
-            let [first, second] = entities else {
-                unreachable!("exact curve tangency requires two entities")
-            };
             Some(Definition::Tangent {
                 first: first.id().clone(),
                 second: second.id().clone(),
             })
         }
-        0x800 if exact_equal_size(entities) => {
-            let [first, second] = entities else {
-                unreachable!("exact equal size requires two entities")
-            };
+        (SketchConstraintKind::Equal, [first, second]) if exact_equal_size(entities) => {
             Some(Definition::Equal {
                 first: first.id().clone(),
                 second: second.id().clone(),
             })
         }
         _ => None,
-    }
+    })
 }
 
 fn exact_line_arc_tangency(

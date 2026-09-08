@@ -1619,6 +1619,12 @@ struct DesignDimensionLocusGroupWire {
 }
 
 impl DesignDimensionLocusGroup {
+    /// Constraint kinds selected by the owner mask.
+    #[must_use]
+    pub fn owner_kinds(&self) -> Vec<SketchConstraintKind> {
+        constraint_kinds_from_state(u64::from(self.owner_role)).0
+    }
+
     #[must_use]
     pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
         constraint_kinds_from_state(u64::from(self.state)).0
