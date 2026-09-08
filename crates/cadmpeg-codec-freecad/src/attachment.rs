@@ -93,7 +93,7 @@ pub(crate) fn transfer(
                 crate::native::native_id("attachment", &object.name),
                 object.id.clone(),
                 support.map(support_links).transpose()?.unwrap_or_default(),
-                mode.map(map_mode_value).transpose()?.flatten(),
+                mode.map(map_mode_value).transpose()?,
                 placement,
                 offset,
             )
@@ -167,7 +167,7 @@ fn support_links(property: &PropertyRecord) -> Result<Vec<LinkTarget>, CodecErro
     Ok(property.links().to_vec())
 }
 
-fn map_mode_value(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+fn map_mode_value(property: &PropertyRecord) -> Result<String, CodecError> {
     if property.type_name != "App::PropertyEnumeration" {
         return Err(malformed(format!(
             "attachment property {} has runtime type {}, expected App::PropertyEnumeration",
@@ -204,7 +204,7 @@ fn map_mode_value(property: &PropertyRecord) -> Result<Option<String>, CodecErro
         })?;
     MAP_MODE_NAMES
         .get(index)
-        .map(|_| Some(index.to_string()))
+        .map(|_| index.to_string())
         .ok_or_else(|| {
             malformed(format!(
                 "attachment property {} enum index {index} is out of range",
