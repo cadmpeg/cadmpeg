@@ -79,7 +79,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                                 })
                                 .unwrap();
                         })
-                        .unwrap()
+                        .unwrap();
                 })
                 .unwrap();
         }
