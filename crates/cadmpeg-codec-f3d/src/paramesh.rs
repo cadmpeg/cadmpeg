@@ -307,13 +307,11 @@ fn take_varint(message: &[u8], at: &mut usize) -> Result<u64, CodecError> {
     Err(malformed("paramesh protobuf varint exceeds ten bytes"))
 }
 
-/// One protobuf field value. Fixed-width values are retained only as a wire
-/// shape because the implemented registry fields do not interpret them.
+/// One protobuf field value; fixed32 and fixed64 wire values are skipped.
 enum ProtobufValue<'a> {
     Varint(u64),
     Bytes(&'a [u8]),
-    Fixed64,
-    Fixed32,
+    Skipped,
 }
 
 /// Read every protobuf field in stored order.
@@ -335,7 +333,7 @@ fn protobuf_fields(message: &[u8]) -> Result<Vec<(u64, ProtobufValue<'_>)>, Code
                     .checked_add(8)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed64 field is truncated"))?;
-                fields.push((key >> 3, ProtobufValue::Fixed64));
+                fields.push((key >> 3, ProtobufValue::Skipped));
             }
             2 => {
                 let count = usize::try_from(take_varint(message, &mut at)?)
@@ -352,7 +350,7 @@ fn protobuf_fields(message: &[u8]) -> Result<Vec<(u64, ProtobufValue<'_>)>, Code
                     .checked_add(4)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed32 field is truncated"))?;
-                fields.push((key >> 3, ProtobufValue::Fixed32));
+                fields.push((key >> 3, ProtobufValue::Skipped));
             }
             _ => {
                 return Err(malformed(
