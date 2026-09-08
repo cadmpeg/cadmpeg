@@ -135,9 +135,15 @@ fn each_container_parser_classifies_into_its_own_row() {
 
 #[test]
 fn the_container_kind_label_and_the_registry_id_come_from_one_enum() {
-    assert_eq!(NxDialect::Splmsstr.container_kind(), "splmsstr");
+    assert_eq!(
+        NxDialect::Splmsstr.container_kind(),
+        cadmpeg_ir::ContainerKind::Splmsstr
+    );
     assert_eq!(NxDialect::Splmsstr.id().as_str(), "nx:splmsstr");
-    assert_eq!(NxDialect::LegacyCfb.container_kind(), "cfb");
+    assert_eq!(
+        NxDialect::LegacyCfb.container_kind(),
+        cadmpeg_ir::ContainerKind::Cfb
+    );
     assert_eq!(NxDialect::LegacyCfb.id().as_str(), "nx:legacy-cfb");
 }
 
