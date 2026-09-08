@@ -26,7 +26,8 @@ use crate::nurbs::proc_surface::{
     EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
     EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
     EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
-    EmbeddedVertexBlendBoundaryGeometry, LegacySweepLayout, LoftProfileData, SweepLawOrFormula,
+    EmbeddedVertexBlendBoundaryGeometry, LegacySweepLayout, LoftProfileData,
+    ProceduralSurfaceCache, SweepLawOrFormula,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -111,7 +112,8 @@ fn emit_carrier_surface(
         source_object: None,
     });
     if let Some(procedural) = procedural_surface_defs.remove(&i) {
-        let definition = match procedural.definition {
+        let (definition, cache) = procedural.into_parts();
+        let definition = match definition {
             DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
                 emit_deformable_surface(out, i, embedded, format)
             }
@@ -398,7 +400,7 @@ fn emit_carrier_surface(
             definition,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
         );
-        if let Some(tolerance) = procedural.cache_fit_tolerance {
+        if let ProceduralSurfaceCache::Legacy(Some(tolerance)) = cache {
             if surface.set_cache_fit_tolerance(Some(tolerance)).is_err() {
                 return;
             }

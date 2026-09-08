@@ -30,7 +30,8 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
@@ -40,7 +41,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                         v_sense,
                         extension: flags,
                     },
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected legacy offset surface");
             };
@@ -158,9 +159,9 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
-        assert_eq!(decoded.cache_fit_tolerance, None);
-        let DecodedProceduralSurfaceDefinition::Deformable(construction) = decoded.definition
-        else {
+        assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Deformable(construction) = definition else {
             panic!("expected deformable surface");
         };
         let crate::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Revision(revision_form) =
@@ -252,7 +253,8 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Taper {
                 reference,
                 pcurve,
@@ -260,7 +262,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 taper,
                 revision_form: None,
                 ..
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected legacy taper surface");
             };
@@ -342,8 +344,9 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-        let DecodedProceduralSurfaceDefinition::Compound { components } = decoded.definition else {
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Compound { components } = definition else {
             panic!("expected compound surface");
         };
 
@@ -432,8 +435,9 @@ fn loft_surface_walks_bridge_to_direct_cache() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-            let DecodedProceduralSurfaceDefinition::Loft(loft) = decoded.definition else {
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
+            let DecodedProceduralSurfaceDefinition::Loft(loft) = definition else {
                 panic!("expected legacy loft surface");
             };
 
@@ -520,10 +524,11 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
                 &test_table(&bytes, int_width),
             )
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
-            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension },
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected legacy exact surface");
             };
@@ -592,16 +597,15 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
-        let DecodedProceduralSurfaceDefinition::Ruled { first, second } = decoded.definition else {
+        let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Ruled { first, second } = definition else {
             panic!("expected ruled surface");
         };
 
         assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
         assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
-        assert!(
-            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
-                < f64::EPSILON * 10.0
-        );
+        assert!((cache_fit_tolerance.expect("fit tolerance") - 0.01).abs() < f64::EPSILON * 10.0);
     }
 }
 
@@ -650,13 +654,14 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Sum {
             first,
             second,
             basepoint,
             revision_form: None,
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected legacy sum surface");
         };
@@ -722,7 +727,8 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revolution surface at width {int_width}"));
-        let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+        let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
             directrix,
             axis_origin,
@@ -730,7 +736,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             angular_interval,
             parameter_interval,
             revision_form: None,
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected legacy revolution surface");
         };
@@ -806,12 +812,13 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
             &test_table(&bytes, int_width),
         )
         .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
+        let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
             angular_interval,
             parameter_interval,
             revision_form: Some(_),
             ..
-        } = decoded.definition
+        } = definition
         else {
             panic!("expected revision revolution surface");
         };
