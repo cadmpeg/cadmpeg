@@ -245,7 +245,7 @@ pub(super) fn emit_model_features(
                 operation.offset >= section.offset
                     && operation.offset < section.offset.saturating_add(section.length)
             })
-            .map_or("MdlStatus", |section| section.name.as_str());
+            .map_or("MdlStatus", |section| section.name());
         let name = current_operation.and_then(|operation| {
             operation.display_name_stored().then_some(())?;
             let stored_name = operation.stored_name()?;

@@ -65,8 +65,8 @@ fn scan_resolves_identifiers_within_independent_scopes() {
     assert_eq!(persistence.declaration_count(), 2);
     assert_eq!(persistence.value_count(), 2);
     assert_eq!(persistence.conflicting_declaration_count(), 0);
-    assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(persistence.real_values[0].scope_offset, second);
+    assert_eq!(persistence.real_values.rows.len(), 1);
+    assert_eq!(persistence.real_values.rows[0].scope_offset, second);
 }
 
 #[test]
@@ -218,25 +218,25 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
             @single 4 2\n0 4 [1]\n1 4 400\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert_eq!(persistence.real_values.len(), 4);
-    assert_eq!(persistence.unresolved_real_value_count, 0);
+    assert_eq!(persistence.real_values.rows.len(), 4);
+    assert_eq!(persistence.real_values.unresolved_count, 0);
     assert_eq!(
-        persistence.real_values[0].payload,
+        persistence.real_values.rows[0].payload,
         RealPayload::Scalar {
             value: Real(1.0f64.to_bits())
         }
     );
     assert_eq!(
-        persistence.real_values[1].payload,
+        persistence.real_values.rows[1].payload,
         RealPayload::Scalar {
             value: Real(25.4f64.to_bits())
         }
     );
     assert_eq!(
-        persistence.real_values[2].payload,
-        RealPayload::Array {
-            dimensions: vec![2, 2],
-            runs: vec![
+        persistence.real_values.rows[2].payload,
+        RealPayload::array(
+            vec![2, 2],
+            vec![
                 RealRun {
                     count: 1,
                     value: Real(1.0f64.to_bits()),
@@ -249,19 +249,21 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
                     count: 1,
                     value: Real(1.0f64.to_bits()),
                 },
-            ],
-        }
+            ]
+        )
+        .expect("complete numeric array")
     );
-    assert_eq!(persistence.real_values[2].payload.element_count(), 4);
+    assert_eq!(persistence.real_values.rows[2].payload.element_count(), 4);
     assert_eq!(
-        persistence.real_values[3].payload,
-        RealPayload::Array {
-            dimensions: vec![1],
-            runs: vec![RealRun {
+        persistence.real_values.rows[3].payload,
+        RealPayload::array(
+            vec![1],
+            vec![RealRun {
                 count: 1,
                 value: Real(2.0f64.to_bits()),
-            }],
-        }
+            }]
+        )
+        .expect("complete numeric array")
     );
 }
 
@@ -272,8 +274,8 @@ fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
             @infinite 3 2\n0 3 7FF\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert!(persistence.real_values.is_empty());
-    assert_eq!(persistence.unresolved_real_value_count, 3);
+    assert!(persistence.real_values.rows.is_empty());
+    assert_eq!(persistence.real_values.unresolved_count, 3);
 }
 
 #[test]
@@ -283,35 +285,37 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
             @single 3 1\n0 3 [1]\n1 3 42\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert_eq!(persistence.integer_values.len(), 3);
-    assert_eq!(persistence.unresolved_integer_value_count, 0);
+    assert_eq!(persistence.integer_values.rows.len(), 3);
+    assert_eq!(persistence.integer_values.unresolved_count, 0);
     assert_eq!(
-        persistence.integer_values[0].payload,
+        persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: i32::MIN }
     );
     assert_eq!(
-        persistence.integer_values[1].payload,
-        IntegerPayload::Array {
-            dimensions: vec![4],
-            runs: vec![
+        persistence.integer_values.rows[1].payload,
+        IntegerPayload::array(
+            vec![4],
+            vec![
                 IntegerRun { count: 1, value: 1 },
                 IntegerRun {
                     count: 2,
                     value: -1,
                 },
                 IntegerRun { count: 1, value: 0 },
-            ],
-        }
+            ]
+        )
+        .expect("complete numeric array")
     );
     assert_eq!(
-        persistence.integer_values[2].payload,
-        IntegerPayload::Array {
-            dimensions: vec![1],
-            runs: vec![IntegerRun {
+        persistence.integer_values.rows[2].payload,
+        IntegerPayload::array(
+            vec![1],
+            vec![IntegerRun {
                 count: 1,
                 value: 42,
-            }],
-        }
+            }]
+        )
+        .expect("complete numeric array")
     );
 }
 
@@ -321,8 +325,8 @@ fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
             @overflow 2 1\n0 2 2147483648\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert!(persistence.integer_values.is_empty());
-    assert_eq!(persistence.unresolved_integer_value_count, 2);
+    assert!(persistence.integer_values.rows.is_empty());
+    assert_eq!(persistence.integer_values.unresolved_count, 2);
 }
 
 #[test]
@@ -338,49 +342,48 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .expect("root offset");
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert_eq!(persistence.type_5_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_5_value_count, 0);
+    assert_eq!(persistence.type_5_values.rows.len(), 2);
+    assert_eq!(persistence.type_5_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_5_values[1].payload,
-        UnsignedPayload::Array {
-            dimensions: vec![3],
-            runs: vec![
+        persistence.type_5_values.rows[1].payload,
+        UnsignedPayload::array(
+            vec![3],
+            vec![
                 NumericRun { count: 1, value: 0 },
                 NumericRun {
                     count: 2,
                     value: 144,
                 },
-            ],
-        }
+            ]
+        )
+        .expect("complete numeric array")
     );
-    assert_eq!(persistence.type_6_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_6_value_count, 0);
+    assert_eq!(persistence.type_6_values.rows.len(), 2);
+    assert_eq!(persistence.type_6_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_6_values[0].payload,
+        persistence.type_6_values.rows[0].payload,
         RealPayload::Scalar {
             value: Real(2.0f64.to_bits())
         }
     );
-    assert_eq!(persistence.type_7_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_7_value_count, 0);
-    assert_eq!(persistence.type_9_values.len(), 1);
-    assert_eq!(persistence.unresolved_type_9_value_count, 0);
-    assert_eq!(persistence.type_11_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_11_value_count, 0);
+    assert_eq!(persistence.type_7_values.rows.len(), 2);
+    assert_eq!(persistence.type_7_values.unresolved_count, 0);
+    assert_eq!(persistence.type_9_values.rows.len(), 1);
+    assert_eq!(persistence.type_9_values.unresolved_count, 0);
+    assert_eq!(persistence.type_11_values.rows.len(), 2);
+    assert_eq!(persistence.type_11_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_11_values[1].payload,
-        UnsignedPayload::Array {
-            dimensions: vec![1],
-            runs: vec![NumericRun {
+        persistence.type_11_values.rows[1].payload,
+        UnsignedPayload::array(
+            vec![1],
+            vec![NumericRun {
                 count: 1,
                 value: 14633,
-            }],
-        }
+            }]
+        )
+        .expect("complete numeric array")
     );
-    assert_eq!(
-        persistence.type_11_values[1].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.type_11_values.rows[1].parent, Some(root_offset));
 }
 
 #[test]
@@ -389,12 +392,12 @@ fn remaining_numeric_types_withhold_undefined_values() {
             @short 3 11\n0 3 [2]\n$1\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert!(persistence.type_5_values.is_empty());
-    assert_eq!(persistence.unresolved_type_5_value_count, 1);
-    assert!(persistence.type_6_values.is_empty());
-    assert_eq!(persistence.unresolved_type_6_value_count, 1);
-    assert!(persistence.type_11_values.is_empty());
-    assert_eq!(persistence.unresolved_type_11_value_count, 1);
+    assert!(persistence.type_5_values.rows.is_empty());
+    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert!(persistence.type_6_values.rows.is_empty());
+    assert_eq!(persistence.type_6_values.unresolved_count, 1);
+    assert!(persistence.type_11_values.rows.is_empty());
+    assert_eq!(persistence.type_11_values.unresolved_count, 1);
 }
 
 #[test]
@@ -408,34 +411,31 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
         .expect("root offset");
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert_eq!(persistence.type_3_values.len(), 3);
-    assert_eq!(persistence.unresolved_type_3_value_count, 1);
-    assert_eq!(persistence.type_3_values[0].payload, StringValue::Null);
+    assert_eq!(persistence.type_3_values.rows.len(), 3);
+    assert_eq!(persistence.type_3_values.unresolved_count, 1);
+    assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
     assert_eq!(
-        persistence.type_3_values[1].payload,
+        persistence.type_3_values.rows[1].payload,
         StringValue::Utf8 {
             text: "texture-name".to_string(),
         }
     );
     assert_eq!(
-        persistence.type_3_values[2].payload,
+        persistence.type_3_values.rows[2].payload,
         StringValue::Bytes { bytes: vec![0xff] }
     );
-    assert_eq!(
-        persistence.type_3_values[0].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.type_3_values.rows[0].parent, Some(root_offset));
 
-    assert_eq!(persistence.type_4_values.len(), 2);
-    assert_eq!(persistence.unresolved_type_4_value_count, 0);
+    assert_eq!(persistence.type_4_values.rows.len(), 2);
+    assert_eq!(persistence.type_4_values.unresolved_count, 0);
     assert_eq!(
-        persistence.type_4_values[0].payload,
+        persistence.type_4_values.rows[0].payload,
         StringValue::Utf8 {
             text: "NULL".to_string(),
         }
     );
     assert_eq!(
-        persistence.type_4_values[1].payload,
+        persistence.type_4_values.rows[1].payload,
         StringValue::Utf8 {
             text: String::new(),
         }
@@ -507,10 +507,7 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
             .undecoded_encoding_count(),
         1
     );
-    assert_eq!(
-        persistence.string_values[4].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.string_values[4].parent, Some(root_offset));
 }
 
 #[test]
@@ -591,10 +588,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
     assert_eq!(persistence.incomplete_object_array_count, 0);
     assert!(persistence.objects[1].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 0);
-    assert_eq!(
-        persistence.objects[1].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.objects[1].parent, Some(root_offset));
     assert_eq!(
         persistence.objects[1].payload,
         ObjectPayload::Array {
@@ -605,15 +599,12 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
             ],
         }
     );
-    assert_eq!(persistence.integer_values.len(), 1);
+    assert_eq!(persistence.integer_values.rows.len(), 1);
+    assert_eq!(persistence.integer_values.rows[0].parent, Some(root_offset));
+    assert_eq!(persistence.real_values.rows.len(), 1);
     assert_eq!(
-        persistence.integer_values[0].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
-    assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(
-        persistence.real_values[0].parent.as_deref(),
-        Some(object_node_id(first_child_offset).as_str())
+        persistence.real_values.rows[0].parent,
+        Some(first_child_offset)
     );
     assert_eq!(persistence.objects[1].offset, array_offset);
 }
@@ -1050,7 +1041,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(scan.framing.sections[0].name, "BasicData");
+    assert_eq!(scan.framing.sections[0].name(), "BasicData");
     assert_eq!(scan.framing.sections[0].offset, section_offset);
     assert_eq!(scan.framing.sections[0].length, section.len());
     let persistence = &scan
@@ -1125,4 +1116,33 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
         container::scan_bytes(embedded).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
+}
+
+#[test]
+fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
+    let data = b"@nullable 1 3\n@bytes 2 4\n@unsigned 3 5\n@real 4 6\n\
+        0 1 NULL\n0 1 text\n$continued\n0 1 other\n$continued\n\
+        0 2 NULL\n0 3 7\n0 3 -1\n0 4 3FF\n";
+    let persistence = scan(data, std::iter::once(0..data.len()));
+    assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
+    assert_eq!(persistence.type_3_values.unresolved_count, 2);
+    assert_eq!(
+        persistence.type_4_values.rows[0].payload,
+        StringValue::Utf8 {
+            text: "NULL".to_owned()
+        }
+    );
+    assert_eq!(persistence.type_4_values.unresolved_count, 0);
+    assert_eq!(
+        persistence.type_5_values.rows[0].payload,
+        NumericPayload::Scalar { value: 7 }
+    );
+    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert_eq!(
+        persistence.type_6_values.rows[0].payload,
+        NumericPayload::Scalar {
+            value: Real::from_bits(1.0f64.to_bits())
+        }
+    );
+    assert_eq!(persistence.type_6_values.unresolved_count, 0);
 }

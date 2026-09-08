@@ -27,7 +27,7 @@ use crate::layout::tail_directory_entry as dir_ent;
 use crate::layout::zlb_wrapper_header as zlb_hdr;
 
 /// Marker shared by block, cache-cell, and directory frames.
-pub const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
+pub(crate) const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
@@ -35,7 +35,7 @@ const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Classified decompressed payload signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PayloadFamily {
+pub(crate) enum PayloadFamily {
     Parasolid,
     PngPreview,
     BmpThumbnail,
@@ -48,7 +48,7 @@ pub enum PayloadFamily {
 }
 
 impl PayloadFamily {
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Parasolid => "parasolid",
             Self::PngPreview => "png-preview",
@@ -66,7 +66,7 @@ impl PayloadFamily {
 /// Classify a decompressed block payload by signature.
 ///
 /// Unknown signatures return [`PayloadFamily::Unknown`].
-pub fn payload_family(payload: &[u8]) -> PayloadFamily {
+pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         PayloadFamily::PngPreview
     } else if is_bmp_thumbnail(payload) {
@@ -104,7 +104,7 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
 /// Decode a nibble-swapped section name.
 ///
 /// Returns `None` when any decoded byte falls outside printable ASCII.
-pub fn nibble_swap_name(raw: &[u8]) -> Option<String> {
+pub(crate) fn nibble_swap_name(raw: &[u8]) -> Option<String> {
     let mut s = String::with_capacity(raw.len());
     for &b in raw {
         let swapped = b.rotate_left(4);
@@ -118,89 +118,89 @@ pub fn nibble_swap_name(raw: &[u8]) -> Option<String> {
 
 /// One validated compressed block.
 #[derive(Debug, Clone)]
-pub struct Block {
+pub(crate) struct Block {
     /// Byte offset of the marker in the file.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Frame `type_id`.
-    pub type_id: u32,
+    pub(crate) type_id: u32,
     /// Compressed payload length.
-    pub comp_sz: u32,
+    pub(crate) comp_sz: u32,
     /// OPC section name decoded from the preamble, when printable.
-    pub section: Option<String>,
+    pub(crate) section: Option<String>,
     /// Payload family from its signature or extracted Parasolid streams.
-    pub family: PayloadFamily,
+    pub(crate) family: PayloadFamily,
     /// The decompressed payload bytes.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
     /// Every located and header-validated Parasolid stream carried by this block.
-    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 impl Block {
     /// Decompressed payload length.
-    pub fn uncomp_sz(&self) -> usize {
+    pub(crate) fn uncomp_sz(&self) -> usize {
         self.payload.len()
     }
 }
 
 /// One tail-directory entry naming a section.
 #[derive(Debug, Clone)]
-pub struct DirectoryEntry {
+pub(crate) struct DirectoryEntry {
     /// Byte offset of the marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Frame `type_id`.
-    pub type_id: u32,
+    pub(crate) type_id: u32,
     /// The section's stored/uncompressed size.
-    pub size: u32,
+    pub(crate) size: u32,
     /// Decoded section name.
-    pub name: String,
+    pub(crate) name: String,
     /// Per-entry descriptor bytes at frame offset +26.
-    pub descriptor: [u8; 14],
+    pub(crate) descriptor: [u8; 14],
     /// File-level directory trailer following the encoded name.
-    pub trailer: [u8; 6],
+    pub(crate) trailer: [u8; 6],
 }
 
 /// One cache-cell section-index entry.
 #[derive(Debug, Clone)]
-pub struct CacheCell {
+pub(crate) struct CacheCell {
     /// Byte offset of the marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// The logical cell size `L`.
-    pub logical_len: u32,
+    pub(crate) logical_len: u32,
     /// Decoded section name.
-    pub name: String,
+    pub(crate) name: String,
 }
 
 /// One named stream in a Compound File Binary container.
 #[derive(Debug, Clone)]
-pub struct CompoundStream {
+pub(crate) struct CompoundStream {
     /// Storage-qualified stream path.
-    pub path: String,
+    pub(crate) path: String,
     /// Unique directory entry identifier.
-    pub directory_id: u32,
+    pub(crate) directory_id: u32,
     /// First regular or mini sector identifier.
-    pub start_sector: u32,
+    pub(crate) start_sector: u32,
     /// Exact stream bytes.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
     /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
-    pub decoded_payload: Option<Vec<u8>>,
+    pub(crate) decoded_payload: Option<Vec<u8>>,
     /// Every located and header-validated Parasolid stream carried here.
-    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 /// Complete result of an outer-container scan.
-pub struct ContainerScan<'a> {
+pub(crate) struct ContainerScan<'a> {
     /// Complete source image for exact passthrough writing.
-    pub source_image: &'a [u8],
+    pub(crate) source_image: &'a [u8],
     /// Big-endian outer version word.
-    pub version: u32,
+    pub(crate) version: u32,
     /// CRC-validated compressed blocks, in file order.
-    pub blocks: Vec<Block>,
+    pub(crate) blocks: Vec<Block>,
     /// Tail directory entries, in file order.
-    pub directory: Vec<DirectoryEntry>,
+    pub(crate) directory: Vec<DirectoryEntry>,
     /// Cache-cell grid entries, in file order.
-    pub cache_cells: Vec<CacheCell>,
+    pub(crate) cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
-    pub compound_streams: Vec<CompoundStream>,
+    pub(crate) compound_streams: Vec<CompoundStream>,
     /// `swSolidWorks` XML facts parsed once from the retained sections.
     pub(crate) solidworks: SolidWorksEnvelopeScan,
 }
@@ -282,7 +282,7 @@ const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
-pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_sldprt(prefix: &[u8]) -> bool {
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
         return CompoundPrefixProbe::inspect(prefix)
             .paths()
@@ -306,7 +306,7 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
 ///
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
-pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
+pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
@@ -425,7 +425,10 @@ fn compound_stream(
 }
 
 /// Scans an in-memory image while routing inflate through the decode budget.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
+pub(crate) fn scan<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = compound_streams(ctx, root)?;
         return Ok(completed_scan(
@@ -468,11 +471,7 @@ fn compound_streams<'a>(
         })
         .map(|entry| {
             let view = snapshot.open(ctx, entry)?;
-            let payload = ctx.copy_retained(
-                view.window(),
-                "retain SolidWorks CFB stream",
-                Some(view.location()),
-            )?;
+            let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
             let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
             Ok(compound_stream(
                 entry.path().to_owned(),
@@ -525,12 +524,8 @@ fn decode_wrapped_payload_budgeted<'a>(
     if consumed != compressed_size {
         return Ok(None);
     }
-    ctx.copy_retained(
-        decoded.window(),
-        "retain decoded SolidWorks CFB stream",
-        Some(source.location()),
-    )
-    .map(Some)
+    ctx.copy_retained(decoded.window(), "retain decoded SolidWorks CFB stream")
+        .map(Some)
 }
 
 /// A block plus the preamble length needed to advance past it.
@@ -737,7 +732,7 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
 
 /// Convert a scan into the generic container inventory returned by
 /// [`cadmpeg_ir::Codec::inspect`].
-pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSummary {
+pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSummary {
     let mut entries = Vec::new();
 
     for b in &scan.blocks {
@@ -861,7 +856,7 @@ pub(crate) fn active_parasolid_summary<'a>(
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
-pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
+pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
     scan.blocks
         .iter()
         .flat_map(|block| &block.ps_streams)

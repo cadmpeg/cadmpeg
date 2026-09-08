@@ -209,7 +209,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[0].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -217,7 +217,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[1].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -225,7 +225,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[2].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 3,
                 trailing_fields: Vec::new(),
             },
@@ -233,7 +233,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[3].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },

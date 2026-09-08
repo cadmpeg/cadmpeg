@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: blind circular.
 
-use crate::container::SectionRole;
 use crate::feature::schema::SchemaClass;
 
 use super::parameter_slot;
@@ -102,17 +101,17 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
             row_offset: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 40,
-            feature_id: Some(40),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 0,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            40,
+            Some(40),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
 
     assert!(single_cap_circular_sweep_geometry(&scan, 40).is_some());
 
@@ -159,17 +158,17 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
             row_offset: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 41,
-            feature_id: Some(41),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 0,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            41,
+            Some(41),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
     assert!(single_cap_circular_sweep_geometry(&scan, 41).is_some());
 
     assert!(section_entity_is_generated_profile(
@@ -274,7 +273,14 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     );
 
     let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
-    assert_eq!(sweep.cylinder_ids, vec![836]);
+    assert_eq!(
+        sweep
+            .cylinder_rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        vec![836]
+    );
     assert_eq!(sweep.direction, [0.0, -1.0, 0.0]);
     assert_eq!(
         sweep.extent,
@@ -288,7 +294,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         }
     );
     assert!(matches!(
-        sweep.geometry,
+        SurfaceGeometry::from(sweep.geometry),
         SurfaceGeometry::Cylinder { origin, axis, radius, .. }
             if origin == Point3::new(-12.5, -4.0, 0.0)
                 && axis == Vector3::new(0.0, -1.0, 0.0)
@@ -381,6 +387,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     .is_none());
     table.table_class_id = 29;
     table.entries[3].class_id = 201;
+    table.entries[3].payload = crate::feature::EntryPayload::Plain;
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
@@ -388,6 +395,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.entries[3].class_id = 200;
+    table.entries[3].payload = crate::feature::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -637,12 +645,10 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(crate::container::Section {
-        name: "VisibGeom".to_string(),
         raw_name: "VisibGeom".to_string(),
         offset: 0,
         length: 1_000,
         expanded_length: None,
-        role: SectionRole::PsbGeometry,
     });
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
@@ -1081,11 +1087,11 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
     let frame =
         reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
-    assert_eq!(frame.origin, [4.5, 9.0, -6.0]);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(2.0));
+    assert_eq!(frame.origin(), [4.5, 9.0, -6.0]);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius(), 1.0);
+    assert_eq!(frame.length(), Some(2.0));
     assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
@@ -1121,13 +1127,16 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
 
     assert_eq!(
         reference_circle_pair_cylinder_frame(&[&first, &second]),
-        Some(crate::surface::PositionalCylinderFrame {
-            origin: first.center,
-            axis: [0.0, 0.0, 1.0],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 2.0,
-            length: Some(6.0),
-        })
+        Some(
+            crate::surface::PositionalCylinderFrame::new(
+                first.center,
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0],
+                2.0,
+                Some(6.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
@@ -1249,21 +1258,24 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
 
 #[test]
 fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 917,
-        feature_id: Some(40),
-        origin: [0.0, 4.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, -1.0],
-        normal: [0.0, 1.0, 0.0],
-        offset: 100,
-    };
-    let frame = |origin| crate::surface::PositionalCylinderFrame {
-        origin,
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 0.75,
-        length: Some(34.0),
+    let transform = crate::placement::FeatureSectionTransform::new(
+        917,
+        Some(40),
+        [0.0, 4.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        100,
+    )
+    .expect("valid section frame");
+    let frame = |origin| {
+        crate::surface::PositionalCylinderFrame::new(
+            origin,
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            0.75,
+            Some(34.0),
+        )
+        .expect("valid positional cylinder frame")
     };
     let frames = [frame([-12.5, 4.0, 0.0]), frame([12.5, 4.0, 0.0])];
     assert_eq!(
@@ -1281,50 +1293,75 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         ))
     );
     assert_eq!(
-        directed_blind_extrusion_span(transform.normal, [0.0, 1.0, 0.0], 34.0),
+        directed_blind_extrusion_span(transform.normal(), [0.0, 1.0, 0.0], 34.0),
         Some(ExtrusionSpan {
             lower: 0.0,
             upper: 34.0,
         })
     );
     assert_eq!(
-        directed_blind_extrusion_span(transform.normal, [0.0, -1.0, 0.0], 34.0),
+        directed_blind_extrusion_span(transform.normal(), [0.0, -1.0, 0.0], 34.0),
         Some(ExtrusionSpan {
             lower: -34.0,
             upper: 0.0,
         })
     );
-    assert!(directed_blind_extrusion_span(transform.normal, [1.0, 0.0, 0.0], 34.0).is_none());
+    assert!(directed_blind_extrusion_span(transform.normal(), [1.0, 0.0, 0.0], 34.0).is_none());
 
     let mut inconsistent = frames;
-    inconsistent[1].length = Some(33.0);
+    inconsistent[1] = crate::surface::PositionalCylinderFrame::new(
+        frames[1].origin(),
+        frames[1].axis(),
+        frames[1].ref_direction(),
+        frames[1].radius(),
+        Some(33.0),
+    )
+    .expect("valid positional cylinder frame");
     assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
     inconsistent = frames;
-    inconsistent[1].origin[1] = 5.0;
+    let mut origin = frames[1].origin();
+    origin[1] = 5.0;
+    inconsistent[1] = crate::surface::PositionalCylinderFrame::new(
+        origin,
+        frames[1].axis(),
+        frames[1].ref_direction(),
+        frames[1].radius(),
+        frames[1].length(),
+    )
+    .expect("valid positional cylinder frame");
     assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
 
     let diagonal = 0.5_f64.sqrt();
-    let diagonal_transform = crate::placement::FeatureSectionTransform {
-        normal: [diagonal, diagonal, 0.0],
-        ..transform
-    };
-    let perpendicular = [crate::surface::PositionalCylinderFrame {
-        origin: diagonal_transform.origin,
-        axis: [diagonal, -diagonal, 0.0],
-        ..frames[0]
-    }];
+    let diagonal_transform = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        transform.feature_id,
+        transform.origin(),
+        [diagonal, -diagonal, 0.0],
+        [0.0, 0.0, -1.0],
+        transform.offset,
+    )
+    .expect("valid section frame");
+    let perpendicular = [crate::surface::PositionalCylinderFrame::new(
+        diagonal_transform.origin(),
+        [diagonal, -diagonal, 0.0],
+        [0.0, 0.0, 1.0],
+        frames[0].radius(),
+        frames[0].length(),
+    )
+    .expect("valid positional cylinder frame")];
     assert!(agreed_generated_cylinder_extent(&diagonal_transform, &perpendicular).is_none());
 }
 
 #[test]
 fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
-    let frame = crate::surface::PositionalCylinderFrame {
-        origin: [1.0, 2.0, 3.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        length: Some(5.0),
-    };
+    let frame = crate::surface::PositionalCylinderFrame::new(
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        4.0,
+        Some(5.0),
+    )
+    .expect("valid positional cylinder frame");
     let parameter =
         |surface_id, positional_cylinder_frame: Option<crate::surface::PositionalCylinderFrame>| {
             crate::surface::SurfaceParameterRecord {
@@ -1391,13 +1428,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: crate::surface::PositionalCylinderFrame {
-                    origin: [2.0, 4.0, 0.0],
-                    axis: [0.0, -1.0, 0.0],
-                    ref_direction: [1.0, 0.0, 0.0],
-                    radius: 1.0,
-                    length: Some(8.0),
-                },
+                frame: crate::surface::PositionalCylinderFrame::new(
+                    [2.0, 4.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    1.0,
+                    Some(8.0),
+                )
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -1506,7 +1544,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     else {
         panic!("cylinder frame");
     };
-    frame.length = None;
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        None,
+    )
+    .expect("valid positional cylinder frame");
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &ir, 7, None),
         Some((
@@ -1533,30 +1578,30 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         ],
     )
     .is_none());
-    let invalid_length = crate::surface::PositionalCylinderFrame {
-        length: Some(0.0),
-        ..lengthless
-    };
-    assert!(
-        bounded_cylinder_span(invalid_length, &[([0.0, -4.0, 0.0], [0.0, 1.0, 0.0])]).is_none()
-    );
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
     ) = &mut scan.surfaces.parameters[0].carrier
     else {
         panic!("cylinder frame");
     };
-    frame.length = Some(8.0);
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        Some(8.0),
+    )
+    .expect("valid positional cylinder frame");
 
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        feature_id: Some(7),
-        origin: [0.0, 4.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        7,
+        Some(7),
+        [0.0, 4.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        0,
+    )
+    .expect("valid section frame");
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&transform)),
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
@@ -1603,18 +1648,28 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     );
     scan.surfaces.rows = surface_rows;
     ir.model.surfaces = model_surfaces;
-    let displaced = crate::placement::FeatureSectionTransform {
-        origin: [0.0, 3.0, 0.0],
-        ..transform.clone()
-    };
+    let displaced = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        transform.feature_id,
+        [0.0, 3.0, 0.0],
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
     assert!(
         generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&displaced))
             .is_none()
     );
-    let perpendicular = crate::placement::FeatureSectionTransform {
-        normal: [1.0, 0.0, 0.0],
-        ..transform
-    };
+    let perpendicular = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        transform.feature_id,
+        transform.origin(),
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        transform.offset,
+    )
+    .expect("valid section frame");
     assert!(
         generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&perpendicular))
             .is_none()
@@ -1633,7 +1688,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     else {
         panic!("cylinder frame");
     };
-    frame.length = Some(7.0);
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        Some(7.0),
+    )
+    .expect("valid positional cylinder frame");
     assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1641,7 +1703,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     else {
         panic!("cylinder frame");
     };
-    frame.length = Some(8.0);
+    *frame = crate::surface::PositionalCylinderFrame::new(
+        frame.origin(),
+        frame.axis(),
+        frame.ref_direction(),
+        frame.radius(),
+        Some(8.0),
+    )
+    .expect("valid positional cylinder frame");
 
     scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
     assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());

@@ -141,7 +141,8 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     assert_eq!(graph.edge_parameter_incidences.len(), 3);
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.object_id)
             .collect::<Vec<_>>(),
@@ -149,7 +150,8 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     );
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.point)
             .collect::<Vec<_>>(),

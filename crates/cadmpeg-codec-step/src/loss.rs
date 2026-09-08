@@ -123,6 +123,8 @@ pub enum StepLossCode {
     DraughtingAssociatedItemUntyped,
     /// A body-representation tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
+    /// A tessellation payload fails numeric or structural admission.
+    TessellationInvalidPayload,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
     /// A repositioned tessellation item has no valid placement.
@@ -356,6 +358,7 @@ impl StepLossCode {
         Self::DraughtingSemanticDefinitionUntyped,
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
+        Self::TessellationInvalidPayload,
         Self::TessellationItemUndeclared,
         Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
@@ -512,6 +515,7 @@ impl StepLossCode {
                 "drawing.draughting-semantic-definition-untyped"
             }
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
+            Self::TessellationInvalidPayload => "tessellation.invalid-payload",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
             Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
@@ -788,9 +792,9 @@ impl StepLossCode {
             Self::RootOccurrencePlacementNotRepresentable
             | Self::OccurrencePlacementNotRigid
             | Self::BodyNonRigidTransform => LossTaxonomy::BodyTransformNotApplied,
-            Self::TessellationRequiresAp242 | Self::TessellationInvalidCardinality => {
-                LossTaxonomy::TessellationOmitted
-            }
+            Self::TessellationRequiresAp242
+            | Self::TessellationInvalidCardinality
+            | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
             Self::AnalyticSurfaceNormalized => LossTaxonomy::AnalyticSurfaceNormalized,
             Self::EllipticalConeReduced => LossTaxonomy::EllipticalConeReduced,
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
@@ -820,7 +824,16 @@ impl StepLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
-        LossKind::namespaced("step", self.code(), self.shared_taxonomy())
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("step") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -897,6 +910,7 @@ mod tests {
                 "drawing.draughting-semantic-definition-untyped",
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
+                "tessellation.invalid-payload",
                 "tessellation.item-undeclared",
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",

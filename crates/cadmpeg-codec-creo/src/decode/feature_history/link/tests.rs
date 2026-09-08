@@ -38,17 +38,17 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
             saved_section: None,
             offset: 10,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 7,
-            feature_id: Some(2),
-            origin: [0.0; 3],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 1.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            offset: 20,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            7,
+            Some(2),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            20,
+        )
+        .expect("valid section frame"),
+    );
     scan
 }
 

@@ -2,6 +2,7 @@
 //! Tests: numbered intersect.
 
 use crate::decode::sketch::axis::SectionAxis;
+use crate::vecmath::normalize;
 
 use super::parameter_slot;
 use crate::decode::build::report::has_transferred_geometry;
@@ -18,7 +19,7 @@ use crate::decode::holes::{
     cylinder_from_complementary_outline_bounds, extrusion_extent_and_direction, hole_placement,
 };
 use crate::decode::sketch::{
-    normalized, section_linear_distance_coordinate, solve_section_coordinate_equations,
+    section_linear_distance_coordinate, solve_section_coordinate_equations,
     solve_unsigned_dimension_coordinates, SectionCoordinateEquation,
 };
 use crate::decode::surfaces::fc05_model_frame;
@@ -425,8 +426,8 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
 
 #[test]
 fn normalization_rejects_overflowed_finite_vectors() {
-    assert_eq!(normalized([f64::MAX, f64::MAX, 0.0]), None);
-    assert_eq!(normalized([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
+    assert_eq!(normalize([f64::MAX, f64::MAX, 0.0]), None);
+    assert_eq!(normalize([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
 }
 
 #[test]
@@ -1212,7 +1213,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         feature_id: 50,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 1,
         offset: 0,
     });
@@ -1721,15 +1722,15 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
 
 #[test]
 fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(2),
-        origin: [0.0, 0.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(2),
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
@@ -1741,7 +1742,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     };
 
     assert!(matches!(
-        revolved_section_circle(&transform, [2.0, 3.0], &axis),
+        revolved_section_circle(&transform, [2.0, 3.0], &axis).map(CurveGeometry::from),
         Some(CurveGeometry::Circle {
             center,
             axis,
@@ -1755,7 +1756,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
     assert!(matches!(
         extruded_section_line(&transform, [2.0, 3.0]),
-        Some(CurveGeometry::Line { origin, direction })
+        CurveGeometry::Line { origin, direction }
             if origin == Point3::new(2.0, 3.0, 0.0)
                 && direction == Vector3::new(0.0, 0.0, 1.0)
     ));

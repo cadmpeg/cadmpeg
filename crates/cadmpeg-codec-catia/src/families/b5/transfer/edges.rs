@@ -82,14 +82,6 @@ pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
     })
 }
 
-pub(super) fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
-    graph.vertex_points.get(vertex).copied().or_else(|| {
-        vertex
-            .checked_sub(graph.vertex_points.len())
-            .and_then(|index| graph.logical_vertices.get(index).map(|vertex| vertex.point))
-    })
-}
-
 pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
     let parameters = bounded_occurrence_range(parameters, domain)?;
     Some(if parameters[0] < parameters[1] {
@@ -288,7 +280,8 @@ pub(super) fn emit_edges(
         let id = EdgeId::mint(format!("catia:b5:edge#{edge_id}")).expect("identity grammar");
         let curve_id =
             CurveId::mint(format!("catia:b5:curve#{edge_id}")).expect("identity grammar");
-        let endpoints = graph.edge_vertices[&edge_id];
+        let endpoints = graph.vertices.edges()[&edge_id]
+            .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
         let curve_plan = plan
             .edge_curve_plan
             .remove(&edge_id)

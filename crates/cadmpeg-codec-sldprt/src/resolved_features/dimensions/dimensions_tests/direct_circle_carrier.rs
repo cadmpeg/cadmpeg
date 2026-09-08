@@ -1,4 +1,5 @@
 use super::super::reconcile_direct_circle_dimension_carriers;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
@@ -36,7 +37,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             operands: vec![FeatureInputOperand {
                 offset: 0,
                 reference_ref: "reference".into(),
-                kind: FeatureInputOperandKind::Native(0x829a),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
                 entity_index: 0,
                 entity_ref: Some(marker.into()),
             }],

@@ -113,10 +113,7 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
         crate::writer::reference_marker(shell_indices[0]),
         crate::writer::reference_marker(shell_indices[1])
     );
-    assert_eq!(
-        String::from_utf8(solid.parameters.clone()).unwrap(),
-        expected
-    );
+    assert_eq!(String::from_utf8(solid.parameter_text()).unwrap(), expected);
 }
 
 #[test]

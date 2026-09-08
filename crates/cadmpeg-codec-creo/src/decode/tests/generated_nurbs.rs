@@ -1322,7 +1322,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         feature_id: 6,
         root_schema_class: Some(crate::feature::schema::SchemaClass::from(schema_class)),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: offset + 1,
         offset,
     };
@@ -1375,15 +1375,15 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         unique_feature_revolution_extent(&[extent(7, 40)], 6).map(|e| e.feature_id),
         None
     );
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 5,
-        feature_id: Some(6),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 40,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5,
+        Some(6),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        40,
+    )
+    .expect("valid section frame");
     assert_eq!(
         unique_feature_section_transform(std::slice::from_ref(&transform), 5, 40)
             .map(|placed| placed.offset),
@@ -1392,21 +1392,29 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     assert!(
         unique_feature_section_transform(&[transform.clone(), transform.clone()], 5, 40).is_none()
     );
-    let repeated_schema = crate::placement::FeatureSectionTransform {
-        feature_id: Some(7),
-        offset: 50,
-        ..transform.clone()
-    };
+    let repeated_schema = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        Some(7),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        50,
+    )
+    .expect("valid section frame");
     assert_eq!(
         unique_feature_section_transform(&[transform.clone(), repeated_schema], 5, 40)
             .map(|placed| placed.offset),
         Some(40)
     );
-    let competing_definition = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        offset: 50,
-        ..transform.clone()
-    };
+    let competing_definition = crate::placement::FeatureSectionTransform::new(
+        7,
+        transform.feature_id,
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        50,
+    )
+    .expect("valid section frame");
     assert!(unique_feature_section_transform(&[transform, competing_definition], 5, 40).is_none());
     let affected = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
         feature_id: 6,
@@ -1548,14 +1556,16 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         saved_section: None,
         offset,
     };
-    let transform = |definition_id, feature_id, offset| crate::placement::FeatureSectionTransform {
-        definition_id,
-        feature_id: Some(feature_id),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset,
+    let transform = |definition_id, feature_id, offset| {
+        crate::placement::FeatureSectionTransform::new(
+            definition_id,
+            Some(feature_id),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            offset,
+        )
+        .expect("valid section frame")
     };
 
     let mut scan = crate::container::scan_bytes(Vec::new());

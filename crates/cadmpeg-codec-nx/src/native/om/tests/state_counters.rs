@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use crate::om::roll_forward::OperationStateGroupRow;
@@ -171,8 +171,14 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
         .expect("operation-state journal use arena");
     assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].operation_local_ordinal, 2);
-    assert_eq!(uses[0].journal_state_ordinal, 2);
+    assert_eq!(
+        serde_json::to_value(&uses[0]).unwrap()["operation_local_ordinal"],
+        2
+    );
+    assert_eq!(
+        serde_json::to_value(&uses[0]).unwrap()["journal_state_ordinal"],
+        2
+    );
     assert_eq!(uses[0].journal_row_ordinal, 0);
 }
 
@@ -184,7 +190,11 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
     )]);
     let container = container::scan_bytes(file).expect("required invariant");
 
-    let groups = operation_state_groups(&container);
+    let tables = operation_state_groups(&container);
+    let groups = tables
+        .iter()
+        .flat_map(OmRollForwardStateTable::groups)
+        .collect::<Vec<_>>();
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[0].frame.members().count().declared_count(), 3);
     assert_eq!(groups[0].frame.members().rows().len(), 2);
@@ -224,7 +234,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         .expect("NX namespace")
         .arena_as::<OmRollForwardStateGroup>("om_roll_forward_state_groups")
         .expect("roll-forward group arena");
-    assert_eq!(emitted, groups.as_slice());
+    assert_eq!(emitted.iter().collect::<Vec<_>>(), groups);
 }
 
 #[test]

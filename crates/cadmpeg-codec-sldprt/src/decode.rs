@@ -74,7 +74,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let classification = crate::dialect::classify_layers(&scan);
     let form_padding = classification.host().form_code_padding();
@@ -2453,7 +2453,12 @@ fn build_geometry_ir(
         .collect::<Vec<_>>();
     let face_producers = face_identities
         .iter()
-        .map(|(target, identity)| (target.as_str().to_owned(), identity.feature_source_id))
+        .map(|(target, identity)| {
+            (
+                target.as_str().to_owned(),
+                identity.feature_source_id.value(),
+            )
+        })
         .collect::<Vec<_>>();
     let body_modifiers = brep
         .body_modifiers
@@ -2755,7 +2760,7 @@ fn build_geometry_ir(
                     table_index,
                     candidates
                         .iter()
-                        .map(u32::to_string)
+                        .map(|source| source.value().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 ));
@@ -2815,18 +2820,11 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model.tessellations.push(
-                cadmpeg_ir::tessellation::Tessellation::from_decoded(
-                    id,
-                    mesh.vertices,
-                    mesh.triangles,
-                    mesh.strip_lengths,
-                    mesh.normals,
-                    Vec::new(),
-                    mesh.channels,
-                )
-                .expect("decoded SLDPRT display mesh is a valid tessellation"),
-            );
+            ir.model
+                .tessellations
+                .push(mesh.into_tessellation(id).map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?);
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(
@@ -2878,7 +2876,7 @@ fn build_geometry_ir(
     );
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
-    ));
+    )?);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
         annotation_builder
@@ -3187,7 +3185,7 @@ fn build_geometry_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
     DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),
@@ -4505,7 +4503,7 @@ fn build_container_report(
     classification.append_losses(&mut losses);
 
     DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),

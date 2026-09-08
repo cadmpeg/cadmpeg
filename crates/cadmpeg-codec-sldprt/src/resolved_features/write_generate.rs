@@ -9,6 +9,7 @@ use super::write_prepare::{
     arc_angle_relation_kind, binary_marker_relation, ellipse_angle_relation_kind, same_point2,
 };
 use super::{CLASS_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKind};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
@@ -163,7 +164,7 @@ pub(super) fn append_generated_sketch_markers(
         return Ok(());
     }
 
-    let mut marker_ids = HashMap::<SketchEntityId, Vec<u16>>::new();
+    let mut marker_ids = HashMap::<SketchEntityId, (u16, Option<u16>)>::new();
     let mut marker_loci = Vec::<(SketchLocus, Point2, SketchInputKind, u16)>::new();
     let mut next_id = 1u32;
     for entity in ir
@@ -187,8 +188,10 @@ pub(super) fn append_generated_sketch_markers(
             );
             marker_ids
                 .entry(entity.id().clone())
-                .or_default()
-                .push(local_id);
+                .and_modify(|(_, second)| {
+                    second.get_or_insert(local_id);
+                })
+                .or_insert((local_id, None));
             marker_loci.push((
                 locus,
                 point,
@@ -219,11 +222,7 @@ pub(super) fn append_generated_sketch_markers(
                 })?;
                 let links = match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
                     Ok(unique) => [unique, unique],
-                    Err(_) => match ids.as_slice() {
-                        [only] => [*only, *only],
-                        [first, second, ..] => [*first, *second],
-                        [] => unreachable!("empty marker-id vectors are never inserted"),
-                    },
+                    Err(_) => [ids.0, ids.1.unwrap_or(ids.0)],
                 };
                 (kind, links)
             }
@@ -363,23 +362,23 @@ pub(super) fn append_generated_sketch_markers(
                 "sgPntPntHorDist",
                 vec![
                     (
-                        FeatureInputOperandKind::Native(0x8dcb),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         generated_locus_operand(
                             ir,
                             sketch,
                             &marker_loci,
                             first,
-                            FeatureInputOperandKind::Native(0x8dcb),
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         )?,
                     ),
                     (
-                        FeatureInputOperandKind::Native(0x8dcb),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         generated_locus_operand(
                             ir,
                             sketch,
                             &marker_loci,
                             second,
-                            FeatureInputOperandKind::Native(0x8dcb),
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         )?,
                     ),
                 ],
@@ -389,23 +388,23 @@ pub(super) fn append_generated_sketch_markers(
                 "sgPntPntVertDist",
                 vec![
                     (
-                        FeatureInputOperandKind::Native(0x8dcb),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         generated_locus_operand(
                             ir,
                             sketch,
                             &marker_loci,
                             first,
-                            FeatureInputOperandKind::Native(0x8dcb),
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         )?,
                     ),
                     (
-                        FeatureInputOperandKind::Native(0x8dcb),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         generated_locus_operand(
                             ir,
                             sketch,
                             &marker_loci,
                             second,
-                            FeatureInputOperandKind::Native(0x8dcb),
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
                         )?,
                     ),
                 ],
@@ -415,23 +414,23 @@ pub(super) fn append_generated_sketch_markers(
                 "sgAnglDim",
                 vec![
                     (
-                        FeatureInputOperandKind::Native(0x8dda),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
                         generated_entity_operand(
                             ir,
                             sketch,
                             &marker_loci,
                             first,
-                            FeatureInputOperandKind::Native(0x8dda),
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
                         )?,
                     ),
                     (
-                        FeatureInputOperandKind::Native(0x8dda),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
                         generated_entity_operand(
                             ir,
                             sketch,
                             &marker_loci,
                             second,
-                            FeatureInputOperandKind::Native(0x8dda),
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
                         )?,
                     ),
                 ],
@@ -440,13 +439,13 @@ pub(super) fn append_generated_sketch_markers(
             GeneratedDimension::Circle(entity, parameter) => (
                 "sgCircleDim",
                 vec![(
-                    FeatureInputOperandKind::Native(0x83fe),
+                    FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
                     generated_entity_operand(
                         ir,
                         sketch,
                         &marker_loci,
                         entity,
-                        FeatureInputOperandKind::Native(0x83fe),
+                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
                     )?,
                 )],
                 parameter,
@@ -617,7 +616,7 @@ fn append_generated_scalar(
         let tag = match kind {
             FeatureInputOperandKind::D6 => 0x80d6,
             FeatureInputOperandKind::E1 => 0x80e1,
-            FeatureInputOperandKind::Native(tag) => *tag,
+            FeatureInputOperandKind::Native(tag) => tag.value(),
         };
         payload[offset..offset + 2].copy_from_slice(&tag.to_le_bytes());
         payload[offset + 2..offset + 4].copy_from_slice(&entity.to_le_bytes());

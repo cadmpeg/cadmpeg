@@ -76,7 +76,9 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
     assert_eq!(census.len(), 2);
-    assert!(census.iter().all(|record| record.neutral));
+    assert!(census
+        .iter()
+        .all(crate::native::DesignCensusRecord::neutral));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
@@ -392,7 +394,9 @@ fn transfers_stored_and_external_part_feature_families() {
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
     assert_eq!(census.len(), 8);
-    assert!(census.iter().all(|record| record.neutral));
+    assert!(census
+        .iter()
+        .all(crate::native::DesignCensusRecord::neutral));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
 }
@@ -866,10 +870,10 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
     assert!(properties.iter().any(|property| {
-        property.name == "ExpressionEngine" && property.raw_xml.contains("Second.Length")
+        property.name == "ExpressionEngine" && property.xml.text().contains("Second.Length")
     }));
     assert!(properties.iter().any(|property| {
-        property.name == "ExpressionEngine" && property.raw_xml.contains("First.Length")
+        property.name == "ExpressionEngine" && property.xml.text().contains("First.Length")
     }));
     assert_eq!(
         result
@@ -938,7 +942,7 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .expect("properties");
     assert!(properties
         .iter()
-        .any(|property| { property.name == "cells" && property.raw_xml.contains("=second") }));
+        .any(|property| { property.name == "cells" && property.xml.text().contains("=second") }));
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }

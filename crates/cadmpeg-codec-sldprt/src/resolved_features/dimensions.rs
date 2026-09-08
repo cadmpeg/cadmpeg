@@ -21,6 +21,7 @@ use super::transforms::{
 };
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
@@ -49,9 +50,29 @@ enum DimensionedCurveNative {
 
 struct DimensionedRelationCarrier<'a> {
     marker: &'a SketchInputEntity,
-    curve: Option<DimensionedCurveNative>,
-    center: [f64; 2],
+    geometry: DimensionedCarrierGeometry,
     construction: Option<bool>,
+}
+
+enum DimensionedCarrierGeometry {
+    Center([f64; 2]),
+    Curve(DimensionedCurveNative),
+}
+
+impl DimensionedRelationCarrier<'_> {
+    fn center(&self) -> [f64; 2] {
+        match &self.geometry {
+            DimensionedCarrierGeometry::Center(center) => *center,
+            DimensionedCarrierGeometry::Curve(curve) => curve.center(),
+        }
+    }
+
+    fn curve(&self) -> Option<&DimensionedCurveNative> {
+        match &self.geometry {
+            DimensionedCarrierGeometry::Center(_) => None,
+            DimensionedCarrierGeometry::Curve(curve) => Some(curve),
+        }
+    }
 }
 
 /// Resolve the construction state carried by a native radial-circle record
@@ -367,31 +388,28 @@ fn dimensioned_relation_carrier<'a>(
     if let Some((marker, center)) = declared_slot_handle_dimension_center(lanes, feature, operand) {
         return Some(DimensionedRelationCarrier {
             marker,
-            curve: None,
-            center: center.coordinates_m?,
+            geometry: DimensionedCarrierGeometry::Center(center.coordinates_m?),
             construction: Some(true),
         });
     }
-    if operand.kind == FeatureInputOperandKind::Native(0x836e) {
+    if operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E) {
         let marker = declared_entity_handle_indexed_circle_dimension_center(
             lanes, feature, operand, radius,
         )?;
         return Some(DimensionedRelationCarrier {
             marker,
-            curve: None,
-            center: marker.coordinates_m?,
+            geometry: DimensionedCarrierGeometry::Center(marker.coordinates_m?),
             construction: Some(false),
         });
     }
     if matches!(
         operand.kind,
-        FeatureInputOperandKind::Native(0x80d4 | 0x80d5)
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D4 | NativeOperandTag::TAG_80D5)
     ) {
         let marker = declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
         return Some(DimensionedRelationCarrier {
             marker,
-            curve: None,
-            center: marker.coordinates_m?,
+            geometry: DimensionedCarrierGeometry::Center(marker.coordinates_m?),
             construction: Some(false),
         });
     }
@@ -510,10 +528,10 @@ fn dimensioned_relation_carrier<'a>(
         });
     Some(DimensionedRelationCarrier {
         marker,
-        center: curve
-            .as_ref()
-            .map_or(marker.coordinates_m, |curve| Some(curve.center()))?,
-        curve,
+        geometry: match curve {
+            Some(curve) => DimensionedCarrierGeometry::Curve(curve),
+            None => DimensionedCarrierGeometry::Center(marker.coordinates_m?),
+        },
         construction,
     })
 }
@@ -647,8 +665,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     Some((
                         quantize(
                             Point2::new(
-                                carrier.center[0] * NATIVE_TO_IR,
-                                carrier.center[1] * NATIVE_TO_IR,
+                                carrier.center()[0] * NATIVE_TO_IR,
+                                carrier.center()[1] * NATIVE_TO_IR,
                             ),
                             QUANTUM,
                         ),
@@ -721,8 +739,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             };
             let native = quantize(
                 Point2::new(
-                    carrier.center[0] * NATIVE_TO_IR,
-                    carrier.center[1] * NATIVE_TO_IR,
+                    carrier.center()[0] * NATIVE_TO_IR,
+                    carrier.center()[1] * NATIVE_TO_IR,
                 ),
                 QUANTUM,
             );
@@ -737,8 +755,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             }
             if carrier
-                .curve
-                .as_ref()
+                .curve()
                 .and_then(DimensionedCurveNative::arc)
                 .is_none()
                 && entities.iter().any(|entity| {
@@ -758,7 +775,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             }
             let (geometry, endpoint_refs) =
-                if let Some(arc) = carrier.curve.as_ref().and_then(DimensionedCurveNative::arc) {
+                if let Some(arc) = carrier.curve().and_then(DimensionedCurveNative::arc) {
                     let Some((geometry, endpoint_refs)) =
                         transformed_dimensioned_arc(*transform, arc, NATIVE_TO_IR, QUANTUM)
                     else {

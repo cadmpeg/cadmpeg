@@ -381,7 +381,7 @@ fn patch_points(
         let offset = raw_annotation_offset(annotations, &old.id).ok()?;
         let tables = crate::brep::topology::scan(payload.get(body_start..)?);
         let point = tables
-            .points
+            .points()
             .values()
             .find(|point| point.offset == offset)?;
         let values = body_start.checked_add(point.xyz_offset)?;

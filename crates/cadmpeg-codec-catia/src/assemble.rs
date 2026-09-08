@@ -61,7 +61,7 @@ pub(crate) fn annotate(
 ) {
     let id = id.to_string();
     let stream = annotations.stream(format!("catia:{stream_name}"));
-    annotations.note(&id, stream, offset).tag(tag);
+    annotations.note(&id, &stream, offset).tag(tag);
     annotations.exactness(id, exactness);
 }
 
@@ -575,7 +575,7 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: Vec::new(),
@@ -679,7 +679,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     ));
 
     DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: Vec::new(),

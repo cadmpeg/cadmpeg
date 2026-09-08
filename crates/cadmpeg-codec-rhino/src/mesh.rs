@@ -172,7 +172,6 @@ fn commit_mesh_buffer(
         .charge_retained(
             u64::try_from(declared).unwrap_or(u64::MAX),
             "rhino_mesh_buffer",
-            None,
         )
         .map_err(|refusal| expansion_refused(position, &refusal))
 }
@@ -339,12 +338,9 @@ pub(crate) fn decode(
             archive,
         )?;
         if let Some(bytes) = surface {
-            decoded.channels.push(channel(
-                CHANNEL_SURFACE_PARAMETERS,
-                16,
-                vertex_count,
-                bytes.into_owned(),
-            ));
+            decoded
+                .channels
+                .push(channel(CHANNEL_SURFACE_PARAMETERS, 16, bytes.into_owned())?);
         }
     }
     let post_2006_fields =
@@ -618,21 +614,46 @@ fn native_vertex_sha1(vertices: &[[f32; 3]]) -> [u8; 20] {
     digest.finalize().into()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaceIndexWidth {
+    One,
+    Two,
+    Four,
+}
+
+impl FaceIndexWidth {
+    pub(crate) fn bytes(self) -> usize {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Four => 4,
+        }
+    }
+}
+
+impl TryFrom<i32> for FaceIndexWidth {
+    type Error = GeometryError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            4 => Ok(Self::Four),
+            _ => Err(error(0, "invalid mesh face index width")),
+        }
+    }
+}
+
 fn read_faces(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     faces: usize,
 ) -> Result<Vec<[u32; 4]>, GeometryError> {
-    let width = reader.i32()?;
-    if !matches!(width, 1 | 2 | 4) {
-        return Err(error(
-            reader.position() - 4,
-            "invalid mesh face index width",
-        ));
-    }
+    let width = FaceIndexWidth::try_from(reader.i32()?)
+        .map_err(|_| error(reader.position() - 4, "invalid mesh face index width"))?;
     let bytes = faces
         .checked_mul(4)
-        .and_then(|value| value.checked_mul(width as usize))
+        .and_then(|value| value.checked_mul(width.bytes()))
         .ok_or_else(|| error(reader.position(), "mesh face byte count overflow"))?;
     let raw = reader.take(bytes)?;
     let mut result = Vec::new();
@@ -642,7 +663,7 @@ fn read_faces(
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
-            let offset = (face * 4 + slot) * width as usize;
+            let offset = (face * 4 + slot) * width.bytes();
             *index = face_index(raw, offset, width);
             if (*index as usize) >= vertices {
                 return Err(error(reader.position(), "mesh face index out of range"));
@@ -700,12 +721,11 @@ fn distance_squared(a: Point3, b: Point3) -> f64 {
     (a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)
 }
 
-fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
+fn face_index(raw: &[u8], offset: usize, width: FaceIndexWidth) -> u32 {
     match width {
-        1 => u32::from(raw[offset]),
-        2 => u32::from(View::u16_le_at(raw, offset).expect("face width")),
-        4 => View::u32_le_at(raw, offset).expect("face width"),
-        _ => unreachable!(),
+        FaceIndexWidth::One => u32::from(raw[offset]),
+        FaceIndexWidth::Two => u32::from(View::u16_le_at(raw, offset).expect("face width")),
+        FaceIndexWidth::Four => View::u32_le_at(raw, offset).expect("face width"),
     }
 }
 
@@ -730,15 +750,15 @@ fn read_raw_channels(
     }
     let uv = read_counted_raw(reader, vertices, 8, "UV", warnings)?;
     if let Some(bytes) = uv {
-        channels.push(channel(CHANNEL_UV, 8, vertices, bytes));
+        channels.push(channel(CHANNEL_UV, 8, bytes)?);
     }
     let curvature = read_counted_raw(reader, vertices, 16, "curvature", warnings)?;
     if let Some(bytes) = curvature {
-        channels.push(channel(CHANNEL_CURVATURE, 16, vertices, bytes));
+        channels.push(channel(CHANNEL_CURVATURE, 16, bytes)?);
     }
     let colors = read_counted_raw(reader, vertices, 4, "colors", warnings)?;
     if let Some(bytes) = colors {
-        channels.push(channel(CHANNEL_COLOR, 4, vertices, bytes));
+        channels.push(channel(CHANNEL_COLOR, 4, bytes)?);
     }
     if points.len() != vertices {
         return Err(error(reader.position(), "mesh vertex channel is required"));
@@ -792,7 +812,7 @@ fn read_compressed_channels(
                 };
                 decoded
                     .channels
-                    .push(channel(kind, item_size, vertices, bytes.into_owned()));
+                    .push(channel(kind, item_size, bytes.into_owned())?);
             }
         }
     }
@@ -1427,7 +1447,7 @@ fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
     })
 }
 
-fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> TessellationChannel {
+fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
     TessellationChannel::new(
         cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
         item_size,
@@ -1435,7 +1455,7 @@ fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> Tessellati
         0,
         data,
     )
-    .unwrap_or_else(|_| panic!("channel payload length {count} * {item_size} is inconsistent"))
+    .map_err(|error| GeometryError::malformed(0, format!("invalid mesh channel: {error}")))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {

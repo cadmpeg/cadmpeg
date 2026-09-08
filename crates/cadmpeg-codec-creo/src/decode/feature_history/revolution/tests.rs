@@ -127,17 +127,17 @@ fn saved_spline_curve() -> Curve {
 fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.definitions.push(saved_spline_definition());
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 40,
-            feature_id: Some(40),
-            origin: [0.0; 3],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 1.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            offset: 0,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            40,
+            Some(40),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {

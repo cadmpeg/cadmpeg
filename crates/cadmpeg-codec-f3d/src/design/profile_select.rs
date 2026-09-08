@@ -185,7 +185,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                         && group.scope_record_index == scope.record_index
                         && group.role() == DesignOperandRole::PROFILE
                         && group
-                            .members
+                            .members()
                             .iter()
                             .map(|member| member.value)
                             .eq([profile_operand.record_index])
@@ -217,7 +217,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
                         && group.role() == DesignOperandRole::PROFILE
-                        && group.members.len() == 1
+                        && group.members().len() == 1
                         && native_stream(&group.id) == Some(stream)
                 });
                 let group = matching_groups.next()?;
@@ -228,7 +228,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     operand.scope_record_index == scope.record_index
                         && operand.group_record_index == group.record_index
                         && operand.group_member_ordinal == 0
-                        && operand.record_index == group.members[0].value
+                        && operand.record_index == group.members()[0].value
                         && native_stream(&operand.id) == Some(stream)
                 });
                 let operand = matching_operands.next()?;
@@ -258,7 +258,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     return None;
                 }
                 let selected =
-                    neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+                    neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id);
                 sketch_entities
                     .iter()
                     .any(|entity| entity.sketch == sketch && entity.id() == &selected)
@@ -283,7 +283,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     && native_stream(&group.id) == Some(stream)
             });
             let group = matching_groups.next()?;
-            if matching_groups.next().is_some() || group.members.len() != 1 {
+            if matching_groups.next().is_some() || group.members().len() != 1 {
                 return None;
             }
             *path = resolve_entity_selection_path(group, &path_resolution)?;
@@ -316,7 +316,7 @@ pub(crate) fn bind_split_face_sketch_selections(
         let mut matching_groups = resolution.groups.iter().filter(|group| {
             group.id == *group_id
                 && group.role() == DesignOperandRole::ROLE_0X21
-                && !group.members.is_empty()
+                && !group.members().is_empty()
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -348,7 +348,7 @@ pub(crate) fn bind_surface_trim_sketch_selections(
         let mut matching_groups = resolution.groups.iter().filter(|group| {
             group.id == *group_id
                 && group.role() == DesignOperandRole::ROLE_0X21
-                && !group.members.is_empty()
+                && !group.members().is_empty()
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -653,10 +653,10 @@ fn historical_face_profile_selection(
             })
             .collect::<Vec<_>>();
         group_members.sort_by_key(|member| member.group_member_ordinal);
-        if group_members.len() != group.members.len()
+        if group_members.len() != group.members().len()
             || group_members
                 .iter()
-                .zip(&group.members)
+                .zip(group.members())
                 .any(|(member, record_index)| member.record_index != record_index.value)
         {
             return None;
@@ -881,10 +881,10 @@ pub(crate) fn resolved_extrude_profile_selection(
         })
         .collect::<Vec<_>>();
     selection_members.sort_by_key(|member| member.group_member_ordinal);
-    let exact_member_run = selection_members.len() == group.members.len()
+    let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
-            .zip(&group.members)
+            .zip(group.members())
             .all(|(member, record_index)| member.record_index == record_index.value);
     let resolved_profiles = exact_member_run.then(|| {
         let mut selected = Vec::new();
@@ -1131,10 +1131,10 @@ fn resolved_spatial_extrude_profile_selection(
         })
         .collect::<Vec<_>>();
     group_members.sort_by_key(|member| member.group_member_ordinal);
-    let exact_member_run = group_members.len() == group.members.len()
+    let exact_member_run = group_members.len() == group.members().len()
         && group_members
             .iter()
-            .zip(&group.members)
+            .zip(group.members())
             .all(|(member, record_index)| member.record_index == record_index.value);
     let exact_selection = (|| {
         if !exact_member_run {
@@ -1838,16 +1838,21 @@ fn resolve_entity_selection_path(
     use cadmpeg_ir::features::PathRef;
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    if group.members.is_empty() {
+    if group.members().is_empty() {
         return None;
     }
     let stream = native_stream(&group.id)?;
-    let mut selected_identities = Vec::with_capacity(group.members.len());
-    let mut member_records = HashSet::with_capacity(group.members.len());
+    let mut selected_identities = Vec::with_capacity(group.members().len());
+    let mut member_records = HashSet::with_capacity(group.members().len());
     let mut primary_identity = None;
     let mut asset_id = None;
     let mut context_id = None;
-    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .enumerate()
+    {
         let ordinal = u32::try_from(ordinal).ok()?;
         if !member_records.insert(record_index) {
             return None;
@@ -1905,18 +1910,18 @@ fn resolve_entity_selection_path(
         let mut curves = resolution.curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
-                && curve.primary_id == secondary_identity
+                && curve.primary_id.get() == secondary_identity
                 && secondary
                     .curve_identity
                     .is_none_or(|identity| curve.secondary_id == identity.value)
         });
         let curve = curves.next()?;
         if curves.next().is_some()
-            || !selected_curve_identities.insert((curve.primary_id, curve.secondary_id))
+            || !selected_curve_identities.insert((curve.primary_id.get(), curve.secondary_id))
         {
             return None;
         }
-        curve_ids.push((curve.primary_id, curve.secondary_id));
+        curve_ids.push((curve.primary_id.get(), curve.secondary_id));
     }
 
     let spatial_sketch = neutral_spatial_sketch_id(placement);
@@ -2003,14 +2008,17 @@ fn spatial_profile_member_entity<'a>(
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
-            && curve.primary_id == u64::from(member.curve_primary_id.get())
+            && curve.primary_id.get() == u64::from(member.curve_primary_id.get())
     });
     let curve = curves.next()?;
     if curves.next().is_some() {
         return None;
     }
-    let entity_id =
-        neutral_spatial_sketch_curve_id(&spatial_sketch.id, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_spatial_sketch_curve_id(
+        &spatial_sketch.id,
+        curve.primary_id.get(),
+        curve.secondary_id,
+    );
     let mut entities = spatial_entities
         .iter()
         .filter(|entity| entity.sketch == spatial_sketch.id && entity.id() == &entity_id);
@@ -2029,13 +2037,13 @@ fn sketch_profile_member_entity(
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
-            && curve.primary_id == u64::from(member.curve_primary_id.get())
+            && curve.primary_id.get() == u64::from(member.curve_primary_id.get())
     });
     let curve = curves.next()?;
     if curves.next().is_some() {
         return None;
     }
-    let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id.get(), curve.secondary_id);
     let mut entities = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id && entity.id() == &entity_id);
@@ -2265,7 +2273,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         matches!(
             group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
-        ) && group.members.len() == 1
+        ) && group.members().len() == 1
     }) {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -2275,7 +2283,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(header) = headers.get(&(stream, group.members[0].value)) else {
+        let Some(header) = headers.get(&(stream, group.members()[0].value)) else {
             continue;
         };
         let Some(profile) = parse_sketch_profile(
@@ -2333,7 +2341,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         matches!(
             group.role(),
             DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
-        ) && !group.members.is_empty()
+        ) && !group.members().is_empty()
     }) {
         if let Some(path) = resolved_loft_entity_selection_path(group, resolution) {
             resolved_entity_paths.insert(group.id.clone(), path);
@@ -2341,7 +2349,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     }
     for group in groups
         .iter()
-        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5 && group.members.len() == 1)
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5 && group.members().len() == 1)
     {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -2354,7 +2362,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
-                    && operand.record_index == group.members[0].value
+                    && operand.record_index == group.members()[0].value
             });
         let Some(operand) = operands.next() else {
             continue;
@@ -2396,7 +2404,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         }
         let entity = neutral_spatial_sketch_curve_id(
             &spatial_sketch_id,
-            curve.primary_id,
+            curve.primary_id.get(),
             curve.secondary_id,
         );
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);

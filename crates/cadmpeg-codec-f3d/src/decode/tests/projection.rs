@@ -23,8 +23,8 @@ use crate::native::F3dNative;
 use crate::records::feature::DesignParameterScope;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignFeatureTimeline, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
-    DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+    DesignFeatureTimeline, DesignParameterCompanion, DesignParameterOwner, DesignSketchPlacement,
+    LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 
 #[test]
@@ -59,7 +59,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .expect("active face operand"),
     );
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -1041,19 +1041,22 @@ fn split_body_requires_resolved_target_and_tool_selections() {
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
-    native.design_body_bindings.push(DesignBodyBinding {
-        id: "f3d:design:body-binding#0".into(),
-        stream: "Design/BulkStream.dat".into(),
-        pair_count: 1,
-        pair_ordinal: 0,
-        asm_body_key: 0,
-        asm_body_key_offset: 0,
-        entity_suffix: 1,
-        entity_suffix_offset: 8,
-        blob_name: "BREP.snapshot.smb".into(),
-        blob_name_offset: 16,
-        body: None,
-    });
+    native.design_body_bindings.push(
+        DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+            id: "f3d:design:body-binding#0".into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 0,
+            asm_body_key_offset: 0,
+            entity_suffix: 1,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.snapshot.smb".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap(),
+    );
 
     assert_eq!(
         design_projection_gaps(&ir, &native).unresolved_body_bindings,
@@ -1275,23 +1278,29 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
     });
-    native.sketch_points.push(SketchPoint {
-        id: "native:sketch-point".into(),
-        record_index: 11,
-        owner_reference: Some(1),
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            1,
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
-    });
+    native.sketch_points.push(
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: "native:sketch-point".into(),
+            record_index: 11,
+            owner_reference: Some(1),
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                1,
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap(),
+    );
     native.sketch_curve_identities.push(SketchCurveIdentity {
         id: "native:sketch-curve".into(),
         record_index: 12,
@@ -1300,7 +1309,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 1,
+        primary_id: std::num::NonZeroU64::new(1).unwrap(),
         secondary_id: 2,
         geometry: None,
     });
@@ -1333,34 +1342,37 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         return_members: (Vec::new()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     });
-    native.design_parameters.push(DesignParameter {
-        id: "f3d:test:design-parameter#2".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        record_index: 2,
-        source_ordinal: 2,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(3),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "1 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    native.design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:test:design-parameter#2".into(),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            record_index: 2,
+            source_ordinal: 2,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(3),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "1 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "native-unit".into(),
-            offset: Some(0),
-        }),
-        name: "d2".into(),
-        name_offset: 0,
-        evaluated_value: 0.1,
-        evaluated_value_offset: 0,
-    });
+            unit: Some(crate::records::RecordedValue {
+                value: "native-unit".into(),
+                offset: Some(70),
+            }),
+            name: "d2".into(),
+            name_offset: 80,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 90,
+        })
+        .unwrap(),
+    );
     native.design_parameter_scopes.push(DesignParameterScope {
         id: "native:unprojected-scope".into(),
         byte_offset: 0,
@@ -1437,9 +1449,9 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 1.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 0x10_0000_0000u64,
@@ -1679,34 +1691,37 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let stream = "f3d:test/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let mut native = F3dNative::default();
-    native.design_parameters.push(DesignParameter {
-        id: format!("{stream}:design-parameter#10"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 10,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(20),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 22,
-            }),
-        )
-        .unwrap(),
-        expression: "5 mm".into(),
-        expression_offset: 40,
-        source_kind_offset: 60,
+    native.design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#10"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 10,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(20),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "5 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(90),
-        }),
-        name: "d1".into(),
-        name_offset: 100,
-        evaluated_value: 0.5,
-        evaluated_value_offset: 110,
-    });
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(90),
+            }),
+            name: "d1".into(),
+            name_offset: 100,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 110,
+        })
+        .unwrap(),
+    );
     native.design_parameter_owners.push(DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#20"),
         byte_offset: 120,

@@ -101,8 +101,8 @@ pub(crate) enum NativeClassKind {
 /// Format semantics attached to a serialized native object class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NativeObjectClass {
-    pub kind: NativeClassKind,
-    pub role: FeatureInputClassRole,
+    pub(crate) kind: NativeClassKind,
+    pub(crate) role: FeatureInputClassRole,
 }
 
 impl NativeObjectClass {

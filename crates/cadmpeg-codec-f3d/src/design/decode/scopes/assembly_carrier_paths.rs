@@ -54,8 +54,7 @@ fn exact_class_363_operand_path(
         bytes,
         carrier_at.checked_add(class_363_carrier::TERMINAL_REFERENCE)?,
     )?;
-    let (leading_at, leading_scope_reference) =
-        exact_class_363_node_frame(bytes, records, scope, leading_record_index)?;
+    let leading = exact_class_363_node_frame(bytes, records, scope, leading_record_index)?;
     let (terminal_at, terminal_paired_at) = exact_class_264_record_frame(
         bytes,
         records,
@@ -65,29 +64,37 @@ fn exact_class_363_operand_path(
     )?;
     let leading_identity_record_index = marked_record_reference(
         bytes,
-        leading_at.checked_add(class_363_leading::IDENTITY_REFERENCE)?,
+        leading
+            .start
+            .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
     )?;
     let terminal_identity_record_index = marked_record_reference(
         bytes,
         terminal_at.checked_add(class_363_terminal::IDENTITY_REFERENCE)?,
     )?;
-    let (leading_identity_at, leading_identity_scope_reference) =
+    let leading_identity =
         exact_class_363_identity_frame(bytes, records, leading_identity_record_index)?;
-    let (terminal_identity_at, terminal_identity_scope_reference) =
+    let terminal_identity =
         exact_class_363_identity_frame(bytes, records, terminal_identity_record_index)?;
     let scope_backlinks = [
-        (leading_at, leading_scope_reference),
-        (terminal_at, class_363_terminal::SCOPE_REFERENCE),
-        (leading_identity_at, leading_identity_scope_reference),
-        (terminal_identity_at, terminal_identity_scope_reference),
-        (carrier_at, class_363_carrier::SCOPE_REFERENCE),
+        leading,
+        CarrierFrame {
+            start: terminal_at,
+            scope_reference: class_363_terminal::SCOPE_REFERENCE,
+        },
+        leading_identity,
+        terminal_identity,
+        CarrierFrame {
+            start: carrier_at,
+            scope_reference: class_363_carrier::SCOPE_REFERENCE,
+        },
     ];
     if carrier_paired_at != carrier_at.checked_add(class_363_carrier::LEN)?
         || terminal_paired_at != terminal_at.checked_add(class_363_terminal::LEN)?
         || leading_record_index == terminal_record_index
         || leading_identity_record_index == terminal_identity_record_index
         || rigid_transform_at(bytes, carrier_at.checked_add(class_363_carrier::TRANSFORM)?)?
-            != frame.transform
+            != frame.transform.rows()
         || marked_record_reference(
             bytes,
             carrier_at.checked_add(class_363_carrier::REPEATED_LEADING_REFERENCE)?,
@@ -96,8 +103,8 @@ fn exact_class_363_operand_path(
             bytes,
             carrier_at.checked_add(class_363_carrier::REPEATED_TERMINAL_REFERENCE)?,
         ) != Some(terminal_record_index)
-        || scope_backlinks.iter().any(|(start, relative_offset)| {
-            marked_record_reference(bytes, start.saturating_add(*relative_offset))
+        || scope_backlinks.iter().any(|frame| {
+            marked_record_reference(bytes, frame.start.saturating_add(frame.scope_reference))
                 != Some(scope.record_index)
         })
     {
@@ -120,9 +127,9 @@ fn exact_class_363_operand_path(
         }
     }
     let (occurrence_guid, identity_guid, occurrence_guid_offset, identity_guid_offset) =
-        exact_class_363_identity_guids(bytes, leading_identity_at)?;
+        exact_class_363_identity_guids(bytes, leading_identity.start)?;
     let (terminal_occurrence_guid, terminal_identity_guid, _, _) =
-        exact_class_363_identity_guids(bytes, terminal_identity_at)?;
+        exact_class_363_identity_guids(bytes, terminal_identity.start)?;
     if occurrence_guid != terminal_occurrence_guid || identity_guid != terminal_identity_guid {
         return None;
     }
@@ -135,7 +142,9 @@ fn exact_class_363_operand_path(
     }
     let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
         bytes,
-        leading_at.checked_add(class_363_leading::IDENTITY_REFERENCE)?,
+        leading
+            .start
+            .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
     )?;
     Some(DesignAssemblyOperandPath {
         link: DesignAssemblyOperandPathLink {
@@ -147,7 +156,7 @@ fn exact_class_363_operand_path(
             wrapper_record_index: leading_identity_record_index,
             wrapper_reference_offset,
             wrapper_class_tag: "388".to_owned().try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
+            wrapper_byte_offset: u64::try_from(leading_identity.start).ok()?,
             path_reference_offset: occurrence_guid_offset,
         },
         record_index: terminal_record_index,
@@ -234,11 +243,17 @@ fn exact_class_307_joint_origin(
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CarrierFrame {
+    start: usize,
+    scope_reference: usize,
+}
+
 fn exact_class_363_identity_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(usize, usize)> {
+) -> Option<CarrierFrame> {
     for (frame_length, scope_reference) in [
         (
             class_363_identity_reduced_490::LEN,
@@ -252,7 +267,10 @@ fn exact_class_363_identity_frame(
         if let Some((start, _paired_at)) =
             exact_class_264_record_frame(bytes, records, record_index, "388", frame_length)
         {
-            return Some((start, scope_reference));
+            return Some(CarrierFrame {
+                start,
+                scope_reference,
+            });
         }
     }
     if let Some((start, _paired_at)) = exact_class_264_record_frame(
@@ -262,12 +280,18 @@ fn exact_class_363_identity_frame(
         "388",
         class_363_identity_short::LEN,
     ) {
-        return Some((start, class_363_identity_short::SCOPE_REFERENCE));
+        return Some(CarrierFrame {
+            start,
+            scope_reference: class_363_identity_short::SCOPE_REFERENCE,
+        });
     }
     if let Some((start, _paired_at)) =
         exact_class_264_record_frame(bytes, records, record_index, "388", class_363_identity::LEN)
     {
-        return Some((start, class_363_identity::SCOPE_REFERENCE));
+        return Some(CarrierFrame {
+            start,
+            scope_reference: class_363_identity::SCOPE_REFERENCE,
+        });
     }
     let (start, _paired_at) = exact_class_264_record_frame(
         bytes,
@@ -276,7 +300,10 @@ fn exact_class_363_identity_frame(
         "388",
         class_363_identity_extended::LEN,
     )?;
-    Some((start, class_363_identity_extended::SCOPE_REFERENCE))
+    Some(CarrierFrame {
+        start,
+        scope_reference: class_363_identity_extended::SCOPE_REFERENCE,
+    })
 }
 
 fn exact_class_363_node_frame(
@@ -284,11 +311,14 @@ fn exact_class_363_node_frame(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     record_index: u32,
-) -> Option<(usize, usize)> {
+) -> Option<CarrierFrame> {
     if let Some((start, _paired_at)) =
         exact_class_264_record_frame(bytes, records, record_index, "360", class_363_leading::LEN)
     {
-        return Some((start, class_363_leading::SCOPE_REFERENCE));
+        return Some(CarrierFrame {
+            start,
+            scope_reference: class_363_leading::SCOPE_REFERENCE,
+        });
     }
     let (start, _paired_at) =
         exact_class_264_record_frame(bytes, records, record_index, "360", class_363_child::LEN)?;
@@ -310,7 +340,10 @@ fn exact_class_363_node_frame(
     {
         return None;
     }
-    Some((start, class_363_child::SCOPE_REFERENCE))
+    Some(CarrierFrame {
+        start,
+        scope_reference: class_363_child::SCOPE_REFERENCE,
+    })
 }
 
 fn exact_class_264_record_frame(
@@ -425,7 +458,7 @@ mod tests {
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: 9,
-            transform: super::super::identity_matrix(),
+            transform: super::super::identity_matrix().try_into().unwrap(),
             transform_offset: 20,
         };
 
@@ -506,7 +539,10 @@ mod tests {
             let records = IndexedRecordOffsets::build(&bytes);
             assert_eq!(
                 exact_class_363_identity_frame(&bytes, &records, record_index),
-                Some((0, scope_reference))
+                Some(CarrierFrame {
+                    start: 0,
+                    scope_reference
+                })
             );
             let (occurrence, identity, _, _) =
                 exact_class_363_identity_guids(&bytes, 0).expect("identity GUID prefix");

@@ -126,7 +126,7 @@ pub(crate) fn keep_faces_and_carriers(
         }
         if let Some(geometry) = procedural_surface_defs
             .get(&surf_ref)
-            .and_then(|procedural| analytic_procedural_surface(&procedural.definition))
+            .and_then(|procedural| analytic_procedural_surface(procedural.definition()))
         {
             surface_geo.insert(surf_ref, (geometry, false));
         }
@@ -134,8 +134,8 @@ pub(crate) fn keep_faces_and_carriers(
             procedural_surface_defs
                 .get(&surf_ref)
                 .is_some_and(|procedural| {
-                    procedural.cache_fit_tolerance.is_none()
-                        && procedural_surface_definition_is_exact_carrier(&procedural.definition)
+                    procedural.cache_fit_tolerance().is_none()
+                        && procedural_surface_definition_is_exact_carrier(procedural.definition())
                 });
         // A non-analytic surface may still carry a decodable B-spline face
         // cache. Exact cacheless constructions own their nested surface blocks
@@ -158,12 +158,12 @@ pub(crate) fn keep_faces_and_carriers(
         if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
             let analytic_geometry = procedural_surface_defs
                 .get(&surf_ref)
-                .and_then(|procedural| analytic_procedural_surface(&procedural.definition));
+                .and_then(|procedural| analytic_procedural_surface(procedural.definition()));
             let construction_is_exact_carrier =
                 procedural_surface_defs
                     .get(&surf_ref)
                     .is_some_and(|procedural| {
-                        procedural_surface_definition_is_exact_carrier(&procedural.definition)
+                        procedural_surface_definition_is_exact_carrier(procedural.definition())
                     });
             surface_geo.insert(
                 surf_ref,
@@ -989,3 +989,6 @@ pub(crate) fn region_chain(
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

@@ -89,7 +89,7 @@ fn validate_value_root(
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid geometry property XML {}: {error}",
             property.id
@@ -202,7 +202,7 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
 }
 
 fn point_transform(property: &PropertyRecord) -> Result<[[f64; 4]; 4], CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid point property XML {}: {error}",
             property.id

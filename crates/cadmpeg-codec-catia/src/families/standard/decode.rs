@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
@@ -241,7 +242,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut surface_bindings = HashMap::<SurfaceId, usize>::new();
+    let mut surface_bindings = HashMap::<SurfaceId, Option<usize>>::new();
     for face in &ir.model.faces {
         if !unknown_surfaces.contains(&face.surface) {
             continue;
@@ -299,13 +300,16 @@ fn bind_consolidated_revolution_faces_and_seams(
         surface_bindings
             .entry(face.surface.clone())
             .and_modify(|stored| {
-                if *stored != binding {
-                    *stored = usize::MAX;
+                if *stored != Some(binding) {
+                    *stored = None;
                 }
             })
-            .or_insert(binding);
+            .or_insert(Some(binding));
     }
-    surface_bindings.retain(|_, binding| *binding != usize::MAX);
+    let surface_bindings = surface_bindings
+        .into_iter()
+        .filter_map(|(surface, binding)| binding.map(|index| (surface, index)))
+        .collect::<HashMap<_, _>>();
     for (surface_id, binding) in &surface_bindings {
         if let Some(surface) = ir
             .model
@@ -1157,7 +1161,7 @@ struct StandardPopulationSelection {
     spine: Vec<u8>,
     records: Vec<crate::families::standard::records::StandardSurfaceRecord>,
     supports: Vec<crate::families::standard::records::StandardCurveSupport>,
-    fbb_edge_table: bool,
+    edge_table_form: EdgeTableForm,
     vertex_roster_compatible: bool,
 }
 
@@ -1177,7 +1181,7 @@ fn standard_population_selections(
                 spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
                 records: population.records,
                 supports: population.supports,
-                fbb_edge_table: layout.fbb_edge_table,
+                edge_table_form: layout.edge_table_form,
                 vertex_roster_compatible:
                     crate::families::standard::records::standard_vertex_roster(
                         &scan.data,
@@ -1382,8 +1386,8 @@ fn try_decode_standard_populations(
             .extend_rewritten(model, &mut rewriter)
             .ok()?;
         merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope);
-        if output.report.geometry_transferred {
-            merged.report.geometry_transferred = true;
+        if output.report.transfer.geometry_transferred() {
+            merged.report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
         }
     }
 
@@ -1466,9 +1470,13 @@ fn try_decode_standard_population(
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
-    let fbb_only = selection.map_or(scan.variant == Variant::FbbOnly, |selection| {
-        selection.fbb_edge_table
-    });
+    let edge_table_form = selection.map_or_else(
+        || match scan.variant {
+            Variant::FbbOnly => EdgeTableForm::FbbOnly,
+            _ => EdgeTableForm::Standard,
+        },
+        |selection| selection.edge_table_form,
+    );
     if !work_budget.charge() {
         return None;
     }
@@ -1476,10 +1484,9 @@ fn try_decode_standard_population(
         &scan.data,
         container::consolidated_record_sources(scan),
     );
-    let points = (if fbb_only {
-        fbb::fbb_only_vertex_points(standard_spine)
-    } else {
-        fbb::standard_vertex_points(standard_spine)
+    let points = (match edge_table_form {
+        EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
+        EdgeTableForm::Standard => fbb::standard_vertex_points(standard_spine),
     })
     .unwrap_or_default()
     .into_iter()
@@ -1527,7 +1534,7 @@ fn try_decode_standard_population(
         .collect::<HashSet<_>>();
     let standard_edge_count = selection.map_or_else(
         || {
-            (if fbb_only {
+            (if edge_table_form == EdgeTableForm::FbbOnly {
                 fbb::fbb_only_edge_count(standard_spine)
             } else {
                 fbb::standard_edge_count(standard_spine)
@@ -2080,7 +2087,7 @@ fn try_decode_standard_population(
         &records,
         &face_bounds,
         standard_spine,
-        fbb_only,
+        edge_table_form,
         brep,
         selection.map(|selection| selection.supports.as_slice()),
         &scan.data,
@@ -2330,11 +2337,11 @@ fn try_decode_standard_population(
             ),
         );
     }
+    report.coverage.record(
+        crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
+        0,
+    );
     for (key, exhaustion) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
-            mesh_quotient::MeshCandidateExhaustion::QuotientPreparation,
-        ),
         (
             crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
@@ -3671,7 +3678,7 @@ fn attach_standard_topology(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     spine: &[u8],
-    fbb_only: bool,
+    edge_table_form: EdgeTableForm,
     brep: &[u8],
     support_override: Option<&[crate::families::standard::records::StandardCurveSupport]>,
     source: &[u8],
@@ -3684,7 +3691,7 @@ fn attach_standard_topology(
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
-    let Some(edge_count) = (if fbb_only {
+    let Some(edge_count) = (if edge_table_form == EdgeTableForm::FbbOnly {
         crate::families::standard::fbb::fbb_only_edge_count(spine)
     } else {
         crate::families::standard::fbb::standard_edge_count(spine)
@@ -3845,8 +3852,8 @@ fn attach_standard_topology(
     {
         let e5_edges = e5_topology
             .edges
-            .into_values()
-            .map(|edge| (edge.record_id, [edge.start_vertex, edge.end_vertex]));
+            .into_iter()
+            .map(|(record_id, edge)| (record_id, [edge.start_vertex, edge.end_vertex]));
         if !merge_standard_edge_vertex_references(&mut native_edges, e5_edges) {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
         }
@@ -4463,10 +4470,10 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let fbb_mesh_ports = fbb_only
+    let fbb_mesh_ports = (edge_table_form == EdgeTableForm::FbbOnly)
         .then(|| missing_edge::standard_mesh_edge_ports(spine))
         .flatten();
-    let mesh_topology = if fbb_only {
+    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
         fbb_mesh_ports
             .as_deref()
             .and_then(|ports| topology::parse_fbb_with_native_vertices(spine, ports))
@@ -4515,7 +4522,8 @@ fn attach_standard_topology(
         })
         .collect();
     let mut mesh_search_exhausted = false;
-    let native_fbb_topology = if fbb_only && !has_open_face_domains {
+    let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
+    {
         native_endpoint_pairs.as_ref().and_then(|pairs| {
             fbb::parse_fbb_endpoints_with_edge_classes(
                 spine,
@@ -4662,7 +4670,7 @@ fn attach_standard_topology(
                     .iter()
                     .zip(line_constraint.flexible_edge_mask())
                     .zip(&face_domain_edges)
-                    .map(|((circle, line), face)| *circle || *line || *face)
+                    .map(|((circle, line), face)| *circle || line || *face)
                     .collect::<Vec<_>>();
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -5631,8 +5639,8 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
 ) -> Option<Vec<Option<[usize; 2]>>> {
     let graph = graph?;
     let identity_points = unique_native_identity_points(
-        &graph.logical_vertices,
-        graph.vertex_points.len(),
+        graph.vertices.logical_vertices(),
+        graph.vertices.raw_points().len(),
         &graph.vertex_tolerances,
         points,
     );
@@ -8490,10 +8498,16 @@ struct StandardLineSelection {
 
 type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdgeLineRole {
+    NotLine,
+    Fixed,
+    Flexible,
+}
+
 struct StandardLinePairConstraint {
     points: Vec<Point3>,
-    line_edges: Vec<bool>,
-    flexible_edges: Vec<bool>,
+    edge_roles: Vec<EdgeLineRole>,
     edges_by_face: HashMap<usize, Vec<usize>>,
     simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
 }
@@ -8508,27 +8522,31 @@ impl StandardLinePairConstraint {
             .iter()
             .map(|point| point.position)
             .collect::<Vec<_>>();
-        let line_edges = supports
+        let edge_roles = supports
             .iter()
-            .map(|support| {
-                matches!(
+            .enumerate()
+            .map(|(edge, support)| {
+                if !matches!(
                     support.geometry,
                     crate::families::standard::records::StandardCurveGeometry::Line
-                )
+                ) {
+                    EdgeLineRole::NotLine
+                } else if endpoint_options
+                    .get(edge)
+                    .is_some_and(|options| options.len() > 1)
+                {
+                    EdgeLineRole::Flexible
+                } else {
+                    EdgeLineRole::Fixed
+                }
             })
             .collect::<Vec<_>>();
-        let mut flexible_edges = vec![false; supports.len()];
         let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
 
-        for (edge, (support, options)) in supports.iter().zip(endpoint_options).enumerate() {
-            if !matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Line
-            ) || options.len() <= 1
-            {
+        for (edge, support) in supports.iter().enumerate() {
+            if edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
-            flexible_edges[edge] = true;
             for &face in &support.faces {
                 let edges = edges_by_face.entry(face).or_default();
                 if !edges.contains(&edge) {
@@ -8539,20 +8557,21 @@ impl StandardLinePairConstraint {
 
         Self {
             points,
-            line_edges,
-            flexible_edges,
+            edge_roles,
             edges_by_face,
             simplicity_cache: RefCell::new(HashMap::new()),
         }
     }
 
-    fn flexible_edge_mask(&self) -> &[bool] {
-        &self.flexible_edges
+    fn flexible_edge_mask(&self) -> impl Iterator<Item = bool> + '_ {
+        self.edge_roles
+            .iter()
+            .map(|role| *role == EdgeLineRole::Flexible)
     }
 
     fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
         pairs.iter().enumerate().all(|(edge, pair)| {
-            if !self.line_edges.get(edge).copied().unwrap_or(false) {
+            if self.edge_roles[edge] == EdgeLineRole::NotLine {
                 return true;
             }
             let Some(pair) = pair else {
@@ -8569,9 +8588,9 @@ impl StandardLinePairConstraint {
         if !self.is_valid(pairs) {
             return false;
         }
-        let mut selected = vec![None; self.flexible_edges.len()];
+        let mut selected = vec![None; self.edge_roles.len()];
         for (edge, pair) in pairs.iter().enumerate() {
-            if !self.flexible_edges.get(edge).copied().unwrap_or(false) {
+            if self.edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
             let Some(pair) = pair else {

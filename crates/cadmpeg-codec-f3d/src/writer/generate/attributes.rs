@@ -882,7 +882,8 @@ fn native_sketch_link_attribute(
             "{} {} {} 0 {} {}",
             link.sketch_curve_id,
             link.ref_b,
-            link.sense.unwrap_or(SKETCH_LINK_SENSE_UNCONSTRAINED),
+            link.sense
+                .map_or(SKETCH_LINK_SENSE_UNCONSTRAINED, i64::from),
             link.role,
             link.closure
         ),

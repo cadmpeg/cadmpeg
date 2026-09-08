@@ -24,11 +24,41 @@ pub struct FeatureRow {
     pub stream_offset: usize,
     /// Row bytes after the compact feature identifier, ending before the next
     /// known feature row or at the end of the section.
-    pub body: Vec<u8>,
+    pub body: FeatureRowBody,
     /// Byte offset of `body[0]` in the original stream.
     pub body_offset: usize,
     /// Byte offset of the feature identifier in the original stream.
     pub offset: usize,
+}
+
+/// Row bytes with a complete two-byte header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureRowBody(Vec<u8>);
+
+impl TryFrom<Vec<u8>> for FeatureRowBody {
+    type Error = &'static str;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        if bytes.len() < 2 {
+            return Err("FeatureRow.body requires two header bytes");
+        }
+        Ok(Self(bytes))
+    }
+}
+
+impl std::ops::Deref for FeatureRowBody {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl FeatureRowBody {
+    /// Two header bytes at the start of the row body.
+    pub fn header(&self) -> [u8; 2] {
+        [self.0[0], self.0[1]]
+    }
 }
 
 /// One short-form scalar candidate from a class-913 round replay record.
@@ -409,7 +439,7 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>, stream_offset: usize) -
                 feature_id,
                 root_schema_class,
                 stream_offset,
-                body: body.to_vec(),
+                body: body.to_vec().try_into().ok()?,
                 body_offset: stream_offset + body_start,
                 offset: stream_offset + start,
             })

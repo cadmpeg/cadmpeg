@@ -792,27 +792,26 @@ impl<'a> Cursor<'a> {
         Ok(self.take(1, field)?[0])
     }
 
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(View::u16_le_at(self.take(2, field)?, 0).expect("two-byte field"))
+    fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
+        Ok(self.view.req_u16_le()?)
     }
 
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(View::u32_le_at(self.take(4, field)?, 0).expect("four-byte field"))
+    fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
+        Ok(self.view.req_u32_le()?)
     }
 
-    fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        Ok(View::i32_le_at(self.take(4, field)?, 0).expect("four-byte field"))
+    fn i32(&mut self, _field: &str) -> Result<i32, CodecError> {
+        Ok(self.view.req_i32_le()?)
     }
 
-    fn u64(&mut self, field: &str) -> Result<u64, CodecError> {
-        Ok(View::u64_le_at(self.take(8, field)?, 0).expect("eight-byte field"))
+    fn u64(&mut self, _field: &str) -> Result<u64, CodecError> {
+        Ok(self.view.req_u64_le()?)
     }
 
     fn array<const N: usize>(&mut self, field: &str) -> Result<[u8; N], CodecError> {
-        Ok(self
-            .take(N, field)?
-            .try_into()
-            .expect("cursor returned requested fixed length"))
+        self.view
+            .array()
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
     }
 
     fn peek_u32(&self, field: &str) -> Result<u32, CodecError> {
@@ -876,7 +875,7 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain UFRxDoc string", None)?;
+        ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
         let _ = self.position().checked_add(len).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
         })?;
@@ -896,7 +895,7 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        ctx.charge_retained(count as u64, "retain UFRxDoc string", None)?;
+        ctx.charge_retained(count as u64, "retain UFRxDoc string")?;
         let value = self.take(count, field)?;
         std::str::from_utf8(value)
             .map(str::to_owned)
@@ -921,6 +920,18 @@ mod tests {
 
     use super::*;
 
+    fn stream_id() -> CompoundStreamId {
+        let bytes = crate::test_support::fixture(true);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic compound file fits policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("synthetic compound file parses");
+        snapshot
+            .stream("RSeStorage/RSeSegInfo")
+            .expect("validated stream entry")
+            .id()
+    }
+
     #[test]
     fn supported_schemas_frame_external_references_and_retain_the_tail() {
         for schema in 11..=15 {
@@ -929,13 +940,8 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic UFRxDoc fits policy");
-            let document = parse_stream(
-                &ctx,
-                root,
-                CompoundStreamId::from_directory_id(0),
-                &DocumentKind::Assembly,
-            )
-            .unwrap_or_else(|error| panic!("synthetic UFRxDoc schema {schema}: {error}"));
+            let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
+                .unwrap_or_else(|error| panic!("synthetic UFRxDoc schema {schema}: {error}"));
             assert_eq!(document.schema, schema);
             assert_eq!(document.original_file_name, "synthetic.ipt");
             assert_eq!(document.references.len(), 1);
@@ -986,13 +992,8 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic part UFRxDoc fits policy");
 
-        let document = parse_stream(
-            &ctx,
-            root,
-            CompoundStreamId::from_directory_id(0),
-            &DocumentKind::Part,
-        )
-        .expect("schema-15 part UFRxDoc parses");
+        let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Part)
+            .expect("schema-15 part UFRxDoc parses");
 
         let representation = document.representation.expect("model-state header parses");
         assert_eq!(representation.active_representation, None);
@@ -1007,13 +1008,8 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        let document = parse_stream(
-            &ctx,
-            root,
-            CompoundStreamId::from_directory_id(0),
-            &DocumentKind::Assembly,
-        )
-        .expect("foreign schema uses the residual grammar");
+        let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
+            .expect("foreign schema uses the residual grammar");
         assert_eq!(document.schema, 16);
         assert_eq!(document.original_file_name, "synthetic.ipt");
         assert_eq!(document.references.len(), 1);
@@ -1026,12 +1022,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        let Err(error) = parse_stream(
-            &ctx,
-            root,
-            CompoundStreamId::from_directory_id(0),
-            &DocumentKind::Assembly,
-        ) else {
+        let Err(error) = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly) else {
             panic!("broken foreign schema must recover as unsupported");
         };
         assert!(
@@ -1049,13 +1040,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        assert!(parse_stream(
-            &ctx,
-            root,
-            CompoundStreamId::from_directory_id(0),
-            &DocumentKind::Assembly,
-        )
-        .is_err());
+        assert!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly,).is_err());
     }
 
     #[test]

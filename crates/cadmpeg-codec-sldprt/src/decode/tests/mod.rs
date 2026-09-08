@@ -2,7 +2,9 @@
 //! Design-loss and geometry-report tests for SLDPRT decode.
 
 fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::codec::DecodeBody {
-    cadmpeg_ir::codec::DecodeBody::new(geometry_transferred)
+    cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::DecodeTransfer::full(
+        geometry_transferred,
+    ))
 }
 
 mod admission;

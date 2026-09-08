@@ -728,7 +728,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("one exact point use projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
@@ -754,7 +754,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             coordinate_pairs: &[],
         },
         &mut rejected_annotations,
-        rejected_stream,
+        &rejected_stream,
     )
     .is_none());
     assert!(rejected_ir.model.sketches.is_empty());
@@ -824,7 +824,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("a complete named payload point projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
@@ -852,7 +852,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression: text.to_string(),
         value: None,
         source_entry: "entry".to_string(),
-        source_table: "table".to_string(),
+        source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
         source_offset: 0,
     };
     let parameter_use = |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
@@ -1220,9 +1220,11 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{key}")),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: key.to_string(),
-        value: Some(f64::from(key)),
+        value: Some(
+            crate::native::om::finite_value::FiniteValue::try_from(f64::from(key)).unwrap(),
+        ),
         source_entry: "part".into(),
-        source_table: "table".into(),
+        source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
@@ -1283,18 +1285,21 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 
 #[test]
 fn nx_inch_expression_values_are_attached_in_millimeters() {
-    let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
-        id: format!("nx:test:expression#{key}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Inch,
-        expression: formula.into(),
-        value,
-        source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: "table".into(),
-        source_offset: u64::from(key),
-    };
+    let expression =
+        |key: u32, name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{key}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Inch,
+            expression: formula.into(),
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_offset: u64::from(key),
+        };
     let expressions = [
         expression(1, "p1", "2", Some(2.0)),
         expression(2, "p2", "p1 * 3", Some(6.0)),
@@ -1336,9 +1341,9 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         name: crate::om::parameter_name::ParameterName::new("p1".to_string()),
         unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
         expression: "4".into(),
-        value: Some(4.0),
+        value: Some(crate::native::om::finite_value::FiniteValue::try_from(4.0).unwrap()),
         source_entry: "part".into(),
-        source_table: "table".into(),
+        source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
         source_offset: 1,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -1656,7 +1661,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
 
-    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
+    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
         .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
@@ -1699,7 +1704,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     let stream = annotations.stream("nx:container");
 
     assert!(
-        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream,)
+        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,)
             .is_none()
     );
     assert!(ir.model.bodies.is_empty());

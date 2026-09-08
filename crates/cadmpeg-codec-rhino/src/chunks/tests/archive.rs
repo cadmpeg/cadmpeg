@@ -230,7 +230,7 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         );
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
-        assert_eq!(result.ir().model.subds[0].faces[0].edges.len(), 4);
+        assert_eq!(result.ir().model.subds[0].cage.faces()[0].edges().len(), 4);
         assert!(!result
             .ir()
             .native_unknowns("rhino")

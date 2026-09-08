@@ -897,3 +897,34 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     assert_eq!(parameter.expression, "25mm");
     assert!(parameter.pmi.is_some());
 }
+
+#[test]
+fn u16_precision_survives_plain_patch_round_trip() {
+    let mut payload = pmi_semantic_payload();
+    let record = parse_payload(&payload, &mut Vec::new()).remove(0);
+    let offset = record.precision_offset as usize;
+    payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let record = &native.pmi_dimensions[0];
+    assert_eq!(record.precision, 3);
+    assert!(decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|p| p.pmi.is_some()));
+    let original = payload.clone();
+    patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
+    assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
+    assert_eq!(payload, original);
+}

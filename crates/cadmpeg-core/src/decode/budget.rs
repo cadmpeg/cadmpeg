@@ -5,9 +5,7 @@ use std::cell::Cell;
 
 use crate::CodecError;
 
-use super::error::{
-    ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
-};
+use super::error::{ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
     MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
@@ -15,7 +13,8 @@ use super::policy::{
 
 #[derive(Debug)]
 pub(crate) struct DecodeBudget {
-    policy: DecodePolicy,
+    /// Policy applied to this budget.
+    pub(super) policy: DecodePolicy,
     input_bytes: u64,
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
@@ -64,7 +63,6 @@ impl DecodeBudget {
         &self,
         amount: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<(), CodecError> {
         self.charge(
             ResourceDimension::DecompressedBytes,
@@ -72,7 +70,6 @@ impl DecodeBudget {
             self.decompression_allowance(),
             amount,
             operation,
-            location,
         )
     }
 
@@ -100,7 +97,6 @@ impl DecodeBudget {
         limit: u64,
         amount: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<(), CodecError> {
         if let Some(resource) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(resource));
@@ -110,41 +106,32 @@ impl DecodeBudget {
             return Err(self.refuse(
                 dimension,
                 ResourceFailure::BudgetExceeded,
-                LimitScope::Global,
                 limit,
                 before,
                 amount,
                 operation,
-                location,
             ));
         }
         used.set(before + amount);
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn refuse(
         &self,
         dimension: ResourceDimension,
         reason: ResourceFailure,
-        scope: LimitScope,
         limit: u64,
         used: u64,
         additional: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> CodecError {
         let resource = ResourceLimit {
             dimension,
             reason,
-            scope,
             limit,
             used,
             additional,
-            context: ErrorContext {
-                operation,
-                location,
-            },
+            context: ErrorContext { operation },
         };
         self.fuse.set(Some(resource));
         CodecError::ResourceLimit(resource)
@@ -154,7 +141,6 @@ impl DecodeBudget {
         &self,
         bytes: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<ScopedReservation<'_>, CodecError> {
         self.charge(
             ResourceDimension::MaterializedBytes,
@@ -162,13 +148,11 @@ impl DecodeBudget {
             self.materialized_allowance(),
             bytes,
             operation,
-            location,
         )?;
         Ok(ScopedReservation {
             budget: self,
             bytes,
             operation,
-            location,
         })
     }
 
@@ -176,7 +160,6 @@ impl DecodeBudget {
         &self,
         bytes: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<(), CodecError> {
         self.charge(
             ResourceDimension::RetainedBytes,
@@ -184,7 +167,6 @@ impl DecodeBudget {
             self.retained_allowance(),
             bytes,
             operation,
-            location,
         )
     }
 
@@ -199,7 +181,6 @@ impl DecodeBudget {
             self.policy.limits.max_entities,
             count,
             operation,
-            None,
         )
     }
 
@@ -214,14 +195,12 @@ impl DecodeBudget {
             self.policy.limits.max_collection_items,
             count,
             operation,
-            None,
         )
     }
 
     pub(crate) fn enter_nested(
         &self,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<DepthGuard<'_>, CodecError> {
         self.charge(
             ResourceDimension::RecursionDepth,
@@ -229,7 +208,6 @@ impl DecodeBudget {
             self.policy.limits.max_recursion_depth,
             1,
             operation,
-            location,
         )?;
         Ok(DepthGuard { budget: self })
     }
@@ -245,7 +223,6 @@ impl DecodeBudget {
             self.policy.limits.max_work_units,
             units,
             operation,
-            None,
         )
     }
 }
@@ -256,7 +233,6 @@ pub struct ScopedReservation<'a> {
     budget: &'a DecodeBudget,
     bytes: u64,
     operation: &'static str,
-    location: Option<SourceLocation>,
 }
 
 impl ScopedReservation<'_> {
@@ -268,7 +244,6 @@ impl ScopedReservation<'_> {
             self.budget.materialized_allowance(),
             bytes,
             self.operation,
-            self.location,
         )?;
         self.bytes = self.bytes.saturating_add(bytes);
         Ok(())
@@ -276,8 +251,7 @@ impl ScopedReservation<'_> {
 
     /// Converts the temporary reservation into session-retained bytes.
     pub fn commit(self) -> Result<(), CodecError> {
-        self.budget
-            .charge_retained(self.bytes, self.operation, self.location)
+        self.budget.charge_retained(self.bytes, self.operation)
     }
 
     /// Returns the currently reserved byte count.
@@ -449,19 +423,13 @@ impl<'a> WorkBudget<'a> {
             self.limit as u64,
             self.consumed().saturating_add(1) as u64,
             operation,
-            None,
         )
     }
 }
 
 /// Builds a correctly classified refusal for a codec-local ceiling.
-pub fn refuse_local_limit(
-    what: &'static str,
-    limit: u64,
-    requested: u64,
-    location: Option<SourceLocation>,
-) -> CodecError {
-    local_limit_error(what, limit, requested, what, location)
+pub fn refuse_local_limit(what: &'static str, limit: u64, requested: u64) -> CodecError {
+    local_limit_error(what, limit, requested, what)
 }
 
 /// Allocates `count` copies of `value` with `try_reserve_exact` and no panic on OOM.
@@ -476,7 +444,7 @@ pub fn alloc_filled<T: Clone>(
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     out.try_reserve_exact(count)
-        .map_err(|_| refuse_local_limit(operation, count as u64, count as u64, None))?;
+        .map_err(|_| refuse_local_limit(operation, count as u64, count as u64))?;
     out.resize(count, value);
     Ok(out)
 }
@@ -486,19 +454,14 @@ fn local_limit_error(
     limit: u64,
     requested: u64,
     operation: &'static str,
-    location: Option<SourceLocation>,
 ) -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::Codec(what),
         reason: ResourceFailure::BudgetExceeded,
-        scope: LimitScope::Global,
         limit,
         used: requested.min(limit),
         additional: requested.saturating_sub(limit),
-        context: ErrorContext {
-            operation,
-            location,
-        },
+        context: ErrorContext { operation },
     })
 }
 
