@@ -74,8 +74,8 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         camera.properties["settings"],
         "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
-    assert_eq!(presentation.states[1].assets.len(), 1);
-    assert!(presentation.states[1].assets[0].ends_with("section.bin"));
+    assert_eq!(presentation.states()[1].assets.len(), 1);
+    assert!(presentation.states()[1].assets[0].ends_with("section.bin"));
     assert!(result.ir().model.view_presentations.is_empty());
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());

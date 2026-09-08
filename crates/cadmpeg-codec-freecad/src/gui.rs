@@ -557,32 +557,36 @@ fn transfer_neutral_presentation(
     neutral_schema_version: Option<u32>,
 ) -> Result<(), CodecError> {
     for document in &graph.documents {
-        plan.presentation_documents.push(PresentationDocument {
-            id: PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
-            schema_version: neutral_schema_version,
-            active_view: None,
-            states: document
-                .states
-                .iter()
-                .map(|state| {
-                    Ok(PresentationState {
-                        kind: if state.kind == "Camera" {
-                            PresentationStateKind::Camera(camera_state_value(state)?)
-                        } else {
-                            PresentationStateKind::Native(state.kind.clone())
-                        },
-                        order: state.order as u32,
-                        attributes: state.attributes.clone(),
-                        assets: state
-                            .side_entries
-                            .iter()
-                            .map(|entry| crate::native::native_id("entry", entry))
-                            .collect(),
+        let mut presentation = PresentationDocument::new(
+            PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
+        );
+        presentation.schema_version = neutral_schema_version;
+        presentation.native_ref = Some(document.id.clone());
+        presentation
+            .set_states(
+                document
+                    .states
+                    .iter()
+                    .map(|state| {
+                        Ok(PresentationState {
+                            kind: if state.kind == "Camera" {
+                                PresentationStateKind::Camera(camera_state_value(state)?)
+                            } else {
+                                PresentationStateKind::Native(state.kind.clone())
+                            },
+                            order: state.order as u32,
+                            attributes: state.attributes.clone(),
+                            assets: state
+                                .side_entries
+                                .iter()
+                                .map(|entry| crate::native::native_id("entry", entry))
+                                .collect(),
+                        })
                     })
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?,
-            native_ref: Some(document.id.clone()),
-        });
+                    .collect::<Result<Vec<_>, CodecError>>()?,
+            )
+            .map_err(CodecError::malformed)?;
+        plan.presentation_documents.push(presentation);
     }
 
     let properties = graph.properties.iter().fold(
