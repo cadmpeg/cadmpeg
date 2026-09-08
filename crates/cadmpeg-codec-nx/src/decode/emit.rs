@@ -111,14 +111,14 @@ pub(super) fn emit_topology(
     for body_xmt in body_xmts {
         let id = BodyId::mint(format!("{prefix}:body#{body_xmt}")).expect("identity grammar");
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
-            annotate_node(annotations, &id, source_stream, node, "BODY");
+            annotate_node(annotations, &id, source_stream.clone(), node, "BODY");
         } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
             shell
                 .shell_fields()
                 .is_some_and(|fields| fields.body == body_xmt)
         }) {
             annotations
-                .note(&id, source_stream, shell.pos as u64)
+                .note(&id, &source_stream, shell.pos as u64)
                 .tag("UNRESOLVED_BODY_REFERENCE");
             annotations.exactness(&id, Exactness::Unknown);
         }
@@ -152,10 +152,16 @@ pub(super) fn emit_topology(
             let region = RegionId::mint(format!("{prefix}:region#{}", fields.region))
                 .expect("identity grammar");
             if let Some(region_node) = graph.get(NodeKind::Region, fields.region) {
-                annotate_node(annotations, &region, source_stream, region_node, "REGION");
+                annotate_node(
+                    annotations,
+                    &region,
+                    source_stream.clone(),
+                    region_node,
+                    "REGION",
+                );
             } else {
                 annotations
-                    .note(&region, source_stream, node.pos as u64)
+                    .note(&region, &source_stream, node.pos as u64)
                     .tag("UNRESOLVED_REGION_REFERENCE");
                 annotations.exactness(&region, Exactness::Unknown);
             }
@@ -178,7 +184,7 @@ pub(super) fn emit_topology(
         };
         let shell_id =
             ShellId::mint(format!("{prefix}:shell#{}", node.xmt)).expect("identity grammar");
-        annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
+        annotate_node(annotations, &shell_id, source_stream.clone(), node, "SHELL");
         ir.model.shells.push(Shell {
             id: shell_id.clone(),
             region: region_id.clone(),
@@ -222,7 +228,7 @@ pub(super) fn emit_topology(
         let tolerance = decoded_tolerance(fields.tolerance);
         let vertex =
             VertexId::mint(format!("{prefix}:vertex#{}", node.xmt)).expect("identity grammar");
-        annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
+        annotate_node(annotations, &vertex, source_stream.clone(), node, "VERTEX");
         if tolerance.is_some() {
             annotations.derived(&vertex, "tolerance");
         }
@@ -304,7 +310,7 @@ pub(super) fn emit_topology(
                 ))
                 .expect("identity grammar");
                 annotations
-                    .note(&carrier, source_stream, node.pos as u64)
+                    .note(&carrier, &source_stream, node.pos as u64)
                     .tag("PARAMETRIC_SURFACE_CURVE");
                 annotations.derived(&carrier, "geometry");
                 ir.model.curves.push(Curve {
@@ -360,7 +366,7 @@ pub(super) fn emit_topology(
                         curve,
                         curve_index,
                         param_range,
-                        source_stream,
+                        source_stream.clone(),
                         decoded_tolerance(fields.tolerance),
                         &mut curve_point_cache,
                         adaptive_geometry_budget,
@@ -394,7 +400,7 @@ pub(super) fn emit_topology(
         };
         let (mut start, mut end) = (start, end);
         let id = EdgeId::mint(format!("{prefix}:edge#{}", node.xmt)).expect("identity grammar");
-        annotate_node(annotations, &id, source_stream, node, "EDGE");
+        annotate_node(annotations, &id, source_stream.clone(), node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
         }
@@ -459,7 +465,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let id = FaceId::mint(format!("{prefix}:face#{}", node.xmt)).expect("identity grammar");
-        annotate_node(annotations, &id, source_stream, node, "FACE");
+        annotate_node(annotations, &id, source_stream.clone(), node, "FACE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
         }
@@ -506,7 +512,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let id = LoopId::mint(format!("{prefix}:loop#{}", node.xmt)).expect("identity grammar");
-        annotate_node(annotations, &id, source_stream, node, "LOOP");
+        annotate_node(annotations, &id, source_stream.clone(), node, "LOOP");
         loop_specs.insert(node.xmt, (id.clone(), face));
         loops.insert(node.xmt, id);
     }
@@ -652,7 +658,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
-        annotate_node(annotations, &id, source_stream, node, "FIN");
+        annotate_node(annotations, &id, source_stream.clone(), node, "FIN");
         let _next = fin_ids
             .get(&fields.forward)
             .cloned()
@@ -700,7 +706,7 @@ pub(super) fn emit_topology(
                 let pcurve_id = PcurveId::mint(format!("{prefix}:intersection-pcurve#{fin_xmt}"))
                     .expect("identity grammar");
                 annotations
-                    .note(&pcurve_id, source_stream, node.pos as u64)
+                    .note(&pcurve_id, &source_stream, node.pos as u64)
                     .tag("INTERSECTION_PCURVE");
                 annotations.derived(&pcurve_id, "geometry");
                 annotations.derived(&pcurve_id, "parameter_range");
@@ -763,7 +769,7 @@ pub(super) fn emit_topology(
         graph,
         &edges,
         &prefix,
-        source_stream,
+        source_stream.clone(),
         annotations,
         adaptive_geometry_budget,
     );
@@ -836,7 +842,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         let id = SurfaceId::mint(format!("nx:s{stream_index}:surface#unknown-{surface_xmt}"))
             .expect("identity grammar");
         annotations
-            .note(&id, source_stream, face.pos as u64)
+            .note(&id, &source_stream, face.pos as u64)
             .tag("UNRESOLVED_SURFACE_REFERENCE");
         annotations.exactness(&id, Exactness::Unknown);
         ir.model.surfaces.push(Surface {
@@ -859,7 +865,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         let id = CurveId::mint(format!("nx:s{stream_index}:curve#unknown-{curve_xmt}"))
             .expect("identity grammar");
         annotations
-            .note(&id, source_stream, edge.pos as u64)
+            .note(&id, &source_stream, edge.pos as u64)
             .tag("UNRESOLVED_CURVE_REFERENCE");
         annotations.exactness(&id, Exactness::Unknown);
         ir.model.curves.push(Curve {
@@ -880,7 +886,7 @@ pub(crate) fn annotate_node(
     node: &Node,
     tag: &str,
 ) {
-    annotations.note(id, stream, node.pos as u64).tag(tag);
+    annotations.note(id, &stream, node.pos as u64).tag(tag);
 }
 
 pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
@@ -958,11 +964,11 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     let vertex = VertexId::mint(format!("{prefix}:vertex#closed-edge-{}", edge.xmt))
         .expect("identity grammar");
     annotations
-        .note(&point, source_stream, edge.pos as u64)
+        .note(&point, &source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_POINT");
     annotations.exactness(&point, Exactness::Inferred);
     annotations
-        .note(&vertex, source_stream, edge.pos as u64)
+        .note(&vertex, &source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_VERTEX");
     annotations.exactness(&vertex, Exactness::Inferred);
     ir.model.points.push(Point {

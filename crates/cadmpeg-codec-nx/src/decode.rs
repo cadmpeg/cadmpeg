@@ -238,7 +238,7 @@ fn build_metadata_ir(
             let unknown = unknown_stream(ctx, si, stream)?;
             let source_stream = annotations.stream("nx:container");
             annotations
-                .note(unknown.id(), source_stream, stream.file_offset as u64)
+                .note(unknown.id(), &source_stream, stream.file_offset as u64)
                 .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);

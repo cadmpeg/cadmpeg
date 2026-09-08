@@ -122,7 +122,7 @@ fuzz_target!(|data: &[u8]| {
             // Add an annotation for an entity that does not exist.
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let stream = annotations.stream("fuzz:nonexistent");
-            annotations.note("nonexistent", stream, u64::MAX);
+            annotations.note("nonexistent", &stream, u64::MAX);
             source_fidelity.annotations.append(annotations.build());
         }
         13 => {
