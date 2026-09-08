@@ -6246,7 +6246,7 @@ pub struct DesignRuledSurfaceOperation {
     /// Ordered auxiliary selection records between the edge-group runs.
     pub auxiliary_record_indices: Vec<u32>,
     /// Serialized direction entity identity; the all-zero UUID means absent.
-    pub direction_entity_id: Option<String>,
+    pub direction_entity_id: Option<DesignRelaxedGuidText>,
 }
 
 /// Boundary condition a `SurfacePatch` component imposes against its adjacent

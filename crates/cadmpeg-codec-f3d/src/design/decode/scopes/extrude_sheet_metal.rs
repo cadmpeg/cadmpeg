@@ -2148,11 +2148,14 @@ pub(crate) fn exact_ruled_surface_operation(
     if direction_end.checked_add(3)? != reference_count_at
         || bytes.get(direction_end..reference_count_at)? != [0; 3]
         || paired_at <= reference_count_at
-        || (!direction_absent && !crate::bytes::is_guid_relaxed(&direction_entity_id))
     {
         return None;
     }
-    let direction_entity_id = (!direction_absent).then_some(direction_entity_id);
+    let direction_entity_id = if direction_absent {
+        None
+    } else {
+        Some(crate::records::DesignRelaxedGuidText::try_from(direction_entity_id).ok()?)
+    };
     if reference_members.first() != Some(&distance_owner_record_index)
         || reference_members.get(1) != Some(&angle_owner_record_index)
         || edge_group_record_indices.is_empty()

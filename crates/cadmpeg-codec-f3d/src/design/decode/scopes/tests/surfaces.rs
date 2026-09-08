@@ -54,7 +54,10 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
         .expect("directed SurfaceRuled operation");
     assert_eq!(operation.method, DesignRuledSurfaceMethod::Direction);
     assert_eq!(
-        operation.direction_entity_id.as_deref(),
+        operation
+            .direction_entity_id
+            .as_ref()
+            .map(crate::records::DesignRelaxedGuidText::as_str),
         Some("01234567-89ab-cdef-0123-456789abcdef")
     );
 }
