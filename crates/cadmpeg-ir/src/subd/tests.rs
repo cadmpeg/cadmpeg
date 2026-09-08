@@ -135,24 +135,26 @@ fn grip_wedge_rejects_phantom_payload() {
 
 #[test]
 fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
-    let symmetry = SubdSymmetry {
-        kind: SubdSymmetryKind::Radial {
-            segments: 4,
+    let symmetry = SubdSymmetry::new(
+        SubdSymmetryKind::Radial {
+            segments: std::num::NonZeroU32::new(4).unwrap(),
             sweep: 1.0,
             radial_maps: vec![SubdRadialSymmetryMap {
                 selector: SubdRadialMapSelector::Ef,
                 pairs: vec![[1, 2]],
             }],
         },
-        plane: SubdPlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            first_axis: Vector3::new(1.0, 0.0, 0.0),
-            second_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
-        face_pairs: Vec::new(),
-        edge_pairs: Vec::new(),
-        vertex_pairs: Vec::new(),
-    };
+        SubdPlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
     let wire = serde_json::to_value(&symmetry).unwrap();
     assert_eq!(
         wire,
@@ -469,3 +471,5 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
         );
     }
 }
+
+mod symmetry;

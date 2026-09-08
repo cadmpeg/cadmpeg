@@ -394,19 +394,17 @@ fn symmetry_plane(name: &str, values: [f64; 12]) -> Result<SubdPlaneFrame, Codec
     if (values[3] - 1.0).abs() > SYMMETRY_FRAME_EPS
         || values[7].abs() > SYMMETRY_FRAME_EPS
         || values[11].abs() > SYMMETRY_FRAME_EPS
-        || (first_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
-        || (second_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
-        || first_axis.dot(second_axis).abs() > SYMMETRY_FRAME_EPS
     {
         return Err(malformed(
             name,
             "symmetry plane is not a homogeneous orthonormal frame",
         ));
     }
-    Ok(SubdPlaneFrame {
-        origin,
-        first_axis,
-        second_axis,
+    SubdPlaneFrame::new(origin, first_axis, second_axis).map_err(|error| {
+        malformed(
+            name,
+            format!("symmetry plane is not a homogeneous orthonormal frame: {error}"),
+        )
     })
 }
 
@@ -1305,7 +1303,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     maps,
                 } => (
                     SubdSymmetryKind::Radial {
-                        segments: segments.get(),
+                        segments: *segments,
                         sweep: *sweep,
                         radial_maps: maps.clone(),
                     },
@@ -1314,13 +1312,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     Vec::new(),
                 ),
             };
-            Ok(SubdSymmetry {
-                kind,
-                plane,
-                face_pairs,
-                edge_pairs,
-                vertex_pairs,
-            })
+            SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
+                .map_err(|error| malformed(name, &error.to_string()))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     let edge_knot_intervals_ir = edge_knot_intervals
@@ -1604,17 +1597,20 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
 
         assert_eq!(cage.surface.cage.symmetries().len(), 1);
         let symmetry = &cage.surface.cage.symmetries()[0];
-        assert_eq!(symmetry.kind, cadmpeg_ir::SubdSymmetryKind::Correspondence);
         assert_eq!(
-            symmetry.plane.origin,
+            symmetry.kind(),
+            &cadmpeg_ir::SubdSymmetryKind::Correspondence
+        );
+        assert_eq!(
+            symmetry.plane.origin(),
             cadmpeg_ir::math::Point3::new(0.0, 20.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.first_axis,
+            symmetry.plane.first_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.second_axis,
+            symmetry.plane.second_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(symmetry.face_pairs, vec![[0, 0]]);
@@ -1792,21 +1788,21 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             segments,
             sweep,
             radial_maps,
-        } = &symmetry.kind
+        } = symmetry.kind()
         else {
             panic!("radial symmetry kind");
         };
-        assert_eq!((*segments, *sweep), (4, 1.0));
+        assert_eq!((segments.get(), *sweep), (4, 1.0));
         assert_eq!(
-            symmetry.plane.origin,
+            symmetry.plane.origin(),
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.first_axis,
+            symmetry.plane.first_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.second_axis,
+            symmetry.plane.second_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert!(symmetry.face_pairs.is_empty());
@@ -1858,7 +1854,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let native = source.replace("105r ef 0 1\n", &replacement);
         let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
         let cadmpeg_ir::SubdSymmetryKind::Radial { radial_maps, .. } =
-            &cage.surface.cage.symmetries()[0].kind
+            cage.surface.cage.symmetries()[0].kind()
         else {
             panic!("radial symmetry kind");
         };
