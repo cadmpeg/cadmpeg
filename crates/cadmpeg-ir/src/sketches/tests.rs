@@ -2141,3 +2141,64 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
     profiles.retain_uses(|_| false);
     assert!(profiles.is_empty());
 }
+
+#[test]
+fn circular_pattern_admission_checks_angles_and_entity_ownership() {
+    use crate::features::Angle;
+    use crate::sketches::{SketchCircularPattern, SketchCircularPatternInstance, SketchEntityId};
+
+    let center = SketchEntityId::mint("test:test:sketch-entity#center").unwrap();
+    let seed = SketchEntityId::mint("test:test:sketch-entity#seed").unwrap();
+    let copy = SketchEntityId::mint("test:test:sketch-entity#copy").unwrap();
+    let instances = vec![
+        SketchCircularPatternInstance {
+            angle: Angle(0.0),
+            entities: vec![seed.clone()],
+        },
+        SketchCircularPatternInstance {
+            angle: Angle(-1.0),
+            entities: vec![copy],
+        },
+    ];
+    let admit = |angle, instances| {
+        SketchCircularPattern::new(center.clone(), Angle(angle), None, None, instances)
+    };
+    let pattern = admit(-1.0, instances.clone()).unwrap();
+    for angle in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(admit(angle, instances.clone()).is_none());
+        let mut invalid = instances.clone();
+        invalid[1].angle = Angle(angle);
+        assert!(admit(-1.0, invalid).is_none());
+    }
+    let mut invalid = instances.clone();
+    invalid[0].angle = Angle(f64::MIN_POSITIVE);
+    assert!(admit(-1.0, invalid).is_none());
+    for entity in [center, seed] {
+        let mut invalid = instances.clone();
+        invalid[1].entities[0] = entity;
+        assert!(SketchCircularPattern::new(
+            pattern.center().clone(),
+            Angle(-1.0),
+            None,
+            None,
+            invalid
+        )
+        .is_none());
+    }
+    let wire = serde_json::to_value(&pattern).unwrap();
+    assert_eq!(
+        serde_json::from_value::<SketchCircularPattern>(wire.clone()).unwrap(),
+        pattern
+    );
+    for (path, value) in [
+        ("angle", serde_json::json!(f64::MIN_POSITIVE)),
+        ("entities", serde_json::json!([pattern.center()])),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["instances"][0][path] = value;
+        assert!(serde_json::from_value::<SketchCircularPattern>(invalid).is_err());
+    }
+    let mut duplicate = wire;
+    duplicate["instances"][1]["entities"] = duplicate["instances"][0]["entities"].clone();
+    assert!(serde_json::from_value::<SketchCircularPattern>(duplicate).is_err());
+}
