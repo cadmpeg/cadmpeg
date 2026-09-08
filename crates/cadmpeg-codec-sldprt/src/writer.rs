@@ -2046,7 +2046,8 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let append: [fn(&mut Vec<u8>, &[u32]); 3] = [
+        type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
+        let append: [AuxiliaryWriter; 3] = [
             |out, _| descriptor(out, 4, 8, 2, 0, &[]),
             |out, list_c| {
                 let data = list_c
