@@ -3712,6 +3712,8 @@ fn parse_relation_class_members(
             RelationClassMembers::CircularPattern
         }
         SketchRelationClass::RectangularPattern => {
+            use AuxiliaryRelationReference::Present;
+
             // The three flags are not checked the way the tangency class's are:
             // the counted runs and the unit directions that follow them already
             // reject a misframed record, and the flags do not.
@@ -3733,7 +3735,6 @@ fn parse_relation_class_members(
                 *cursor += 32;
                 pair[1] = take!()?;
             }
-            use AuxiliaryRelationReference::Present;
             let clauses = match clauses {
                 [Present(a), Present(b), Present(c), Present(d)] => Some([a, b, c, d]),
                 _ => None,
