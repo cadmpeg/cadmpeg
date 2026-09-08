@@ -1979,20 +1979,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    for reference in data.ufrx.external_references() {
-        if reference.path.is_empty()
-            && reference
-                .document_id
-                .chars()
-                .all(|character| character == '0')
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor external reference has neither a path nor a document id".into(),
-                Some(reference.id.clone()),
-            ));
-        }
-    }
     unique(
         findings,
         data.ufrx
