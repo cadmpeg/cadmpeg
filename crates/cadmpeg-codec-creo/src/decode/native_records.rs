@@ -749,9 +749,8 @@ pub(crate) struct CreoFc05CircleRecord {
 pub(crate) struct CreoFc05CylinderCapPairRecord {
     pub(crate) id: String,
     pub(crate) surface_id: u32,
-    pub(crate) curve_ids: Vec<u32>,
-    pub(crate) cap_plane_ids: Vec<u32>,
-    pub(crate) curve_cap_ordinates_row_frame: Vec<f64>,
+    #[serde(flatten, serialize_with = "serialize_cap_edges")]
+    pub(crate) cap_edges: Vec<crate::curve::Fc05CapEdge>,
     pub(crate) center_row_frame: [f64; 2],
     pub(crate) radius_mm: f64,
     pub(crate) reference_direction_row_frame: [f64; 2],
@@ -759,6 +758,33 @@ pub(crate) struct CreoFc05CylinderCapPairRecord {
     pub(crate) cap_ordinates_row_frame: Vec<f64>,
     pub(crate) offset: usize,
     pub(crate) source_section: String,
+}
+
+fn serialize_cap_edges<S: serde::Serializer>(
+    edges: &[crate::curve::Fc05CapEdge],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry(
+        "curve_ids",
+        &edges.iter().map(|edge| edge.curve_id).collect::<Vec<_>>(),
+    )?;
+    map.serialize_entry(
+        "cap_plane_ids",
+        &edges
+            .iter()
+            .map(|edge| edge.cap_plane_id)
+            .collect::<Vec<_>>(),
+    )?;
+    map.serialize_entry(
+        "curve_cap_ordinates_row_frame",
+        &edges
+            .iter()
+            .map(|edge| edge.cap_ordinate_row_frame)
+            .collect::<Vec<_>>(),
+    )?;
+    map.end()
 }
 
 #[derive(Serialize)]
