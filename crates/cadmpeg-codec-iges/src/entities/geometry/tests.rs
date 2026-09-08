@@ -1284,13 +1284,13 @@ fn affine_composition_rejects_translation_overflow() {
 
 #[test]
 fn decode_reports_transform_translation_overflow_after_inch_scaling() {
-    let mut bytes =
-        transformed_circular_arc_file(b"124,1,0,0,1.7D308,0,1,0,0,0,0,1,0;", b"100,0,0,0,1,0,0,1;");
-    let offset = bytes
-        .windows(6)
-        .position(|bytes| bytes == b"2,2HMM")
-        .unwrap();
-    bytes[offset..offset + 6].copy_from_slice(b"1,2HIN");
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,1,2HIN,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let bytes = transformed_circular_arc_file_with_global(
+        0,
+        b"124,1,0,0,1.7D308,0,1,0,0,0,0,1,0;",
+        b"100,0,0,0,1,0,0,1;",
+        global,
+    );
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
