@@ -548,28 +548,25 @@ pub fn project_spatial_sketch_design(
                         knots,
                         poles,
                         ..
-                    } if *degree != 0
-                        && usize::try_from(*degree)
-                            .is_ok_and(|degree| poles.point_count() > degree) =>
-                    {
-                        SpatialSketchGeometry::Nurbs {
-                            curve: cadmpeg_ir::geometry::NurbsCurve::new(
-                                *degree,
-                                knots.clone(),
-                                poles
-                                    .points()
-                                    .map(|point| transform_point(placement, point))
-                                    .collect(),
-                                poles
-                                    .weights()
-                                    .next()
-                                    .is_some()
-                                    .then(|| poles.weights().copied().collect()),
-                                false,
-                            )
-                            .ok()?,
-                        }
-                    }
+                    } => SpatialSketchGeometry::Nurbs {
+                        curve: cadmpeg_ir::geometry::NurbsCurve::new(
+                            *degree,
+                            knots.clone(),
+                            poles
+                                .points()
+                                .map(|point| transform_point(placement, point))
+                                .collect(),
+                            poles
+                                .weights()
+                                .next()
+                                .is_some()
+                                .then(|| poles.weights().copied().collect()),
+                            false,
+                        )
+                        .ok()?
+                        .try_into()
+                        .ok()?,
+                    },
                     _ => return None,
                 }
             };

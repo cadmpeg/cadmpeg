@@ -887,23 +887,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                 }
             }
-            SpatialSketchGeometry::Nurbs { curve } => {
-                if curve.degree() == 0
-                    || curve.knots().iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(curve.knots())
-                    || curve.control_points().iter().any(|point| !finite3(*point))
-                    || curve
-                        .weights()
-                        .is_some_and(|weights| weights.iter().any(|weight| nonpositive(*weight)))
-                {
-                    finding(
-                        findings,
-                        Check::ParameterDomain,
-                        id,
-                        "invalid spatial sketch NURBS",
-                    );
-                }
-            }
+            SpatialSketchGeometry::Nurbs { .. } => {}
             SpatialSketchGeometry::NurbsSurface { surface } => {
                 if surface.u_degree() == 0
                     || surface.v_degree() == 0
