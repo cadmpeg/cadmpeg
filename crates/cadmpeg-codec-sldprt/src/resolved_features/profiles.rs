@@ -466,12 +466,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
                 visible: None,
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin,
-                    normal,
-                    u_axis,
+                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    origin, normal, u_axis,
+                ) {
+                    Ok(placement) => placement,
+                    Err(_) => continue,
                 },
-                profiles: Vec::new(),
+                profiles: Default::default(),
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
@@ -538,7 +539,9 @@ pub(crate) fn project_compact_sketch_profiles(
                     );
                 }
                 let mut sketch = sketch;
-                sketch.profiles.push(profile);
+                if sketch.profiles.try_push(profile).is_err() {
+                    continue;
+                }
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
@@ -669,7 +672,9 @@ pub(crate) fn project_compact_sketch_profiles(
                     profile
                 };
                 let mut sketch = sketch;
-                sketch.profiles.push(profile);
+                if sketch.profiles.try_push(profile).is_err() {
+                    continue;
+                }
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
@@ -726,7 +731,9 @@ pub(crate) fn project_compact_sketch_profiles(
                 );
             }
             let mut sketch = sketch;
-            sketch.profiles.push(profile);
+            if sketch.profiles.try_push(profile).is_err() {
+                continue;
+            }
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
@@ -929,17 +936,18 @@ pub(crate) fn project_marker_backed_sketches(
                             name: Some(native_feature.name.clone()),
                             configuration: lane.configuration.clone(),
                             visible: None,
-                            placement: frame.map_or(
-                                cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-                                |(origin, normal, u_axis)| {
-                                    cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                                        origin,
-                                        normal,
-                                        u_axis,
+                            placement: match frame {
+                                Some((origin, normal, u_axis)) => {
+                                    match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                                        origin, normal, u_axis,
+                                    ) {
+                                        Ok(placement) => placement,
+                                        Err(_) => continue,
                                     }
-                                },
-                            ),
-                            profiles: Vec::new(),
+                                }
+                                None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                            },
+                            profiles: Default::default(),
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
@@ -976,15 +984,18 @@ pub(crate) fn project_marker_backed_sketches(
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
                 visible: None,
-                placement: frame.map_or(
-                    cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-                    |(origin, normal, u_axis)| cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                        origin,
-                        normal,
-                        u_axis,
-                    },
-                ),
-                profiles: Vec::new(),
+                placement: match frame {
+                    Some((origin, normal, u_axis)) => {
+                        match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                            origin, normal, u_axis,
+                        ) {
+                            Ok(placement) => placement,
+                            Err(_) => continue,
+                        }
+                    }
+                    None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                },
+                profiles: Default::default(),
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
@@ -1769,7 +1780,12 @@ pub(crate) fn project_marker_backed_sketches(
                 QUANTUM,
             );
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
-            sketch.profiles = closed_marker_profiles(&projected);
+            let Ok(profiles) =
+                cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(&projected))
+            else {
+                continue;
+            };
+            sketch.profiles = profiles;
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
                 continue;
             }
@@ -2122,7 +2138,7 @@ fn assemble_sketch_block_profile(
         let source_profiles = if source_sketch.profiles.is_empty() {
             closed_marker_profiles_allowing_shared_endpoints(&source_entities)
         } else {
-            source_sketch.profiles.clone()
+            source_sketch.profiles.to_vec()
         };
         for profile in &source_profiles {
             let mut assembled_profile = Vec::with_capacity(profile.len());
@@ -2142,12 +2158,13 @@ fn assemble_sketch_block_profile(
             name: Some(input.native_profile.name.clone()),
             configuration: input.configuration.map(str::to_string),
             visible: None,
-            placement: SketchPlacement::Resolved {
-                origin: placement.origin,
-                normal: placement.normal,
-                u_axis: placement.u_axis,
-            },
-            profiles: assembled_profiles,
+            placement: SketchPlacement::try_resolved(
+                placement.origin,
+                placement.normal,
+                placement.u_axis,
+            )
+            .ok()?,
+            profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(assembled_profiles).ok()?,
             native_ref: Some(input.native_ref.to_string()),
         },
         entities: assembled_entities,
@@ -2448,12 +2465,13 @@ fn project_detached_legacy_config_sketches(
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
                 visible: None,
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin,
-                    normal,
-                    u_axis,
+                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    origin, normal, u_axis,
+                ) {
+                    Ok(placement) => placement,
+                    Err(_) => continue,
                 },
-                profiles: Vec::new(),
+                profiles: Default::default(),
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
@@ -2656,13 +2674,14 @@ fn legacy_config_hex_sketch(
         );
     }
     let mut sketch = sketch.clone();
-    sketch.profiles = vec![
+    sketch.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
         outer_profile,
         vec![SketchEntityUse {
             entity: entity_id("circle", 0)?,
             reversed: false,
         }],
-    ];
+    ])
+    .ok()?;
     Some((sketch, entities))
 }
 
@@ -2828,12 +2847,13 @@ mod detached_legacy_sketch_tests {
             name: Some("profile".into()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: Default::default(),
             native_ref: Some("lane".into()),
         }
     }
@@ -3070,7 +3090,10 @@ mod detached_legacy_sketch_tests {
 
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].id, expected_sketch);
-        assert_eq!(sketches[0].profiles, Vec::<Vec<SketchEntityUse>>::new());
+        assert_eq!(
+            sketches[0].profiles.as_slice(),
+            Vec::<Vec<SketchEntityUse>>::new()
+        );
         assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
         assert!(sketch_entities.is_empty());
         assert!(matches!(
@@ -3309,15 +3332,17 @@ mod detached_legacy_sketch_tests {
             name: Some("block".into()),
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: vec![vec![SketchEntityUse {
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
                 entity: block_entity_id.clone(),
                 reversed: false,
-            }]],
+            }]])
+            .unwrap(),
             native_ref: Some("lane".into()),
         };
         let block_entities = vec![
@@ -3380,11 +3405,12 @@ mod detached_legacy_sketch_tests {
         assert_eq!(assembled.entities.len(), 4);
         assert_eq!(
             assembled.sketch.placement,
-            SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            }
+            SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
         );
         let circles = assembled
             .entities

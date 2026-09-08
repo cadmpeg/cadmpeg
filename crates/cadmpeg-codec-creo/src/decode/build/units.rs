@@ -134,8 +134,10 @@ pub(super) fn normalize_model_lengths(
         }
     }
     for sketch in &mut ir.model.sketches {
-        if let SketchPlacement::Resolved { origin, .. } = &mut sketch.placement {
-            scale_point3(origin, length_scale_mm);
+        if let Some((mut origin, normal, u_axis)) = sketch.resolved_placement() {
+            scale_point3(&mut origin, length_scale_mm);
+            sketch.placement = SketchPlacement::try_resolved(origin, normal, u_axis)
+                .map_err(CodecError::malformed)?;
         }
     }
     for entity in &mut ir.model.sketch_entities {

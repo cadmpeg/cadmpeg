@@ -77,7 +77,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     transfer_fc05_cap_circles(scan, ir, annotations);
     transfer_cap_pair_cylinders(scan, ir, annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, ir, annotations);
-    let sketch_segment_coverage = transfer_sketches(scan, ir, annotations);
+    let sketch_segment_coverage = transfer_sketches(scan, ir, annotations)?;
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, ir, annotations);
     let feature_revolution_vertex_orbit_curve_count =

@@ -587,12 +587,13 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         name: Some("Position".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(10.0, 20.0, 30.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(10.0, 20.0, 30.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("lane".into()),
     };
     let entities = [SketchEntity::new(
@@ -783,12 +784,13 @@ fn unique_unindexed_point_locus_is_projected() {
         name: Some("Position".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(10.0, 20.0, 30.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(10.0, 20.0, 30.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("lane".into()),
     };
     let mut features = vec![hole, sketch_feature];

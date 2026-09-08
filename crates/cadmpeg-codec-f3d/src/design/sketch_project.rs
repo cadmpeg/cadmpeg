@@ -170,24 +170,25 @@ pub fn project_sketch_design(
                     .visibility
                     .as_ref()
                     .map(|visibility| visibility.visible),
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin: Point3::new(
+                placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    Point3::new(
                         placement.transform()[0][3] * placement_origin_scale(placement),
                         placement.transform()[1][3] * placement_origin_scale(placement),
                         placement.transform()[2][3] * placement_origin_scale(placement),
                     ),
-                    normal: Vector3::new(
+                    Vector3::new(
                         placement.transform()[0][2],
                         placement.transform()[1][2],
                         placement.transform()[2][2],
                     ),
-                    u_axis: Vector3::new(
+                    Vector3::new(
                         placement.transform()[0][0],
                         placement.transform()[1][0],
                         placement.transform()[2][0],
                     ),
-                },
-                profiles: Vec::new(),
+                )
+                .ok()?,
+                profiles: Default::default(),
                 native_ref: Some(placement.id.clone()),
             })
         })
@@ -351,7 +352,14 @@ pub fn project_sketch_design(
     }));
     entities.sort_by(|a, b| a.id().cmp(b.id()));
     for sketch in &mut sketches {
-        sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed_sketch_profiles(
+            &sketch.id,
+            &entities,
+            linear_tolerance,
+        )) else {
+            continue;
+        };
+        sketch.profiles = profiles;
     }
     (sketches, entities)
 }

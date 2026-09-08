@@ -78,9 +78,6 @@ pub(super) fn sketch_brep(
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
-        if profile.is_empty() {
-            continue;
-        }
         let endpoints = profile
             .iter()
             .map(|entity_use| {

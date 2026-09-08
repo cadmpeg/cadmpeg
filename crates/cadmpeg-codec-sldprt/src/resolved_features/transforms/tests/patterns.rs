@@ -1252,12 +1252,13 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let feature = Feature {

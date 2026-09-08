@@ -1188,7 +1188,7 @@ mod tests {
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: Default::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1294,7 +1294,7 @@ mod tests {
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: Default::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {

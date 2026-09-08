@@ -2953,7 +2953,7 @@ mod relation_geometry_tests {
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: Default::default(),
             native_ref: Some("lane#test".into()),
         }];
         let mut entities = Vec::new();
@@ -3232,12 +3232,13 @@ mod relation_geometry_tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: Default::default(),
             native_ref: Some(LANE.into()),
         }];
         let mut entities = Vec::new();

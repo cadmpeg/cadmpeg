@@ -288,12 +288,13 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         name: Some("sketch-native".into()),
         configuration: Some("0".into()),
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("lane".into()),
     });
     ir.model.sketch_entities.push(

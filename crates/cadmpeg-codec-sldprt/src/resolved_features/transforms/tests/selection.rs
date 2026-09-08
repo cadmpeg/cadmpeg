@@ -634,12 +634,13 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let mut first_marker = marker("first-point", Some([-0.005, 0.002]));
@@ -788,12 +789,13 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(20.0, 20.0, 0.0),
-            normal: Vector3::new(-1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(20.0, 20.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let circles = [((6, 14), 3), ((14, 14), 3), ((14, 7), 3), ((6, 7), 3)];
@@ -875,15 +877,19 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         name: Some("Sketch2".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
-            entity: entity_id.clone(),
-            reversed: false,
-        }]],
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
+            cadmpeg_ir::sketches::SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            },
+        ]])
+        .unwrap(),
         native_ref: None,
     }];
     let entities = [SketchEntity::new(

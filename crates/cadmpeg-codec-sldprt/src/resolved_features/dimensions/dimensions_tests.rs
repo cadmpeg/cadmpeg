@@ -1283,12 +1283,13 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, 1.0e-8)

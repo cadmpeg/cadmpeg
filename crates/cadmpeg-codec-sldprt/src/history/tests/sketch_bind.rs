@@ -335,16 +335,22 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         name: Some("Profile".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
-            entity: cadmpeg_ir::sketches::SketchEntityId::mint("synthetic:test:id#sketch:entity")
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
+            cadmpeg_ir::sketches::SketchEntityUse {
+                entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+                    "synthetic:test:id#sketch:entity",
+                )
                 .unwrap(),
-            reversed: false,
-        }]],
+                reversed: false,
+            },
+        ]])
+        .unwrap(),
         native_ref: None,
     };
     let neutral =

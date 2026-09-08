@@ -122,6 +122,11 @@ fn project_brep(
             Ok(id) => id,
             Err(_) => continue,
         };
+        let Ok(placement) =
+            cadmpeg_ir::sketches::SketchPlacement::try_resolved(*origin, *normal, *u_axis)
+        else {
+            continue;
+        };
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
@@ -235,6 +240,9 @@ fn project_brep(
                     )]),
             );
         }
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
+            continue;
+        };
         if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
             continue;
         }
@@ -261,11 +269,7 @@ fn project_brep(
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: *origin,
-                normal: *normal,
-                u_axis: *u_axis,
-            },
+            placement,
             profiles,
             native_ref: Some(native_ref.to_string()),
         });

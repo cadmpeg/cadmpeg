@@ -90,7 +90,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: spline_id.clone(),
                 reversed: false,
@@ -103,7 +103,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 entity: second_line_id.clone(),
                 reversed: false,
             },
-        ]],
+        ]])
+        .unwrap(),
         native_ref: None,
     });
     for (id, geometry) in [
@@ -1008,7 +1009,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: Default::default(),
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
     });
     assert!(matches!(
@@ -1746,12 +1747,13 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
     });
     assert_eq!(
@@ -1759,11 +1761,11 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         ProfileRef::Native("creo:featdefs:sketch#offset:40".to_string())
     );
 
-    ir.model.sketches[0].profiles.push(vec![SketchEntityUse {
+    ir.model.sketches[0].profiles.push_single(SketchEntityUse {
         entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
             .unwrap(),
         reversed: false,
-    }]);
+    });
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Sketch(SketchId::mint("creo:model:sketch#offset:40".to_string()).unwrap())
@@ -1787,7 +1789,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: entity_id(1),
                 reversed: false,
@@ -1796,7 +1798,8 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 entity: entity_id(2),
                 reversed: true,
             },
-        ]],
+        ]])
+        .unwrap(),
         native_ref: None,
     });
     ir.model.sketch_entities.extend([
