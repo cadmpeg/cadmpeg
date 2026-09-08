@@ -1122,7 +1122,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .iter()
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
-            matches!(geometry, SurfaceGeometry::Cylinder { origin, axis, radius, .. }
+            matches!(geometry, crate::decode::holes::placement::HoleCylinder { origin, axis, radius, .. }
                 if *origin == Point3::new(1.0, 2.0, 3.0)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
                     && (*radius - 0.098).abs() < 1.0e-12)

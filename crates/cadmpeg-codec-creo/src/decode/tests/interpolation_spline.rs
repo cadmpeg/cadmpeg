@@ -11,6 +11,7 @@ use crate::decode::feature_history::{
     section_sweep_allows_linear_extrusion, section_sweep_boolean_operation,
     surface_transition_dependencies, sweep_output_kind, thicken_plane_offset,
 };
+use crate::decode::holes::placement::HoleCylinder;
 use crate::decode::holes::{
     circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
     cylinder_from_single_cap_outline, extrusion_extent_and_direction,
@@ -1631,7 +1632,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 draft: None,
             },
         },
-        geometry: SurfaceGeometry::Cylinder {
+        geometry: HoleCylinder {
             origin: Point3::new(2.0, 3.0, 4.0),
             axis: Vector3::new(0.0, 0.0, -1.0),
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1682,7 +1683,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
         normal: [0.0, -1.0, 0.0],
         offset: 20,
     };
-    let cylinder = SurfaceGeometry::Cylinder {
+    let cylinder = HoleCylinder {
         origin: Point3::new(5.0, -14.0, 1.0),
         axis: Vector3::new(0.0, 1.0, 0.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1693,11 +1694,8 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
         circular_section_profile_from_cylinder(&transform, &cylinder),
         Some(([2.0, 4.0], 4.5))
     );
-    let mut off_axis = cylinder.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut off_axis else {
-        unreachable!();
-    };
-    *axis = Vector3::new(1.0, 0.0, 0.0);
+    let mut off_axis = cylinder;
+    off_axis.axis = Vector3::new(1.0, 0.0, 0.0);
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &off_axis),
         None
@@ -1918,7 +1916,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
                 [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]],
             ),
         ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+        Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(0.0, 19.0, 0.85)
                 && axis == Vector3::new(0.0, 0.0, 1.0)
                 && radius == 1.5
@@ -1948,7 +1946,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             ),
             (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
         ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+        Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(-12.5, 4.0, 0.0)
                 && axis == Vector3::new(0.0, -1.0, 0.0)
                 && radius == 0.75
@@ -1960,7 +1958,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             [0.0, 1.0, 0.0],
             Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
         )),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+        Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(0.0, 16.0, 0.0)
                 && axis == Vector3::new(0.0, 1.0, 0.0)
                 && radius == 4.45
