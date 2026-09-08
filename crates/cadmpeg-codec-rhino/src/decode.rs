@@ -2362,6 +2362,7 @@ impl<'a> DecodeContext<'a> {
             }
         }
         self.report.typed_losses.extend(omissions);
+        losses.extend(self.scan.definitions.losses.iter().cloned());
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(
                 RhinoLossCode::ContainerInstanceDefinitionDegraded

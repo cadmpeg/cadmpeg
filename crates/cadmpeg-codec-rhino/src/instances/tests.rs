@@ -1493,3 +1493,21 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     }));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
+
+#[test]
+fn contradictory_standard_unit_detail_preserves_scale_and_name() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 2_u32.to_le_bytes().to_vec();
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(utf16_bytes("retained name"));
+    let data = anonymous_chunk(archive, 0, &body);
+    let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
+    let mut warnings = Vec::new();
+    let units =
+        super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
+    assert_eq!(units.unit, 2);
+    assert_eq!(units.meters_per_unit, 0.5);
+    assert_eq!(units.custom_name, "retained name");
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].starts_with("redundant instance unit detail "));
+}
