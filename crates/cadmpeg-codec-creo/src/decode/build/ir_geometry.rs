@@ -138,7 +138,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     );
     diagnostics.record_coverage(coverage);
     *brep_diagnostics = diagnostics;
-    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations);
+    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations)?;
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, ir, annotations)?;
     let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations)?;

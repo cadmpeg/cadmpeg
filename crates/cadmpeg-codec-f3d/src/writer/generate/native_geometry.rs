@@ -6278,7 +6278,7 @@ pub(crate) fn native_pcurve(
                     pcurve.id
                 ))
             })?;
-            let range = metadata.parameter_range.ok_or_else(|| {
+            let range = metadata.parameter_range().ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "ref-form pcurve {} has no parameter range",
                     pcurve.id
@@ -6302,7 +6302,7 @@ pub(crate) fn native_pcurve(
             pcurve.id
         )));
     }
-    let range = inline.parameter_range;
+    let range = inline.parameter_range();
     let native_geometry = native_support_pcurve_for_range(support, &pcurve.geometry, range)?;
     let NativePcurveGeometry {
         degree,

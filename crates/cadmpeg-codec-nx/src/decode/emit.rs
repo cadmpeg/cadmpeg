@@ -711,11 +711,12 @@ pub(super) fn emit_topology(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry,
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                         None,
                         Some(parameter_range),
                         fit_tolerance,
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
                 pcurve = Some(pcurve_id);
             }

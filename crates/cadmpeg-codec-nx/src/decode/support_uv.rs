@@ -2220,14 +2220,22 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     Some((
                         coedge_id,
                         source_index,
-                        (candidate.0.clone(), candidate.1, fit_tolerance),
+                        (
+                            candidate.0.clone(),
+                            cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                                None,
+                                Some(candidate.1),
+                                fit_tolerance,
+                            )
+                            .ok()?,
+                        ),
                     ))
                 },
             )
             .collect::<Vec<_>>();
         replacements
     };
-    for (coedge_id, source_index, (geometry, parameter_range, fit_tolerance)) in replacements {
+    for (coedge_id, source_index, (geometry, metadata)) in replacements {
         let source = &sources[source_index];
         let Some(fin_xmt) = coedge_id
             .as_str()
@@ -2253,17 +2261,13 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .tag("INTERSECTION_PCURVE");
         annotations.derived(&pcurve_id, "geometry");
         annotations.derived(&pcurve_id, "parameter_range");
-        if fit_tolerance.is_some() {
+        if metadata.fit_tolerance().is_some() {
             annotations.derived(&pcurve_id, "fit_tolerance");
         }
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry,
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
-                None,
-                Some(parameter_range),
-                fit_tolerance,
-            ),
+            metadata,
         });
         if let Some(coedge) = ir
             .model

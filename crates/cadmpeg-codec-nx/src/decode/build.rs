@@ -588,7 +588,7 @@ pub(crate) fn try_decode_geometry(
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt, id);

@@ -28,7 +28,7 @@ pub(in super::super) fn add_extrusion_pcurve(
     id: PcurveId,
     source_offset: usize,
     geometry: PcurveGeometry,
-) -> PcurveId {
+) -> Result<PcurveId, cadmpeg_core::CodecError> {
     let parameter_range = match &geometry {
         PcurveGeometry::Nurbs { nurbs } => usize::try_from(nurbs.degree())
             .ok()
@@ -53,9 +53,14 @@ pub(in super::super) fn add_extrusion_pcurve(
     ir.model.pcurves.push(Pcurve {
         id: id.clone(),
         geometry,
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some(parameter_range), None),
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            None,
+            Some(parameter_range),
+            None,
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
     });
-    id
+    Ok(id)
 }
 
 pub(in super::super) fn revolution_boundary_pcurve(

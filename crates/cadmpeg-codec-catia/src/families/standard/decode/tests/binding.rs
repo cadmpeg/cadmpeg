@@ -849,7 +849,8 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             &[None],
             &[None],
             &[],
-        );
+        )
+        .unwrap();
 
         let [loop_] = ir.model.loops.as_slice() else {
             panic!("standard edge emission must create one loop");

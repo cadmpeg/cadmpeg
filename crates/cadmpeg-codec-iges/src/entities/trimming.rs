@@ -2196,7 +2196,7 @@ pub(super) fn project(
                     param_range: item.source_edge.param_range,
                     tolerance: Some(sewing_tolerance),
                 });
-                let pcurve_uses = item
+                let pcurve_uses = match item
                     .pcurves
                     .into_iter()
                     .enumerate()
@@ -2210,19 +2210,26 @@ pub(super) fn project(
                         candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
-                            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                                 None,
                                 Some(parameter_range),
                                 None,
-                            ),
+                            )?,
                         });
-                        PcurveUse {
+                        Ok(PcurveUse {
                             pcurve: id,
                             isoparametric: None,
                             parameter_range: None,
-                        }
+                        })
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, &'static str>>() {
+                    Ok(uses) => uses,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, error));
+                        valid = false;
+                        break;
+                    }
+                };
                 let coedge_id = coedge_ids[segment_index].clone();
                 candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.clone(),

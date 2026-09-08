@@ -4881,7 +4881,7 @@ fn attach_standard_topology(
         &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
-    );
+    )?;
     Ok(())
 }
 
@@ -5012,7 +5012,7 @@ fn emit_standard_topology(
     native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
-) {
+) -> Result<(), StandardTopologyFailure> {
     let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -5142,7 +5142,7 @@ fn emit_standard_topology(
                     ),
                     edge_curve,
                 )
-                .map(|(geometry, range)| {
+                .map(|(geometry, range)| -> Result<_, StandardTopologyFailure> {
                     let id = PcurveId::mint(format!(
                         "catia:standard:pcurve#{face_index}:{loop_index}:{coedge_index}"
                     ))
@@ -5159,14 +5159,16 @@ fn emit_standard_topology(
                     ir.model.pcurves.push(Pcurve {
                         id: id.clone(),
                         geometry,
-                        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                             None,
                             Some(range),
                             None,
-                        ),
+                        )
+                        .map_err(|_| StandardTopologyFailure::InadmissibleNeutralModel)?,
                     });
-                    (id, range)
-                });
+                    Ok((id, range))
+                })
+                .transpose()?;
                 let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
                 let id = coedge_ids[coedge_index].clone();
@@ -5249,6 +5251,8 @@ fn emit_standard_topology(
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn standard_native_support_endpoint_pair(

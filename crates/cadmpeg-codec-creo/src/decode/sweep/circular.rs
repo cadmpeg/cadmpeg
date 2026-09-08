@@ -106,7 +106,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 circular_pcurve(section_center, radius, 0.0, std::f64::consts::TAU).ok_or_else(
                     || cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid"),
                 )?,
-            );
+            )?;
             let side_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
@@ -115,7 +115,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
                 })?,
-            );
+            )?;
             ir.model.surfaces.push(Surface {
                 id: cap_surface.clone(),
                 geometry: SurfaceGeometry::Plane(

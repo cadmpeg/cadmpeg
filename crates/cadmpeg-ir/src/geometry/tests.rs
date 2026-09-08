@@ -105,12 +105,15 @@ fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
             )
             .unwrap(),
         ),
-        metadata: crate::geometry::PcurveMetadata::AsmInline(crate::geometry::PcurveInlineForm {
-            wrapper_reversed: false,
-            native_tail_flags: [true, false, true, false],
-            parameter_range: [-1.0, 2.0],
-            fit_tolerance: 0.001,
-        }),
+        metadata: crate::geometry::PcurveMetadata::AsmInline(
+            crate::geometry::PcurveInlineForm::try_new(
+                false,
+                [true, false, true, false],
+                [-1.0, 2.0],
+                0.001,
+            )
+            .unwrap(),
+        ),
     };
     let value = serde_json::to_value(&pcurve).unwrap();
     assert_eq!(
@@ -762,6 +765,7 @@ mod compound_components;
 mod compound_loft;
 mod fit_tolerance;
 mod nurbs_invariants;
+mod pcurve_metadata;
 
 mod vertex_blend_twists;
 

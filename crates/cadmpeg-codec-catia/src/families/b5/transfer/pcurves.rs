@@ -671,7 +671,7 @@ pub(super) fn emit_pcurves(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> HashMap<(u32, usize), (PcurveId, [f64; 2])> {
+) -> Option<HashMap<(u32, usize), (PcurveId, [f64; 2])>> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
@@ -734,13 +734,14 @@ pub(super) fn emit_pcurves(
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                     None,
                     Some(parameter_range),
                     None,
-                ),
+                )
+                .ok()?,
             });
         }
     }
-    pcurve_uses
+    Some(pcurve_uses)
 }

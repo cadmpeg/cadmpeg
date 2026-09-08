@@ -415,11 +415,12 @@ pub(crate) fn transfer_closed_face_topology(
         ir.model.pcurves.push(Pcurve {
             id: pcurve.id.clone(),
             geometry: pcurve.geometry.clone(),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 None,
                 Some(pcurve.parameter_range),
                 None,
-            ),
+            )
+            .ok()?,
         });
     }
 

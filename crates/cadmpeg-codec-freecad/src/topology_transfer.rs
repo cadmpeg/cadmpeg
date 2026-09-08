@@ -65,7 +65,7 @@ pub(crate) fn transfer(
                 |property| property.owner.clone(),
             );
         let mut builder = Builder::new(payload, tables, source_object);
-        builder.emit_pcurves(ir);
+        builder.emit_pcurves(ir)?;
         for root in builder.body_roots()? {
             builder.append_body(ctx, ir, root)?;
         }
@@ -217,7 +217,7 @@ impl<'a> Builder<'a> {
         });
     }
 
-    fn emit_pcurves(&self, ir: &mut CadIr) {
+    fn emit_pcurves(&self, ir: &mut CadIr) -> Result<(), CodecError> {
         for shape in self.tables.tshapes {
             let TextTShapeGeometry::Edge {
                 representations, ..
@@ -256,11 +256,12 @@ impl<'a> Builder<'a> {
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(shape.index, representation_index, false),
                     geometry: primary_geometry,
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                         None,
                         primary_range,
                         None,
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
                 if let Some(secondary) = secondary {
                     let Some(secondary_geometry) =
@@ -277,15 +278,18 @@ impl<'a> Builder<'a> {
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(shape.index, representation_index, true),
                         geometry: secondary_geometry,
-                        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                             None,
                             secondary_range,
                             None,
-                        ),
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                     });
                 }
             }
         }
+
+        Ok(())
     }
 
     fn emit_unowned_triangulations(&self, ir: &mut CadIr) {

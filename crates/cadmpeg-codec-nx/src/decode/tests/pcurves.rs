@@ -1188,11 +1188,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 None,
                 Some([0.0, 10.0]),
                 Some(0.02),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
@@ -1372,7 +1373,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
             panic!("fixture uses general pcurve metadata")
         };
-        metadata.parameter_range = Some(range);
+        metadata.set_parameter_range(Some(range)).unwrap();
         pcurve.geometry = PcurveGeometry::Ellipse(
             cadmpeg_ir::geometry::EllipsePcurve::try_new(
                 Point2::new(5.0, 0.0),
