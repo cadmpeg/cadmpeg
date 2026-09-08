@@ -8421,8 +8421,8 @@ type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EdgeLineRole {
     NotLine,
-    FixedLine,
-    FlexibleLine,
+    Fixed,
+    Flexible,
 }
 
 struct StandardLinePairConstraint {
@@ -8455,16 +8455,16 @@ impl StandardLinePairConstraint {
                     .get(edge)
                     .is_some_and(|options| options.len() > 1)
                 {
-                    EdgeLineRole::FlexibleLine
+                    EdgeLineRole::Flexible
                 } else {
-                    EdgeLineRole::FixedLine
+                    EdgeLineRole::Fixed
                 }
             })
             .collect::<Vec<_>>();
         let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
 
         for (edge, support) in supports.iter().enumerate() {
-            if edge_roles[edge] != EdgeLineRole::FlexibleLine {
+            if edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
             for &face in &support.faces {
@@ -8486,7 +8486,7 @@ impl StandardLinePairConstraint {
     fn flexible_edge_mask(&self) -> impl Iterator<Item = bool> + '_ {
         self.edge_roles
             .iter()
-            .map(|role| *role == EdgeLineRole::FlexibleLine)
+            .map(|role| *role == EdgeLineRole::Flexible)
     }
 
     fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
@@ -8510,7 +8510,7 @@ impl StandardLinePairConstraint {
         }
         let mut selected = vec![None; self.edge_roles.len()];
         for (edge, pair) in pairs.iter().enumerate() {
-            if self.edge_roles[edge] != EdgeLineRole::FlexibleLine {
+            if self.edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
             let Some(pair) = pair else {
