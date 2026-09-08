@@ -1715,9 +1715,8 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
     assert_eq!(serde_json::to_value(record).unwrap(), wire);
     for count in [0, 1, 3] {
         let mut invalid_chain = wire.clone();
-        invalid_chain["chain_records"] = serde_json::Value::Array(
-            std::iter::repeat_n(wire["chain_records"][0].clone(), count).collect(),
-        );
+        invalid_chain["chain_records"] =
+            serde_json::Value::Array(vec![wire["chain_records"][0].clone(); count]);
         assert!(
             serde_json::from_value::<super::DesignSurfaceTrimOperation>(invalid_chain).is_err()
         );
