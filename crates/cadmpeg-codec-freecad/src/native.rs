@@ -4,6 +4,7 @@
 pub(crate) mod frame;
 pub(crate) mod joint;
 
+use crate::attachment::MapModeIndex;
 use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_ir::hash::sha256_hex;
@@ -443,7 +444,7 @@ pub struct AttachmentRecord {
     /// Ordered support objects and subelements.
     pub supports: Vec<LinkTarget>,
     /// Persisted attachment-map mode.
-    pub map_mode: Option<String>,
+    pub map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
     placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
@@ -455,7 +456,7 @@ impl AttachmentRecord {
         id: String,
         object: String,
         supports: Vec<LinkTarget>,
-        map_mode: Option<String>,
+        map_mode: Option<MapModeIndex>,
         placement: Option<[[f64; 4]; 4]>,
         offset: Option<[[f64; 4]; 4]>,
     ) -> Result<Self, String> {
@@ -498,7 +499,7 @@ struct AttachmentRecordWire {
     id: String,
     object: String,
     supports: Vec<LinkTarget>,
-    map_mode: Option<String>,
+    map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
     effective_frame: [[f64; 4]; 4],

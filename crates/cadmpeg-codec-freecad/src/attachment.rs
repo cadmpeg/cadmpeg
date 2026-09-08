@@ -65,6 +65,53 @@ const MAP_MODE_NAMES: &[&str] = &[
     "MidPoint",
 ];
 
+/// An index in the attachment map-mode table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct MapModeIndex(u8);
+
+impl MapModeIndex {
+    pub(crate) fn try_new(index: usize) -> Result<Self, String> {
+        if index >= MAP_MODE_NAMES.len() {
+            return Err(format!("map_mode index {index} is out of range"));
+        }
+        u8::try_from(index)
+            .map(Self)
+            .map_err(|_| format!("map_mode index {index} exceeds its storage range"))
+    }
+}
+
+impl TryFrom<&str> for MapModeIndex {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let index = value
+            .parse::<usize>()
+            .map_err(|_| format!("map_mode {value:?} is not an index"))?;
+        Self::try_new(index)
+    }
+}
+
+impl TryFrom<String> for MapModeIndex {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_str())
+    }
+}
+
+impl std::fmt::Display for MapModeIndex {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl From<MapModeIndex> for String {
+    fn from(value: MapModeIndex) -> Self {
+        value.to_string()
+    }
+}
+
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
@@ -167,7 +214,7 @@ fn support_links(property: &PropertyRecord) -> Result<Vec<LinkTarget>, CodecErro
     Ok(property.links().to_vec())
 }
 
-fn map_mode_value(property: &PropertyRecord) -> Result<String, CodecError> {
+fn map_mode_value(property: &PropertyRecord) -> Result<MapModeIndex, CodecError> {
     if property.type_name != "App::PropertyEnumeration" {
         return Err(malformed(format!(
             "attachment property {} has runtime type {}, expected App::PropertyEnumeration",
@@ -186,31 +233,14 @@ fn map_mode_value(property: &PropertyRecord) -> Result<String, CodecError> {
             property.id
         )));
     }
-    let index = value
-        .attributes
-        .get("value")
-        .ok_or_else(|| {
-            malformed(format!(
-                "attachment property {} has no enum index",
-                property.id
-            ))
-        })?
-        .parse::<usize>()
-        .map_err(|_| {
-            malformed(format!(
-                "attachment property {} has an invalid enum index",
-                property.id
-            ))
-        })?;
-    MAP_MODE_NAMES
-        .get(index)
-        .map(|_| index.to_string())
-        .ok_or_else(|| {
-            malformed(format!(
-                "attachment property {} enum index {index} is out of range",
-                property.id
-            ))
-        })
+    let index = value.attributes.get("value").ok_or_else(|| {
+        malformed(format!(
+            "attachment property {} has no enum index",
+            property.id
+        ))
+    })?;
+    MapModeIndex::try_from(index.as_str())
+        .map_err(|error| malformed(format!("attachment property {}: {error}", property.id)))
 }
 
 fn malformed(message: impl Into<String>) -> CodecError {
