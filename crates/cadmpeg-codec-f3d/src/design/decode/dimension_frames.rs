@@ -197,7 +197,6 @@ fn decode_standard_recipe_references(
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::Either,
-            true,
         ) else {
             return Vec::new();
         };
@@ -234,7 +233,6 @@ fn decode_paired_recipe_references(
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::Packed,
-            false,
         ) else {
             return Vec::new();
         };
@@ -244,7 +242,6 @@ fn decode_paired_recipe_references(
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::LengthPrefixed,
-            true,
         ) else {
             return Vec::new();
         };
@@ -306,7 +303,6 @@ fn decode_grouped_recipe_references(
                 prefix_offset,
                 at,
                 RecipeReferenceTokenFrame::Packed,
-                false,
             ) else {
                 return Vec::new();
             };
@@ -343,7 +339,6 @@ fn decode_recipe_reference_operand(
     prefix_offset: u64,
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-    terminated: bool,
 ) -> Option<(Vec<crate::records::DesignRecipeReference>, usize)> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
@@ -381,7 +376,7 @@ fn decode_recipe_reference_operand(
         return None;
     }
     let references_end = references_at.checked_add(reference_bytes)?;
-    let next = if terminated {
+    let next = if !matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
         if View::u32_le_at(prefix, references_end) != Some(0) {
             return None;
         }
