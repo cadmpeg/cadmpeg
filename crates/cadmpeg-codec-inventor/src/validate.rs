@@ -1949,15 +1949,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         .iter()
         .map(|state| state.ordinal)
         .collect::<HashSet<_>>();
-    for state in data.ufrx.model_states() {
-        if state.name.is_empty() || state.suffix_len != 77 || state.suffix_sha256.len() != 64 {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor UFRxDoc model-state framing is inconsistent".into(),
-                Some(state.id.clone()),
-            ));
-        }
-    }
     if model_state_ordinals.len() != data.ufrx.model_states().len()
         || model_state_ordinals
             != (0..data.ufrx.model_states().len() as u32).collect::<HashSet<_>>()

@@ -28,7 +28,8 @@ use crate::native::protein::{
 };
 use crate::native::ufrx::{
     EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateParameterRecord,
-    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+    UfrxModelStateRecord, UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxRecord,
+    UfrxRepresentationRecord,
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
@@ -336,29 +337,32 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .model_states
                 .iter()
                 .enumerate()
-                .map(|(ordinal, state)| UfrxModelStateRecord {
-                    id: format!("inventor:ufrx:model-state#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    prefix: state.prefix,
-                    name: state.name.clone(),
-                    state: state.state,
-                    prefix_count: state.prefix_count,
-                    parameters: state
-                        .parameters
-                        .iter()
-                        .map(|parameter| UfrxModelStateParameterRecord {
-                            name: parameter.name.clone(),
-                            tag: parameter.tag,
-                            kind: parameter.kind,
-                            state: parameter.state,
-                            value: parameter.value.clone(),
-                            trailer: parameter.trailer,
-                        })
-                        .collect(),
-                    suffix_len: state.suffix.window().len() as u64,
-                    suffix_sha256: sha256_hex(state.suffix.window()),
+                .map(|(ordinal, state)| {
+                    UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
+                        id: format!("inventor:ufrx:model-state#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        prefix: state.prefix,
+                        name: state.name.clone(),
+                        state: state.state,
+                        prefix_count: state.prefix_count,
+                        parameters: state
+                            .parameters
+                            .iter()
+                            .map(|parameter| UfrxModelStateParameterRecord {
+                                name: parameter.name.clone(),
+                                tag: parameter.tag,
+                                kind: parameter.kind,
+                                state: parameter.state,
+                                value: parameter.value.clone(),
+                                trailer: parameter.trailer,
+                            })
+                            .collect(),
+                        suffix_len: state.suffix.window().len() as u64,
+                        suffix_sha256: sha256_hex(state.suffix.window()),
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(CodecError::malformed)?;
             let references = document
                 .references
                 .iter()

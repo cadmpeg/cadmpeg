@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UFRx` document states and their owned child records.
 
+use crate::native::digest::Sha256Hex;
+use cadmpeg_ir::products::NonEmptyString;
+
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};
 
@@ -104,7 +107,23 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "UfrxModelStateRecordWire",
+    into = "UfrxModelStateRecordWire"
+)]
 pub(crate) struct UfrxModelStateRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) prefix: u8,
+    name: NonEmptyString,
+    pub(crate) state: [u16; 2],
+    pub(crate) prefix_count: u32,
+    pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
+    suffix_sha256: Sha256Hex,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct UfrxModelStateRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) prefix: u8,
@@ -114,6 +133,42 @@ pub(crate) struct UfrxModelStateRecord {
     pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
     pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
+}
+
+impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
+    type Error = String;
+    fn try_from(wire: UfrxModelStateRecordWire) -> Result<Self, Self::Error> {
+        if wire.suffix_len != 77 {
+            return Err("suffix_len must be 77".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            prefix: wire.prefix,
+            name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
+            state: wire.state,
+            prefix_count: wire.prefix_count,
+            parameters: wire.parameters,
+            suffix_sha256: Sha256Hex::try_from(wire.suffix_sha256)
+                .map_err(|error| format!("suffix_sha256: {error}"))?,
+        })
+    }
+}
+
+impl From<UfrxModelStateRecord> for UfrxModelStateRecordWire {
+    fn from(value: UfrxModelStateRecord) -> Self {
+        Self {
+            id: value.id,
+            ordinal: value.ordinal,
+            prefix: value.prefix,
+            name: value.name.as_str().to_owned(),
+            state: value.state,
+            prefix_count: value.prefix_count,
+            parameters: value.parameters,
+            suffix_sha256: value.suffix_sha256.into(),
+            suffix_len: 77,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -485,6 +540,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn model_state_admission_rejects_invalid_framing() {
+        let valid = serde_json::json!({
+            "id": "state", "ordinal": 0, "prefix": 0, "name": "Primary",
+            "state": [0, 0], "prefix_count": 0, "parameters": [],
+            "suffix_len": 77, "suffix_sha256": "a".repeat(64)
+        });
+        let record: UfrxModelStateRecord = serde_json::from_value(valid.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), valid);
+        for (field, value) in [
+            ("name", serde_json::json!("")),
+            ("suffix_len", serde_json::json!(76)),
+            ("suffix_len", serde_json::json!(78)),
+            ("suffix_sha256", serde_json::json!("a".repeat(63))),
+            ("suffix_sha256", serde_json::json!("g".repeat(64))),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = value;
+            assert!(
+                serde_json::from_value::<UfrxModelStateRecord>(wire).is_err(),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
     fn parsed_state_owns_arenas_and_checks_wire_counts() {
         let record = UfrxRecord::ParsedPrefix {
             id: "inventor:ufrx:state#root".into(),
@@ -494,7 +574,7 @@ mod tests {
             original_file_name: "part.ipt".into(),
             caption: "part".into(),
             representation: None,
-            model_states: vec![UfrxModelStateRecord {
+            model_states: vec![UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
                 id: "inventor:ufrx:model-state#0".into(),
                 ordinal: 0,
                 prefix: 0,
@@ -504,7 +584,8 @@ mod tests {
                 parameters: vec![],
                 suffix_len: 77,
                 suffix_sha256: "0".repeat(64),
-            }],
+            })
+            .unwrap()],
             external_references: vec![],
             embedded_references: vec![],
             occurrences: vec![],
