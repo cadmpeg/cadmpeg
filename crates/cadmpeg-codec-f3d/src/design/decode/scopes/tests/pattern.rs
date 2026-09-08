@@ -488,8 +488,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &rectangular_owners,
     )
     .expect("exact assembly scalar lanes");
-    assert_eq!(alignment.angle, 3.0);
-    assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
+    assert_eq!(alignment.angle(), 3.0);
+    assert_eq!(alignment.offset(), [1.0, 10.0, 0.0]);
     assert_eq!(
         alignment
             .owners
@@ -532,8 +532,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &placement_and_alignment_owners,
     )
     .expect("assembly alignment after four placement lanes");
-    assert_eq!(alignment.angle, 0.25);
-    assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(alignment.angle(), 0.25);
+    assert_eq!(alignment.offset(), [4.0, 5.0, 6.0]);
     assert_eq!(
         alignment
             .owners
@@ -550,8 +550,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &placement_and_alignment_owners,
     )
     .expect("JointOrigin datum-envelope alignment after four placement lanes");
-    assert_eq!(datum_envelope_alignment.angle, 0.25);
-    assert_eq!(datum_envelope_alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(datum_envelope_alignment.angle(), 0.25);
+    assert_eq!(datum_envelope_alignment.offset(), [4.0, 5.0, 6.0]);
     assert_eq!(
         datum_envelope_alignment
             .owners
@@ -580,8 +580,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &short_axial_owners,
     )
     .expect("six-owner alignment belongs to the 705-byte axial frame");
-    assert_eq!(short_axial_alignment.angle, 0.5);
-    assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(short_axial_alignment.angle(), 0.5);
+    assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
 
     let mut legacy_alignment_owners = placement_and_alignment_owners.clone();
     legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
@@ -602,8 +602,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &legacy_alignment_owners,
     )
     .expect("legacy assembly axial alignment lanes");
-    assert_eq!(alignment.angle, 0.5);
-    assert_eq!(alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(alignment.angle(), 0.5);
+    assert_eq!(alignment.offset(), [0.0, 0.0, 2.0]);
     assert_eq!(
         alignment
             .owners
@@ -738,8 +738,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &legacy_alignment_owners,
     )
     .expect("legacy assembly alignment and operand frames");
-    assert_eq!(axial_alignment.angle, 0.5);
-    assert_eq!(axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(axial_alignment.angle(), 0.5);
+    assert_eq!(axial_alignment.offset(), [0.0, 0.0, 2.0]);
     let axial_frames = axial_alignment.operand_frames().unwrap();
     assert_eq!(axial_frames[0].reference_offset, 29);
     assert_eq!(axial_frames[0].transform_offset, 39);
@@ -764,8 +764,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &short_axial_owners,
     )
     .expect("short axial assembly alignment and operand frames");
-    assert_eq!(short_axial_alignment.angle, 0.5);
-    assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(short_axial_alignment.angle(), 0.5);
+    assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
     assert_eq!(
         short_axial_alignment
             .owners

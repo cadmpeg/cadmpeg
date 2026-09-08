@@ -201,13 +201,16 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             offset: 322,
         }],
     };
-    let limits = crate::records::feature::DesignAssemblyLimits {
-        kind: crate::records::feature::DesignAssemblyLimitKind::Angular,
-        minimum: -1.0,
-        maximum: 1.0,
-        owner_record_indices: [40, 50],
-        value_offsets: [411, 511],
-    };
+    let limits: crate::records::feature::DesignAssemblyLimits =
+        crate::records::feature::DesignAssemblyLimitsWire {
+            kind: crate::records::feature::DesignAssemblyLimitKind::Angular,
+            minimum: -1.0,
+            maximum: 1.0,
+            owner_record_indices: [40, 50],
+            value_offsets: [411, 511],
+        }
+        .try_into()
+        .unwrap();
     let joint_origin = crate::records::feature::DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: 60,
         class_tag: crate::records::DesignClassTag::try_from("307".to_owned()).unwrap(),
@@ -275,10 +278,10 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             ),
         ),
     ] {
-        let alignment = crate::records::feature::DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owners: vec![
+        let alignment = crate::records::feature::DesignAssemblyAlignment::try_new(
+            0.0,
+            [0.0; 3],
+            vec![
                 crate::records::Located {
                     value: 10,
                     offset: 11,
@@ -289,7 +292,8 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
                 },
             ],
             form,
-        };
+        )
+        .unwrap();
         let wire = serde_json::to_string(&alignment).unwrap();
         let decoded: crate::records::feature::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
@@ -408,11 +412,11 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         transform_offset: 325,
     };
     for frames_field_present in [false, true] {
-        let alignment = crate::records::feature::DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owners: Vec::new(),
-            form: Some(
+        let alignment = crate::records::feature::DesignAssemblyAlignment::try_new(
+            0.0,
+            [0.0; 3],
+            Vec::new(),
+            Some(
                 crate::records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                     carriers: carriers.clone(),
                     solved_frame: solved_frame.clone(),
@@ -420,7 +424,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                     frames_field_present,
                 },
             ),
-        };
+        )
+        .unwrap();
         let frames = alignment.operand_frames().unwrap();
         assert_eq!(frames[0].reference_record_index, 10);
         assert_eq!(frames[1].reference_record_index, 20);
@@ -608,6 +613,54 @@ fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>
             } else {
                 let decoded = decoded.unwrap_or_else(|error| panic!("{field}: {error}"));
                 assert_eq!(serde_json::to_value(decoded).unwrap(), changed);
+            }
+        }
+    }
+}
+
+#[test]
+fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds() {
+    use crate::records::feature::{
+        DesignAssemblyAlignment, DesignAssemblyLimitKind, DesignAssemblyLimits,
+        DesignAssemblyLimitsWire,
+    };
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(DesignAssemblyAlignment::try_new(invalid, [0.0; 3], Vec::new(), None).is_err());
+        for lane in 0..3 {
+            let mut offset = [0.0; 3];
+            offset[lane] = invalid;
+            assert!(DesignAssemblyAlignment::try_new(0.0, offset, Vec::new(), None).is_err());
+        }
+    }
+    let alignment =
+        DesignAssemblyAlignment::try_new(-1.0, [-2.0, -0.0, 3.0], Vec::new(), None).unwrap();
+    let json = serde_json::to_value(&alignment).unwrap();
+    assert_eq!(
+        serde_json::from_value::<DesignAssemblyAlignment>(json).unwrap(),
+        alignment
+    );
+    for (minimum, maximum, valid) in [
+        (-1.0, 2.0, true),
+        (0.0, 0.0, true),
+        (2.0, 1.0, false),
+        (f64::NAN, 1.0, false),
+        (0.0, f64::INFINITY, false),
+        (f64::NEG_INFINITY, 0.0, false),
+    ] {
+        let wire = DesignAssemblyLimitsWire {
+            kind: DesignAssemblyLimitKind::Angular,
+            minimum,
+            maximum,
+            owner_record_indices: [1, 2],
+            value_offsets: [10, 20],
+        };
+        assert_eq!(DesignAssemblyLimits::try_from(wire.clone()).is_ok(), valid);
+        if minimum.is_finite() && maximum.is_finite() {
+            let json = serde_json::to_value(wire).unwrap();
+            let result = serde_json::from_value::<DesignAssemblyLimits>(json.clone());
+            assert_eq!(result.is_ok(), valid);
+            if let Ok(limits) = result {
+                assert_eq!(serde_json::to_value(limits).unwrap(), json);
             }
         }
     }

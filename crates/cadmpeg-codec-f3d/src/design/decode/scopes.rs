@@ -1831,12 +1831,10 @@ pub(crate) fn exact_assembly_alignment(
                 limits: exact.limits,
             },
         };
-        return Some(DesignAssemblyAlignment {
-            angle: exact.angle,
-            offset: exact.offset,
-            owners: exact.owners,
-            form: Some(form),
-        });
+        return Some(
+            DesignAssemblyAlignment::try_new(exact.angle, exact.offset, exact.owners, Some(form))
+                .ok()?,
+        );
     }
     let (angle, offset, owners) = {
         if matches!(scope.frame_length, 671 | 744 | 748)
@@ -1995,12 +1993,7 @@ pub(crate) fn exact_assembly_alignment(
             }
         })
     };
-    Some(DesignAssemblyAlignment {
-        angle,
-        offset,
-        owners,
-        form,
-    })
+    Some(DesignAssemblyAlignment::try_new(angle, offset, owners, form).ok()?)
 }
 
 pub(crate) fn exact_derived_instance_construction(

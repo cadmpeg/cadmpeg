@@ -2115,13 +2115,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             Some(alignment) => {
                 let values = if alignment.owners.len() == 2 {
-                    vec![alignment.angle, alignment.offset[2]]
+                    vec![alignment.angle(), alignment.offset()[2]]
                 } else {
                     vec![
-                        alignment.angle,
-                        alignment.offset[0],
-                        alignment.offset[1],
-                        alignment.offset[2],
+                        alignment.angle(),
+                        alignment.offset()[0],
+                        alignment.offset()[1],
+                        alignment.offset()[2],
                     ]
                 };
                 let operand_frame_variant = design::assembly::operand_frame_variant(
@@ -2429,10 +2429,25 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     match (alignment.limits(), alignment.owners.as_slice()) {
                         (Some(limits), [angle, offset_x, offset_y, offset_z]) => {
                             let alignment_lanes = [
-                                (offset_x.value, offset_x.offset, alignment.offset[0], 0_u32),
-                                (offset_y.value, offset_y.offset, alignment.offset[1], 1_u32),
-                                (offset_z.value, offset_z.offset, alignment.offset[2], 2_u32),
-                                (angle.value, angle.offset, alignment.angle, 3_u32),
+                                (
+                                    offset_x.value,
+                                    offset_x.offset,
+                                    alignment.offset()[0],
+                                    0_u32,
+                                ),
+                                (
+                                    offset_y.value,
+                                    offset_y.offset,
+                                    alignment.offset()[1],
+                                    1_u32,
+                                ),
+                                (
+                                    offset_z.value,
+                                    offset_z.offset,
+                                    alignment.offset()[2],
+                                    2_u32,
+                                ),
+                                (angle.value, angle.offset, alignment.angle(), 3_u32),
                             ];
                             let limit_order = if generation.reverse_limit_order() {
                                 [1, 0]
@@ -2444,14 +2459,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     (
                                         limits.owner_record_indices[index],
                                         limits.value_offsets[index],
-                                        [limits.minimum, limits.maximum][index],
+                                        [limits.minimum(), limits.maximum()][index],
                                         4 + ordinal as u32,
                                     )
                                 });
                             limits.kind == generation.limit_kind()
-                                && limits.minimum.is_finite()
-                                && limits.maximum.is_finite()
-                                && limits.minimum <= limits.maximum
                                 && alignment_lanes.into_iter().chain(limit_lanes).all(
                                     |(record_index, value_offset, value, local_ordinal)| {
                                         native.design_parameter_owners.iter().any(|owner| {
@@ -2538,8 +2550,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .take(alignment.owners.len())
                         .eq(alignment.owners.iter().map(|owner| &owner.value).rev())
                 };
-                values.iter().all(|value| value.is_finite())
-                    && operand_frames_link
+                operand_frames_link
                     && solved_frame_link
                     && operand_qualifiers_link
                     && joint_origin_envelope_link

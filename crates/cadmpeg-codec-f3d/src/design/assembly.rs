@@ -323,8 +323,8 @@ pub(crate) fn project_assembly_joints(
         let (angular_limits, linear_limits) = match limits {
             Some(limits) => {
                 let projected = JointLimits::Both {
-                    minimum: limits.minimum,
-                    maximum: limits.maximum,
+                    minimum: limits.minimum(),
+                    maximum: limits.maximum(),
                 };
                 match limits.kind {
                     DesignAssemblyLimitKind::Angular => (Some(projected), None),
@@ -341,8 +341,8 @@ pub(crate) fn project_assembly_joints(
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
-                    angle: Some(alignment.angle),
-                    translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
+                    angle: Some(alignment.angle()),
+                    translation_offset: Some(alignment.offset().map(|value| value * 10.0)),
                     angular_limits,
                     linear_limits,
                 },

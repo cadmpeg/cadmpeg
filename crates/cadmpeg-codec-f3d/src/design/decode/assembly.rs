@@ -10,7 +10,8 @@ use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
 use crate::records::feature::{
     DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands, DesignAssemblyLegacySelection,
-    DesignAssemblyLimits, DesignAssemblySolvedFrame, DesignParameterScope, DesignWorkPointRule,
+    DesignAssemblyLimits, DesignAssemblyLimitsWire, DesignAssemblySolvedFrame,
+    DesignParameterScope, DesignWorkPointRule,
 };
 use crate::records::{ConstructionRecipe, DesignParameterOwner, DesignRecordHeader};
 use cadmpeg_core::decode::View;
@@ -123,9 +124,6 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         minimum_owner.evaluated_value_offset(),
         maximum_owner.evaluated_value_offset(),
     ];
-    if !minimum.is_finite() || !maximum.is_finite() || minimum > maximum {
-        return None;
-    }
     Some(LegacyAsBuilt421Alignment {
         angle: angle.evaluated_value(),
         offset: [
@@ -140,13 +138,15 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
                 offset: owner.evaluated_value_offset(),
             })
             .collect(),
-        limits: DesignAssemblyLimits {
+        limits: DesignAssemblyLimitsWire {
             kind,
             minimum,
             maximum,
             owner_record_indices: limit_owner_record_indices,
             value_offsets: limit_value_offsets,
-        },
+        }
+        .try_into()
+        .ok()?,
     })
 }
 

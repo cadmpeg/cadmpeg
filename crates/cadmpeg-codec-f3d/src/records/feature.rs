@@ -1929,7 +1929,27 @@ pub enum DesignAssemblyLimitKind {
 
 /// Ordered lower and upper limits carried by a legacy As-built assembly scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignAssemblyLimitsWire",
+    into = "DesignAssemblyLimitsWire"
+)]
 pub struct DesignAssemblyLimits {
+    /// Degree-of-freedom domain of the limits.
+    #[serde(default)]
+    pub kind: DesignAssemblyLimitKind,
+    /// Lower bound in the domain's native units.
+    minimum: f64,
+    /// Upper bound in the domain's native units.
+    maximum: f64,
+    /// Parameter-owner records for the lower and upper bounds.
+    pub owner_record_indices: [u32; 2],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 2],
+}
+
+/// Wire fields for finite ordered assembly limits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignAssemblyLimitsWire {
     /// Degree-of-freedom domain of the limits.
     #[serde(default)]
     pub kind: DesignAssemblyLimitKind,
@@ -1941,6 +1961,42 @@ pub struct DesignAssemblyLimits {
     pub owner_record_indices: [u32; 2],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
     pub value_offsets: [u64; 2],
+}
+
+impl DesignAssemblyLimits {
+    pub(crate) fn minimum(&self) -> f64 {
+        self.minimum
+    }
+    pub(crate) fn maximum(&self) -> f64 {
+        self.maximum
+    }
+}
+
+impl TryFrom<DesignAssemblyLimitsWire> for DesignAssemblyLimits {
+    type Error = String;
+    fn try_from(wire: DesignAssemblyLimitsWire) -> Result<Self, Self::Error> {
+        if !wire.minimum.is_finite() || !wire.maximum.is_finite() || wire.minimum > wire.maximum {
+            return Err("assembly limits minimum and maximum must be finite and ordered".into());
+        }
+        Ok(Self {
+            kind: wire.kind,
+            minimum: wire.minimum,
+            maximum: wire.maximum,
+            owner_record_indices: wire.owner_record_indices,
+            value_offsets: wire.value_offsets,
+        })
+    }
+}
+impl From<DesignAssemblyLimits> for DesignAssemblyLimitsWire {
+    fn from(value: DesignAssemblyLimits) -> Self {
+        Self {
+            kind: value.kind,
+            minimum: value.minimum,
+            maximum: value.maximum,
+            owner_record_indices: value.owner_record_indices,
+            value_offsets: value.value_offsets,
+        }
+    }
 }
 
 /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
@@ -2180,9 +2236,9 @@ pub struct DesignAssemblyLegacySelection {
 )]
 pub struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
-    pub angle: f64,
+    angle: f64,
     /// Signed local-frame translation in source centimetres.
-    pub offset: [f64; 3],
+    offset: [f64; 3],
     /// Parameter-owner records and their evaluated-value locations.
     pub owners: Vec<Located<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
@@ -2245,6 +2301,32 @@ impl DesignAssemblyAlignmentForm {
 }
 
 impl DesignAssemblyAlignment {
+    pub(crate) fn try_new(
+        angle: f64,
+        offset: [f64; 3],
+        owners: Vec<Located<u32>>,
+        form: Option<DesignAssemblyAlignmentForm>,
+    ) -> Result<Self, String> {
+        if !angle.is_finite() {
+            return Err("assembly alignment angle must be finite".into());
+        }
+        if !offset.iter().all(|value| value.is_finite()) {
+            return Err("assembly alignment offset must be finite".into());
+        }
+        Ok(Self {
+            angle,
+            offset,
+            owners,
+            form,
+        })
+    }
+    pub(crate) fn angle(&self) -> f64 {
+        self.angle
+    }
+    pub(crate) fn offset(&self) -> [f64; 3] {
+        self.offset
+    }
+
     pub(crate) fn operand_frames(&self) -> Option<[DesignAssemblyOperandFrame; 2]> {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::Frames { frames } => Some(frames.clone()),
@@ -2394,12 +2476,7 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
-        Ok(Self {
-            angle: wire.angle,
-            offset: wire.offset,
-            owners,
-            form,
-        })
+        Self::try_new(wire.angle, wire.offset, owners, form)
     }
 }
 
