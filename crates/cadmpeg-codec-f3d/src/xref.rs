@@ -789,12 +789,15 @@ pub(crate) fn repeated_target_component_insert(
         return None;
     }
     let details = repeated_target_occurrence_placement_details(body)?;
-    let transform = details.transform.map(|(_, matrix)| matrix).unwrap_or([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]);
+    let transform = details.transform.map_or(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        |(_, matrix)| matrix,
+    );
     if transform != expected_transform {
         return None;
     }
