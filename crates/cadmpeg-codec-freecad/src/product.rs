@@ -57,7 +57,13 @@ pub(crate) fn transfer(
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?;
         let placement = selected_placement(&owned)?;
-        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
+        let local_transform = placement
+            .map(placement_matrix)
+            .transpose()?
+            .flatten()
+            .map(crate::native::frame::FiniteFrame::try_from)
+            .transpose()
+            .map_err(malformed)?;
         let link_transform = bool_property(&owned, "LinkTransform")?;
         let element_count = integer_property(&owned, "ElementCount")?
             .map(u64::try_from)
@@ -74,7 +80,10 @@ pub(crate) fn transfer(
         let copy_on_change_group =
             linked_object(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?;
+        let scale = scale_property(&owned)?
+            .map(crate::native::frame::FiniteVec3::try_from)
+            .transpose()
+            .map_err(malformed)?;
         let element_visibility_count = bool_list_count(&owned, "VisibilityList")?;
         if let Some(count) = element_count {
             let count = usize::try_from(count).map_err(|_| {

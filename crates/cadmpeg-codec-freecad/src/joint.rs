@@ -11,7 +11,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
-use cadmpeg_ir::transform::Transform;
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -71,7 +70,7 @@ pub(crate) fn transfer(
                 .and_then(optional_reference);
             JointBody::Grounded {
                 reference,
-                placement,
+                placement: placement.try_into().map_err(CodecError::Malformed)?,
             }
         } else if let Some(joint_type) = joint_type {
             let connector_record = |owned: &[&PropertyRecord],
@@ -85,8 +84,13 @@ pub(crate) fn transfer(
                         .next()
                         .and_then(optional_reference),
                     placement: placement(owned, placement_name)?
-                        .unwrap_or_else(crate::product::identity),
-                    offset: placement(owned, offset_name)?.unwrap_or_else(crate::product::identity),
+                        .unwrap_or_else(crate::product::identity)
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
+                    offset: placement(owned, offset_name)?
+                        .unwrap_or_else(crate::product::identity)
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
                 })
             };
             JointBody::Pair {
@@ -236,7 +240,7 @@ pub(crate) fn transfer_neutral(
                     id,
                     JointConnector {
                         operand: operand(reference.as_ref()?)?,
-                        frame: Transform::from_rows(*placement)?,
+                        frame: placement.transform(),
                         detached: bool_value("Detach1").unwrap_or(false),
                     },
                     None,
@@ -259,19 +263,16 @@ pub(crate) fn transfer_neutral(
                         [
                             JointConnector {
                                 operand: operand(first.reference.as_ref()?)?,
-                                frame: Transform::from_rows(first.placement)?,
+                                frame: first.placement.transform(),
                                 detached: bool_value("Detach1").unwrap_or(false),
                             },
                             JointConnector {
                                 operand: operand(second.reference.as_ref()?)?,
-                                frame: Transform::from_rows(second.placement)?,
+                                frame: second.placement.transform(),
                                 detached: bool_value("Detach2").unwrap_or(false),
                             },
                         ],
-                        Some([
-                            Transform::from_rows(first.offset)?,
-                            Transform::from_rows(second.offset)?,
-                        ]),
+                        Some([first.offset.transform(), second.offset.transform()]),
                     )
                 }
             };

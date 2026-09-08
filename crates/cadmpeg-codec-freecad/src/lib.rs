@@ -259,13 +259,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
         });
-        let non_finite = attachment
-            .placement
-            .iter()
-            .chain(attachment.offset.iter())
-            .flat_map(|matrix| matrix.iter().flatten())
-            .any(|value| !value.is_finite());
-        if !object_ids.contains(attachment.object.as_str()) || missing_support || non_finite {
+        if !object_ids.contains(attachment.object.as_str()) || missing_support {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
@@ -382,20 +376,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        let non_finite_array = node
-            .element_transforms()
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(node.element_scales().iter().flatten())
-            .any(|value| !value.is_finite());
-        if non_finite_array {
-            findings.push(finding(
-                Check::Counts,
-                format!("{} has invalid link-array count or values", node.id),
-                Some(node.id.clone()),
-            ));
-        }
     }
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
@@ -405,14 +385,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
             });
-        let invalid_frames = joint
-            .placements()
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(joint.offsets().iter().flatten().flatten())
-            .any(|value| !value.is_finite());
-        if missing_link || invalid_frames {
+        if missing_link {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
