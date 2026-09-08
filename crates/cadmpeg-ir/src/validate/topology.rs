@@ -5007,7 +5007,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     feature.id.as_str(),
                     "spatial sketch path curve",
-                    curves.iter().map(crate::sketches::SpatialSketchEntityId::as_str),
+                    curves
+                        .iter()
+                        .map(crate::sketches::SpatialSketchEntityId::as_str),
                     |identity| spatial_sketch_entity_owners.contains_key(identity),
                 ),
                 PathRef::HistoricalEdges {

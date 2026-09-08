@@ -1352,8 +1352,8 @@ fn same_coordinate_accepts_legacy_relation_tags() {
         ("vertical_points", SketchCoordinateAxis::U),
     ] {
         let constraint = serde_json::from_value::<SketchConstraint>(serde_json::json!({
-            "id": "test:sketch-constraint#axis",
-            "sketch": "test:sketch#axis",
+            "id": "test:test:sketch-constraint#axis",
+            "sketch": "test:test:sketch#axis",
             "definition": {
                 "kind": kind,
                 "first": first,
