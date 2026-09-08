@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{
-    empty_link_target, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
+    optional_reference, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
 };
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
@@ -68,7 +68,7 @@ pub(crate) fn transfer(
             let reference = links(&owned, "ObjectToGround")
                 .into_iter()
                 .next()
-                .unwrap_or_else(empty_link_target);
+                .and_then(optional_reference);
             JointBody::Grounded {
                 reference,
                 placement,
@@ -83,7 +83,7 @@ pub(crate) fn transfer(
                     reference: connector(owned, reference_name)?
                         .into_iter()
                         .next()
-                        .unwrap_or_else(empty_link_target),
+                        .and_then(optional_reference),
                     placement: placement(owned, placement_name)?
                         .unwrap_or_else(crate::product::identity),
                     offset: placement(owned, offset_name)?.unwrap_or_else(crate::product::identity),
@@ -235,7 +235,7 @@ pub(crate) fn transfer_neutral(
                 } => AssemblyJoint::grounded(
                     id,
                     JointConnector {
-                        operand: operand(reference)?,
+                        operand: operand(reference.as_ref()?)?,
                         frame: Transform::from_rows(*placement)?,
                         detached: bool_value("Detach1").unwrap_or(false),
                     },
@@ -258,12 +258,12 @@ pub(crate) fn transfer_neutral(
                         kind,
                         [
                             JointConnector {
-                                operand: operand(&first.reference)?,
+                                operand: operand(first.reference.as_ref()?)?,
                                 frame: Transform::from_rows(first.placement)?,
                                 detached: bool_value("Detach1").unwrap_or(false),
                             },
                             JointConnector {
-                                operand: operand(&second.reference)?,
+                                operand: operand(second.reference.as_ref()?)?,
                                 frame: Transform::from_rows(second.placement)?,
                                 detached: bool_value("Detach2").unwrap_or(false),
                             },
