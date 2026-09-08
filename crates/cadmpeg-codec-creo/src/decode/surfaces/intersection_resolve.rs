@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Multi-component intersection candidates and FC14 axis selection.
 
+use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::CurveGeometry;
 
-use super::super::sketch::normalized;
 use crate::decode::analytic::edges::{
     nonperiodic_conic_parameter, periodic_conic_frame, PeriodicConicFrame,
 };
@@ -76,7 +76,7 @@ pub(in super::super) fn curve_contains_points(
     match geometry {
         CurveGeometry::Line { origin, direction } => {
             let origin = [origin.x, origin.y, origin.z];
-            let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
+            let Some(direction) = normalize([direction.x, direction.y, direction.z]) else {
                 return false;
             };
             points.into_iter().all(|point| {

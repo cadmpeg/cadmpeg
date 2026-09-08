@@ -130,7 +130,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ),
         };
         charge_work(ctx, bytes.len() as u64, card_scan)?;
-        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage, None)?;
+        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage)?;
         let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan)?;
         let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
@@ -231,8 +231,7 @@ pub(crate) fn inspect(
         .extend(graph::summary_notes(&parse.references));
     summary.losses = losses;
     if representation != Representation::FixedAscii {
-        summary.container_kind = cadmpeg_ir::ContainerKind::parse(representation.as_str())
-            .expect("iges representation is a closed container kind");
+        summary.container_kind = representation.container_kind();
         if let Some(note) = summary
             .notes
             .iter_mut()
@@ -300,7 +299,7 @@ fn decode_with_occurrence_limits(
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
-    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image", None)?;
+    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image")?;
     source_fidelity
         .retained_records
         .push(RetainedSourceRecord::retained(
@@ -547,7 +546,11 @@ fn decode_with_occurrence_limits(
             .attributes
             .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
     }
-    let mut body = DecodeBody::new(geometry_transferred);
+    let mut body = DecodeBody::new(if ctx.container_only() {
+        cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+    } else {
+        cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
+    });
     body.losses = losses;
     body.notes = notes;
     body.transfer_ledger = transfer_ledger;

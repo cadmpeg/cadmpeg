@@ -228,3 +228,22 @@ fn decode_preserves_native_entities_and_graph() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn absent_native_parameter_record_keeps_empty_wire_fields() {
+    #[derive(serde::Serialize)]
+    struct Record {
+        #[serde(flatten, serialize_with = "super::serialize_parameter_record")]
+        parameters: Option<super::NativeParameterRecord>,
+    }
+    assert_eq!(
+        serde_json::to_value(Record { parameters: None }).unwrap(),
+        serde_json::json!({
+            "parameter_line_start": null,
+            "parameter_line_end": null,
+            "parameter_bytes": [],
+            "parameters": [],
+            "comment": [],
+        })
+    );
+}

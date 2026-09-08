@@ -618,26 +618,27 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         )
         .expect("valid module registration"),
     }];
-    native.sketch_points = vec![SketchPoint {
+    native.sketch_points = vec![SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:generated:sketch-point#0".into(),
         record_index: 100,
         owner_reference: Some(277),
         class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             500,
             crate::records::SketchPointClosure::Selector0State1,
             Some(900),
             0.0,
-            Some(crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
-                incident_curves: Vec::new(),
-            }),
         ),
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
-    }];
+    })
+    .unwrap()];
     native.sketch_curve_identities = vec![
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#0".into(),
@@ -647,7 +648,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: Some(901),
-            primary_id: 700,
+            primary_id: std::num::NonZeroU64::new(700).unwrap(),
             secondary_id: 701,
             geometry: Some(SketchCurveGeometry::Line {
                 start: Point3::new(10.0, 20.0, 0.0),
@@ -664,7 +665,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
-            primary_id: 702,
+            primary_id: std::num::NonZeroU64::new(702).unwrap(),
             secondary_id: 703,
             geometry: Some(SketchCurveGeometry::Arc {
                 center: Point3::new(5.0, 6.0, 0.0),
@@ -683,7 +684,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
-            primary_id: 704,
+            primary_id: std::num::NonZeroU64::new(704).unwrap(),
             secondary_id: 705,
             geometry: Some(SketchCurveGeometry::Nurbs {
                 carrier_reference: None,
@@ -884,20 +885,20 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     assert_eq!(
         native.sketch_points[0].companion(),
-        Some(crate::records::SketchPointCompanionRef {
+        crate::records::SketchPointCompanionRef {
             prefix_present_zero: false,
             incident_curves: &[],
-        })
+        }
     );
     assert_eq!(
-        native.sketch_points[0].coordinates,
+        native.sketch_points[0].coordinates(),
         Point2::new(12.5, -25.0)
     );
     assert_eq!(native.sketch_curve_identities.len(), 3);
     let genesis_curve = native
         .sketch_curve_identities
         .iter()
-        .find(|curve| curve.primary_id == 700)
+        .find(|curve| curve.primary_id.get() == 700)
         .expect("genesis curve");
     assert_eq!(genesis_curve.entity_genesis, Some(901));
     assert_eq!(genesis_curve.geometry_offset, 185);
@@ -960,19 +961,23 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     {
         let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
-        let persistent_id = point.persistent_id().unwrap_or(0);
-        point.record_form = crate::records::SketchPointRecordForm::Version11 {
-            depth: 7.5,
-            entity_genesis: point.entity_genesis(),
-            padded_paired_reference: true,
-            persistent_id,
-            flags: [true, false, false, true, false, true, false, true],
-            closure: crate::records::SketchPointClosure::Selector4State0,
-            companion: Some(crate::records::SketchPointCompanion {
+        let persistent_id = std::num::NonZeroU64::new(point.persistent_id().unwrap()).unwrap();
+        point
+            .try_set_record_form(crate::records::SketchPointRecordForm::Version11 {
+                depth: 7.5,
+                entity_genesis: point.entity_genesis(),
+                padded_paired_reference: true,
+                persistent_id,
+                flags: [true, false, false, true, false, true, false, true],
+                closure: crate::records::SketchPointClosure::Selector4State0,
+            })
+            .unwrap();
+        point
+            .try_set_companion(crate::records::SketchPointCompanion {
                 prefix_present_zero: true,
                 incident_curves: vec![600],
-            }),
-        };
+            })
+            .unwrap();
     }
     let mut extended_encoded = Vec::new();
     F3dCodec
@@ -998,10 +1003,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     assert_eq!(
         extended_point.companion(),
-        Some(crate::records::SketchPointCompanionRef {
+        crate::records::SketchPointCompanionRef {
             prefix_present_zero: true,
             incident_curves: &[600],
-        })
+        }
     );
     assert!(crate::validate::validate_native(extended_round_trip.ir()).is_empty());
 

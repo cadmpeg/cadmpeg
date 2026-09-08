@@ -397,7 +397,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return Vec::new();
     };
     let selected_construction = marker_is_selected_construction_line(payload, offset);
@@ -460,7 +460,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             .into_iter()
             .filter_map(|offset| {
                 markers.iter().copied().find(|marker| {
-                    marker.offset == offset
+                    marker.offset() == offset
                         && marker.coordinates_m.is_some()
                         && matches!(
                             marker.kind,
@@ -488,7 +488,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             .copied()
             .filter(|marker| marker.feature_ref == curve.feature_ref)
             .collect::<Vec<_>>();
-        owned.sort_unstable_by_key(|marker| marker.offset);
+        owned.sort_unstable_by_key(|marker| marker.offset());
         let endpoints = indices
             .into_iter()
             .filter_map(|index| owned.get(index).copied())
@@ -508,7 +508,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             .copied()
             .filter(|marker| marker.feature_ref == curve.feature_ref)
             .collect::<Vec<_>>();
-        owned.sort_unstable_by_key(|marker| marker.offset);
+        owned.sort_unstable_by_key(|marker| marker.offset());
         let endpoints = indices
             .into_iter()
             .filter_map(|index| owned.get(index).copied())
@@ -658,7 +658,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             .copied()
             .filter(|marker| marker.feature_ref == curve.feature_ref)
             .collect::<Vec<_>>();
-        owned.sort_unstable_by_key(|marker| marker.offset);
+        owned.sort_unstable_by_key(|marker| marker.offset());
         let endpoints = [56, 58]
             .into_iter()
             .map(|relative| {
@@ -718,7 +718,7 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return Vec::new();
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -755,7 +755,7 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
         .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset);
+    owned.sort_unstable_by_key(|marker| marker.offset());
     let endpoints = [first, second].map(|index| {
         owned.get(index).copied().filter(|marker| {
             marker.coordinates_m.is_some()
@@ -841,7 +841,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return Vec::new();
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -922,7 +922,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                             )
                     })
                     .collect::<Vec<_>>();
-                owned.sort_unstable_by_key(|marker| marker.offset);
+                owned.sort_unstable_by_key(|marker| marker.offset());
                 let endpoint = |id: u32| {
                     let index = usize::try_from(id.checked_sub(1)?).ok()?;
                     owned.get(index).copied()
@@ -939,7 +939,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                     .copied()
                     .filter(|marker| marker.feature_ref == curve.feature_ref)
                     .collect::<Vec<_>>();
-                owned.sort_unstable_by_key(|marker| marker.offset);
+                owned.sort_unstable_by_key(|marker| marker.offset());
                 let endpoint_by_roster_index = |id| {
                     owned
                         .get(usize::try_from(id).ok()?)
@@ -1015,7 +1015,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<([&'a SketchInputEntity; 2], [f64; 2])> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
         || wide_indexed_curve_endpoint_indices(payload, offset).is_none()
@@ -1072,7 +1072,7 @@ pub(super) fn wide_direct_line_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
@@ -1148,7 +1148,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     markers: &[&'a SketchInputEntity],
     explicit_endpoint_offset: Option<usize>,
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return Vec::new();
     };
     if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
@@ -1207,7 +1207,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
                             ))
             })
             .collect::<Vec<_>>();
-        coordinates.sort_unstable_by_key(|marker| marker.offset);
+        coordinates.sort_unstable_by_key(|marker| marker.offset());
         let endpoint = |relative: usize| {
             let index = usize::from(View::u16_le_at(payload, offset + relative)?);
             let index = if one_based {
@@ -1331,7 +1331,7 @@ fn compact_complete_marker_roster_pair<'a>(
     markers: &[&'a SketchInputEntity],
     one_based: bool,
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
         curve.kind,
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
@@ -1356,7 +1356,7 @@ fn compact_complete_marker_roster_pair<'a>(
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
         .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset);
+    owned.sort_unstable_by_key(|marker| marker.offset());
     let index = |raw: u16| {
         let index = usize::from(raw);
         if one_based {
@@ -1465,7 +1465,7 @@ fn legacy_relation_continuation_marker_pair<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
         curve.kind,
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
@@ -1485,7 +1485,7 @@ fn legacy_relation_continuation_marker_pair<'a>(
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
         .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset);
+    owned.sort_unstable_by_key(|marker| marker.offset());
     Some([
         *owned.get(usize::from(raw[0]))?,
         *owned.get(usize::from(raw[1]))?,
@@ -1497,7 +1497,7 @@ fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return Vec::new();
     };
     let Some(indices) = legacy_compact_84_coordinate_roster_endpoint_indices(payload, offset)
@@ -1509,7 +1509,7 @@ fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
         .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset);
+    owned.sort_unstable_by_key(|marker| marker.offset());
     let endpoints = indices
         .into_iter()
         .filter_map(|index| owned.get(index).copied())
@@ -1535,7 +1535,7 @@ fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return Vec::new();
     };
     if !compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
@@ -1556,7 +1556,7 @@ fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset);
+    owned.sort_unstable_by_key(|marker| marker.offset());
     let endpoints = [
         View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_FIRST),
         View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_SECOND),
@@ -1577,7 +1577,7 @@ fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
     endpoint_offset: usize,
 ) -> Option<Vec<&'a SketchInputEntity>> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !compact_legacy_coordinate_roster_curve_record(payload, offset) || endpoint_offset != 42 {
         return None;
     }
@@ -1613,9 +1613,9 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset);
-    let first = usize::try_from(owned.first()?.offset).ok()?;
-    let owner_offset = usize::try_from(owner.offset).ok()?;
+    owned.sort_unstable_by_key(|marker| marker.offset());
+    let first = usize::try_from(owned.first()?.offset()).ok()?;
+    let owner_offset = usize::try_from(owner.offset()).ok()?;
     if owner_offset < first {
         return None;
     }
@@ -1666,7 +1666,7 @@ pub(super) fn output_curve_endpoint_markers<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    if usize::try_from(curve.offset)
+    if usize::try_from(curve.offset())
         .ok()
         .is_some_and(|offset| current_compact_roster_selected_axis(payload, offset))
     {
@@ -1848,7 +1848,7 @@ pub(super) fn inferred_point_coordinates_by_index(
                 matches!(
                     operand.kind,
                     FeatureInputOperandKind::Native(tag)
-                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag)
+                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value())
                 )
             })
     }) {
@@ -1986,7 +1986,7 @@ pub(super) fn implicit_coordinate_roster_curve_endpoints(
     markers: &[&SketchInputEntity],
     inferred: &HashMap<u32, [f64; 2]>,
 ) -> Option<[[f64; 2]; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !coordinate_roster_curve_layout(payload, offset) {
         return None;
     }
@@ -2005,7 +2005,7 @@ pub(super) fn implicit_coordinate_roster_curve_endpoints(
                 )
         })
         .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    coordinates.sort_unstable_by_key(|marker| marker.offset());
     let endpoint_offset = coordinate_roster_endpoint_offset(payload, offset)?;
     let endpoint_index = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
     let indices = [
@@ -2032,7 +2032,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<[[f64; 2]; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let indices = packed_compact_legacy_curve_endpoint_indices(payload, offset)?;
     if marker_profile_curve_role(payload, offset) != Some(1) {
         return None;
@@ -2063,7 +2063,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
         .copied()
         .filter(|candidate| {
             candidate.feature_ref == curve.feature_ref
-                && usize::try_from(candidate.offset)
+                && usize::try_from(candidate.offset())
                     .ok()
                     .is_some_and(|offset| {
                         packed_compact_legacy_curve_endpoint_indices(payload, offset).is_some()
@@ -2091,7 +2091,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
                 sibling.kind,
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
-            && usize::try_from(sibling.offset)
+            && usize::try_from(sibling.offset())
                 .ok()
                 .is_some_and(|offset| marker_profile_curve_role(payload, offset) == Some(1))
     }) {
@@ -2112,7 +2112,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             let entry =
                 degrees
                     .entry(endpoint.id.as_str())
-                    .or_insert((0, coordinates, endpoint.offset));
+                    .or_insert((0, coordinates, endpoint.offset()));
             if entry.1 != coordinates {
                 return None;
             }
@@ -2146,7 +2146,7 @@ pub(super) fn extended_declared_inline_line_endpoints(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<[[f64; 2]; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let declaration = payload.get(offset + 96..offset + 106)?;
     let declaration_id = View::u16_le_at(declaration, 0)?;
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -2205,7 +2205,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<[[f64; 2]; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
     {
@@ -2253,7 +2253,7 @@ pub(super) fn extended_identity_inline_line_endpoints(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<[[f64; 2]; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !extended_identity_inline_line_record(payload, offset) {
         return None;
     }
@@ -2317,7 +2317,7 @@ pub(super) fn coordinate_roster_arc_center(
     markers: &[&SketchInputEntity],
     resolved_endpoints: [&SketchInputEntity; 2],
 ) -> Option<[f64; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let current_wide = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
@@ -2385,7 +2385,7 @@ pub(super) fn coordinate_roster_arc_center(
                         ))
             })
             .collect::<Vec<_>>();
-        coordinates.sort_unstable_by_key(|marker| marker.offset);
+        coordinates.sort_unstable_by_key(|marker| marker.offset());
         coordinates
     };
     let equidistant = |center: [f64; 2]| {
@@ -2500,7 +2500,7 @@ pub(super) fn legacy_compact_diameter_arc_center(
     markers: &[&SketchInputEntity],
     endpoints: [&SketchInputEntity; 2],
 ) -> Option<[f64; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
         || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
@@ -2550,7 +2550,7 @@ pub(super) fn coordinate_circle_radius(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<f64> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -2583,8 +2583,8 @@ pub(super) fn coordinate_circle_radius(
                 )
         })
         .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
-    let insertion = coordinates.partition_point(|marker| marker.offset < circle.offset);
+    coordinates.sort_unstable_by_key(|marker| marker.offset());
+    let insertion = coordinates.partition_point(|marker| marker.offset() < circle.offset());
     let grids = [
         insertion
             .checked_sub(6)
@@ -2640,7 +2640,7 @@ pub(super) fn legacy_coordinate_circle_radius(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<f64> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -2677,7 +2677,7 @@ pub(super) fn legacy_coordinate_circle_radius(
     let radial_index = View::u32_le_at(payload, offset + 158)?;
     let mut radial_points = markers.iter().copied().filter(|marker| {
         marker.feature_ref == circle.feature_ref
-            && marker.offset == circle.offset + 162
+            && marker.offset() == circle.offset() + 162
             && marker.object_index == Some(radial_index)
             && marker.kind == SketchInputKind::Point
             && marker.coordinates_m.is_some()
@@ -2697,7 +2697,7 @@ pub(super) fn coordinate_roster_full_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     let radial_index = if let Some(index) = current_long_full_circle_radial_index(payload, offset) {
         index
     } else {
@@ -2750,7 +2750,7 @@ pub(super) fn coordinate_roster_full_circle(
                 )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|marker| marker.offset);
+    points.sort_unstable_by_key(|marker| marker.offset());
     let center = points.first()?.coordinates_m?;
     let radial = points.get(radial_index)?.coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
@@ -2762,7 +2762,7 @@ pub(super) fn extended_geometry_full_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     if circle.kind != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -2829,7 +2829,7 @@ pub(super) fn extended_geometry_full_circle(
                 )
         })
         .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    coordinates.sort_unstable_by_key(|marker| marker.offset());
     let center = coordinates.get(center_index)?.coordinates_m?;
     let radial = coordinates.get(radial_index)?.coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
@@ -2912,7 +2912,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     let prefix = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())?;
     let extended_layout = prefix == LEGACY_EXTENDED_SKETCH_MARKER
         && marker_native_code(payload, offset) == Some(0)
@@ -2986,7 +2986,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
                     )
             })
             .collect::<Vec<_>>();
-        coordinates.sort_unstable_by_key(|marker| marker.offset);
+        coordinates.sort_unstable_by_key(|marker| marker.offset());
         if let (Some(center), Some(radial)) = (
             radial_index
                 .checked_sub(1)
@@ -3014,7 +3014,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
                 )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|marker| marker.offset);
+    points.sort_unstable_by_key(|marker| marker.offset());
     let center_index = usize::from(center_index.checked_sub(1)?);
     let center = points.get(center_index)?.coordinates_m?;
     let radial = points.get(center_index.checked_add(1)?)?.coordinates_m?;
@@ -3027,7 +3027,7 @@ pub(super) fn current_profile_circle_dimension(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     if circle.kind != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(profile_circle_dim::NATIVE_KIND_VALUE)
@@ -3103,7 +3103,7 @@ pub(super) fn current_profile_circle_dimension(
                 )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|marker| marker.offset);
+    points.sort_unstable_by_key(|marker| marker.offset());
     let center = points.first()?.coordinates_m?;
     let radial = points
         .get(usize::from(radial_index).checked_sub(1)?)?
@@ -3117,7 +3117,7 @@ pub(super) fn compact_profile_full_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
     let kind = marker_native_code(payload, offset)?;
     let supported_kind = if kind == 1 && circle.kind == SketchInputKind::LineOrCircle {
@@ -3187,7 +3187,7 @@ pub(super) fn compact_profile_full_circle(
                 )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|marker| marker.offset);
+    points.sort_unstable_by_key(|marker| marker.offset());
     let center = points.first()?.coordinates_m?;
     let mut radials = points
         .iter()
@@ -3225,7 +3225,7 @@ pub(super) fn compact_legacy_terminal_diameter_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     if circle.kind != SketchInputKind::LineOrCircle
         || !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(1)
@@ -3273,7 +3273,7 @@ pub(super) fn compact_legacy_profile_full_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     if circle.kind != SketchInputKind::LineOrCircle
         || !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(1)
@@ -3327,15 +3327,15 @@ pub(super) fn compact_legacy_profile_full_circle(
                 )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|marker| marker.offset);
+    points.sort_unstable_by_key(|marker| marker.offset());
     let center = points.first()?.coordinates_m?;
-    let feature_start = usize::try_from(points.first()?.offset).ok()?;
+    let feature_start = usize::try_from(points.first()?.offset()).ok()?;
     let radial_offset = (feature_start..=offset)
         .filter(|candidate| sketch_marker_prefix_at(payload, *candidate))
         .nth(radial_index)?;
     let mut radial_candidates = points
         .iter()
-        .filter(|marker| usize::try_from(marker.offset).ok() == Some(radial_offset));
+        .filter(|marker| usize::try_from(marker.offset()).ok() == Some(radial_offset));
     let radial = radial_candidates.next()?.coordinates_m?;
     if radial_candidates.next().is_some() {
         return None;
@@ -3349,7 +3349,7 @@ pub(super) fn legacy_profile_radial_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     let identity_end = payload
         .get(offset + 104..offset + 108)
         .zip(payload.get(offset + 108..offset + 112))
@@ -3406,7 +3406,7 @@ pub(super) fn legacy_profile_radial_circle(
                 )
         })
         .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    coordinates.sort_unstable_by_key(|marker| marker.offset());
     let center = coordinates.first()?.coordinates_m?;
     let mut radials = [
         coordinates.get(usize::from(radial_index)).copied(),
@@ -3442,7 +3442,7 @@ pub(super) fn wide_coordinate_roster_full_circle(
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
-    let offset = usize::try_from(circle.offset).ok()?;
+    let offset = usize::try_from(circle.offset()).ok()?;
     let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
     let supported_kind = prefix == LEGACY_SKETCH_MARKER
         && marker_native_code(payload, offset) == Some(1)
@@ -3492,7 +3492,7 @@ pub(super) fn wide_coordinate_roster_full_circle(
                     ))
         })
         .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    coordinates.sort_unstable_by_key(|marker| marker.offset());
     let raw_index = usize::from(View::u16_le_at(payload, offset + 64)?);
     if raw_index == 0 {
         return None;
@@ -3577,7 +3577,7 @@ pub(super) fn coordinate_ellipse_axes(
     ellipse: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64, f64)> {
-    let offset = usize::try_from(ellipse.offset).ok()?;
+    let offset = usize::try_from(ellipse.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
@@ -3593,7 +3593,7 @@ pub(super) fn coordinate_ellipse_axes(
         .copied()
         .filter(|marker| {
             marker.feature_ref == ellipse.feature_ref
-                && marker.offset > ellipse.offset
+                && marker.offset() > ellipse.offset()
                 && marker.coordinates_m.is_some()
                 && matches!(
                     marker.kind,
@@ -3601,9 +3601,9 @@ pub(super) fn coordinate_ellipse_axes(
                 )
         })
         .collect::<Vec<_>>();
-    following.sort_unstable_by_key(|marker| marker.offset);
+    following.sort_unstable_by_key(|marker| marker.offset());
     let corners = following.get(..4)?;
-    if corners[0].offset != ellipse.offset.checked_add(134)? {
+    if corners[0].offset() != ellipse.offset().checked_add(134)? {
         return None;
     }
     let mut u = corners
@@ -6029,7 +6029,7 @@ fn legacy_compact_92_profile_object_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<Vec<&'a SketchInputEntity>> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if !legacy_compact_92_profile_line(payload, offset) {
         return None;
     }
@@ -6198,7 +6198,7 @@ pub(super) fn relation_reference_curve_record(
     ) {
         return false;
     }
-    let Some(offset) = usize::try_from(curve.offset).ok() else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return false;
     };
     if legacy_relation_continuation_body(payload, offset) {

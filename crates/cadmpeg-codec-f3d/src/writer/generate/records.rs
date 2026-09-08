@@ -421,25 +421,12 @@ pub(super) fn encode_document_parameters(
         }
         let crate::records::DesignParameterSource::User {
             family_discriminator,
-        } = &parameter.source
+        } = parameter.source()
         else {
             return Err(CodecError::NotImplemented(
                 "source-less F3D owned Design parameter records are not writable".into(),
             ));
         };
-        if parameter.expression.is_empty()
-            || parameter.name.is_empty()
-            || parameter
-                .unit
-                .as_ref()
-                .is_some_and(|field| field.value.is_empty())
-            || !parameter.evaluated_value.is_finite()
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has an invalid document parameter value",
-                parameter.id
-            )));
-        }
         if !parameter_indices.insert(parameter.record_index)
             || !parameter_ordinals.insert(parameter.source_ordinal)
         {
@@ -455,18 +442,18 @@ pub(super) fn encode_document_parameters(
         out.push(0);
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
         out.push(0);
-        native_lp_utf16(&mut out, &parameter.expression)?;
+        native_lp_utf16(&mut out, parameter.expression())?;
         out.extend_from_slice(&[0; 8]);
         out.push(1);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
-        if let Some(unit) = &parameter.unit {
-            native_lp_utf16(&mut out, &unit.value)?;
+        if let Some(unit) = parameter.unit() {
+            native_lp_utf16(&mut out, unit.value.as_str())?;
         } else {
             out.extend_from_slice(&0u32.to_le_bytes());
         }
-        native_lp_utf16(&mut out, &parameter.name)?;
-        out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
+        native_lp_utf16(&mut out, parameter.name())?;
+        out.extend_from_slice(&parameter.evaluated_value().to_le_bytes());
         out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
     Ok(out)
@@ -486,14 +473,6 @@ fn encode_sketch_point(
     out: &mut Vec<u8>,
     point: &crate::records::SketchPoint,
 ) -> Result<(), CodecError> {
-    if !point.coordinates.u.is_finite()
-        || !point.coordinates.v.is_finite()
-        || !point.depth().is_finite()
-    {
-        return Err(CodecError::Malformed(
-            "source-less sketch point coordinates must be finite".into(),
-        ));
-    }
     let owner_reference = point.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "source-less sketch point {} has no direct owner",
@@ -502,13 +481,12 @@ fn encode_sketch_point(
     })?;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
-        companion: _,
         entity_genesis,
         depth,
         persistent_id,
         flags,
         closure,
-    } = &point.record_form
+    } = point.record_form()
     else {
         return Err(CodecError::NotImplemented(format!(
             "source-less sketch point {} requires the version-11 member sequence",
@@ -527,14 +505,14 @@ fn encode_sketch_point(
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
     record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
+    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.get().to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
     record[81 + shift..89 + shift].copy_from_slice(&flags.map(u8::from));
     record[89 + shift..97 + shift]
-        .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
+        .copy_from_slice(&(point.coordinates().u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
-        .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
+        .copy_from_slice(&(point.coordinates().v / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&(depth / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&closure.selector().to_le_bytes());
     record.push(closure.state());
@@ -556,13 +534,8 @@ fn encode_sketch_point_companion(
     class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
-    companion: Option<crate::records::SketchPointCompanionRef<'_>>,
+    companion: crate::records::SketchPointCompanionRef<'_>,
 ) -> Result<(), CodecError> {
-    let companion = companion.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {point_record_index} has no inverse companion"
-        ))
-    })?;
     let prefix_present_zero = companion.prefix_present_zero;
     let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {
@@ -606,7 +579,7 @@ fn encode_sketch_curve_identity(
     record[29 + shift..43 + shift].copy_from_slice(b"crv_primary_id");
     record[43 + shift..47 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[47 + shift..70 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.to_le_bytes());
+    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.get().to_le_bytes());
     record[78 + shift..82 + shift].copy_from_slice(&16u32.to_le_bytes());
     record[82 + shift..98 + shift].copy_from_slice(b"crv_secondary_id");
     record[98 + shift..102 + shift].copy_from_slice(&23u32.to_le_bytes());

@@ -28,6 +28,7 @@ use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
     marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
@@ -113,7 +114,7 @@ fn ensure_spatial_relation_point(
     let id = SpatialSketchEntityId::mint(format!(
         "{}:relation-point:{}",
         sketch.as_str(),
-        marker.offset
+        marker.offset()
     ))
     .ok()?;
     entities.push(
@@ -145,7 +146,7 @@ fn spatial_relation_point_line_entities(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset).ok()?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             let code = marker_native_code(&lane.native_payload, offset)?;
             matches!(code, 2..=5).then_some(())?;
             Some((
@@ -154,7 +155,7 @@ fn spatial_relation_point_line_entities(
             ))
         })
         .collect::<Vec<_>>();
-    point_markers.sort_unstable_by_key(|(marker, _)| marker.offset);
+    point_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
     let point_operand = relation.operands.first()?;
     let point_marker = point_operand
         .entity_ref
@@ -175,7 +176,7 @@ fn spatial_relation_point_line_entities(
                 && marker.object_index.is_some()
         })
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset).ok()?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             (marker_native_code(&lane.native_payload, offset) == Some(0)).then_some(())?;
             Some((
                 marker,
@@ -183,7 +184,7 @@ fn spatial_relation_point_line_entities(
             ))
         })
         .collect::<Vec<_>>();
-    line_markers.sort_unstable_by_key(|(marker, _)| marker.offset);
+    line_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
     let line_matches = line_markers
         .chunks_exact(2)
         .filter_map(|pair| {
@@ -317,10 +318,7 @@ pub(crate) fn project_spatial_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                                operand_kind_name(operand.kind),
-                            )
-                            .expect("source operand kind is nonempty"),
+                            native_kind: operand_kind_name(operand.kind),
                             field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
@@ -512,7 +510,7 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             if sketch.as_str().contains("sketch#compact:")
-                && !marker_is_geometry_locus(&lane.native_payload, marker.offset as usize)
+                && !marker_is_geometry_locus(&lane.native_payload, marker.offset() as usize)
                 && !entities.iter().any(|entity| {
                     entity
                         .endpoint_refs
@@ -552,7 +550,7 @@ pub(crate) fn project_relation_point_geometry(
                 SketchEntity::new(
                     match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                        marker.offset
+                        marker.offset()
                     )) {
                         Ok(id) => id,
                         Err(_) => continue,
@@ -588,7 +586,7 @@ pub(crate) fn project_relation_point_geometry(
             .collect::<HashMap<_, _>>();
         let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
         for marker in &lane.sketch_entities {
-            let marker_offset = usize::try_from(marker.offset).ok();
+            let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind == SketchInputKind::Arc
                 && marker_offset.is_some_and(|offset| {
                     current_undetailed_bounded_curve_is_line(&lane.native_payload, offset)
@@ -673,7 +671,7 @@ pub(crate) fn project_relation_point_geometry(
                             }),
                     )
                     .collect::<Vec<_>>();
-                endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
+                endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
                 endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
             }
             let [first_marker, second_marker] = endpoints.as_slice() else {
@@ -727,7 +725,7 @@ pub(crate) fn project_relation_point_geometry(
                 SketchEntity::new(
                     match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
-                        marker.offset
+                        marker.offset()
                     )) {
                         Ok(id) => id,
                         Err(_) => continue,
@@ -766,7 +764,7 @@ pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
 pub(super) fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
-        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x81e7)
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7)
     )
 }
 
@@ -915,7 +913,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                         )
                 })
                 .collect::<Vec<_>>();
-            points.sort_by_key(|marker| marker.offset);
+            points.sort_by_key(|marker| marker.offset());
             let endpoint_line_markers = |operand_index: usize| {
                 relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
                     .and_then(|marker_id| {
@@ -954,11 +952,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                             )
                         })
                         .or_else(|| {
-                            (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
-                                .then(|| {
-                                    points.get(usize::from(first_operand.entity_index)).copied()
-                                })
-                                .flatten()
+                            (first_operand.kind
+                                == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD))
+                            .then(|| points.get(usize::from(first_operand.entity_index)).copied())
+                            .flatten()
                         })
                 })
                 .flatten();
@@ -1625,10 +1622,10 @@ pub(super) fn implicit_circle_marker<'a>(
                 .iter()
                 .filter(|marker| {
                     marker.feature_ref.as_deref() == Some(feature)
-                        && marker.offset > center.offset
+                        && marker.offset() > center.offset()
                         && marker.coordinates_m.is_some()
                 })
-                .min_by_key(|marker| marker.offset)?;
+                .min_by_key(|marker| marker.offset())?;
             let [cu, cv] = center.coordinates_m?;
             let [ru, rv] = radial.coordinates_m?;
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
@@ -1664,7 +1661,7 @@ pub(super) fn implicit_circle_marker<'a>(
             for center in feature_markers
                 .iter()
                 .copied()
-                .filter(|marker| marker.local_id.is_some() && marker.offset < radial.offset)
+                .filter(|marker| marker.local_id.is_some() && marker.offset() < radial.offset())
             {
                 let [cu, cv] = center.coordinates_m?;
                 let [ru, rv] = radial.coordinates_m?;
@@ -1685,7 +1682,7 @@ pub(super) fn implicit_circle_marker<'a>(
     // Only 83fe defines an ordered center/radial point roster. Other native
     // carriers may use the relation-qualified witness tiers above, but their
     // point-marker order does not identify a circular-dimension pair.
-    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+    if operand_kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE) {
         return None;
     }
 
@@ -1702,7 +1699,7 @@ pub(super) fn implicit_circle_marker<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     let pair = (markers.len() % 2 == 0)
         .then(|| markers.chunks_exact(2).nth(usize::from(index)))
         .flatten()?;
@@ -1772,7 +1769,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
                 SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
             )
     })?;
-    let marker_offset = usize::try_from(marker.offset).ok()?;
+    let marker_offset = usize::try_from(marker.offset()).ok()?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
 
     let entity_class = lane
@@ -1788,7 +1785,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .filter(|class| {
             class.name == "sgSlotHandle"
                 && class.offset > entity_class.offset
-                && class.offset < marker.offset
+                && class.offset < marker.offset()
         })
         .collect::<Vec<_>>();
     if slot_classes.len() != 1 {
@@ -1802,7 +1799,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .map(|class| class.offset)
         .min()
         .unwrap_or_else(|| u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX))
-        .min(marker.offset);
+        .min(marker.offset());
     let class_start = usize::try_from(slot_class.offset).ok()?;
     let class_end = usize::try_from(class_end)
         .ok()?
@@ -1829,11 +1826,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             )?))
         })
         .collect::<Vec<_>>();
-    if reference_indices.len() != 2 {
-        return None;
-    }
     let [slot_index, center_index] = reference_indices.as_slice() else {
-        unreachable!("two slot-handle references were required above")
+        return None;
     };
     let slot_index = u32::try_from(*slot_index).ok()?;
     let center_index = u32::try_from(*center_index).ok()?;
@@ -1853,20 +1847,15 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|candidate| candidate.offset);
-    let centers = center_indices
-        .map(|index| points.get(index).copied())
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = centers.as_slice() else {
-        unreachable!("slot descriptor has two center indices")
-    };
+    points.sort_unstable_by_key(|candidate| candidate.offset());
+    let [first, second] = center_indices.map(|index| points.get(index).copied());
+    let (first, second) = (first?, second?);
     let center = match (
         first.local_id == Some(center_index),
         second.local_id == Some(center_index),
     ) {
-        (true, false) => *first,
-        (false, true) => *second,
+        (true, false) => first,
+        (false, true) => second,
         _ => return None,
     };
     let coordinates = center.coordinates_m?;
@@ -1889,7 +1878,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     operand: &FeatureInputOperand,
     expected_radius: f64,
 ) -> Option<&'a SketchInputEntity> {
-    if operand.kind != FeatureInputOperandKind::Native(0x836e)
+    if operand.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E)
         || operand.entity_ref.is_some()
         || !expected_radius.is_finite()
         || expected_radius <= 0.0
@@ -1916,7 +1905,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
             )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     let pairs = markers
         .chunks_exact(2)
         .map(|pair| [pair[0], pair[1]])
@@ -1950,7 +1939,9 @@ fn point_dimension_marker_matches_operand(
     };
     let address = u32::from(operand.entity_index);
     let identity_matches = match operand.kind {
-        FeatureInputOperandKind::Native(0x814c) => marker.object_index == Some(address),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) => {
+            marker.object_index == Some(address)
+        }
         FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
         _ => false,
     };
@@ -2157,7 +2148,7 @@ fn declared_entity_handle_pairs<'a>(
     let mut pairs = declared_entity_handle_linked_pairs(lane, feature);
     pairs.extend(declared_entity_handle_declared_child_pairs(lane, feature));
     pairs.extend(declared_entity_handle_indexed_point_pairs(lane, feature));
-    pairs.sort_unstable_by_key(|[center, radial]| (center.offset, radial.offset));
+    pairs.sort_unstable_by_key(|[center, radial]| (center.offset(), radial.offset()));
     pairs.dedup_by(|left, right| left[0].id == right[0].id && left[1].id == right[1].id);
     pairs
 }
@@ -2182,7 +2173,7 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
             )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     markers
         .windows(2)
         .filter_map(|pair| {
@@ -2215,7 +2206,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
         .collect::<Vec<_>>();
-    feature_markers.sort_unstable_by_key(|marker| marker.offset);
+    feature_markers.sort_unstable_by_key(|marker| marker.offset());
     let mut markers = feature_markers
         .iter()
         .copied()
@@ -2230,7 +2221,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     markers
         .windows(2)
         .filter_map(|pair| {
@@ -2250,11 +2241,11 @@ fn declared_entity_handle_declared_child_pairs<'a>(
             }
             let next_marker_offset = feature_markers
                 .iter()
-                .find(|marker| marker.offset > radial.offset)
-                .map_or(u64::MAX, |marker| marker.offset);
+                .find(|marker| marker.offset() > radial.offset())
+                .map_or(u64::MAX, |marker| marker.offset());
             let declared = lane.classes.iter().any(|class| {
                 class.name == class_name
-                    && class.offset > radial.offset
+                    && class.offset > radial.offset()
                     && class.offset < next_marker_offset
             });
             if !declared {
@@ -2284,7 +2275,7 @@ fn declared_entity_handle_linked_pairs<'a>(
             )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     markers
         .windows(2)
         .filter_map(|pair| {
@@ -2440,10 +2431,7 @@ pub(crate) fn project_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                                operand_kind_name(operand.kind),
-                            )
-                            .expect("source operand kind is nonempty"),
+                            native_kind: operand_kind_name(operand.kind),
                             field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
@@ -2533,7 +2521,7 @@ pub(crate) fn project_relation_bindings(
             let projected = SketchConstraint {
                 id: match SketchConstraintId::mint(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
-                    marker.offset
+                    marker.offset()
                 )) {
                     Ok(id) => id,
                     Err(_) => continue,
@@ -2881,7 +2869,7 @@ mod relation_geometry_tests {
         let operand = |offset: u64, entity_index: u16| FeatureInputOperand {
             offset,
             reference_ref: format!("reference-{offset}"),
-            kind: FeatureInputOperandKind::Native(0x8100),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
             entity_ref: None,
         };
@@ -3123,7 +3111,7 @@ mod relation_geometry_tests {
                 .map(|(index, entity_index)| FeatureInputOperand {
                     offset: 40 + index as u64,
                     reference_ref: format!("reference-{index}"),
-                    kind: FeatureInputOperandKind::Native(0x812a),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                     entity_index,
                     entity_ref: None,
                 })
@@ -3445,7 +3433,7 @@ mod relation_geometry_tests {
         let operand = |entity_index| FeatureInputOperand {
             offset: 700 + u64::from(entity_index),
             reference_ref: format!("reference-{entity_index}"),
-            kind: FeatureInputOperandKind::Native(0x8100),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
             entity_ref: None,
         };

@@ -359,21 +359,34 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
-    section_incidence_curve_family_evidence_with_solver_roles(definition, entity_id, true, true)
+    section_incidence_curve_family_evidence_with_solver_roles(
+        definition,
+        entity_id,
+        SolverRoles::Extended,
+    )
 }
 
 fn section_incidence_curve_family_evidence_without_type35(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
-    section_incidence_curve_family_evidence_with_solver_roles(definition, entity_id, false, false)
+    section_incidence_curve_family_evidence_with_solver_roles(
+        definition,
+        entity_id,
+        SolverRoles::Strict,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SolverRoles {
+    Strict,
+    Extended,
 }
 
 fn section_incidence_curve_family_evidence_with_solver_roles(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
-    include_type35: bool,
-    include_type_zero: bool,
+    solver_roles: SolverRoles,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
     let mut evidence = BTreeSet::new();
     if complete_section_skamps(definition).any(|skamp| {
@@ -398,7 +411,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                 evidence.insert(SectionEntityIncidenceFamily::Circular);
             }
         }
-        if include_type35 {
+        if matches!(solver_roles, SolverRoles::Extended) {
             let type35_line_role =
                 |target: &crate::feature::FeatureSkampItem,
                  point: &crate::feature::FeatureSkampItem| {
@@ -420,7 +433,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                 }
             }
         }
-        if include_type_zero {
+        if matches!(solver_roles, SolverRoles::Extended) {
             let type_zero_point_role =
                 |target: &crate::feature::FeatureSkampItem,
                  point: &crate::feature::FeatureSkampItem| {

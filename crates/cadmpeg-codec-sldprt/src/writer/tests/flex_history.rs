@@ -2,6 +2,7 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use crate::records::operand_tag::NativeOperandTag;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -687,7 +688,9 @@ fn encoder_writes_source_less_curved_sketches() {
                 operand.kind,
                 crate::records::FeatureInputOperandKind::D6
                     | crate::records::FeatureInputOperandKind::E1
-                    | crate::records::FeatureInputOperandKind::Native(0x8dcb | 0x8dda)
+                    | crate::records::FeatureInputOperandKind::Native(
+                        NativeOperandTag::TAG_8DCB | NativeOperandTag::TAG_8DDA
+                    )
             )
         })
         .any(|operand| {

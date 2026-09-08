@@ -262,13 +262,8 @@ fn active_cylinder_frame(
         let mut ref_direction = [0.0; 3];
         ref_direction[diameter_index] =
             orientation * (corners[1][diameter_index] - corners[0][diameter_index]).signum();
-        let candidate = PositionalCylinderFrame {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            length: Some(length),
-        };
+        let candidate =
+            PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(length))?;
         if !candidates
             .iter()
             .any(|existing| active_cylinder_frames_agree(*existing, candidate))
@@ -285,33 +280,33 @@ fn active_cylinder_frames_agree(
     second: PositionalCylinderFrame,
 ) -> bool {
     let scale = first
-        .origin
+        .origin()
         .into_iter()
-        .chain(second.origin)
-        .chain([first.radius, second.radius])
-        .chain(first.length)
-        .chain(second.length)
+        .chain(second.origin())
+        .chain([first.radius(), second.radius()])
+        .chain(first.length())
+        .chain(second.length())
         .map(f64::abs)
         .fold(1.0, f64::max);
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_ACTIVE_CYLINDER_RELATIVE * scale;
     first
-        .origin
+        .origin()
         .into_iter()
-        .zip(second.origin)
+        .zip(second.origin())
         .all(|(left, right)| close(left, right))
         && first
-            .axis
+            .axis()
             .into_iter()
-            .zip(second.axis)
+            .zip(second.axis())
             .all(|(left, right)| close(left, right))
         && first
-            .ref_direction
+            .ref_direction()
             .into_iter()
-            .zip(second.ref_direction)
+            .zip(second.ref_direction())
             .all(|(left, right)| close(left, right))
-        && close(first.radius, second.radius)
-        && match (first.length, second.length) {
+        && close(first.radius(), second.radius())
+        && match (first.length(), second.length()) {
             (Some(left), Some(right)) => close(left, right),
             (None, None) => true,
             _ => false,

@@ -62,9 +62,17 @@ enum BinaryValue {
 #[derive(Debug)]
 struct BinaryDirectory {
     offset: u32,
-    values: Vec<BinaryValue>,
-    entity_type: i64,
-    parameter_pointer: i64,
+    values: [BinaryValue; 16],
+}
+
+impl BinaryDirectory {
+    fn entity_type(&self) -> Result<i64, CodecError> {
+        integer_value(&self.values[0], "Directory entity type")
+    }
+
+    fn parameter_pointer(&self) -> Result<i64, CodecError> {
+        pointer_value(&self.values[1], "Directory Parameter Data")
+    }
 }
 
 #[derive(Debug)]
@@ -73,7 +81,12 @@ struct BinaryParameter {
     entity_type: i64,
     directory_pointer: i64,
     values: Vec<BinaryValue>,
-    text: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct NormalizedParameter {
+    offset: u32,
+    directory_sequence: u32,
     lines: Vec<Vec<u8>>,
     first_sequence: u32,
 }
@@ -575,19 +588,15 @@ fn read_directory(
             return Err(malformed("Binary Directory entity exceeds its section"));
         }
         let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
-        let mut values = Vec::with_capacity(16);
-        for _ in 0..16 {
-            values.push(one_value(&mut stream, "Directory")?);
+        let mut values = std::array::from_fn(|_| BinaryValue::Default);
+        for value in &mut values {
+            *value = one_value(&mut stream, "Directory")?;
         }
         stream.finish()?;
-        let entity_type = integer_value(&values[0], "Directory entity type")?;
-        let parameter_pointer = pointer_value(&values[1], "Directory Parameter Data")?;
-        records.push(BinaryDirectory {
-            offset,
-            values,
-            entity_type,
-            parameter_pointer,
-        });
+        let record = BinaryDirectory { offset, values };
+        record.entity_type()?;
+        record.parameter_pointer()?;
+        records.push(record);
         cursor = body_end;
     }
     Ok(records)
@@ -651,10 +660,17 @@ fn parameter_text(entity_type: i64, values: &[BinaryValue]) -> Result<Vec<u8>, C
     Ok(output)
 }
 
-fn render_field(value: &BinaryValue, label: bool, status: bool) -> Result<[u8; 8], CodecError> {
+#[derive(Debug, Clone, Copy)]
+enum FieldRendering {
+    Plain,
+    Label,
+    Status,
+}
+
+fn render_field(value: &BinaryValue, rendering: FieldRendering) -> Result<[u8; 8], CodecError> {
     let mut field = [b' '; 8];
-    let rendered = if status {
-        match value {
+    let rendered = match rendering {
+        FieldRendering::Status => match value {
             BinaryValue::Default => Vec::new(),
             BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
                 format!("{value:08}").into_bytes()
@@ -662,25 +678,15 @@ fn render_field(value: &BinaryValue, label: bool, status: bool) -> Result<[u8; 8
             BinaryValue::Real(_) | BinaryValue::String(_) => {
                 return Err(malformed("Binary Directory status is not an integer"));
             }
-        }
-    } else if label {
-        match value {
-            BinaryValue::Default => Vec::new(),
-            BinaryValue::String(value) => value.clone(),
-            BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
-                value.to_string().into_bytes()
-            }
-            BinaryValue::Real(value) => render_real(*value),
-        }
-    } else {
-        match value {
+        },
+        FieldRendering::Plain | FieldRendering::Label => match value {
             BinaryValue::Default => Vec::new(),
             BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
                 value.to_string().into_bytes()
             }
             BinaryValue::Real(value) => render_real(*value),
             BinaryValue::String(value) => value.clone(),
-        }
+        },
     };
     if rendered.len() > field.len() {
         return Err(malformed(
@@ -886,9 +892,6 @@ fn read_parameters(
             entity_type,
             directory_pointer: i64::from(directory_pointer),
             values,
-            text: Vec::new(),
-            lines: Vec::new(),
-            first_sequence: 0,
         });
         cursor = body_end;
     }
@@ -898,7 +901,7 @@ fn read_parameters(
 fn normalize_directory_and_parameters(
     output: &mut Vec<u8>,
     directory: &[BinaryDirectory],
-    parameters: &mut [BinaryParameter],
+    parameters: Vec<BinaryParameter>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(usize, usize), CodecError> {
     let directory_by_offset = directory
@@ -906,42 +909,55 @@ fn normalize_directory_and_parameters(
         .enumerate()
         .map(|(index, record)| (record.offset, index))
         .collect::<BTreeMap<_, _>>();
-    let parameter_by_offset = parameters
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.offset, index))
-        .collect::<BTreeMap<_, _>>();
     let mut referenced_parameters = BTreeSet::new();
-    for parameter in parameters.iter_mut() {
+    let mut normalized = Vec::with_capacity(parameters.len());
+    let mut parameter_sequence = 1_u32;
+    for parameter in parameters {
         let directory_pointer =
             positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
         let directory_index = *directory_by_offset
             .get(&directory_pointer)
             .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
-        if directory[directory_index].entity_type != parameter.entity_type {
+        if directory[directory_index].entity_type()? != parameter.entity_type {
             return Err(malformed(
                 "Binary Directory and Parameter entity types disagree",
             ));
         }
-        parameter.text = parameter_text(parameter.entity_type, &parameter.values)?;
-        parameter.lines = render_parameter_lines(&parameter.text, parameter.entity_type == 306)?;
-    }
-    let mut parameter_sequence = 1_u32;
-    for parameter in parameters.iter_mut() {
-        parameter.first_sequence = parameter_sequence;
+        let directory_sequence = 1_u32
+            .checked_add(
+                u32::try_from(directory_index)
+                    .map_err(|_| malformed("normalized Directory index exceeds u32"))?
+                    .checked_mul(2)
+                    .ok_or_else(|| malformed("normalized Directory sequence overflows"))?,
+            )
+            .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
+        let text = parameter_text(parameter.entity_type, &parameter.values)?;
+        let lines = render_parameter_lines(&text, parameter.entity_type == 306)?;
+        let first_sequence = parameter_sequence;
         parameter_sequence = parameter_sequence
             .checked_add(
-                u32::try_from(parameter.lines.len())
+                u32::try_from(lines.len())
                     .map_err(|_| malformed("normalized Parameter Data line count exceeds u32"))?,
             )
             .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
+        normalized.push(NormalizedParameter {
+            offset: parameter.offset,
+            directory_sequence,
+            lines,
+            first_sequence,
+        });
     }
+    let parameter_by_offset = normalized
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.offset, index))
+        .collect::<BTreeMap<_, _>>();
     let mut parameter_starts =
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
     let mut parameter_counts =
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
     for (directory_index, directory_record) in directory.iter().enumerate() {
-        let pointer = directory_record.parameter_pointer;
+        let pointer = directory_record.parameter_pointer()?;
         if pointer < 0 {
             return Err(malformed(
                 "Binary Directory Parameter Data pointer is negative",
@@ -959,10 +975,10 @@ fn normalize_directory_and_parameters(
                 "Binary Parameter Data entry is referenced by more than one Directory Entry",
             ));
         }
-        parameter_starts[directory_index] = parameters[parameter_index].first_sequence;
-        parameter_counts[directory_index] = parameters[parameter_index].lines.len();
+        parameter_starts[directory_index] = normalized[parameter_index].first_sequence;
+        parameter_counts[directory_index] = normalized[parameter_index].lines.len();
     }
-    if referenced_parameters.len() != parameters.len() {
+    if referenced_parameters.len() != normalized.len() {
         return Err(malformed(
             "Binary Parameter Data section contains an unreferenced entry",
         ));
@@ -975,36 +991,34 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
         let values = &directory_record.values;
         let first = [
-            render_field(&values[0], false, false)?,
+            render_field(&values[0], FieldRendering::Plain)?,
             render_field(
                 &BinaryValue::Pointer(i64::from(parameter_starts[index])),
-                false,
-                false,
+                FieldRendering::Plain,
             )?,
-            render_field(&values[2], false, false)?,
-            render_field(&values[3], false, false)?,
-            render_field(&values[4], false, false)?,
-            render_field(&values[5], false, false)?,
-            render_field(&values[6], false, false)?,
-            render_field(&values[7], false, false)?,
-            render_field(&values[8], false, true)?,
+            render_field(&values[2], FieldRendering::Plain)?,
+            render_field(&values[3], FieldRendering::Plain)?,
+            render_field(&values[4], FieldRendering::Plain)?,
+            render_field(&values[5], FieldRendering::Plain)?,
+            render_field(&values[6], FieldRendering::Plain)?,
+            render_field(&values[7], FieldRendering::Plain)?,
+            render_field(&values[8], FieldRendering::Status)?,
         ];
         let second = [
-            render_field(&values[0], false, false)?,
-            render_field(&values[9], false, false)?,
-            render_field(&values[10], false, false)?,
+            render_field(&values[0], FieldRendering::Plain)?,
+            render_field(&values[9], FieldRendering::Plain)?,
+            render_field(&values[10], FieldRendering::Plain)?,
             render_field(
                 &BinaryValue::Integer(i64::try_from(parameter_counts[index]).map_err(|_| {
                     malformed("normalized Parameter Data line count exceeds signed range")
                 })?),
-                false,
-                false,
+                FieldRendering::Plain,
             )?,
-            render_field(&values[11], false, false)?,
-            render_field(&values[12], false, false)?,
-            render_field(&values[13], false, false)?,
-            render_field(&values[14], true, false)?,
-            render_field(&values[15], false, false)?,
+            render_field(&values[11], FieldRendering::Plain)?,
+            render_field(&values[12], FieldRendering::Plain)?,
+            render_field(&values[13], FieldRendering::Plain)?,
+            render_field(&values[14], FieldRendering::Label)?,
+            render_field(&values[15], FieldRendering::Plain)?,
         ];
         let mut first_data = [b' '; CARD_DATA_WIDTH];
         let mut second_data = [b' '; CARD_DATA_WIDTH];
@@ -1023,22 +1037,14 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for parameter in parameters.iter() {
-        let directory_pointer =
-            positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
-        let directory_index = *directory_by_offset
-            .get(&directory_pointer)
-            .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
-        let directory_sequence = 1_u32
-            .checked_add(
-                u32::try_from(directory_index)
-                    .map_err(|_| malformed("normalized Directory index exceeds u32"))?
-                    .checked_mul(2)
-                    .ok_or_else(|| malformed("normalized Directory sequence overflows"))?,
-            )
-            .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
+    for parameter in &normalized {
         for line in &parameter.lines {
-            render_parameter_line(output, line, directory_sequence, parameter_sequence)?;
+            render_parameter_line(
+                output,
+                line,
+                parameter.directory_sequence,
+                parameter_sequence,
+            )?;
             parameter_sequence = parameter_sequence
                 .checked_add(1)
                 .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
@@ -1130,8 +1136,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .enumerate()
         .map(|(index, record)| (record.offset, index))
         .collect::<BTreeMap<_, _>>();
-    let mut parameters =
-        read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
+    let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence)?;
@@ -1143,7 +1148,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     let global_count = global_sequence.saturating_sub(1) as usize;
     let (directory_count, parameter_count) =
-        normalize_directory_and_parameters(&mut output, &directory, &mut parameters, ctx)?;
+        normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
         &mut output,
         start_count,

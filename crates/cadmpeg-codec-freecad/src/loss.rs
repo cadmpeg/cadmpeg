@@ -18,7 +18,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FreecadLossCode {
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
@@ -101,8 +100,18 @@ impl FreecadLossCode {
             Self::SourceGuiSchemaUnverified => None,
             other => other.shared_taxonomy().strict_floor(),
         };
-        LossKind::namespaced("fcstd", self.code(), self.shared_taxonomy())
-            .with_strict_floor(strict_floor)
+        cadmpeg_ir::report::NamespacedLossKind::new(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("fcstd") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(strict_floor)
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

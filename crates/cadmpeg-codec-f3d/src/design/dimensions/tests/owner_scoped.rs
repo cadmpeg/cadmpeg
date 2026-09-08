@@ -346,7 +346,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         byte_offset,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: u64::from(record_index),
+        primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(0.0, 0.0, 0.0),
@@ -361,25 +361,28 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         curve(12, 110, std::f64::consts::FRAC_PI_2),
         curve(13, 120, -std::f64::consts::FRAC_PI_4),
     ];
-    let point = |record_index, byte_offset, incident_curves| SketchPoint {
-        id: format!("{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            Some(crate::records::SketchPointCompanion {
+    let point = |record_index, byte_offset, incident_curves| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset,
+            coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
                 prefix_present_zero: false,
                 incident_curves,
-            }),
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
     };
     let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
     let entity = |record_index, angle: f64| {
@@ -414,7 +417,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         3.0 * std::f64::consts::FRAC_PI_4,
     ))
     .expect("angular parameter");
-    parameter.byte_offset = 100;
+    parameter.try_translate_offsets(100).unwrap();
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
@@ -612,12 +615,16 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
     ));
 
     let mut linear = parameter;
-    linear.source = crate::records::DesignParameterSource::new(
-        "Linear Dimension-2".into(),
-        linear.owner_record_index(),
-        linear.family_discriminator(),
-    )
-    .unwrap();
+    linear
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                linear.owner_record_index(),
+                linear.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     assert!(!radial_extension_annotation_group(
         &[&extension_point, &line],
         &linear,

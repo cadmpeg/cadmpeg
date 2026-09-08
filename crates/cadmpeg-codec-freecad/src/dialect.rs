@@ -157,7 +157,10 @@ impl FcstdDialect {
             DECLARED_SCHEMA_VERSION.into(),
             document.schema_version.clone(),
         );
-        declared.insert(DECLARED_FILE_VERSION.into(), document.file_version.clone());
+        declared.insert(
+            DECLARED_FILE_VERSION.into(),
+            document.file_version.as_str().to_owned(),
+        );
         if let Some(version) = &document.program_version {
             declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
         }

@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact hole and circular-sweep geometry.
 
+use crate::vecmath::normalize;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
     LinearTermination, ProfileRef,
 };
-use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::sketch::normalized;
 use super::super::sweep::{feature_outline_plane, feature_outline_planes, FeatureOutlinePlane};
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
-    hole_placement, plane_envelope_corners, ExtrusionSpan, PartialCapOutline, SimpleHoleGeometry,
+    hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, HoleCylinder,
+    SimpleHoleGeometry,
 };
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -24,7 +24,10 @@ const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 const EPS_OFFSET_NONZERO: f64 = 1.0e-12;
 const EPS_EXTENT_AGREEMENT: f64 = 1.0e-9;
 
-pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
+pub fn simple_hole_geometry<'a>(
+    scan: &'a ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<SimpleHoleGeometry<'a>> {
     let cap_rows = feature_outline_planes(scan, feature_id)?
         .into_iter()
         .map(|(id, origin, normal)| {
@@ -37,12 +40,12 @@ pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Sim
             let [envelope] = envelopes.as_slice() else {
                 return None;
             };
-            Some((
-                id,
+            Some(CapOutline {
+                surface_id: id,
                 origin,
                 normal,
-                plane_envelope_corners(&envelope.envelope)?,
-            ))
+                corners: Some(plane_envelope_corners(&envelope.envelope)?),
+            })
         })
         .collect::<Option<Vec<_>>>()?;
     let [first, second] = cap_rows.as_slice() else {
@@ -62,22 +65,22 @@ pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Sim
     else {
         return None;
     };
-    if *entry_plane != first.0 || *termination_plane != second.0 {
+    if *entry_plane != first.surface_id || *termination_plane != second.surface_id {
         return None;
     }
-    let cylinder_ids = [*first_cylinder, *second_cylinder];
-    if cylinder_ids.iter().any(|id| {
-        !crate::surface::unique_surface_row(&scan.surfaces.rows, *id).is_some_and(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+    let cylinder_rows = [*first_cylinder, *second_cylinder]
+        .into_iter()
+        .map(|id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, id).filter(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+            })
         })
-    }) {
-        return None;
-    }
+        .collect::<Option<Vec<_>>>()?;
     let (_, direction, extent) =
-        hole_placement([*first, *second].map(|(id, origin, normal, _)| (id, origin, normal)))?;
+        hole_placement([*first, *second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     Some(SimpleHoleGeometry {
         entry_surface_id: Some(*entry_plane),
-        cylinder_ids: cylinder_ids.to_vec(),
+        cylinder_rows,
         direction,
         extent,
         geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
@@ -162,8 +165,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .iter()
                 .enumerate()
                 .filter(|(_, candidate)| {
-                    candidate.class_id == 200
-                        && candidate.source_entity_id() == Some(0)
+                    candidate.source_entity_id() == Some(0)
                         && !table.surface_ids().contains(&candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
@@ -208,10 +210,10 @@ pub fn compact_simple_hole_cylinder_id(
     Some(*cylinder_id)
 }
 
-pub fn compact_simple_hole_geometry(
-    scan: &ContainerScan,
+pub fn compact_simple_hole_geometry<'a>(
+    scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<SimpleHoleGeometry> {
+) -> Option<SimpleHoleGeometry<'a>> {
     let cylinder_id = compact_simple_hole_cylinder_id(
         feature_id,
         &scan.features.entity_tables,
@@ -219,31 +221,32 @@ pub fn compact_simple_hole_geometry(
     )?;
     let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
         .positional_cylinder_frame()?;
-    let length = frame.length?;
+    let length = frame.length()?;
     Some(SimpleHoleGeometry {
         entry_surface_id: None,
-        cylinder_ids: vec![cylinder_id],
-        direction: frame.axis,
+        cylinder_rows: vec![crate::surface::unique_surface_row(
+            &scan.surfaces.rows,
+            cylinder_id,
+        )?],
+        direction: frame.axis(),
         extent: LinearTermination::Blind {
             length: Length(length),
         },
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-            axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+        geometry: HoleCylinder {
+            origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+            axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             ref_direction: Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
             ),
-            radius: frame.radius,
+            radius: frame.radius(),
         },
     })
 }
 
-pub fn circular_sweep_cylinder_from_cap_outlines(
-    caps: [PartialCapOutline; 2],
-) -> Option<SurfaceGeometry> {
-    let (_, axis, _) = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
+pub fn circular_sweep_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCylinder> {
+    let (_, axis, _) = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_ALIGNMENT)
@@ -253,7 +256,7 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
         .collect::<Vec<_>>();
     let circles = caps
         .iter()
-        .filter_map(|(_, _, _, corners)| cap_square_center_radius((*corners)?, axis_index))
+        .filter_map(|cap| cap_square_center_radius(cap.corners?, axis_index))
         .collect::<Vec<_>>();
     let (center, radius) = circles.first().copied()?;
     let scale = center
@@ -270,7 +273,7 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
+    Some(HoleCylinder {
         origin: Point3::new(center[0], center[1], center[2]),
         axis: Vector3::new(axis[0], axis[1], axis[2]),
         ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -279,18 +282,18 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CircularSweepGeometry {
-    pub cylinder_ids: Vec<u32>,
+pub struct CircularSweepGeometry<'a> {
+    pub cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
     pub section_definition_id: Option<u32>,
     pub direction: [f64; 3],
     pub extent: ExtrudeExtent,
-    pub geometry: SurfaceGeometry,
+    pub geometry: HoleCylinder,
 }
 
-pub fn single_cap_circular_sweep_geometry(
-    scan: &ContainerScan,
+pub fn single_cap_circular_sweep_geometry<'a>(
+    scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<CircularSweepGeometry> {
+) -> Option<CircularSweepGeometry<'a>> {
     let tables = scan
         .features
         .entity_tables
@@ -334,11 +337,10 @@ pub fn single_cap_circular_sweep_geometry(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
         .then_some(())?;
-    crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id.entity_id)
-        .is_some_and(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        })
-        .then_some(())?;
+    let cylinder_row =
+        crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id.entity_id).filter(
+            |row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder,
+        )?;
     let plane = feature_outline_plane(scan, feature_id, cap_id.entity_id)?;
     let envelopes = scan
         .planes
@@ -349,12 +351,12 @@ pub fn single_cap_circular_sweep_geometry(
     let [envelope] = envelopes.as_slice() else {
         return None;
     };
-    let cap = (
-        plane.0,
-        plane.1,
-        plane.2,
-        plane_envelope_corners(&envelope.envelope),
-    );
+    let cap = CapOutline {
+        surface_id: plane.0,
+        origin: plane.1,
+        normal: plane.2,
+        corners: plane_envelope_corners(&envelope.envelope),
+    };
     let transforms = scan
         .features
         .section_transforms
@@ -364,10 +366,13 @@ pub fn single_cap_circular_sweep_geometry(
     let [transform] = transforms.as_slice() else {
         return None;
     };
-    let (extent, direction) =
-        extrusion_extent_and_direction(transform.origin, transform.normal, [(plane.1, plane.2)])?;
+    let (extent, direction) = extrusion_extent_and_direction(
+        transform.origin(),
+        transform.normal(),
+        [(plane.1, plane.2)],
+    )?;
     Some(CircularSweepGeometry {
-        cylinder_ids: vec![cylinder_id.entity_id],
+        cylinder_rows: vec![cylinder_row],
         section_definition_id: Some(transform.definition_id),
         direction,
         extent,
@@ -377,7 +382,7 @@ pub fn single_cap_circular_sweep_geometry(
 
 pub fn circular_sweep_feature_definition(
     profile: ProfileRef,
-    sweep: &CircularSweepGeometry,
+    sweep: &CircularSweepGeometry<'_>,
     op: BooleanOp,
     solid: Option<bool>,
 ) -> IrFeatureDefinition {
@@ -398,18 +403,18 @@ pub fn circular_sweep_feature_definition(
     }
 }
 
-pub fn circular_sweep_geometry(
-    scan: &ContainerScan,
+pub fn circular_sweep_geometry<'a>(
+    scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<CircularSweepGeometry> {
+) -> Option<CircularSweepGeometry<'a>> {
     two_cap_circular_sweep_geometry(scan, feature_id)
         .or_else(|| single_cap_circular_sweep_geometry(scan, feature_id))
 }
 
-pub fn two_cap_circular_sweep_geometry(
-    scan: &ContainerScan,
+pub fn two_cap_circular_sweep_geometry<'a>(
+    scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<CircularSweepGeometry> {
+) -> Option<CircularSweepGeometry<'a>> {
     let tables = scan
         .features
         .entity_tables
@@ -469,18 +474,20 @@ pub fn two_cap_circular_sweep_geometry(
             [envelope] => plane_envelope_corners(&envelope.envelope),
             _ => None,
         };
-        (plane.0, plane.1, plane.2, corners)
+        CapOutline {
+            surface_id: plane.0,
+            origin: plane.1,
+            normal: plane.2,
+            corners,
+        }
     };
-    if !crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_entry.entity_id)
-        .is_some_and(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        })
-    {
-        return None;
-    }
+    let cylinder_row =
+        crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_entry.entity_id).filter(
+            |row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder,
+        )?;
     let (_, direction, termination) = hole_placement([first, second])?;
     Some(CircularSweepGeometry {
-        cylinder_ids: vec![cylinder_entry.entity_id],
+        cylinder_rows: vec![cylinder_row],
         section_definition_id: None,
         direction,
         extent: ExtrudeExtent::OneSided {
@@ -563,7 +570,7 @@ pub fn extrusion_extent_and_direction(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let span = extrusion_span(profile_origin, direction, planes)?;
-    let direction = normalized(direction)?;
+    let direction = normalize(direction)?;
     if span.lower == 0.0 || span.upper == 0.0 {
         let signed_length = if span.upper == 0.0 {
             span.lower

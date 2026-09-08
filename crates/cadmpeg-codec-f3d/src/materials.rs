@@ -8,6 +8,7 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
+use crate::records::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::BTreeMap;
@@ -30,8 +31,7 @@ use cadmpeg_protein::{
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
 use crate::container::ContainerScan;
 use crate::design::presentation::{
-    visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
-    MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
+    APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
@@ -42,14 +42,6 @@ const NO_ASSET_LIB_ID: &str = "00000000-0000-0000-0000-000000000000";
 /// a library.
 fn library_id(asset_lib_id: &str) -> Option<String> {
     (!asset_lib_id.is_empty() && asset_lib_id != NO_ASSET_LIB_ID).then(|| asset_lib_id.to_owned())
-}
-
-/// Whether two complete serialized visual tokens identify one appearance
-/// record.
-pub(crate) fn visual_tokens_match(left: &str, right: &str) -> bool {
-    visual_token(left)
-        .zip(visual_token(right))
-        .is_some_and(|(left, right)| left.matches(right))
 }
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
@@ -214,6 +206,7 @@ pub(crate) struct ProteinAppearanceEdit {
 pub(crate) fn patch_protein_appearances(
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
+    notes: &mut Vec<String>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
@@ -239,7 +232,7 @@ pub(crate) fn patch_protein_appearances(
         }
         let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
         if name.ends_with("AssetData/InstanceProperties.bin") {
-            patch_instance_colors(protein, &mut bytes, edits, &mut patched)?;
+            patch_instance_colors(protein, &mut bytes, edits, &mut patched, notes)?;
         }
         zip.start_file(name, options).map_err(|error| {
             CodecError::malformed(format_args!("cannot write nested Protein entry: {error}"))
@@ -258,18 +251,26 @@ fn patch_instance_colors(
     bytes: &mut [u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
+    notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let frames = cadmpeg_protein::record_frames(bytes).ok_or_else(|| {
+    let frames = cadmpeg_protein::framing::record_frames(bytes).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein InstanceProperties pages".into())
     })?;
     let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
-        cadmpeg_protein::decode(protein, bytes)?
+        let outcome = cadmpeg_protein::decode_detailed(protein, bytes)?;
+        notes.extend(outcome.rejected.iter().map(|rejected| {
+            format!(
+                "Protein record {} rejected: {}",
+                rejected.ordinal, rejected.detail
+            )
+        }));
+        outcome.records
     } else {
         Vec::new()
     };
     for frame in frames {
-        let record = frame.bytes.as_slice();
+        let record = frame.bytes();
         let mut position = RECORD_MARKER.len();
         let schema = take_lp_utf8(record, &mut position).ok_or_else(|| {
             CodecError::Malformed("Protein appearance schema is truncated".into())
@@ -286,7 +287,7 @@ fn patch_instance_colors(
                 decoded
                     .iter()
                     .find(|decoded| {
-                        decoded.logical_offset == frame.logical_offset
+                        decoded.logical_offset == frame.logical_offset()
                             && decoded.schema == schema
                             && decoded.guid == guid
                     })
@@ -345,7 +346,7 @@ fn patch_instance_colors(
             for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
                 patch_logical_f64(
                     bytes,
-                    frame.logical_offset + relative + ordinal * 8,
+                    frame.logical_offset() + relative + ordinal * 8,
                     f64::from(value),
                 )?;
             }
@@ -415,7 +416,7 @@ fn patch_instance_colors(
                     }
                 }
             };
-            patch_logical_f64(bytes, frame.logical_offset + relative, *value)?;
+            patch_logical_f64(bytes, frame.logical_offset() + relative, *value)?;
         }
         patched.insert(guid);
     }
@@ -484,6 +485,8 @@ pub struct DecodedMaterials {
     /// Distance-valued texture properties omitted because their unit tag has
     /// no defined model-space conversion.
     pub untyped_distance_properties: usize,
+    /// Rejected Protein record diagnostics.
+    pub notes: Vec<String>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -508,6 +511,7 @@ pub fn decode_with_body_bindings<'a>(
     body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
+    let mut notes = Vec::new();
     let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
@@ -520,12 +524,20 @@ pub fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let record_frames = cadmpeg_protein::record_frames(instance.window()).ok_or_else(|| {
-            CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
-        })?;
+        let record_frames =
+            cadmpeg_protein::framing::record_frames(instance.window()).ok_or_else(|| {
+                CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
+            })?;
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
-            let records = cadmpeg_protein::decode(protein.window(), instance.window())?;
+            let outcome = cadmpeg_protein::decode_detailed(protein.window(), instance.window())?;
+            notes.extend(outcome.rejected.iter().map(|rejected| {
+                format!(
+                    "Protein {} record {} rejected: {}",
+                    entry.name, rejected.ordinal, rejected.detail
+                )
+            }));
+            let records = outcome.records;
             let (mut decoded, untyped_count) = appearances_from_schema_records(&records)?;
             untyped_distance_properties = untyped_distance_properties
                 .checked_add(untyped_count)
@@ -587,9 +599,9 @@ pub fn decode_with_body_bindings<'a>(
                     .visual_preset
                     .as_ref()
                     .map(|field| field.value.clone()),
-                asset_guid: Some(assignment.visual_guid.clone()),
+                asset_guid: Some(assignment.visual_guid.to_string()),
                 library_id: None,
-                visual_guid: Some(assignment.visual_guid.clone()),
+                visual_guid: Some(assignment.visual_guid.to_string()),
                 physical_token: assignment
                     .physical_token
                     .as_ref()
@@ -604,10 +616,10 @@ pub fn decode_with_body_bindings<'a>(
     }
     for appearance in &mut out {
         if let Some(assignment) = assignments.iter().find(|assignment| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| visual_tokens_match(guid, &assignment.visual_guid))
+            appearance.visual_guid.as_deref().is_some_and(|guid| {
+                DesignVisualToken::try_from(guid.to_owned())
+                    .is_ok_and(|token| assignment.visual_guid.matches(&token))
+            })
         }) {
             appearance.physical_token = assignment
                 .physical_token
@@ -660,6 +672,7 @@ pub fn decode_with_body_bindings<'a>(
         face_assignments,
         has_topology_assignments,
         untyped_distance_properties,
+        notes,
     })
 }
 
@@ -1031,7 +1044,7 @@ pub(crate) struct BodyAppearanceOverride {
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
     /// Complete serialized visual token bound by the body record.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
 }
 
 /// Decode per-body appearance overrides from browser body records in every
@@ -1104,7 +1117,7 @@ fn decode_body_appearance_overrides(
     out.dedup_by(|left, right| {
         left.body == right.body
             && left.entity_suffix == right.entity_suffix
-            && visual_tokens_match(&left.visual_guid, &right.visual_guid)
+            && left.visual_guid.matches(&right.visual_guid)
     });
     Ok(out)
 }
@@ -1119,7 +1132,7 @@ pub struct FaceAppearanceAssignment {
     /// The face GUID shared with the BREP face attribute.
     pub face_guid: String,
     /// Complete serialized visual token bound by the face record.
-    pub visual_guid: String,
+    pub visual_guid: DesignVisualToken,
     /// Face-local neutral color carried by a legacy assignment entry.
     pub color: Option<Color>,
 }
@@ -1192,10 +1205,13 @@ fn legacy_face_appearance_assignments(
         let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
             continue;
         };
-        if visual_at.checked_add(visual_len) != Some(*marker_at) || visual_token(visual).is_none() {
+        if visual_at.checked_add(visual_len) != Some(*marker_at) {
             continue;
         }
 
+        let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
+            continue;
+        };
         let Some(face_at) = visual_at.checked_sub(LP_GUID_BYTES + COLOR_BYTES + CARRIER_BYTES)
         else {
             continue;
@@ -1331,10 +1347,13 @@ fn modern_face_appearance_assignments(
         let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
             continue;
         };
-        if visual_at.checked_add(visual_len) != Some(*marker_at) || visual_token(visual).is_none() {
+        if visual_at.checked_add(visual_len) != Some(*marker_at) {
             continue;
         }
 
+        let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
+            continue;
+        };
         let Some((_, first_library_len)) = lp_utf16_string_at(bytes, *marker_at) else {
             continue;
         };
@@ -1428,7 +1447,7 @@ fn is_lowercase_guid(value: &str) -> bool {
 /// The terminating visual marker is shared with face-presentation records.
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
-pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
+pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, DesignVisualToken)> {
     let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
@@ -1440,9 +1459,9 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
             continue;
         }
         let visual = &strings[index - 1].1;
-        if visual_token(visual).is_none() {
+        let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
             continue;
-        }
+        };
         if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
             out.push((entity_suffix, visual.clone()));
         }
@@ -1543,20 +1562,15 @@ pub(crate) fn appearance_for_assignment<'a>(
 /// names no decoded asset. Absence of a preset supplies no fallback identity.
 pub(crate) fn appearance_for_visual_token<'a>(
     appearances: &'a [Appearance],
-    serialized_token: &str,
+    serialized_token: &DesignVisualToken,
     fallback_name: Option<&str>,
 ) -> Result<Option<&'a Appearance>, CodecError> {
-    if visual_token(serialized_token).is_none() {
-        return Err(CodecError::Malformed(
-            "F3D appearance assignment has a malformed visual token".into(),
-        ));
-    }
     let exact = unique_appearance(
         appearances.iter().filter(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|token| visual_tokens_match(token, serialized_token))
+            appearance.visual_guid.as_deref().is_some_and(|token| {
+                DesignVisualToken::try_from(token.to_owned())
+                    .is_ok_and(|token| serialized_token.matches(&token))
+            })
         }),
         "visual token",
     )?;
@@ -1608,9 +1622,9 @@ fn resolved_body_for_map_pair(
     let mut matches = body_bindings.iter().filter(|binding| {
         crate::ids::native_stream(&binding.id) == Some(owner_stream)
             && binding.asm_body_key == asm_body_key
-            && binding.asm_body_key_offset == asm_body_key_offset
+            && binding.asm_body_key_offset() == asm_body_key_offset
             && binding.entity_suffix == entity_suffix
-            && binding.entity_suffix_offset == entity_suffix_offset
+            && binding.entity_suffix_offset() == entity_suffix_offset
     });
     let Some(binding) = matches.next() else {
         return Ok(None);
@@ -1855,12 +1869,12 @@ fn definition_catalog<'a>(
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::record_frames(entry.window()).ok_or_else(|| {
+    let frames = cadmpeg_protein::framing::record_frames(entry.window()).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein DefinitionIteratorProperties pages".into())
     })?;
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
-        let definition = decode_definition_catalog_record(&frame.bytes)?;
+        let definition = decode_definition_catalog_record(frame.bytes())?;
         merge_definition_catalog_record(&mut definitions, definition);
     }
     Ok(definitions
@@ -1977,10 +1991,12 @@ pub(crate) fn nested_entry<'a>(
 
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
 /// Protein assets package schemas and use the schema-driven path instead.
-fn decode_fixed_logical_records(frames: &[cadmpeg_protein::RecordFrame]) -> Vec<Appearance> {
+fn decode_fixed_logical_records(
+    frames: &[cadmpeg_protein::framing::RecordFrame],
+) -> Vec<Appearance> {
     frames
         .iter()
-        .filter_map(|frame| decode_fixed_record(&frame.bytes))
+        .filter_map(|frame| decode_fixed_record(frame.bytes()))
         .collect()
 }
 

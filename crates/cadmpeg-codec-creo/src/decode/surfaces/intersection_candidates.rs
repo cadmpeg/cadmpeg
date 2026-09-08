@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parallel, coaxial, and meridian intersection candidate families.
 
+use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::sketch::normalized;
 use crate::decode::analytic::equations::{circular_cone, CarrierEquation};
 use crate::vecmath::{cross, dot};
 
@@ -35,10 +35,10 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     else {
         return Vec::new();
     };
-    let Some(normal) = normalized(plane.normal) else {
+    let Some(normal) = normalize(plane.normal) else {
         return Vec::new();
     };
-    let Some(axis) = normalized(cylinder.axis) else {
+    let Some(axis) = normalize(cylinder.axis) else {
         return Vec::new();
     };
     if dot(normal, axis).abs() > EPS_AXIS_ORTHO || cylinder.radius <= 0.0 {
@@ -57,7 +57,7 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     }
     let closest: [f64; 3] =
         std::array::from_fn(|index| cylinder.origin[index] - signed_distance * normal[index]);
-    let Some(transverse) = normalized(cross(axis, normal)) else {
+    let Some(transverse) = normalize(cross(axis, normal)) else {
         return Vec::new();
     };
     let offset = offset_squared.sqrt();
@@ -85,7 +85,7 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     else {
         return Vec::new();
     };
-    let (Some(first_axis), Some(second_axis)) = (normalized(first.axis), normalized(second.axis))
+    let (Some(first_axis), Some(second_axis)) = (normalize(first.axis), normalize(second.axis))
     else {
         return Vec::new();
     };
@@ -115,7 +115,7 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     if height_squared <= EPS_HEIGHT_RESIDUAL * scale * scale {
         return Vec::new();
     }
-    let Some(perpendicular) = normalized(cross(first_axis, center_direction)) else {
+    let Some(perpendicular) = normalize(cross(first_axis, center_direction)) else {
         return Vec::new();
     };
     let base: [f64; 3] =
@@ -146,7 +146,7 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
     else {
         return Vec::new();
     };
-    let Some(axis) = normalized(cylinder.axis) else {
+    let Some(axis) = normalize(cylinder.axis) else {
         return Vec::new();
     };
     let relative: [f64; 3] =
@@ -167,7 +167,7 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
     if offset_squared < -offset_tolerance {
         return Vec::new();
     }
-    let Some(reference) = normalized(cylinder.ref_direction) else {
+    let Some(reference) = normalize(cylinder.ref_direction) else {
         return Vec::new();
     };
     let (offsets, tag) = if offset_squared.abs() <= offset_tolerance {
@@ -210,9 +210,9 @@ pub(in super::super) fn coaxial_cone_cylinder_circle_candidates(
         return Vec::new();
     }
     let (Some(cone_axis), Some(cylinder_axis), Some(reference)) = (
-        normalized(cone.axis()),
-        normalized(cylinder.axis),
-        normalized(cone.ref_direction()),
+        normalize(cone.axis()),
+        normalize(cylinder.axis),
+        normalize(cone.ref_direction()),
     ) else {
         return Vec::new();
     };
@@ -260,10 +260,10 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         return Vec::new();
     };
     let (Some(first_axis), Some(second_axis), Some(reference), Some(second_reference)) = (
-        normalized(first.axis()),
-        normalized(second.axis()),
-        normalized(first.ref_direction()),
-        normalized(second.ref_direction()),
+        normalize(first.axis()),
+        normalize(second.axis()),
+        normalize(first.ref_direction()),
+        normalize(second.ref_direction()),
     ) else {
         return Vec::new();
     };
@@ -391,13 +391,13 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     else {
         return Vec::new();
     };
-    let Some(normal) = normalized(plane.normal) else {
+    let Some(normal) = normalize(plane.normal) else {
         return Vec::new();
     };
-    let Some(axis) = normalized(cone.axis()) else {
+    let Some(axis) = normalize(cone.axis()) else {
         return Vec::new();
     };
-    let Some(x_axis) = normalized(cone.ref_direction()) else {
+    let Some(x_axis) = normalize(cone.ref_direction()) else {
         return Vec::new();
     };
     let slope = cone.half_angle().tan();
@@ -478,7 +478,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
         [-1.0, 1.0]
             .into_iter()
             .filter_map(|sense| {
-                normalized(std::array::from_fn(|index| {
+                normalize(std::array::from_fn(|index| {
                     negative_weight * negative_direction[index]
                         + sense * positive_weight * positive_direction[index]
                 }))
@@ -516,7 +516,7 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
     if !circular_cone(cone) {
         return Vec::new();
     }
-    let Some(axis) = normalized(cone.axis()) else {
+    let Some(axis) = normalize(cone.axis()) else {
         return Vec::new();
     };
     let relative: [f64; 3] =
@@ -545,7 +545,7 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
     if discriminant < -discriminant_tolerance {
         return Vec::new();
     }
-    let Some(reference) = normalized(cone.ref_direction()) else {
+    let Some(reference) = normalize(cone.ref_direction()) else {
         return Vec::new();
     };
     let (deltas, tag) = if discriminant.abs() <= discriminant_tolerance {
@@ -593,9 +593,9 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
         return Vec::new();
     }
     let (Some(cone_axis), Some(torus_axis), Some(reference)) = (
-        normalized(cone.axis()),
-        normalized(torus.axis),
-        normalized(cone.ref_direction()),
+        normalize(cone.axis()),
+        normalize(torus.axis),
+        normalize(cone.ref_direction()),
     ) else {
         return Vec::new();
     };
@@ -687,9 +687,9 @@ pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
         return Vec::new();
     };
     let (Some(cylinder_axis), Some(torus_axis), Some(reference)) = (
-        normalized(cylinder.axis),
-        normalized(torus.axis),
-        normalized(cylinder.ref_direction),
+        normalize(cylinder.axis),
+        normalize(torus.axis),
+        normalize(cylinder.ref_direction),
     ) else {
         return Vec::new();
     };
@@ -754,9 +754,9 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
         return Vec::new();
     };
     let (Some(normal), Some(axis), Some(reference)) = (
-        normalized(plane.normal),
-        normalized(torus.axis),
-        normalized(torus.ref_direction),
+        normalize(plane.normal),
+        normalize(torus.axis),
+        normalize(torus.ref_direction),
     ) else {
         return Vec::new();
     };
@@ -854,7 +854,7 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
     else {
         return Vec::new();
     };
-    let (Some(normal), Some(axis)) = (normalized(plane.normal), normalized(torus.axis)) else {
+    let (Some(normal), Some(axis)) = (normalize(plane.normal), normalize(torus.axis)) else {
         return Vec::new();
     };
     let scale = torus.major_radius.max(torus.minor_radius).max(1.0);
@@ -869,7 +869,7 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
     {
         return Vec::new();
     }
-    let Some(radial) = normalized(cross(normal, axis)) else {
+    let Some(radial) = normalize(cross(normal, axis)) else {
         return Vec::new();
     };
     [-1.0, 1.0]
@@ -900,7 +900,7 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
     else {
         return Vec::new();
     };
-    let (Some(axis), Some(reference)) = (normalized(torus.axis), normalized(torus.ref_direction))
+    let (Some(axis), Some(reference)) = (normalize(torus.axis), normalize(torus.ref_direction))
     else {
         return Vec::new();
     };
@@ -958,9 +958,9 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         return Vec::new();
     };
     let (Some(first_axis), Some(second_axis), Some(reference)) = (
-        normalized(first.axis),
-        normalized(second.axis),
-        normalized(first.ref_direction),
+        normalize(first.axis),
+        normalize(second.axis),
+        normalize(first.ref_direction),
     ) else {
         return Vec::new();
     };

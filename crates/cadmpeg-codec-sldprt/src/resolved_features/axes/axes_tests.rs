@@ -432,22 +432,25 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     payload[256..258].copy_from_slice(&0u16.to_le_bytes());
     payload[258..260].copy_from_slice(&2u16.to_le_bytes());
     payload[260..264].copy_from_slice(&[1, 0, 0, 0]);
-    let marker = |id: &str,
-                  offset: u64,
-                  object_index: Option<u32>,
-                  coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile-native".into()),
-        ordinal: object_index.unwrap_or(3),
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m,
-        links: None,
-    };
+    let marker =
+        |id: &str, offset: u64, object_index: Option<u32>, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                object_index.unwrap_or(3),
+                offset,
+                SketchInputKind::Point,
+            );
+            constructed_marker.feature_ref = Some("profile-native".into());
+            constructed_marker.object_index = object_index;
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -600,22 +603,25 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
     payload[266..268].copy_from_slice(&1u16.to_le_bytes());
     payload[272..280].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[292..297].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let marker = |id: &str,
-                  offset: u64,
-                  object_index: Option<u32>,
-                  coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile-native".into()),
-        ordinal: object_index.unwrap_or(3),
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m,
-        links: None,
-    };
+    let marker =
+        |id: &str, offset: u64, object_index: Option<u32>, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                object_index.unwrap_or(3),
+                offset,
+                SketchInputKind::Point,
+            );
+            constructed_marker.feature_ref = Some("profile-native".into());
+            constructed_marker.object_index = object_index;
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -680,22 +686,25 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     payload[curve + 56..curve + 58].copy_from_slice(&0u16.to_le_bytes());
     payload[curve + 58..curve + 60].copy_from_slice(&1u16.to_le_bytes());
     payload[curve + 84..curve + 84 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    let marker = |id: &str,
-                  offset: u64,
-                  object_index: Option<u32>,
-                  coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile-native".into()),
-        ordinal: object_index.unwrap_or(4),
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m,
-        links: None,
-    };
+    let marker =
+        |id: &str, offset: u64, object_index: Option<u32>, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                object_index.unwrap_or(4),
+                offset,
+                SketchInputKind::Point,
+            );
+            constructed_marker.feature_ref = Some("profile-native".into());
+            constructed_marker.object_index = object_index;
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -915,18 +924,23 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     curve(&mut payload, 400, 0, 1);
     curve(&mut payload, 484, 1, 2);
     curve(&mut payload, 568, 2, 0);
-    let marker = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile-native".into()),
-        ordinal: offset as u32,
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, object_index, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            offset as u32,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("profile-native".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut entities = vec![
         marker("vertical-near", 0, Some(1), Some([0.0, 0.01])),

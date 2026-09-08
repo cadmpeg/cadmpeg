@@ -177,7 +177,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
         id: "nx:test:reference#0".into(),
         record: "nx:test:om-record#0".into(),
-        object_id: Some(1),
+        object_id: 1,
         ordinal: 0,
         reference: RecordReference::Direct(DirectReference::PersistentHandle(0x1020_3040)),
         source_entry: "om".into(),
@@ -258,7 +258,7 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
     let reference = |record: &str, ordinal: u32, offset: u64| super::super::ObjectReference {
         id: format!("{record}:reference#{ordinal}"),
         record: record.into(),
-        object_id: Some(7),
+        object_id: 7,
         ordinal,
         reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
         source_entry: "om".into(),
@@ -279,7 +279,7 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
     assert_eq!(pairs[0].record, "record#0");
     assert_eq!(pairs[0].first_reference, "record#0:reference#0");
     assert_eq!(pairs[0].second_reference, "record#0:reference#1");
-    assert_eq!(pairs[0].object_id, Some(7));
+    assert_eq!(pairs[0].object_id, 7);
     assert_eq!(pairs[1].record, "record#1");
     assert_eq!(pairs[1].source_offset, 20);
 }

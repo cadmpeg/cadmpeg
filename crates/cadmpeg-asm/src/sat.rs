@@ -1490,6 +1490,25 @@ mod tests {
     }
 
     #[test]
+    fn text_reference_tokens_do_not_declare_a_binary_width() {
+        let stream = parse(&asm_stream(
+            "asmheader $4294967296 -1 @13 232.4.0.65535 #\n",
+        ))
+        .unwrap();
+        assert_eq!(stream.records[0].ref_at(0), Some(4_294_967_296));
+        let header = stream.header.as_kernel_header();
+        for family in [
+            crate::dialect::KernelHeaderRef::TextAsm(&header),
+            crate::dialect::KernelHeaderRef::TextAcis(&header),
+        ] {
+            let classified = crate::dialect::classify(family);
+            assert!(!classified
+                .declared()
+                .contains_key(crate::dialect::DECLARED_REFERENCE_WIDTH));
+        }
+    }
+
+    #[test]
     fn header_conversion_reports_the_centimetre_convention() {
         let stream = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("stream");
         let header = stream.header.as_kernel_header();

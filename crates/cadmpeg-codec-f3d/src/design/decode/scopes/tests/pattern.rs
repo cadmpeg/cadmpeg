@@ -11,6 +11,7 @@ use super::prelude::*;
 
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
+    use crate::design::decode::scopes::CircularPatternAxisCandidate;
     use crate::records::feature::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {
@@ -28,22 +29,65 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         direction_offset: 53,
     };
 
-    let historical_only = [(historical.clone(), 10, 11)];
+    let historical_only = [CircularPatternAxisCandidate {
+        axis: historical.clone(),
+        axis_record_index: 10,
+        selection_record_index: 11,
+    }];
     assert_eq!(
-        select_circular_pattern_axis(&historical_only).map(|candidate| (candidate.1, candidate.2)),
+        select_circular_pattern_axis(&historical_only).map(|candidate| (
+            candidate.axis_record_index,
+            candidate.selection_record_index
+        )),
         Some((10, 11))
     );
 
-    let mixed = [(historical.clone(), 10, 11), (inline.clone(), 20, 21)];
+    let mixed = [
+        CircularPatternAxisCandidate {
+            axis: historical.clone(),
+            axis_record_index: 10,
+            selection_record_index: 11,
+        },
+        CircularPatternAxisCandidate {
+            axis: inline.clone(),
+            axis_record_index: 20,
+            selection_record_index: 21,
+        },
+    ];
     assert_eq!(
-        select_circular_pattern_axis(&mixed).map(|candidate| (candidate.1, candidate.2)),
+        select_circular_pattern_axis(&mixed).map(|candidate| (
+            candidate.axis_record_index,
+            candidate.selection_record_index
+        )),
         Some((20, 21))
     );
 
-    let duplicate_inline = [(inline.clone(), 20, 21), (inline, 30, 31)];
+    let duplicate_inline = [
+        CircularPatternAxisCandidate {
+            axis: inline.clone(),
+            axis_record_index: 20,
+            selection_record_index: 21,
+        },
+        CircularPatternAxisCandidate {
+            axis: inline,
+            axis_record_index: 30,
+            selection_record_index: 31,
+        },
+    ];
     assert!(select_circular_pattern_axis(&duplicate_inline).is_none());
 
-    let duplicate_historical = [(historical.clone(), 10, 11), (historical, 12, 13)];
+    let duplicate_historical = [
+        CircularPatternAxisCandidate {
+            axis: historical.clone(),
+            axis_record_index: 10,
+            selection_record_index: 11,
+        },
+        CircularPatternAxisCandidate {
+            axis: historical,
+            axis_record_index: 12,
+            selection_record_index: 13,
+        },
+    ];
     assert!(select_circular_pattern_axis(&duplicate_historical).is_none());
 }
 
@@ -349,10 +393,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &rectangular_owners,
     )
     .expect("exact rectangular-pattern scalar lanes");
-    assert_eq!(rectangular.u_count, 3);
-    assert_eq!(rectangular.v_count, 1);
-    assert_eq!(rectangular.u_extent, 10.0);
-    assert_eq!(rectangular.v_extent, 0.0);
+    assert_eq!(rectangular.u_count(), 3);
+    assert_eq!(rectangular.v_count(), 1);
+    assert_eq!(rectangular.u_extent(), 10.0);
+    assert_eq!(rectangular.v_extent(), 0.0);
     assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
     assert_eq!(rectangular.instances, None);
@@ -746,12 +790,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
-        Some(axial_frames[0].transform)
+        Some(axial_frames[0].transform.rows())
     );
     assert_eq!(linked_scopes[2].joint_origin_transform_offset(), Some(178));
     assert_eq!(
         linked_scopes[2].joint_origin_transform(),
-        Some(axial_frames[1].transform)
+        Some(axial_frames[1].transform.rows())
     );
     assert_eq!(
         linked_scopes[0].assembly_alignment().and_then(
@@ -801,7 +845,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform(),
-        Some(axial_frames[0].transform)
+        Some(axial_frames[0].transform.rows())
     );
     assert_eq!(single_frame_scopes[1].joint_origin_reference(), Some(90));
     assert_eq!(

@@ -23,7 +23,8 @@ use std::sync::Arc;
 /// possible.
 #[must_use]
 pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
-    let (_, _, after_faces) = selected_standard_run(bytes)?;
+    let face_run = selected_standard_run(bytes)?;
+    let after_faces = face_run.after_faces();
     parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
 }
 
@@ -31,7 +32,8 @@ fn standard_edge_port_identities_with_namespace(
     bytes: &[u8],
     global: bool,
 ) -> Option<Vec<[u32; 2]>> {
-    let (_, _, after_faces) = selected_standard_run(bytes)?;
+    let face_run = selected_standard_run(bytes)?;
+    let after_faces = face_run.after_faces();
     let (edge_rows, scopes, _, _) = parse_standard_edge_tables_scoped(bytes, after_faces)?;
     let mut identity_by_handle = HashMap::new();
     let mut next_identity = 0u32;
@@ -67,7 +69,8 @@ fn standard_edge_port_identities_with_namespace(
 }
 
 fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let face_run = largest_fbb_run(bytes)?;
+    let after_faces = face_run.after_faces();
     let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
     let mut identity_by_handle = HashMap::new();
     edge_rows
@@ -497,7 +500,10 @@ struct StandardMeshAnalysis {
 }
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
-    let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
+    let face_run = selected_standard_run(bytes)?;
+    let face_start = face_run.face_start;
+    let face_count = face_run.face_count;
+    let after_faces = face_run.after_faces();
     let (edge_rows, handle_width, fixed_complete_row_spans) =
         parse_standard_edge_tables_with_width(bytes, after_faces)
             .map(|(rows, _, width)| (rows, width, false))
@@ -508,7 +514,7 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     let cycles = trims
         .iter()
-        .map(|trim| boundary_cycles(&trim.triangles))
+        .map(|trim| boundary_cycles(trim.packet.triangles()))
         .collect::<Option<Vec<_>>>()?;
     let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
     Some(StandardMeshAnalysis {
@@ -621,7 +627,10 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Option<Vec<Vec<usize>>> {
-    let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
+    let face_run = selected_standard_run(bytes)?;
+    let face_start = face_run.face_start;
+    let face_count = face_run.face_count;
+    let after_faces = face_run.after_faces();
     let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
         .map(|(rows, _, width)| (rows, width))
         .or_else(|| {
@@ -630,7 +639,13 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     let face_handles = trims
         .into_iter()
-        .map(|trim| trim.handles.into_iter().collect::<HashSet<_>>())
+        .map(|trim| {
+            trim.packet
+                .handles()
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+        })
         .collect::<Vec<_>>();
     repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
 }
@@ -1122,7 +1137,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
 ) -> Option<Vec<[usize; 2]>> {
-    let face_count = selected_standard_run(bytes)?.1;
+    let face_count = selected_standard_run(bytes)?.face_count;
     let context = StandardMeshBoundaryContext::parse(bytes, serialized);
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
         context.as_ref().map_or_else(
@@ -1201,8 +1216,6 @@ enum MeshFaceAssignmentDomain {
 #[derive(Debug, Clone)]
 pub(crate) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
-    edge_rows: Vec<EdgeRow>,
-    fixed_complete_row_spans: bool,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
     edge_runs: Vec<MeshEdgeRun>,
@@ -1232,12 +1245,8 @@ impl StandardMeshBoundaryContext {
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
-        let edge_rows = analysis.edge_rows.clone();
-        let fixed_complete_row_spans = analysis.fixed_complete_row_spans;
         Some(Self {
             analysis,
-            edge_rows,
-            fixed_complete_row_spans,
             coverage,
             edge_ports,
             edge_runs,
@@ -1249,8 +1258,6 @@ impl StandardMeshBoundaryContext {
         let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
         Some(Self {
             analysis: Arc::clone(&self.analysis),
-            edge_rows: self.edge_rows.clone(),
-            fixed_complete_row_spans: self.fixed_complete_row_spans,
             coverage,
             edge_ports: self.edge_ports.clone(),
             edge_runs: self.edge_runs.clone(),
@@ -2158,7 +2165,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         )
     }
 
-    let edge_rows = &context.edge_rows;
+    let edge_rows = &context.analysis.edge_rows;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return None;
     }
@@ -2296,7 +2303,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (
                         placement_ports,
                         &corner_ports,
@@ -2314,7 +2321,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (None, &HashMap::new(), endpoint_constraints, &corner_points),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -2327,7 +2334,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (None, &HashMap::new(), None, &MeshCornerPoints::new()),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -2449,7 +2456,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                 for run in runs.iter().filter(|run| run.face == face) {
                     let length = cycles[run.cycle].length;
                     let fixed_direction = edge_candidates.is_none()
-                        || context.edge_rows[run.edge].boundary_layout
+                        || context.analysis.edge_rows[run.edge].boundary_layout
                             == EdgeBoundaryLayout::CompleteBoundaryRun;
                     cycles[run.cycle].exact_uses.push((
                         MeshBoundaryEdgeCandidate {
@@ -2484,7 +2491,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     .ok()?;
                     for run in runs.iter().filter(|run| run.face == face) {
                         let fixed_direction = edge_candidates.is_none()
-                            || context.edge_rows[run.edge].boundary_layout
+                            || context.analysis.edge_rows[run.edge].boundary_layout
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
                         boundaries[run.cycle].push((
                             MeshBoundaryEdgeCandidate {
@@ -2545,7 +2552,9 @@ pub fn parse_standard_mesh_selection(
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
 ) -> Option<StandardTopology> {
-    let (_, face_count, after_faces) = selected_standard_run(bytes)?;
+    let face_run = selected_standard_run(bytes)?;
+    let face_count = face_run.face_count;
+    let after_faces = face_run.after_faces();
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let assignments = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
@@ -2698,7 +2707,8 @@ pub fn standard_mesh_prune_endpoint_candidates(
     if edge_faces.len() != edge_candidates.len() {
         return None;
     }
-    let (_, _, after_faces) = selected_standard_run(bytes)?;
+    let face_run = selected_standard_run(bytes)?;
+    let after_faces = face_run.after_faces();
     let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let point_count = parse_vertex_table(bytes, vertex_header)?.len();
     let complete_domain = (0..point_count)
@@ -3663,19 +3673,17 @@ pub(crate) fn motif_port_points(
     vertex_count: usize,
 ) -> Option<HashMap<u32, usize>> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
-        let expected = record
-            .independent_count
-            .checked_mul(3)?
-            .checked_add(record.strip_lengths.iter().sum())?
-            .checked_add(record.fan_lengths.iter().sum())?;
-        if expected != record.handles.len() {
-            return None;
-        }
         Some((
-            [*record.handles.first()?, *record.handles.get(1)?],
             [
-                *record.handles.get(record.handles.len().checked_sub(2)?)?,
-                *record.handles.last()?,
+                *record.packet.handles().first()?,
+                *record.packet.handles().get(1)?,
+            ],
+            [
+                *record
+                    .packet
+                    .handles()
+                    .get(record.packet.handles().len().checked_sub(2)?)?,
+                *record.packet.handles().last()?,
             ],
         ))
     }
@@ -3733,14 +3741,14 @@ pub(crate) fn motif_port_points(
         if trims
             .get(at..at + 2)
             .is_some_and(|records| records[0].kind == 0x4a && records[1].kind == 0x4a)
-            && trims[at].handles.len() >= 4
-            && trims[at + 1].handles.len() >= 2
+            && trims[at].packet.handles().len() >= 4
+            && trims[at + 1].packet.handles().len() >= 2
         {
             for handle in [
-                trims[at + 1].handles[0],
-                trims[at].handles[2],
-                trims[at].handles[3],
-                trims[at + 1].handles[1],
+                trims[at + 1].packet.handles()[0],
+                trims[at].packet.handles()[2],
+                trims[at].packet.handles()[3],
+                trims[at + 1].packet.handles()[1],
             ] {
                 emit(&mut seen, handle);
             }

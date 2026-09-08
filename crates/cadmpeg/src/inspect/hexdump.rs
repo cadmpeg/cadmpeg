@@ -2,6 +2,7 @@
 //! Hexadecimal rendering with absolute file offsets and an ASCII gutter.
 
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 
 /// Number of hexadecimal digits used for the offset column.
 ///
@@ -17,8 +18,8 @@ fn offset_digits(last_offset: u64) -> usize {
 /// Each line prints the absolute offset, `width` bytes in hexadecimal grouped in
 /// eights, and the printable ASCII for the same bytes between pipes. A short
 /// final line is padded so the gutter stays in one column.
-pub fn render(base: u64, bytes: &[u8], width: usize) -> String {
-    let width = width.max(1);
+pub fn render(base: u64, bytes: &[u8], width: NonZeroUsize) -> String {
+    let width = width.get();
     let last = base.saturating_add(bytes.len().saturating_sub(1) as u64);
     let digits = offset_digits(last);
     let mut out = String::new();
@@ -62,7 +63,7 @@ mod tests {
     #[test]
     fn renders_one_full_line_with_grouping_and_gutter() {
         let bytes: Vec<u8> = (0x40u8..0x50).collect();
-        let text = render(0, &bytes, 16);
+        let text = render(0, &bytes, NonZeroUsize::new(16).unwrap());
         assert_eq!(
             text,
             "00000000  40 41 42 43 44 45 46 47  48 49 4a 4b 4c 4d 4e 4f  |@ABCDEFGHIJKLMNO|\n"
@@ -71,9 +72,9 @@ mod tests {
 
     #[test]
     fn pads_a_short_final_line_so_the_gutter_stays_aligned() {
-        let text = render(0x10, b"hi", 16);
+        let text = render(0x10, b"hi", NonZeroUsize::new(16).unwrap());
         let line = text.trim_end_matches('\n');
-        let full = render(0x10, &[0u8; 16], 16);
+        let full = render(0x10, &[0u8; 16], NonZeroUsize::new(16).unwrap());
         let full_line = full.trim_end_matches('\n');
         assert_eq!(
             line.find('|').unwrap(),
@@ -86,21 +87,25 @@ mod tests {
 
     #[test]
     fn non_printable_bytes_become_dots_and_space_stays_a_space() {
-        let text = render(0, &[0x00, 0x20, 0x7e, 0x7f, 0xff], 8);
+        let text = render(
+            0,
+            &[0x00, 0x20, 0x7e, 0x7f, 0xff],
+            NonZeroUsize::new(8).unwrap(),
+        );
         assert!(text.ends_with("|. ~..|\n"), "got {text}");
     }
 
     #[test]
     fn offsets_are_absolute_and_widen_past_four_gibibytes() {
-        let text = render(0x1_0000_0000, &[0u8; 1], 16);
+        let text = render(0x1_0000_0000, &[0u8; 1], NonZeroUsize::new(16).unwrap());
         assert!(text.starts_with("100000000  00 "), "got {text}");
-        let narrow = render(0xff, &[0u8; 1], 16);
+        let narrow = render(0xff, &[0u8; 1], NonZeroUsize::new(16).unwrap());
         assert!(narrow.starts_with("000000ff  00 "), "got {narrow}");
     }
 
     #[test]
     fn respects_a_custom_width() {
-        let text = render(0, &[1, 2, 3, 4, 5], 2);
+        let text = render(0, &[1, 2, 3, 4, 5], NonZeroUsize::new(2).unwrap());
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 3);
         assert!(lines[0].starts_with("00000000  01 02 "));

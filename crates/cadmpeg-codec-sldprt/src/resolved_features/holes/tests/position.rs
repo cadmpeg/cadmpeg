@@ -72,21 +72,24 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     lane.sketch_entities = [(1, [0.013, 0.007]), (2, [-0.009, 0.007])]
         .into_iter()
         .enumerate()
-        .map(
-            |(ordinal, (object_index, coordinates_m))| SketchInputEntity {
-                id: format!("marker-{ordinal}"),
-                parent: "lane".into(),
-                feature_ref: Some("position".into()),
-                ordinal: ordinal as u32,
-                offset: ordinal as u64,
-                object_index: Some(object_index),
-                local_id: None,
-                kind: SketchInputKind::LineOrCircle,
-                state_value: Some(1.0),
-                coordinates_m: Some(coordinates_m),
-                links: None,
-            },
-        )
+        .map(|(ordinal, (object_index, coordinates_m))| {
+            let marker_id: String = format!("marker-{ordinal}");
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                ordinal as u32,
+                ordinal as u64,
+                SketchInputKind::LineOrCircle,
+            );
+            constructed_marker.feature_ref = Some("position".into());
+            constructed_marker.object_index = Some(object_index);
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some(coordinates_m);
+            constructed_marker.links = None;
+            constructed_marker
+        })
         .collect();
     let surface = |id, x| Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
@@ -118,31 +121,31 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         marker.kind = SketchInputKind::Arc;
     }
     lane.sketch_entities.extend([
-        SketchInputEntity {
-            id: "auxiliary-object-locus".into(),
-            parent: "lane".into(),
-            feature_ref: Some("position".into()),
-            ordinal: 2,
-            offset: 2,
-            object_index: Some(3),
-            local_id: None,
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([1.0, 1.0]),
-            links: None,
+        {
+            let marker_id: String = "auxiliary-object-locus".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 2, 2, SketchInputKind::Point);
+            constructed_marker.feature_ref = Some("position".into());
+            constructed_marker.object_index = Some(3);
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some([1.0, 1.0]);
+            constructed_marker.links = None;
+            constructed_marker
         },
-        SketchInputEntity {
-            id: "auxiliary-anchor".into(),
-            parent: "lane".into(),
-            feature_ref: Some("position".into()),
-            ordinal: 3,
-            offset: 3,
-            object_index: None,
-            local_id: None,
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.0, 0.0]),
-            links: None,
+        {
+            let marker_id: String = "auxiliary-anchor".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 3, 3, SketchInputKind::Point);
+            constructed_marker.feature_ref = Some("position".into());
+            constructed_marker.object_index = None;
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some([0.0, 0.0]);
+            constructed_marker.links = None;
+            constructed_marker
         },
     ]);
     assert_eq!(
@@ -203,18 +206,23 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
     lane.sketch_entities = [[-0.07, 0.011], [0.07, 0.011], [0.0, -0.004], [0.0, 0.011]]
         .into_iter()
         .enumerate()
-        .map(|(ordinal, coordinates_m)| SketchInputEntity {
-            id: format!("curve-marker-{ordinal}"),
-            parent: "lane".into(),
-            feature_ref: Some("position".into()),
-            ordinal: ordinal as u32,
-            offset: ordinal as u64,
-            object_index: Some((ordinal + 1) as u32),
-            local_id: None,
-            kind: SketchInputKind::Arc,
-            state_value: Some(1.0),
-            coordinates_m: Some(coordinates_m),
-            links: None,
+        .map(|(ordinal, coordinates_m)| {
+            let marker_id: String = format!("curve-marker-{ordinal}");
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                ordinal as u32,
+                ordinal as u64,
+                SketchInputKind::Arc,
+            );
+            constructed_marker.feature_ref = Some("position".into());
+            constructed_marker.object_index = Some((ordinal + 1) as u32);
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some(coordinates_m);
+            constructed_marker.links = None;
+            constructed_marker
         })
         .collect();
     let surfaces = [-70.0, 70.0]
@@ -250,18 +258,23 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
 
 #[test]
 fn paired_object_loci_select_a_congruent_bore_pattern() {
-    let marker = |id: &str, ordinal, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("position".into()),
-        ordinal,
-        offset: u64::from(ordinal) * 10,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, ordinal, object_index, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            ordinal,
+            u64::from(ordinal) * 10,
+            kind,
+        );
+        constructed_marker.feature_ref = Some("position".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = lane();
     lane.sketch_entities = vec![
@@ -534,54 +547,63 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         hole_position_sketch_source(&history.features[0], &lane),
         Some(6)
     );
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "authored-point".into(),
-        parent: "lane".into(),
-        feature_ref: Some("native-position-sketch".into()),
-        ordinal: 0,
-        offset: 80,
-        object_index: Some(1),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some([0.002, 0.003]),
-        links: None,
+    lane.sketch_entities.push({
+        let marker_id: String = "authored-point".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker.object_index = Some(1);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some([0.002, 0.003]);
+        constructed_marker.links = None;
+        constructed_marker
     });
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "origin-marker".into(),
-        object_index: None,
-        ordinal: 1,
-        offset: 90,
-        coordinates_m: Some([0.0, 0.0]),
-        ..lane.sketch_entities[0].clone()
+    lane.sketch_entities.push({
+        let mut constructed_marker = lane.sketch_entities[0].clone();
+        let ordinal = 1;
+        let offset = 90;
+        constructed_marker = constructed_marker.with_test_position(ordinal, offset);
+        constructed_marker.id = "origin-marker".into();
+        constructed_marker.object_index = None;
+        constructed_marker.coordinates_m = Some([0.0, 0.0]);
+        constructed_marker
     });
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "point-identity".into(),
-        object_index: Some(2),
-        ordinal: 4,
-        offset: 120,
-        coordinates_m: None,
-        ..lane.sketch_entities[0].clone()
+    lane.sketch_entities.push({
+        let mut constructed_marker = lane.sketch_entities[0].clone();
+        let ordinal = 4;
+        let offset = 120;
+        constructed_marker = constructed_marker.with_test_position(ordinal, offset);
+        constructed_marker.id = "point-identity".into();
+        constructed_marker.object_index = Some(2);
+        constructed_marker.coordinates_m = None;
+        constructed_marker
     });
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "authored-arc-locus".into(),
-        object_index: Some(2),
-        ordinal: 2,
-        offset: 100,
-        kind: SketchInputKind::Arc,
-        coordinates_m: Some([0.014, 0.025]),
-        ..lane.sketch_entities[0].clone()
+    lane.sketch_entities.push({
+        let mut constructed_marker = lane.sketch_entities[0].clone();
+        let ordinal = 2;
+        let offset = 100;
+        constructed_marker = constructed_marker.with_test_position(ordinal, offset);
+        constructed_marker.id = "authored-arc-locus".into();
+        constructed_marker.object_index = Some(2);
+        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.coordinates_m = Some([0.014, 0.025]);
+        constructed_marker
     });
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "arc-origin-marker".into(),
-        object_index: None,
-        ordinal: 3,
-        offset: 110,
-        kind: SketchInputKind::Point,
-        coordinates_m: Some([0.0, 0.0]),
-        ..lane.sketch_entities[0].clone()
+    lane.sketch_entities.push({
+        let mut constructed_marker = lane.sketch_entities[0].clone();
+        let ordinal = 3;
+        let offset = 110;
+        constructed_marker = constructed_marker.with_test_position(ordinal, offset);
+        constructed_marker.id = "arc-origin-marker".into();
+        constructed_marker.object_index = None;
+        constructed_marker.kind = SketchInputKind::Point;
+        constructed_marker.coordinates_m = Some([0.0, 0.0]);
+        constructed_marker
     });
-    lane.sketch_entities.sort_by_key(|marker| marker.ordinal);
+    lane.sketch_entities
+        .sort_by_key(crate::records::SketchInputEntity::ordinal);
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
         name: Some("Position".into()),
@@ -698,14 +720,16 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     ));
 
     let mut incomplete_lane = paired_lane;
-    incomplete_lane.sketch_entities.push(SketchInputEntity {
-        id: "unpaired-object-locus".into(),
-        object_index: Some(3),
-        ordinal: 4,
-        offset: 120,
-        kind: SketchInputKind::Arc,
-        coordinates_m: Some([0.016, 0.027]),
-        ..incomplete_lane.sketch_entities[0].clone()
+    incomplete_lane.sketch_entities.push({
+        let mut constructed_marker = incomplete_lane.sketch_entities[0].clone();
+        let ordinal = 4;
+        let offset = 120;
+        constructed_marker = constructed_marker.with_test_position(ordinal, offset);
+        constructed_marker.id = "unpaired-object-locus".into();
+        constructed_marker.object_index = Some(3);
+        constructed_marker.kind = SketchInputKind::Arc;
+        constructed_marker.coordinates_m = Some([0.016, 0.027]);
+        constructed_marker
     });
     let mut incomplete_features = vec![model_hole(), features[1].clone()];
     project_hole_position_sketches(
@@ -761,18 +785,23 @@ fn unique_unindexed_point_locus_is_projected() {
         content: Vec::new(),
     });
     let mut lane = lane_with_position_reference(6);
-    let marker = |id: &str, ordinal, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("native-position-sketch".into()),
-        ordinal,
-        offset: u64::from(ordinal),
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let marker = |id: &str, ordinal, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            ordinal,
+            u64::from(ordinal),
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     lane.sketch_entities = vec![
         marker("relation-anchor-0", 0, [0.0, 0.0]),
@@ -877,44 +906,44 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         content: Vec::new(),
     });
     let mut lane = lane_with_position_reference(6);
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "authored-point".into(),
-        parent: "lane".into(),
-        feature_ref: Some("native-position-sketch".into()),
-        ordinal: 0,
-        offset: 80,
-        object_index: Some(1),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    lane.sketch_entities.push({
+        let marker_id: String = "authored-point".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker.object_index = Some(1);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     });
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "same-axis-endpoint".into(),
-        parent: "lane".into(),
-        feature_ref: Some("native-position-sketch".into()),
-        ordinal: 1,
-        offset: 90,
-        object_index: Some(2),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    lane.sketch_entities.push({
+        let marker_id: String = "same-axis-endpoint".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 1, 90, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker.object_index = Some(2);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     });
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "construction-point".into(),
-        parent: "lane".into(),
-        feature_ref: Some("native-position-sketch".into()),
-        ordinal: 2,
-        offset: 100,
-        object_index: Some(3),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    lane.sketch_entities.push({
+        let marker_id: String = "construction-point".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 2, 100, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker.object_index = Some(3);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     });
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
@@ -1127,18 +1156,23 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         content: Vec::new(),
     });
     let mut lane = lane_with_position_reference(6);
-    lane.sketch_entities.push(SketchInputEntity {
-        id: "relation-handle".into(),
-        parent: "lane".into(),
-        feature_ref: Some("native-position-sketch".into()),
-        ordinal: 0,
-        offset: 80,
-        object_index: Some(1),
-        local_id: None,
-        kind: SketchInputKind::Relation(SketchRelationKind::Vertical),
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    lane.sketch_entities.push({
+        let marker_id: String = "relation-handle".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            80,
+            SketchInputKind::Relation(SketchRelationKind::Vertical),
+        );
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker.object_index = Some(1);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     });
     let sketch = SpatialSketch {
         id: sketch_id.clone(),

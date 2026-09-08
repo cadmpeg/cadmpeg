@@ -95,11 +95,23 @@ fn brep_diagnostics_report_component_gate_inputs() {
 #[test]
 fn explicit_single_body_merges_disconnected_components() {
     let merged = merge_body_components(vec![
-        (vec![1, 2], BTreeSet::from([10])),
-        (vec![3], BTreeSet::from([11, 12])),
+        NeutralShellSpec {
+            faces: vec![1, 2],
+            wire_curves: BTreeSet::from([10]),
+        },
+        NeutralShellSpec {
+            faces: vec![3],
+            wire_curves: BTreeSet::from([11, 12]),
+        },
     ]);
 
-    assert_eq!(merged, vec![(vec![1, 2, 3], BTreeSet::from([10, 11, 12]))]);
+    assert_eq!(
+        merged,
+        vec![NeutralShellSpec {
+            faces: vec![1, 2, 3],
+            wire_curves: BTreeSet::from([10, 11, 12])
+        }]
+    );
 }
 
 #[test]

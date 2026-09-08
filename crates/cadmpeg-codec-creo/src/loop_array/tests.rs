@@ -68,10 +68,7 @@ fn retains_bounded_rows_and_frame_header() {
     assert_eq!(parsed.frames[0].variant, Some(super::LayoutMarker::F3));
     assert_eq!(parsed.frames[0].declared_count, 2);
     assert_eq!(parsed.frames[0].class_id, 0x2a);
-    assert_eq!(
-        parsed.frames[0].rows,
-        super::LoopArrayFrameRows::Materialized(2)
-    );
+    assert!(!parsed.frames[0].overfull);
     assert_eq!(parsed.records.len(), 2);
     assert_eq!(parsed.records[0].lo_id, 1);
     assert_eq!(parsed.records[0].feature_id, 4);
@@ -112,10 +109,7 @@ fn keeps_materialized_rows_when_slots_are_sparse() {
     let parsed = scan(&payload);
 
     assert_eq!(parsed.frames[0].declared_count, 3);
-    assert_eq!(
-        parsed.frames[0].rows,
-        super::LoopArrayFrameRows::Materialized(1)
-    );
+    assert!(!parsed.frames[0].overfull);
     assert_eq!(parsed.records.len(), 1);
 }
 
@@ -129,7 +123,7 @@ fn withholds_an_overfull_frame() {
     let parsed = scan(&frame(1, &rows));
 
     assert_eq!(parsed.frames.len(), 1);
-    assert_eq!(parsed.frames[0].rows, super::LoopArrayFrameRows::Overfull);
+    assert!(parsed.frames[0].overfull);
     assert!(parsed.records.is_empty());
 }
 

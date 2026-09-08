@@ -20,7 +20,7 @@ use crate::decode::sketch_transfer::recipe::{
 };
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+use cadmpeg_ir::geometry::{Curve, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -89,12 +89,15 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         };
         let vertex_curves = profile
             .iter()
-            .map(|(_, _, point, _)| revolved_section_circle(transform, *point, &axis))
+            .map(|entity| revolved_section_circle(transform, entity.start(), &axis))
             .collect::<Vec<_>>();
         let surface_geometries = profile
             .iter()
-            .map(|(geometry, reversed, _, _)| {
-                revolved_brep_surface(transform, geometry, *reversed, &axis)
+            .map(|entity| {
+                let geometry = entity.geometry();
+                let reversed = entity.reversed();
+
+                revolved_brep_surface(transform, &geometry.to_sketch()?, reversed, &axis)
             })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {
@@ -105,12 +108,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             (vertex_curves[index].is_some() || vertex_curves[next].is_some())
                 && [
                     (
-                        segment.2,
+                        segment.start(),
                         vertex_curves[index].is_some(),
                         RevolutionBoundary::Start,
                     ),
                     (
-                        segment.3,
+                        segment.end(),
                         vertex_curves[next].is_some(),
                         RevolutionBoundary::End,
                     ),
@@ -153,20 +156,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Ok(mut edges) = alloc_filled(count, None, "creo revolution profile edges") else {
             continue;
         };
-        for (index, ((_, _, point, _), curve_geometry)) in
-            profile.iter().zip(vertex_curves).enumerate()
-        {
+        for (index, (entity, curve_geometry)) in profile.iter().zip(vertex_curves).enumerate() {
             let Some(curve_geometry) = curve_geometry else {
                 continue;
-            };
-            let CurveGeometry::Circle {
-                center,
-                axis: curve_axis,
-                ref_direction,
-                radius,
-            } = curve_geometry
-            else {
-                unreachable!();
             };
             let curve_id =
                 CurveId::mint(format!("{prefix}:curve:vertex:{index}")).expect("identity grammar");
@@ -176,15 +168,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 VertexId::mint(format!("{prefix}:vertex:{index}")).expect("identity grammar");
             let edge_id =
                 EdgeId::mint(format!("{prefix}:edge:vertex:{index}")).expect("identity grammar");
-            let position = section_point_in_model(transform, *point);
+            let position = section_point_in_model(transform, entity.start());
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Circle {
-                    center,
-                    axis: curve_axis,
-                    ref_direction,
-                    radius,
-                },
+                geometry: curve_geometry.into(),
                 source_object: None,
             });
             ir.model.points.push(Point {
@@ -208,12 +195,14 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             edges[index] = Some(edge_id);
         }
         let mut faces = Vec::new();
-        for (index, (((_, _, start, end), surface_geometry), face_sense)) in profile
+        for (index, ((entity, surface_geometry), face_sense)) in profile
             .iter()
             .zip(surface_geometries)
             .zip(face_senses)
             .enumerate()
         {
+            let start = entity.start();
+            let end = entity.end();
             let next = (index + 1) % count;
             let surface_id =
                 SurfaceId::mint(format!("{prefix}:surface:{index}")).expect("identity grammar");
@@ -225,8 +214,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             });
             let mut loops = Vec::new();
             for (boundary, vertex_index, section_point, sense) in [
-                (RevolutionBoundary::Start, index, *start, Sense::Reversed),
-                (RevolutionBoundary::End, next, *end, Sense::Forward),
+                (RevolutionBoundary::Start, index, start, Sense::Reversed),
+                (RevolutionBoundary::End, next, end, Sense::Forward),
             ] {
                 let Some(edge_id) = edges[vertex_index].clone() else {
                     continue;

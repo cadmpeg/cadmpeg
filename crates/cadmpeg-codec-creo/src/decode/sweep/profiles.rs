@@ -282,16 +282,20 @@ pub(in super::super) fn extrusion_side_uvs(
     ]
 }
 
-pub(in super::super) fn extrusion_profile_signed_area(
-    profile: &[(SketchGeometry, bool, [f64; 2], [f64; 2])],
-) -> Option<f64> {
+pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity]) -> Option<f64> {
     let mut area_twice = 0.0;
-    for (geometry, reversed, start, end) in profile {
-        let contribution = match geometry.definition() {
-            SketchGeometryDefinition::Nurbs { .. } => {
-                nurbs_profile_signed_area_twice(geometry, *reversed)?
+    for ProfileEntity {
+        geometry,
+        reversed,
+        start,
+        end,
+    } in profile
+    {
+        let contribution = match geometry {
+            ProfileGeometry::Nurbs { .. } => {
+                nurbs_profile_signed_area_twice(&geometry.to_sketch()?, *reversed)?
             }
-            SketchGeometryDefinition::Arc {
+            ProfileGeometry::Arc {
                 center,
                 radius,
                 start_angle,
@@ -308,7 +312,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
                     -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
                 )
             }
-            SketchGeometryDefinition::Circle { center, radius } => {
+            ProfileGeometry::Circle { center, radius } => {
                 let sweep = if *reversed {
                     -std::f64::consts::TAU
                 } else {
@@ -319,19 +323,138 @@ pub(in super::super) fn extrusion_profile_signed_area(
                     -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
                 )
             }
-            _ => start[0].mul_add(end[1], -(start[1] * end[0])),
+            ProfileGeometry::Line { .. } => start[0].mul_add(end[1], -(start[1] * end[0])),
         };
         area_twice += contribution;
     }
     let scale = profile
         .iter()
-        .flat_map(|(_, _, start, end)| start.iter().chain(end))
+        .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     (area_twice.abs() > EPS_AREA * scale * scale).then_some(0.5 * area_twice)
 }
 
-pub(in super::super) type ExtrusionProfile = Vec<(SketchGeometry, bool, [f64; 2], [f64; 2])>;
+#[derive(Debug, Clone, PartialEq)]
+pub(in super::super) enum ProfileGeometry {
+    Line {
+        start: Point2,
+        end: Point2,
+    },
+    Arc {
+        center: Point2,
+        radius: cadmpeg_ir::features::Length,
+        start_angle: cadmpeg_ir::features::Angle,
+        end_angle: cadmpeg_ir::features::Angle,
+    },
+    Circle {
+        center: Point2,
+        radius: cadmpeg_ir::features::Length,
+    },
+    Nurbs {
+        curve: cadmpeg_ir::geometry::PcurveNurbs,
+    },
+}
+
+impl ProfileGeometry {
+    fn from_sketch(geometry: SketchGeometry) -> Option<Self> {
+        Some(match geometry.into_definition() {
+            SketchGeometryDefinition::Line { start, end } => Self::Line { start, end },
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => Self::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            SketchGeometryDefinition::Circle { center, radius } => Self::Circle { center, radius },
+            SketchGeometryDefinition::Nurbs { curve } => Self::Nurbs { curve },
+            _ => return None,
+        })
+    }
+
+    pub(in super::super) fn to_sketch(&self) -> Option<SketchGeometry> {
+        SketchGeometry::try_from(match self.clone() {
+            Self::Line { start, end } => SketchGeometryDefinition::Line { start, end },
+            Self::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            Self::Circle { center, radius } => SketchGeometryDefinition::Circle { center, radius },
+            Self::Nurbs { curve } => SketchGeometryDefinition::Nurbs { curve },
+        })
+        .ok()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(in super::super) struct ProfileEntity {
+    geometry: ProfileGeometry,
+    reversed: bool,
+    start: [f64; 2],
+    end: [f64; 2],
+}
+
+impl ProfileEntity {
+    pub(in super::super) fn new(geometry: SketchGeometry, reversed: bool) -> Option<Self> {
+        let (mut start, mut end) = sketch_geometry_endpoints(&geometry)?;
+        if reversed {
+            std::mem::swap(&mut start, &mut end);
+        }
+        Some(Self {
+            geometry: ProfileGeometry::from_sketch(geometry)?,
+            reversed,
+            start,
+            end,
+        })
+    }
+
+    pub(in super::super) fn geometry(&self) -> &ProfileGeometry {
+        &self.geometry
+    }
+    pub(in super::super) fn reversed(&self) -> bool {
+        self.reversed
+    }
+    pub(in super::super) fn start(&self) -> [f64; 2] {
+        self.start
+    }
+    pub(in super::super) fn end(&self) -> [f64; 2] {
+        self.end
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(in super::super) struct ValidatedProfile {
+    entities: ExtrusionProfile,
+    area: f64,
+}
+
+impl ValidatedProfile {
+    fn new(entities: ExtrusionProfile) -> Option<Self> {
+        let area = extrusion_profile_signed_area(&entities)?;
+        Some(Self { entities, area })
+    }
+
+    pub(in super::super) fn entities(&self) -> &ExtrusionProfile {
+        &self.entities
+    }
+    pub(in super::super) fn area(&self) -> f64 {
+        self.area
+    }
+}
+
+pub(in super::super) type ExtrusionProfile = Vec<ProfileEntity>;
 
 pub(in super::super) fn resolved_sketch_profiles(
     ir: &CadIr,
@@ -352,23 +475,22 @@ pub(in super::super) fn resolved_sketch_profiles(
             let entity = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                 entity.sketch == *sketch_id && entity.id() == &entity_use.entity
             }))?;
-            let (mut start, mut end) = sketch_geometry_endpoints(&entity.geometry)?;
-            if entity_use.reversed {
-                std::mem::swap(&mut start, &mut end);
-            }
-            geometries.push((entity.geometry.clone(), entity_use.reversed, start, end));
+            geometries.push(ProfileEntity::new(
+                entity.geometry.clone(),
+                entity_use.reversed,
+            )?);
         }
         (geometries.len() >= minimum_entity_count).then_some(())?;
         let scale = geometries
             .iter()
-            .flat_map(|(_, _, start, end)| start.iter().chain(end))
+            .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
             .map(|value| value.abs())
             .fold(1.0, f64::max);
         geometries
             .iter()
             .enumerate()
-            .all(|(index, (_, _, _, end))| {
-                let next = geometries[(index + 1) % geometries.len()].2;
+            .all(|(index, ProfileEntity { end, .. })| {
+                let next = geometries[(index + 1) % geometries.len()].start;
                 (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
             })
             .then_some(())?;
@@ -380,11 +502,9 @@ pub(in super::super) fn resolved_sketch_profiles(
 #[cfg(test)]
 mod tests;
 
-pub(in super::super) fn profile_arc(
-    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
-) -> Option<([f64; 2], f64, f64, f64)> {
-    let (center, radius, start, forward_delta) = match segment.0.definition() {
-        SketchGeometryDefinition::Arc {
+pub(in super::super) fn profile_arc(segment: &ProfileEntity) -> Option<([f64; 2], f64, f64, f64)> {
+    let (center, radius, start, forward_delta) = match &segment.geometry {
+        ProfileGeometry::Arc {
             center,
             radius,
             start_angle,
@@ -392,15 +512,15 @@ pub(in super::super) fn profile_arc(
         } => (
             [center.u, center.v],
             radius.0,
-            (segment.2[1] - center.v).atan2(segment.2[0] - center.u),
+            (segment.start[1] - center.v).atan2(segment.start[0] - center.u),
             forward_arc_sweep(start_angle.0, end_angle.0),
         ),
-        SketchGeometryDefinition::Circle { center, radius } => {
+        ProfileGeometry::Circle { center, radius } => {
             ([center.u, center.v], radius.0, 0.0, std::f64::consts::TAU)
         }
         _ => return None,
     };
-    let delta = if segment.1 {
+    let delta = if segment.reversed {
         -forward_delta
     } else {
         forward_delta
@@ -707,10 +827,10 @@ pub(in super::super) fn nurbs_profile_polyline(
 }
 
 pub(in super::super) fn profile_nurbs_polyline(
-    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    segment: &ProfileEntity,
     tolerance: f64,
 ) -> Option<Vec<[f64; 2]>> {
-    let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+    let nurbs = oriented_sketch_nurbs_curve(&segment.geometry.to_sketch()?, segment.reversed)?;
     nurbs_profile_polyline(&nurbs, tolerance)
 }
 
@@ -760,15 +880,12 @@ pub(in super::super) fn polylines_intersect(
 }
 
 pub(in super::super) fn profile_segments_intersect(
-    first: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
-    second: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    first: &ProfileEntity,
+    second: &ProfileEntity,
     tolerance: f64,
 ) -> bool {
-    let first_nurbs = matches!(first.0.definition(), SketchGeometryDefinition::Nurbs { .. });
-    let second_nurbs = matches!(
-        second.0.definition(),
-        SketchGeometryDefinition::Nurbs { .. }
-    );
+    let first_nurbs = matches!(first.geometry, ProfileGeometry::Nurbs { .. });
+    let second_nurbs = matches!(second.geometry, ProfileGeometry::Nurbs { .. });
     if first_nurbs || second_nurbs {
         if first_nurbs {
             if let Some(arc) = profile_arc(second) {
@@ -791,23 +908,27 @@ pub(in super::super) fn profile_segments_intersect(
         let Some(first_polyline) = (if first_nurbs {
             profile_nurbs_polyline(first, tolerance)
         } else {
-            Some(vec![first.2, first.3])
+            Some(vec![first.start, first.end])
         }) else {
             return true;
         };
         let Some(second_polyline) = (if second_nurbs {
             profile_nurbs_polyline(second, tolerance)
         } else {
-            Some(vec![second.2, second.3])
+            Some(vec![second.start, second.end])
         }) else {
             return true;
         };
         return polylines_intersect(&first_polyline, &second_polyline, tolerance);
     }
     match (profile_arc(first), profile_arc(second)) {
-        (None, None) => segments_intersect([first.2, first.3], [second.2, second.3], tolerance),
-        (None, Some(arc)) => line_arc_intersect([first.2, first.3], arc, tolerance),
-        (Some(arc), None) => line_arc_intersect([second.2, second.3], arc, tolerance),
+        (None, None) => segments_intersect(
+            [first.start, first.end],
+            [second.start, second.end],
+            tolerance,
+        ),
+        (None, Some(arc)) => line_arc_intersect([first.start, first.end], arc, tolerance),
+        (Some(arc), None) => line_arc_intersect([second.start, second.end], arc, tolerance),
         (Some(first), Some(second)) => arcs_intersect(first, second, tolerance),
     }
 }
@@ -818,7 +939,7 @@ pub(in super::super) fn profile_strictly_contains(
 ) -> bool {
     let scale = profile
         .iter()
-        .flat_map(|(_, _, start, end)| start.iter().chain(end))
+        .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
@@ -831,10 +952,7 @@ pub(in super::super) fn profile_strictly_contains(
                 .mul_add(second[1], -(first[1] * second[0]))
                 .atan2(first[0].mul_add(second[0], first[1] * second[1]));
         };
-        if matches!(
-            segment.0.definition(),
-            SketchGeometryDefinition::Nurbs { .. }
-        ) {
+        if matches!(segment.geometry, ProfileGeometry::Nurbs { .. }) {
             let Some(polyline) = profile_nurbs_polyline(segment, tolerance) else {
                 return false;
             };
@@ -858,19 +976,19 @@ pub(in super::super) fn profile_strictly_contains(
                 );
             }
         } else {
-            accumulate(segment.2, segment.3);
+            accumulate(segment.start, segment.end);
         }
     }
     winding.abs() > std::f64::consts::PI
 }
 
 pub(in super::super) fn ordered_extrusion_profiles(
-    mut profiles: Vec<ExtrusionProfile>,
-) -> Option<(Vec<ExtrusionProfile>, f64)> {
+    profiles: Vec<ExtrusionProfile>,
+) -> Option<Vec<ValidatedProfile>> {
     let scale = profiles
         .iter()
         .flatten()
-        .flat_map(|(_, _, start, end)| start.iter().chain(end))
+        .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
@@ -902,7 +1020,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
         .enumerate()
         .filter(|(candidate, profile)| {
             profiles.iter().enumerate().all(|(index, inner)| {
-                index == *candidate || profile_strictly_contains(profile, inner[0].2)
+                index == *candidate || profile_strictly_contains(profile, inner[0].start)
             })
         })
         .map(|(index, _)| index)
@@ -918,21 +1036,23 @@ pub(in super::super) fn ordered_extrusion_profiles(
             if second == *outer {
                 continue;
             }
-            if profile_strictly_contains(&profiles[first], profiles[second][0].2)
-                || profile_strictly_contains(&profiles[second], profiles[first][0].2)
+            if profile_strictly_contains(&profiles[first], profiles[second][0].start)
+                || profile_strictly_contains(&profiles[second], profiles[first][0].start)
             {
                 return None;
             }
         }
     }
-    let outer_area = extrusion_profile_signed_area(&profiles[*outer])?;
+    let mut profiles = profiles
+        .into_iter()
+        .map(ValidatedProfile::new)
+        .collect::<Option<Vec<_>>>()?;
+    let outer_area = profiles[*outer].area();
     if profiles.iter().enumerate().any(|(index, profile)| {
-        index != *outer
-            && extrusion_profile_signed_area(profile)
-                .is_none_or(|area| area.is_sign_positive() == outer_area.is_sign_positive())
+        index != *outer && profile.area().is_sign_positive() == outer_area.is_sign_positive()
     }) {
         return None;
     }
     profiles.swap(0, *outer);
-    Some((profiles, outer_area))
+    Some(profiles)
 }

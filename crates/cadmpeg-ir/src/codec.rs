@@ -16,7 +16,8 @@ use std::fmt;
 
 use crate::document::CadIr;
 use crate::report::{
-    Coverage, DecodeReport, Finding, LossNote as DecodeLoss, StrictConsequence, TransferLedger,
+    Coverage, DecodeReport, DecodeTransfer, Finding, LossNote as DecodeLoss, StrictConsequence,
+    TransferLedger,
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
@@ -185,8 +186,8 @@ pub struct Decoded {
 /// A [`DecodeReport`] without its classification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodeBody {
-    /// Whether B-rep geometry was transferred into the IR.
-    pub geometry_transferred: bool,
+    /// The backend transfer outcome.
+    pub transfer: DecodeTransfer,
     /// Coverage measures keyed by their declared name.
     pub coverage: Coverage,
     /// Losses resolved during decoding.
@@ -198,11 +199,11 @@ pub struct DecodeBody {
 }
 
 impl DecodeBody {
-    /// An empty body with the given B-rep geometry outcome.
+    /// An empty body with the given transfer outcome.
     #[must_use]
-    pub fn new(geometry_transferred: bool) -> Self {
+    pub fn new(transfer: DecodeTransfer) -> Self {
         Self {
-            geometry_transferred,
+            transfer,
             coverage: Coverage::default(),
             losses: Vec::new(),
             notes: Vec::new(),

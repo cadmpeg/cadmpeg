@@ -14,6 +14,7 @@ use cadmpeg_ir::sketches::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
     content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
     PmDcReferenceList,
@@ -323,8 +324,8 @@ pub(crate) enum PmDcSketchEntityKind {
         position: [f64; 2],
         endpoint_of: PmDcReferenceList,
         center_of: PmDcReferenceList,
-        state: Option<u32>,
-        associations: Option<PmDcReferenceList>,
+        #[serde(flatten)]
+        tail: PointTail,
     },
     Line {
         points: PmDcReferenceList,
@@ -350,14 +351,106 @@ pub(crate) enum PmDcSketchEntityKind {
     },
 }
 
+/// The absent or complete state and association tail of a sketch point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PointTailWire", into = "PointTailWire")]
+pub(crate) enum PointTail {
+    Absent,
+    Present {
+        state: u32,
+        associations: PmDcReferenceList,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+struct PointTailWire {
+    state: Option<u32>,
+    associations: Option<PmDcReferenceList>,
+}
+
+impl From<PointTail> for PointTailWire {
+    fn from(tail: PointTail) -> Self {
+        match tail {
+            PointTail::Absent => Self {
+                state: None,
+                associations: None,
+            },
+            PointTail::Present {
+                state,
+                associations,
+            } => Self {
+                state: Some(state),
+                associations: Some(associations),
+            },
+        }
+    }
+}
+
+impl TryFrom<PointTailWire> for PointTail {
+    type Error = &'static str;
+
+    fn try_from(wire: PointTailWire) -> Result<Self, Self::Error> {
+        match (wire.state, wire.associations) {
+            (Some(state), Some(associations)) => Ok(Self::Present {
+                state,
+                associations,
+            }),
+            (None, None) => Ok(Self::Absent),
+            _ => Err("point state and associations must be present together"),
+        }
+    }
+}
+
+const TRANSFORM_PREFIX: u32 = 0x203;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcTransformPayloadWire",
+    into = "PmDcTransformPayloadWire"
+)]
 pub(crate) struct PmDcTransformPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    pub(crate) prefix: Option<u32>,
-    pub(crate) value_mask: u16,
-    pub(crate) zero_mask: u16,
-    pub(crate) matrix: [[f64; 4]; 4],
+    pub(crate) prefix_present: bool,
+    pub(crate) matrix: CompactMatrix,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcTransformPayloadWire {
+    save_version_major: u8,
+    header: PmDcContentHeader,
+    prefix: Option<u32>,
+    #[serde(flatten)]
+    matrix: CompactMatrix,
+}
+
+impl From<PmDcTransformPayload> for PmDcTransformPayloadWire {
+    fn from(value: PmDcTransformPayload) -> Self {
+        Self {
+            save_version_major: value.save_version_major,
+            header: value.header,
+            prefix: value.prefix_present.then_some(TRANSFORM_PREFIX),
+            matrix: value.matrix,
+        }
+    }
+}
+
+impl TryFrom<PmDcTransformPayloadWire> for PmDcTransformPayload {
+    type Error = &'static str;
+
+    fn try_from(wire: PmDcTransformPayloadWire) -> Result<Self, Self::Error> {
+        let prefix_present = match wire.prefix {
+            None => false,
+            Some(TRANSFORM_PREFIX) => true,
+            Some(_) => return Err("transform prefix must be 515 or null"),
+        };
+        Ok(Self {
+            save_version_major: wire.save_version_major,
+            header: wire.header,
+            prefix_present,
+            matrix: wire.matrix,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -562,20 +655,19 @@ fn parse_point(
     let position = point2(cursor, "sketch point")?;
     let endpoint_of = reference_list(ctx, cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(ctx, cursor, 2, "point center-of list")?;
-    let (state, associations) = if cursor.remaining() == 0 {
-        (None, None)
+    let tail = if cursor.remaining() == 0 {
+        PointTail::Absent
     } else {
-        (
-            Some(cursor.u32("point state")?),
-            Some(reference_list(ctx, cursor, 2, "point association list")?),
-        )
+        PointTail::Present {
+            state: cursor.u32("point state")?,
+            associations: reference_list(ctx, cursor, 2, "point association list")?,
+        }
     };
     Ok(PmDcSketchEntityKind::Point {
         position,
         endpoint_of,
         center_of,
-        state,
-        associations,
+        tail,
     })
 }
 
@@ -698,37 +790,20 @@ fn parse_ellipse(
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let prefix = if cursor.peek_u32("transform prefix")? == 0x203 {
-        Some(cursor.u32("transform prefix")?)
-    } else {
-        None
-    };
+    let prefix_present = cursor.peek_u32("transform prefix")? == TRANSFORM_PREFIX;
+    if prefix_present {
+        cursor.u32("transform prefix")?;
+    }
     let value_mask = cursor.u16("transform value mask")?;
     let zero_mask = cursor.u16("transform zero mask")?;
-    let mut matrix = [[0.0; 4]; 4];
-    for (row, values) in matrix.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().enumerate() {
-            let bit = 1u16 << (column + 4 * row);
-            *value = if zero_mask & bit == 0 {
-                if value_mask & bit == 0 {
-                    cursor.f64("transform explicit value")?
-                } else {
-                    1.0
-                }
-            } else if value_mask & bit == 0 {
-                0.0
-            } else {
-                -1.0
-            };
-        }
-    }
+    let matrix = CompactMatrix::try_new(value_mask, zero_mask, |_| {
+        cursor.f64("transform explicit value")
+    })?;
     cursor.finish("transform")?;
     Ok(PmDcTransformPayload {
         save_version_major: version,
         header,
-        prefix,
-        value_mask,
-        zero_mask,
+        prefix_present,
         matrix,
     })
 }
@@ -1616,7 +1691,7 @@ fn project_placement(
         sketch.identity.segment_token.clone(),
         sketch.direction.index.checked_sub(1)?,
     ))?;
-    let matrix = transform.matrix;
+    let matrix = transform.matrix.rows();
     if matrix[3]
         .iter()
         .zip([0.0, 0.0, 0.0, 1.0])
@@ -2225,5 +2300,65 @@ mod tests {
         assert_eq!(incomplete.unresolved_constraints, 1);
         assert!(incomplete.sketches.is_empty());
         assert!(incomplete.entities.is_empty());
+    }
+    #[test]
+    fn point_tail_wire_requires_both_fields() {
+        let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+        let mut wire = serde_json::json!({
+            "form": "point", "position": [0.0, 0.0],
+            "endpoint_of": list.clone(), "center_of": list.clone(),
+            "state": null, "associations": null
+        });
+        let point: PmDcSketchEntityKind =
+            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+        assert_eq!(
+            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            wire
+        );
+        wire["state"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
+        wire["associations"] = list;
+        let point: PmDcSketchEntityKind =
+            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+        assert_eq!(
+            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            wire
+        );
+        wire["state"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
+    }
+    #[test]
+    fn transform_prefix_wire_is_constant_or_absent() {
+        let mut bytes = content(1);
+        bytes.extend_from_slice(&0x8421u16.to_le_bytes());
+        bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
+        let transform = parse(&bytes, |_, source| {
+            parse_transform(source, 22).expect("constant-prefix transform fixture is valid")
+        });
+        let mut wire =
+            serde_json::to_value(transform).expect("constant-prefix transform fixture is valid");
+        for (prefix, present) in [
+            (serde_json::Value::Null, false),
+            (serde_json::json!(515), true),
+        ] {
+            wire["prefix"] = prefix;
+            let parsed: PmDcTransformPayload = serde_json::from_value(wire.clone())
+                .expect("constant-prefix transform fixture is valid");
+            assert_eq!(parsed.prefix_present, present);
+            assert_eq!(
+                serde_json::to_value(parsed).expect("constant-prefix transform fixture is valid"),
+                wire
+            );
+        }
+        wire["prefix"] = serde_json::json!(516);
+        assert!(serde_json::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
+        wire.as_object_mut()
+            .expect("constant-prefix transform fixture is valid")
+            .remove("prefix");
+        assert!(
+            !serde_json::from_value::<PmDcTransformPayload>(wire)
+                .expect("constant-prefix transform fixture is valid")
+                .prefix_present
+        );
     }
 }

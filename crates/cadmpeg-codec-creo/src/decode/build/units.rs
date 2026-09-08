@@ -109,10 +109,24 @@ pub(super) fn normalize_model_lengths(
         }
     }
     for tessellation in &mut ir.model.tessellations {
-        for vertex in tessellation.vertices_mut() {
-            scale_point3(vertex, length_scale_mm);
-        }
-        scale_optional(&mut tessellation.chordal_deflection, length_scale_mm);
+        tessellation
+            .edit_vertices(|vertices| {
+                for vertex in vertices {
+                    scale_point3(vertex, length_scale_mm);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
+            })?;
+        tessellation
+            .set_chordal_deflection(
+                tessellation
+                    .chordal_deflection()
+                    .map(|value| value * length_scale_mm),
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
+            })?;
     }
     for feature in &mut ir.model.features {
         scale_feature_definition(&mut feature.definition, length_scale_mm);

@@ -190,12 +190,12 @@ pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProj
     }
 }
 
-pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
+pub(crate) fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
     project_feature_model(histories).features
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
-pub fn project_semantic_notes(
+pub(crate) fn project_semantic_notes(
     histories: &[FeatureHistory],
 ) -> Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation> {
     histories
@@ -869,7 +869,7 @@ pub(crate) fn project_feature_dependencies(
 }
 
 /// Project native configuration records into the neutral configuration arena.
-pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
+pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
     histories
         .iter()
         .flat_map(|history| &history.configurations)

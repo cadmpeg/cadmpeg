@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
@@ -125,7 +126,7 @@ fn point_relation_ignores_auxiliary_relation_links() {
     let mut radius = marker("radius", None);
     radius.kind = SketchInputKind::Relation(SketchRelationKind::Radius);
     let mut first = marker("first", Some([0.0, 1.0]));
-    first.offset = 1;
+    first = first.with_test_position(first.ordinal(), 1);
     first.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -134,7 +135,7 @@ fn point_relation_ignores_auxiliary_relation_links() {
         }],
     );
     let mut second = marker("second", Some([1.0, 1.0]));
-    second.offset = 2;
+    second = second.with_test_position(second.ordinal(), 2);
     second.links = first.links.clone();
     let markers = HashMap::from([
         (relation.id.as_str(), &relation),
@@ -175,9 +176,9 @@ fn point_relation_ignores_auxiliary_relation_links() {
 #[test]
 fn axis_relation_expands_intermediate_relation_handle() {
     let mut first = marker("first-point", Some([0.0, 1.0]));
-    first.offset = 1;
+    first = first.with_test_position(first.ordinal(), 1);
     let mut second = marker("second-point", Some([2.0, 1.0]));
-    second.offset = 2;
+    second = second.with_test_position(second.ordinal(), 2);
     let mut distance = marker("distance-handle", None);
     distance.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
     distance.local_id = Some(5);
@@ -196,7 +197,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
         ],
     );
     let mut reverse_owner = marker("reverse-owner", Some([3.0, 4.0]));
-    reverse_owner.offset = 3;
+    reverse_owner = reverse_owner.with_test_position(reverse_owner.ordinal(), 3);
     reverse_owner.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -337,10 +338,10 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
     let sketch = SketchId::mint("synthetic:test:id#axis-sketch").unwrap();
     let first = marker("first-point", Some([0.0, 1.0]));
     let mut second = marker("second-point", Some([2.0, 1.0]));
-    second.offset = 1;
+    second = second.with_test_position(second.ordinal(), 1);
     let mut horizontal = marker("horizontal", None);
     horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    horizontal.offset = 2;
+    horizontal = horizontal.with_test_position(horizontal.ordinal(), 2);
     horizontal.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -356,7 +357,7 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
     );
     let mut reverse_first = marker("reverse-first", Some([3.0, 4.0]));
     reverse_first.kind = SketchInputKind::Point;
-    reverse_first.offset = 3;
+    reverse_first = reverse_first.with_test_position(reverse_first.ordinal(), 3);
     reverse_first.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -366,7 +367,7 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
     );
     let mut reverse_second = marker("reverse-second", Some([5.0, 6.0]));
     reverse_second.kind = SketchInputKind::Point;
-    reverse_second.offset = 4;
+    reverse_second = reverse_second.with_test_position(reverse_second.ordinal(), 4);
     reverse_second.links = reverse_first.links.clone();
     let markers = HashMap::from([
         (first.id.as_str(), &first),
@@ -504,7 +505,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
     let mut first_owner = marker("first-owner", Some([1.0, 2.0]));
     first_owner.kind = SketchInputKind::LineOrCircle;
-    first_owner.offset = 1;
+    first_owner = first_owner.with_test_position(first_owner.ordinal(), 1);
     first_owner.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -514,7 +515,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     );
     let mut second_owner = marker("second-owner", Some([3.0, 4.0]));
     second_owner.kind = SketchInputKind::LineOrCircle;
-    second_owner.offset = 2;
+    second_owner = second_owner.with_test_position(second_owner.ordinal(), 2);
     second_owner.links = first_owner.links.clone();
     let markers = HashMap::from([
         (relation.id.as_str(), &relation),
@@ -586,7 +587,7 @@ fn construction_line_endpoints_accept_reverse_incidence() {
     let mut line = marker("line", Some([0.5, 0.0]));
     line.kind = SketchInputKind::LineOrCircle;
     let mut first = marker("first", Some([0.0, 0.0]));
-    first.offset = 1;
+    first = first.with_test_position(first.ordinal(), 1);
     first.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -595,7 +596,7 @@ fn construction_line_endpoints_accept_reverse_incidence() {
         }],
     );
     let mut second = marker("second", Some([1.0, 0.0]));
-    second.offset = 2;
+    second = second.with_test_position(second.ordinal(), 2);
     second.links = first.links.clone();
     let markers = HashMap::from([
         (line.id.as_str(), &line),
@@ -655,7 +656,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
     let mut line = marker("line", Some([0.0005, 0.0]));
     line.kind = SketchInputKind::LineOrCircle;
     let mut first = marker("first", Some([0.0, 0.0]));
-    first.offset = 1;
+    first = first.with_test_position(first.ordinal(), 1);
     first.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -664,7 +665,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         }],
     );
     let mut second = marker("second", Some([0.001, 0.0]));
-    second.offset = 2;
+    second = second.with_test_position(second.ordinal(), 2);
     second.links = first.links.clone();
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -815,11 +816,11 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
     )
     .with_endpoint_refs(vec!["shared".into(), "second-end".into()]);
     let mut first_start = marker("first-start", Some([0.0, 0.0]));
-    first_start.offset = 1;
+    first_start = first_start.with_test_position(first_start.ordinal(), 1);
     let mut shared = marker("shared", Some([0.001, 0.0]));
-    shared.offset = 2;
+    shared = shared.with_test_position(shared.ordinal(), 2);
     let mut second_end = marker("second-end", Some([0.001, 0.001]));
-    second_end.offset = 3;
+    second_end = second_end.with_test_position(second_end.ordinal(), 3);
     let relation = FeatureInputRelationInstance {
         id: "point-relation".into(),
         parent: "lane".into(),
@@ -837,7 +838,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         operands: vec![FeatureInputOperand {
             offset: 5,
             reference_ref: "shared-reference".into(),
-            kind: FeatureInputOperandKind::Native(0x8ab6),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
             entity_index: 0,
             entity_ref: Some("shared".into()),
         }],
@@ -1529,7 +1530,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
             .map(|entity_index| FeatureInputOperand {
                 offset: u64::from(entity_index),
                 reference_ref: format!("reference-{entity_index}"),
-                kind: FeatureInputOperandKind::Native(0x8386),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index,
                 entity_ref: Some(marker.id.clone()),
             })
@@ -1625,14 +1626,14 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
             FeatureInputOperand {
                 offset: 0,
                 reference_ref: "missing-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x8386),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index: 13,
                 entity_ref: None,
             },
             FeatureInputOperand {
                 offset: 1,
                 reference_ref: "known-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x8386),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index: 6,
                 entity_ref: Some(known_marker.id.clone()),
             },

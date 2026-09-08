@@ -104,7 +104,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 section: "directory-entry",
                 sequence: record.sequence,
                 source_offset: record.source_offset,
-                cards: record.cards,
+                cards: record.cards(),
                 bytes: &record.bytes,
                 defect: record.defect,
             }
@@ -1311,19 +1311,39 @@ pub(crate) struct NativeStoreResult {
 struct NativeView {
     id: String,
     source_entity: String,
-    projection: ViewProjection,
     view_number: Option<i64>,
     scale: Option<f64>,
-    model_to_view: Option<String>,
-    clipping_planes: Vec<Option<String>>,
-    view_plane_normal: Option<[Option<f64>; 3]>,
-    view_reference_point: Option<[Option<f64>; 3]>,
-    center_of_projection: Option<[Option<f64>; 3]>,
-    view_up: Option<[Option<f64>; 3]>,
+    geometry: ViewGeometry,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ViewGeometry {
+    Orthographic {
+        model_to_view: Option<String>,
+        clipping_planes: Vec<Option<String>>,
+    },
+    Perspective(Box<PerspectiveViewGeometry>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PerspectiveViewGeometry {
+    view_plane_normal: [Option<f64>; 3],
+    view_reference_point: [Option<f64>; 3],
+    center_of_projection: [Option<f64>; 3],
+    view_up: [Option<f64>; 3],
     view_plane_distance: Option<f64>,
-    clipping_window: Option<[Option<f64>; 4]>,
+    clipping_window: [Option<f64>; 4],
     depth_clipping: Option<i64>,
-    depth_range: Option<[Option<f64>; 2]>,
+    depth_range: [Option<f64>; 2],
+}
+
+impl ViewGeometry {
+    fn projection(&self) -> ViewProjection {
+        match self {
+            Self::Orthographic { .. } => ViewProjection::OrthographicParallel,
+            Self::Perspective(_) => ViewProjection::Perspective,
+        }
+    }
 }
 
 impl Serialize for NativeView {
@@ -1333,39 +1353,59 @@ impl Serialize for NativeView {
             id: &'a String,
             source_entity: &'a String,
             form: i64,
-            projection: &'a ViewProjection,
-            view_number: &'a Option<i64>,
-            scale: &'a Option<f64>,
-            model_to_view: &'a Option<String>,
-            clipping_planes: &'a Vec<Option<String>>,
-            view_plane_normal: &'a Option<[Option<f64>; 3]>,
-            view_reference_point: &'a Option<[Option<f64>; 3]>,
-            center_of_projection: &'a Option<[Option<f64>; 3]>,
-            view_up: &'a Option<[Option<f64>; 3]>,
-            view_plane_distance: &'a Option<f64>,
-            clipping_window: &'a Option<[Option<f64>; 4]>,
-            depth_clipping: &'a Option<i64>,
-            depth_range: &'a Option<[Option<f64>; 2]>,
+            projection: ViewProjection,
+            view_number: Option<i64>,
+            scale: Option<f64>,
+            model_to_view: Option<&'a str>,
+            clipping_planes: &'a [Option<String>],
+            view_plane_normal: Option<[Option<f64>; 3]>,
+            view_reference_point: Option<[Option<f64>; 3]>,
+            center_of_projection: Option<[Option<f64>; 3]>,
+            view_up: Option<[Option<f64>; 3]>,
+            view_plane_distance: Option<f64>,
+            clipping_window: Option<[Option<f64>; 4]>,
+            depth_clipping: Option<i64>,
+            depth_range: Option<[Option<f64>; 2]>,
         }
-        Wire {
+        let projection = self.geometry.projection();
+        let mut wire = Wire {
             id: &self.id,
             source_entity: &self.source_entity,
-            form: self.projection.form(),
-            projection: &self.projection,
-            view_number: &self.view_number,
-            scale: &self.scale,
-            model_to_view: &self.model_to_view,
-            clipping_planes: &self.clipping_planes,
-            view_plane_normal: &self.view_plane_normal,
-            view_reference_point: &self.view_reference_point,
-            center_of_projection: &self.center_of_projection,
-            view_up: &self.view_up,
-            view_plane_distance: &self.view_plane_distance,
-            clipping_window: &self.clipping_window,
-            depth_clipping: &self.depth_clipping,
-            depth_range: &self.depth_range,
+            form: projection.form(),
+            projection,
+            view_number: self.view_number,
+            scale: self.scale,
+            model_to_view: None,
+            clipping_planes: &[],
+            view_plane_normal: None,
+            view_reference_point: None,
+            center_of_projection: None,
+            view_up: None,
+            view_plane_distance: None,
+            clipping_window: None,
+            depth_clipping: None,
+            depth_range: None,
+        };
+        match &self.geometry {
+            ViewGeometry::Orthographic {
+                model_to_view,
+                clipping_planes,
+            } => {
+                wire.model_to_view = model_to_view.as_deref();
+                wire.clipping_planes = clipping_planes;
+            }
+            ViewGeometry::Perspective(geometry) => {
+                wire.view_plane_normal = Some(geometry.view_plane_normal);
+                wire.view_reference_point = Some(geometry.view_reference_point);
+                wire.center_of_projection = Some(geometry.center_of_projection);
+                wire.view_up = Some(geometry.view_up);
+                wire.view_plane_distance = geometry.view_plane_distance;
+                wire.clipping_window = Some(geometry.clipping_window);
+                wire.depth_clipping = geometry.depth_clipping;
+                wire.depth_range = Some(geometry.depth_range);
+            }
         }
-        .serialize(serializer)
+        wire.serialize(serializer)
     }
 }
 
@@ -1520,20 +1560,35 @@ struct OccurrenceDefinition {
 
 // The wire adapter receives the optional field by reference, including its absence.
 #[allow(clippy::ref_option)]
-fn serialize_parameter_lines<S: Serializer>(
-    lines: &Option<std::ops::Range<u32>>,
+fn serialize_parameter_record<S: Serializer>(
+    record: &Option<NativeParameterRecord>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     #[derive(Serialize)]
-    struct Wire {
+    struct Wire<'a> {
         parameter_line_start: Option<u32>,
         parameter_line_end: Option<u32>,
+        parameter_bytes: &'a [u8],
+        parameters: &'a [Token],
+        comment: &'a [u8],
     }
+    let record = record.as_ref();
     Wire {
-        parameter_line_start: lines.as_ref().map(|range| range.start),
-        parameter_line_end: lines.as_ref().map(|range| range.end),
+        parameter_line_start: record.map(|record| record.lines.start),
+        parameter_line_end: record.map(|record| record.lines.end),
+        parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
+        parameters: record.map_or(&[], |record| record.parameters.as_slice()),
+        comment: record.map_or(&[], |record| record.comment.as_slice()),
     }
     .serialize(serializer)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct NativeParameterRecord {
+    lines: std::ops::Range<u32>,
+    bytes: Vec<u8>,
+    parameters: Vec<Token>,
+    comment: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1557,13 +1612,10 @@ pub(crate) struct NativeEntity {
     reserved: [[u8; 8]; 2],
     label: [u8; 8],
     subscript: i64,
-    #[serde(flatten, serialize_with = "serialize_parameter_lines")]
-    parameter_lines: Option<std::ops::Range<u32>>,
-    parameter_bytes: Vec<u8>,
-    parameters: Vec<Token>,
+    #[serde(flatten, serialize_with = "serialize_parameter_record")]
+    parameter_record: Option<NativeParameterRecord>,
     association_links: Vec<String>,
     property_links: Vec<String>,
-    comment: Vec<u8>,
     links: Vec<String>,
     references: Vec<ReferenceEdge>,
 }
@@ -1641,22 +1693,20 @@ fn placement_affine(
     } else {
         [x_scale; 3]
     };
-    let translation = Affine {
-        rows: [
-            [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
-            [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
-            [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
-        ],
-    };
-    let scale = Affine {
-        rows: [
-            [scales[0], 0.0, 0.0, 0.0],
-            [0.0, scales[1], 0.0, 0.0],
-            [0.0, 0.0, scales[2], 0.0],
-        ],
-    };
+    let translation = Affine::new([
+        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
+        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
+        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
+    ])
+    .ok_or(())?;
+    let scale = Affine::new([
+        [scales[0], 0.0, 0.0, 0.0],
+        [0.0, scales[1], 0.0, 0.0],
+        [0.0, 0.0, scales[2], 0.0],
+    ])
+    .ok_or(())?;
     let directory = if instance.transform == 0 {
-        Affine::IDENTITY
+        Affine::identity()
     } else {
         resolve_transform(
             instance.transform,
@@ -1669,7 +1719,12 @@ fn placement_affine(
         )
         .map_err(|_| ())?
     };
-    Ok((definition, directory.compose(translation.compose(scale))))
+    Ok((
+        definition,
+        directory
+            .compose(translation.compose(scale).ok_or(())?)
+            .ok_or(())?,
+    ))
 }
 
 fn member_affine(
@@ -1681,7 +1736,7 @@ fn member_affine(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Affine, ()> {
     if entry.transform == 0 {
-        return Ok(Affine::IDENTITY);
+        return Ok(Affine::identity());
     }
     resolve_transform(
         entry.transform,
@@ -1719,7 +1774,7 @@ impl OccurrenceExpansion<'_, '_> {
     ) -> Result<Option<u32>, CodecError> {
         let _depth = self
             .ctx
-            .map(|ctx| ctx.enter_nested("iges_product_occurrence", None))
+            .map(|ctx| ctx.enter_nested("iges_product_occurrence"))
             .transpose()?;
         if occurrences.len() >= self.output_limit {
             return Ok(Some(instance_sequence));
@@ -1754,8 +1809,13 @@ impl OccurrenceExpansion<'_, '_> {
         let Some(definition) = self.definitions.get(&definition_sequence) else {
             return Ok(None);
         };
-        let world = parent.compose(local);
-        let definition_world = world.compose(definition.transform);
+        let Some(definition_world) = parent
+            .compose(local)
+            .and_then(|world| world.compose(definition.transform))
+        else {
+            malformed_placement_sequences.insert(instance_sequence);
+            return Ok(None);
+        };
         let root = path.is_empty();
         path.push(instance_sequence);
         let path_ids = path
@@ -1778,8 +1838,8 @@ impl OccurrenceExpansion<'_, '_> {
             member: None,
             neutral_links: Vec::new(),
             instance_path: path_ids.clone(),
-            local_transform: local.rows,
-            world_transform: definition_world.rows,
+            local_transform: local.rows(),
+            world_transform: definition_world.rows(),
         });
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
@@ -1821,6 +1881,10 @@ impl OccurrenceExpansion<'_, '_> {
             if let Some(ctx) = self.ctx {
                 ctx.charge_collection_items(1, "iges_product_occurrences")?;
             }
+            let Some(member_world) = definition_world.compose(member_local) else {
+                malformed_placement_sequences.insert(*member);
+                continue;
+            };
             occurrences.push(NativeProductOccurrence {
                 id: format!("iges:product:occurrence#{path_key}/D{member}"),
                 root: false,
@@ -1829,8 +1893,8 @@ impl OccurrenceExpansion<'_, '_> {
                 member: Some(format!("iges:entity:directory#{member}")),
                 neutral_links: self.neutral_links.get(member).cloned().unwrap_or_default(),
                 instance_path: path_ids.clone(),
-                local_transform: member_local.rows,
-                world_transform: definition_world.compose(member_local).rows,
+                local_transform: member_local.rows(),
+                world_transform: member_world.rows(),
             });
         }
         path.pop();
@@ -1952,7 +2016,7 @@ pub(crate) fn store(
         trailing_pointer_analysis
             .get(&sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                 _ => None,
             })
             .map_or(record.parameter_end(), |groups| groups.token_start)
@@ -2016,7 +2080,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                     _ => None,
                 });
             let invalid_trailing = (trailing.is_none()
@@ -2098,25 +2162,19 @@ pub(crate) fn store(
                 reserved: entry.reserved,
                 label: entry.label,
                 subscript: entry.subscript,
-                parameter_lines: parameters.map(|record| record.line_range.clone()),
-                parameter_bytes: parameters
-                    .map(|record| record.bytes.clone())
-                    .unwrap_or_default(),
-                parameters: parameters
-                    .into_iter()
-                    .flat_map(|record| record.tokens().iter().cloned())
-                    .collect(),
+                parameter_record: parameters.map(|record| NativeParameterRecord {
+                    lines: record.line_range.clone(),
+                    bytes: record.bytes.clone(),
+                    parameters: record.tokens().to_vec(),
+                    comment: record.comment.clone(),
+                }),
                 association_links,
                 property_links,
-                comment: parameters
-                    .map(|record| record.comment.clone())
-                    .unwrap_or_default(),
                 links: references
                     .get(&entry.sequence)
                     .into_iter()
                     .flatten()
                     .filter_map(ReferenceEdge::target)
-                    .map(str::to_owned)
                     .collect(),
                 references: references.get(&entry.sequence).cloned().unwrap_or_default(),
             }
@@ -3848,7 +3906,7 @@ pub(crate) fn store(
                                             ReferenceExpectation::Named(
                                                 ExpectationLabel::NonAssociativityOrType402Form7,
                                             ),
-                                            flow_join_target_valid,
+                                            |target| flow_join_target_valid(target, global.global_table()),
                                         )
                                     })
                                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
@@ -4232,8 +4290,8 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous { groups, .. } => {
-                                        Some(groups)
+                                    TrailingPointerAnalysis::Unambiguous(groups) => {
+                                        Some(groups.as_groups())
                                     }
                                     _ => None,
                                 })
@@ -4583,8 +4641,8 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous { groups, .. } => {
-                                        Some(groups)
+                                    TrailingPointerAnalysis::Unambiguous(groups) => {
+                                        Some(groups.as_groups())
                                     }
                                     _ => None,
                                 })
@@ -4613,7 +4671,9 @@ pub(crate) fn store(
                     trailing_pointer_analysis
                         .get(sequence)
                         .and_then(|analysis| match analysis {
-                            TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                            TrailingPointerAnalysis::Unambiguous(groups) => {
+                                Some(groups.as_groups())
+                            }
                             _ => None,
                         })
                         .is_some_and(|groups| {
@@ -4661,60 +4721,46 @@ pub(crate) fn store(
             NativeView {
                 id: format!("iges:presentation:view#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                projection: if entry.form == 0 {
-                    ViewProjection::OrthographicParallel
-                } else {
-                    ViewProjection::Perspective
-                },
                 view_number: record.and_then(|record| record.integer(1)),
                 scale: record.and_then(|record| record.number(2)),
-                model_to_view: (entry.form == 0 && entry.transform > 0)
-                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                clipping_planes: if entry.form == 0 {
-                    (3..=8)
-                        .map(|index| {
-                            record
-                                .and_then(|record| record.integer(index))
-                                .filter(|sequence| *sequence != 0)
-                                .and_then(|sequence| {
-                                    parameter_resolver.resolve_type(
-                                        entry.sequence,
-                                        index,
-                                        sequence,
-                                        108,
-                                        &[],
-                                    )
-                                })
-                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                        })
-                        .collect()
+                geometry: if entry.form == 0 {
+                    ViewGeometry::Orthographic {
+                        model_to_view: (entry.transform > 0)
+                            .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                        clipping_planes: (3..=8)
+                            .map(|index| {
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .filter(|sequence| *sequence != 0)
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve_type(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            108,
+                                            &[],
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect(),
+                    }
                 } else {
-                    Vec::new()
+                    ViewGeometry::Perspective(Box::new(PerspectiveViewGeometry {
+                        view_plane_normal: vector(3),
+                        view_reference_point: vector(6),
+                        center_of_projection: vector(9),
+                        view_up: vector(12),
+                        view_plane_distance: record.and_then(|record| record.number(15)),
+                        clipping_window: std::array::from_fn(|index| {
+                            record.and_then(|record| record.number(16 + index))
+                        }),
+                        depth_clipping: record.and_then(|record| record.integer(20)),
+                        depth_range: std::array::from_fn(|index| {
+                            record.and_then(|record| record.number(21 + index))
+                        }),
+                    }))
                 },
-                view_plane_normal: (entry.form == 1).then(|| vector(3)),
-                view_reference_point: (entry.form == 1).then(|| vector(6)),
-                center_of_projection: (entry.form == 1).then(|| vector(9)),
-                view_up: (entry.form == 1).then(|| vector(12)),
-                view_plane_distance: (entry.form == 1)
-                    .then(|| record.and_then(|record| record.number(15)))
-                    .flatten(),
-                clipping_window: (entry.form == 1).then(|| {
-                    [
-                        record.and_then(|record| record.number(16)),
-                        record.and_then(|record| record.number(17)),
-                        record.and_then(|record| record.number(18)),
-                        record.and_then(|record| record.number(19)),
-                    ]
-                }),
-                depth_clipping: (entry.form == 1)
-                    .then(|| record.and_then(|record| record.integer(20)))
-                    .flatten(),
-                depth_range: (entry.form == 1).then(|| {
-                    [
-                        record.and_then(|record| record.number(21)),
-                        record.and_then(|record| record.number(22)),
-                    ]
-                }),
             }
         })
         .collect::<Vec<_>>();
@@ -4938,7 +4984,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                     _ => None,
                 });
             let candidates = |form| drawing_property_candidates(trailing, form, &entries);
@@ -5001,7 +5047,8 @@ pub(crate) fn store(
                                         ExpectationLabel::DrawingSpaceAnnotation,
                                     ),
                                     |target| {
-                                        target.status.use_flag() == Some(UseFlag::Annotation)
+                                        target.status.use_flag(global.global_table())
+                                            == Some(UseFlag::Annotation)
                                             && target.status.is_physically_dependent()
                                     },
                                 )
@@ -5062,7 +5109,7 @@ pub(crate) fn store(
                     entry.sequence,
                     OccurrenceDefinition {
                         members: Vec::new(),
-                        transform: Affine::IDENTITY,
+                        transform: Affine::identity(),
                     },
                 ));
             };
@@ -5077,7 +5124,7 @@ pub(crate) fn store(
                     member
                 })
                 .collect();
-            let transform = occurrence_length_factor.map_or(Affine::IDENTITY, |length_factor| {
+            let transform = occurrence_length_factor.map_or(Affine::identity(), |length_factor| {
                 match resolve_transform(
                     entry.transform,
                     &entries,
@@ -5090,7 +5137,7 @@ pub(crate) fn store(
                     Ok(transform) => transform,
                     Err(_) => {
                         malformed = true;
-                        Affine::IDENTITY
+                        Affine::identity()
                     }
                 }
             });
@@ -5215,7 +5262,7 @@ pub(crate) fn store(
             }) {
                 if let Some(source_sequence) = expansion.expand(
                     root.sequence,
-                    Affine::IDENTITY,
+                    Affine::identity(),
                     &mut Vec::new(),
                     &mut product_occurrences,
                     &mut depth_truncated_at,
@@ -5295,7 +5342,6 @@ pub(crate) fn store(
             .into_iter()
             .flatten()
             .filter_map(ReferenceEdge::target)
-            .map(str::to_owned)
             .collect();
         entity.references = references
             .get(&entity.directory_sequence)

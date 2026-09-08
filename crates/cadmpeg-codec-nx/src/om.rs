@@ -231,39 +231,6 @@ pub struct RecordAreaHeader<'a> {
     pub product: StoreVersion<'a>,
 }
 
-/// One value in an NX OM compact-index lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompactIndex {
-    /// `ff` null/sentinel entry.
-    Null,
-    /// Decoded non-null index.
-    Value(u32),
-}
-
-/// Decode a complete NX OM compact-index lane.
-///
-/// `00..7f` are direct values, `80..fe` introduce one low byte, and `ff` is
-/// null. A dangling two-byte prefix rejects the whole lane.
-pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
-    let mut values = Vec::new();
-    let mut at = 0usize;
-    while at < bytes.len() {
-        let (value, width) = compact_index(bytes.get(at..)?)?;
-        at += width;
-        values.push(value);
-    }
-    Some(values)
-}
-
-fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
-    let token = NullableCompactIndex::read(bytes, 0)?;
-    let value = match token.atom {
-        None => CompactIndex::Null,
-        Some(atom) => CompactIndex::Value(atom.value()),
-    };
-    Some((value, token.raw().len()))
-}
-
 /// One RGB definition from an NX part color table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorTableDefinition<'a> {
@@ -740,7 +707,7 @@ pub struct PointFeaturePayloadHeader {
     /// Construction object referenced by the header.
     pub reference: PayloadObjectReference,
     /// Serialized header mode.
-    pub mode: u8,
+    pub mode: discriminators::PointHeaderMode,
 }
 
 /// Exact six-scalar lane selected by a point-feature construction header.
@@ -875,15 +842,13 @@ pub struct HolePackageConstructionGroupLane {
 
 /// One wrapped member index in a branch-`11` operation body clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBodyMember {
+pub struct OperationBodyMemberGroup {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
-    /// Zero-based member order in the counted lane.
-    pub ordinal: u32,
-    /// Exact compact index and its absolute source position.
-    pub member: LocatedCompactIndex,
+    /// Ordered compact indices and their absolute source positions.
+    pub members: Vec<LocatedCompactIndex>,
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
@@ -998,19 +963,6 @@ impl<'a> IndexedSection<'a> {
         }
     }
 
-    fn record_views(&self) -> Vec<(usize, &'a [u8], Option<u32>)> {
-        match &self.store {
-            IndexedStore::Fixed { records } => records
-                .iter()
-                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
-                .collect(),
-            IndexedStore::OffsetOnly { records, .. } => records
-                .iter()
-                .map(|record| (record.offset, record.bytes, None))
-                .collect(),
-        }
-    }
-
     /// Decode explicit numeric-expression text within bounded entity records.
     pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
         self.numeric_expression_records()
@@ -1021,7 +973,16 @@ impl<'a> IndexedSection<'a> {
 
     /// Decode expressions together with their owning record ordinal.
     pub fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
-        let records = self.record_views();
+        let records: Vec<(usize, &'a [u8], Option<u32>)> = match &self.store {
+            IndexedStore::Fixed { records } => records
+                .iter()
+                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
+                .collect(),
+            IndexedStore::OffsetOnly { records, .. } => records
+                .iter()
+                .map(|record| (record.offset, record.bytes, None))
+                .collect(),
+        };
         if !records.iter().any(|(_, bytes, _)| {
             bytes
                 .windows(b"hostglobalvariables".len())
@@ -1038,64 +999,36 @@ impl<'a> IndexedSection<'a> {
             })
             .collect()
     }
+}
 
-    /// Decode every strictly framed printable string in each bounded record.
-    pub fn string_values(&self) -> Vec<(usize, usize, Option<u32>, StringValue<'a>)> {
-        self.record_views()
-            .into_iter()
-            .enumerate()
-            .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
-                string_values(bytes, offset).into_iter().enumerate().map(
-                    move |(value_ordinal, value)| (record_ordinal, value_ordinal, object_id, value),
-                )
-            })
-            .collect()
+impl<'a> FixedEntityRecord<'a> {
+    /// Decode every strictly framed printable string in this bounded record.
+    pub fn string_values(&self) -> Vec<StringValue<'a>> {
+        string_values(self.bytes, self.offset)
     }
 
-    /// Decode tagged cross-record references from every bounded record.
-    // The tuple carries one coupled result; a separate alias would add no invariant.
-    #[allow(clippy::type_complexity)]
-    pub fn references(
-        &self,
-    ) -> Vec<(
-        usize,
-        usize,
-        Option<u32>,
-        LocatedReference<RecordReference<()>>,
-    )> {
-        let records = self.record_views();
-        let record_count = records.len();
-        records
+    /// Decode tagged references within this fixed-record table.
+    pub fn references(&self, record_count: usize) -> Vec<LocatedReference<RecordReference<()>>> {
+        let mut references = record_references(self.bytes, self.offset)
             .into_iter()
-            .enumerate()
-            .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
-                let mut references = record_references(bytes, offset)
-                    .into_iter()
-                    .map(|reference| LocatedReference {
-                        offset: reference.offset,
-                        value: RecordReference::Direct(reference.value),
-                    })
-                    .collect::<Vec<_>>();
-                references.extend(
-                    counted_record_references(bytes, offset, record_count)
-                        .into_iter()
-                        .map(|reference| LocatedReference {
-                            offset: reference.offset,
-                            value: RecordReference::RecordOrdinal16 {
-                                ordinal: reference.value,
-                                target: (),
-                            },
-                        }),
-                );
-                references.sort_by_key(|reference| reference.offset);
-                references
-                    .into_iter()
-                    .enumerate()
-                    .map(move |(reference_ordinal, reference)| {
-                        (record_ordinal, reference_ordinal, object_id, reference)
-                    })
+            .map(|reference| LocatedReference {
+                offset: reference.offset,
+                value: RecordReference::Direct(reference.value),
             })
-            .collect()
+            .collect::<Vec<_>>();
+        references.extend(
+            counted_record_references(self.bytes, self.offset, record_count)
+                .into_iter()
+                .map(|reference| LocatedReference {
+                    offset: reference.offset,
+                    value: RecordReference::RecordOrdinal16 {
+                        ordinal: reference.value,
+                        target: (),
+                    },
+                }),
+        );
+        references.sort_by_key(|reference| reference.offset);
+        references
     }
 }
 
@@ -1912,8 +1845,7 @@ pub fn point_feature_payload_header(
     (record.payload().get(at..at + REFERENCE_SUFFIX.len()) == Some(&REFERENCE_SUFFIX))
         .then_some(())?;
     at += REFERENCE_SUFFIX.len();
-    let mode = *record.payload().get(at)?;
-    matches!(mode, 0x02 | 0x03).then_some(())?;
+    let mode = discriminators::PointHeaderMode::try_from(*record.payload().get(at)?).ok()?;
     at += 1;
     (record.payload().get(at..at + MODE_SUFFIX.len()) == Some(&MODE_SUFFIX)).then_some(())?;
     Some(PointFeaturePayloadHeader {
@@ -2039,59 +1971,52 @@ pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePay
 }
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.
-pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBodyMember> {
+pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBodyMemberGroup> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
-        .flat_map(|(body_ordinal, reference)| {
+        .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
             if record.bytes().get(end..end + 2) != Some(&[0xff, 0x11]) {
-                return Vec::new();
+                return None;
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let Some(atom) = record.bytes().get(at..).and_then(PayloadScalarAtom::read) else {
-                    return Vec::new();
-                };
+                let atom = record.bytes().get(at..).and_then(PayloadScalarAtom::read)?;
                 at += atom.raw().len();
             }
             if record.bytes().get(at) != Some(&0x01) {
-                return Vec::new();
+                return None;
             }
-            let Some(count) = record.bytes().get(at + 1).copied().map(usize::from) else {
-                return Vec::new();
-            };
+            let count = record.bytes().get(at + 1).copied().map(usize::from)?;
             if count < 2 {
-                return Vec::new();
+                return None;
             }
             at += 2;
             let mut members = Vec::with_capacity(count - 1);
-            for ordinal in 0..count - 1 {
+            for _ in 0..count - 1 {
                 if record.bytes().get(at) != Some(&0x2e) {
-                    return Vec::new();
+                    return None;
                 }
                 at += 1;
                 let member_at = at;
-                let Some(atom) = record.bytes().get(at..).and_then(CompactIndexAtom::read) else {
-                    return Vec::new();
-                };
+                let atom = record.bytes().get(at..).and_then(CompactIndexAtom::read)?;
                 at += atom.raw().len();
                 if record.bytes().get(at) != Some(&0x00) {
-                    return Vec::new();
+                    return None;
                 }
                 at += 1;
-                members.push(OperationBodyMember {
-                    body_reference_ordinal: body_ordinal as u32,
-                    body_object_index: reference.object_index.value(),
-                    ordinal: ordinal as u32,
-                    member: LocatedCompactIndex {
-                        atom,
-                        offset: record.offset() + member_at,
-                    },
+                members.push(LocatedCompactIndex {
+                    atom,
+                    offset: record.offset() + member_at,
                 });
             }
-            members
+            Some(OperationBodyMemberGroup {
+                body_reference_ordinal: body_ordinal as u32,
+                body_object_index: reference.object_index.value(),
+                members,
+            })
         })
         .collect()
 }
@@ -2132,11 +2057,9 @@ pub fn operation_body_11_continuations(
                     return None;
                 }
                 at += 1;
-                let (CompactIndex::Value(_), width) = compact_index(record.bytes().get(at..)?)?
-                else {
-                    return None;
-                };
-                at += width;
+                let token = NullableCompactIndex::read(record.bytes(), at)?;
+                token.atom?;
+                at += token.raw().len();
                 if record.bytes().get(at) != Some(&0x00) {
                     return None;
                 }
@@ -2524,20 +2447,16 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
             }
             continue;
         };
-        let next = ExpressionDeclarationName {
-            offset: at,
-            name,
-            literal: None,
-        };
-        if declaration.replace(next).is_some() {
+        if declaration.replace((at, name)).is_some() {
             return None;
         }
     }
-    let declaration = declaration?;
+    let (offset, name) = declaration?;
     let literal = (!multiple_literals).then_some(literal).flatten();
     Some(ExpressionDeclarationName {
+        offset,
+        name,
         literal,
-        ..declaration
     })
 }
 

@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use super::sketch_edges::{circle_contains_point, ellipse_contains_point};
 
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
-pub fn sketches(
+pub(crate) fn sketches(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> (Vec<Sketch>, Vec<SketchEntity>, Vec<SketchConstraint>) {

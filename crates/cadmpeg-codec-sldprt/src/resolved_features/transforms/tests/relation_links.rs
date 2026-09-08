@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
@@ -21,7 +22,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     let mut owner = marker("owner", Some([1.0, 2.0]));
     owner.kind = SketchInputKind::LineOrCircle;
     owner.object_index = Some(7);
-    owner.offset = 1;
+    owner = owner.with_test_position(owner.ordinal(), 1);
     owner.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -31,7 +32,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     );
     let mut point = marker("point", Some([1.0, 2.0]));
     point.object_index = Some(8);
-    point.offset = 2;
+    point = point.with_test_position(point.ordinal(), 2);
     point.links = owner.links.clone();
     let markers = HashMap::from([
         (relation.id.as_str(), &relation),
@@ -290,7 +291,7 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
     let mut center = marker("center", Some([0.0, 1.0]));
     center.kind = SketchInputKind::Arc;
     let mut first = marker("first", Some([-1.0, 0.0]));
-    first.offset = 1;
+    first = first.with_test_position(first.ordinal(), 1);
     first.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -299,7 +300,7 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
         }],
     );
     let mut second = marker("second", Some([1.0, 0.0]));
-    second.offset = 2;
+    second = second.with_test_position(second.ordinal(), 2);
     second.links = first.links.clone();
     let markers = HashMap::from([
         (relation.id.as_str(), &relation),
@@ -716,17 +717,17 @@ fn horizontal_relation_requires_one_line_or_two_points() {
 fn driving_point_distances_resolve_omitted_solver_points() {
     for tag in [0x8100, 0x820f] {
         let mut origin = marker("origin", Some([0.0, 0.0]));
-        origin.offset = 0;
+        origin = origin.with_test_position(origin.ordinal(), 0);
         let mut negative = marker("negative", Some([-0.007, 0.0]));
-        negative.offset = 1;
+        negative = negative.with_test_position(negative.ordinal(), 1);
         let mut first_center = marker("first-center", Some([0.008, 0.0]));
-        first_center.offset = 2;
+        first_center = first_center.with_test_position(first_center.ordinal(), 2);
         let mut second_center = marker("second-center", Some([0.0015, 0.0]));
-        second_center.offset = 3;
+        second_center = second_center.with_test_position(second_center.ordinal(), 3);
         let operand = |index, marker: Option<&str>| FeatureInputOperand {
             offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
-            kind: FeatureInputOperandKind::Native(tag),
+            kind: FeatureInputOperandKind::Native(tag.try_into().unwrap()),
             entity_index: index,
             entity_ref: marker.map(str::to_string),
         };
@@ -791,15 +792,15 @@ fn driving_point_distances_resolve_omitted_solver_points() {
 #[test]
 fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let mut first = marker("first", Some([0.0, 0.0]));
-    first.offset = 0;
+    first = first.with_test_position(first.ordinal(), 0);
     let mut second = marker("second", Some([1.0, 0.0]));
-    second.offset = 1;
+    second = second.with_test_position(second.ordinal(), 1);
     let mut third = marker("third", Some([2.0, 0.0]));
-    third.offset = 2;
+    third = third.with_test_position(third.ordinal(), 2);
     let operand = |index| FeatureInputOperand {
         offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x8100),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
         entity_index: index,
         entity_ref: None,
     };

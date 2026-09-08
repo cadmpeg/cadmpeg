@@ -94,7 +94,7 @@ fn body_instance_transform_composes_before_existing_body_transform() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    compose_body_transform(&mut body, instance);
+    compose_body_transform(&mut body, instance).unwrap();
     assert_eq!(
         body.transform
             .expect("required invariant")
@@ -130,7 +130,7 @@ fn region_raw(
             index: 0,
             loops: Vec::new(),
             surface: 0,
-            reversed_surface: 0,
+            reversed_surface: false,
             material_channel: 0,
             uuid: None,
             color: None,
@@ -259,7 +259,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .map(|(index, vertices)| crate::brep::RawBrepEdge {
             index: i32::try_from(index).expect("index"),
             curve: i32::try_from(index).expect("index"),
-            proxy_reversed: 0,
+            proxy_reversed: false,
             proxy_domain: interval,
             vertices,
             trims: vec![i32::try_from(index).expect("index")],
@@ -277,13 +277,13 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             proxy_domain: interval,
             edge: i32::try_from(index).expect("index"),
             vertices,
-            reversed_3d: 0,
+            reversed_3d: false,
             trim_type: 1,
             iso: 0,
             loop_index: 0,
             tolerances: [0.02, 0.03],
             domain: interval,
-            proxy_reversed: 0,
+            proxy_reversed: false,
             reserved: Vec::new(),
             legacy_tolerances: [0.02, 0.03],
             source_range: 0..0,
@@ -329,7 +329,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
                 index: 0,
                 loops: vec![0],
                 surface: 0,
-                reversed_surface: 0,
+                reversed_surface: false,
                 material_channel: 0,
                 uuid: None,
                 color: None,
@@ -685,7 +685,7 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
     let edge = crate::brep::RawBrepEdge {
         index: 0,
         curve: 0,
-        proxy_reversed: 0,
+        proxy_reversed: false,
         proxy_domain: crate::settings::Interval([3.0, 7.0]),
         vertices: [0, 1],
         trims: Vec::new(),
@@ -696,7 +696,7 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
     assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
     assert_eq!(edge_vertices(&edge), [0, 1]);
     let reversed = crate::brep::RawBrepEdge {
-        proxy_reversed: 1,
+        proxy_reversed: true,
         ..edge
     };
     assert_eq!(edge_param_range(&reversed), [3.0, 7.0]);
@@ -772,6 +772,40 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
             .collect::<Vec<_>>(),
         vec![vec![0]]
     );
+}
+
+#[test]
+fn contradictory_region_index_uses_array_position_for_shell_grouping() {
+    let (_, mut raw) = source_shaped_plane_brep();
+    raw.minor = 3;
+    raw.face_sides = vec![
+        crate::brep::RawBrepFaceSide {
+            index: 0,
+            region: 1,
+            face: 0,
+            direction: 1,
+            source_range: 0..0,
+        },
+        crate::brep::RawBrepFaceSide {
+            index: 1,
+            region: 0,
+            face: 0,
+            direction: -1,
+            source_range: 0..0,
+        },
+    ];
+    raw.regions = vec![region(0, 0), region(9, 1)];
+    raw.regions[0].sides = vec![1];
+    raw.regions[1].sides = vec![0];
+    let admitted = crate::brep::ValidatedRawBrep::try_new(raw).expect("repair redundant index");
+    let grouping = region_shell_groups(admitted.raw(), &[0]).expect("shell grouping");
+    assert!(!grouping.fallback);
+    assert_eq!(grouping.shells[0].region, 1);
+    assert_eq!(grouping.shells[0].faces, vec![0]);
+    assert!(admitted
+        .warnings()
+        .iter()
+        .any(|warning| redundant_field_diagnostic(warning)));
 }
 
 #[test]

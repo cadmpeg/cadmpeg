@@ -9,7 +9,7 @@ use super::super::holes::{
     simple_drilled_hole_envelope_spans, simple_drilled_hole_placement, simple_drilled_hole_recipe,
     simple_hole_geometry, stepped_hole_form,
 };
-use super::super::sketch::{approximately_equal, normalized};
+use super::super::sketch::approximately_equal;
 use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};
 use super::super::sweep::{
     feature_outline_planes, feature_plane_equations, generated_arc_cylinder_extent,
@@ -41,6 +41,7 @@ use crate::decode::sketch_transfer::recipe::{
     feature_section_sweep_semantics_conflict,
 };
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -146,7 +147,7 @@ pub(in super::super) fn linear_extrusion_extent_and_direction(
         if let Some(extent) = generated_arc_cylinder_extent(scan, ir, definition, transform)
             .or_else(|| {
                 feature_plane_equations(scan, ir, feature_id).and_then(|planes| {
-                    extrusion_extent_and_direction(transform.origin, transform.normal, planes)
+                    extrusion_extent_and_direction(transform.origin(), transform.normal(), planes)
                 })
             })
         {
@@ -320,9 +321,8 @@ pub(in super::super) fn schema_feature_definition(
                 )
             },
             |hole| {
-                let SurfaceGeometry::Cylinder { origin, radius, .. } = hole.geometry else {
-                    unreachable!("simple hole helper returns a cylinder")
-                };
+                let origin = hole.geometry.origin;
+                let radius = hole.geometry.radius;
                 (
                     hole.entry_surface_id.map(face_selection),
                     Some(origin),
@@ -632,8 +632,7 @@ pub(in super::super) fn schema_feature_definition(
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
                 let raw_normal: [f64; 3] = values[6..9].try_into().expect("three values");
                 let raw_u_axis: [f64; 3] = values[0..3].try_into().expect("three values");
-                if let (Some(normal), Some(u_axis)) =
-                    (normalized(raw_normal), normalized(raw_u_axis))
+                if let (Some(normal), Some(u_axis)) = (normalize(raw_normal), normalize(raw_u_axis))
                 {
                     if dot(normal, u_axis).abs() <= EPS_FRAME_ORTHONORMAL {
                         let origin: [f64; 3] = values[9..12].try_into().expect("three values");
@@ -662,9 +661,9 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
-                let x_axis = normalized(values[0..3].try_into().expect("three values"));
-                let y_axis = normalized(values[3..6].try_into().expect("three values"));
-                let z_axis = normalized(values[6..9].try_into().expect("three values"));
+                let x_axis = normalize(values[0..3].try_into().expect("three values"));
+                let y_axis = normalize(values[3..6].try_into().expect("three values"));
+                let z_axis = normalize(values[6..9].try_into().expect("three values"));
                 let origin: [f64; 3] = values[9..12].try_into().expect("three values");
                 if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
                     let right_handed =
@@ -934,8 +933,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     matches!(
         generated.entries.as_slice(),
         [entry]
-            if entry.class_id == 200
-                && entry.entity_id == surface.id
+            if entry.entity_id == surface.id
                 && entry.source_entity_id() == Some(0)
                 && generated.surface_ids().as_slice() == [surface.id]
     ) && topology
@@ -943,7 +941,6 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
         .iter()
         .map(|entry| entry.class_id)
         .eq([221, 222, 220, 220])
-        && owner_entry.class_id == 200
         && owner_entry.source_entity_id() == Some(feature_id)
         && matches!(
             output.entries.as_slice(),

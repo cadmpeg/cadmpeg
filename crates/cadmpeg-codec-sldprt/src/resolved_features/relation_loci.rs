@@ -15,6 +15,7 @@ use super::typed_relations::{
     relation_owner_markers, sketch_entity_contains_point,
 };
 use super::SKETCH_POINT_TOLERANCE;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
@@ -385,7 +386,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 let marker = marker(index)?;
                 if matches!(
                     relation.operands.get(index).map(|operand| operand.kind),
-                    Some(FeatureInputOperandKind::Native(0x837b | 0xbc7c))
+                    Some(FeatureInputOperandKind::Native(
+                        NativeOperandTag::TAG_837B | NativeOperandTag::TAG_BC7C
+                    ))
                 ) {
                     if let Some(locus) = qualified_or_linked_point_locus(
                         marker,
@@ -499,12 +502,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)
             }
             PointPointHorizontalDistance | PointPointVerticalDistance => {
-                unique_profile_axis_distance_pair(
-                    sketch,
-                    parameter,
-                    sketch_entities,
-                    profile_axis == Some(ProfileAxis::U),
-                )
+                unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, profile_axis?)
             }
             _ => None,
         }
@@ -737,10 +735,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         same_dimension_length((second_point.u - first_point.u).abs(), expected.0);
                     let vertical =
                         same_dimension_length((second_point.v - first_point.v).abs(), expected.0);
-                    let projected_distance_operands = relation
-                        .operands
-                        .iter()
-                        .all(|operand| operand.kind == FeatureInputOperandKind::Native(0xbc7c));
+                    let projected_distance_operands = relation.operands.iter().all(|operand| {
+                        operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C)
+                    });
                     if projected_distance_operands && horizontal != vertical {
                         return Some(if horizontal {
                             SketchConstraintDefinitionInput::HorizontalDistance {
@@ -779,7 +776,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             })
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
-            let horizontal = profile_axis == Some(ProfileAxis::U);
+            let axis = profile_axis?;
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
@@ -797,7 +794,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             &known,
                             parameter,
                             sketch_entities,
-                            horizontal,
+                            axis,
                         )?,
                     ),
                     (None, Some(known)) => (
@@ -806,16 +803,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             &known,
                             parameter,
                             sketch_entities,
-                            horizontal,
+                            axis,
                         )?,
                         known,
                     ),
-                    (None, None) => unique_profile_axis_distance_pair(
-                        sketch,
-                        parameter,
-                        sketch_entities,
-                        horizontal,
-                    )?,
+                    (None, None) => {
+                        unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, axis)?
+                    }
                 },
             };
             if first == second {
@@ -829,7 +823,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 };
                 let first_point = profile_locus_point(&first, sketch_entities)?;
                 let second_point = profile_locus_point(&second, sketch_entities)?;
-                let measured = if horizontal {
+                let measured = if axis == ProfileAxis::U {
                     (second_point.u - first_point.u).abs()
                 } else {
                     (second_point.v - first_point.v).abs()
@@ -845,12 +839,12 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             &second,
                             parameter,
                             sketch_entities,
-                            horizontal,
+                            axis,
                         )?;
                     }
                 }
             }
-            Some(if horizontal {
+            Some(if axis == ProfileAxis::U {
                 SketchConstraintDefinitionInput::HorizontalDistance {
                     first,
                     second,
@@ -1504,7 +1498,7 @@ pub(super) fn unique_profile_axis_distance_locus(
     known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-    horizontal: bool,
+    axis: ProfileAxis,
 ) -> Option<SketchLocus> {
     unique_profile_measured_locus(
         sketch,
@@ -1512,7 +1506,7 @@ pub(super) fn unique_profile_axis_distance_locus(
         parameter,
         sketch_entities,
         |known, candidate| {
-            if horizontal {
+            if axis == ProfileAxis::U {
                 (candidate.u - known.u).abs()
             } else {
                 (candidate.v - known.v).abs()
@@ -1527,10 +1521,10 @@ fn unique_repaired_profile_axis_distance_pair(
     second: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-    horizontal: bool,
+    axis: ProfileAxis,
 ) -> Option<(SketchLocus, SketchLocus)> {
     unique_repaired_profile_pair(first, second, |known| {
-        unique_profile_axis_distance_locus(sketch, known, parameter, sketch_entities, horizontal)
+        unique_profile_axis_distance_locus(sketch, known, parameter, sketch_entities, axis)
     })
 }
 
@@ -1538,10 +1532,10 @@ pub(super) fn unique_profile_axis_distance_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-    horizontal: bool,
+    axis: ProfileAxis,
 ) -> Option<(SketchLocus, SketchLocus)> {
     unique_profile_measured_loci_pair(sketch, parameter, sketch_entities, |first, second| {
-        if horizontal {
+        if axis == ProfileAxis::U {
             (second.u - first.u).abs()
         } else {
             (second.v - first.v).abs()
@@ -2838,7 +2832,7 @@ pub(super) fn relation_operand_marker<'a>(
                 )
             })
             .collect::<Vec<_>>();
-        coordinate_handles.sort_unstable_by_key(|marker| marker.offset);
+        coordinate_handles.sort_unstable_by_key(|marker| marker.offset());
         return coordinate_handles
             .get(usize::from(operand.entity_index))
             .map(|marker| marker.id.as_str());
@@ -2961,9 +2955,9 @@ fn dynamic_relation_marker<'a>(
         .filter(|marker| direct_kind(marker))
         .collect::<Vec<_>>();
     ordinal.sort_unstable_by(|left, right| {
-        left.offset
-            .cmp(&right.offset)
-            .then_with(|| left.ordinal.cmp(&right.ordinal))
+        left.offset()
+            .cmp(&right.offset())
+            .then_with(|| left.ordinal().cmp(&right.ordinal()))
             .then_with(|| left.id.cmp(&right.id))
     });
     ordinal
@@ -2986,7 +2980,9 @@ fn relation_line_point_marker<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<&'a SketchInputEntity> {
     let operand = relation.operands.get(index)?;
-    if operand.kind != FeatureInputOperandKind::Native(0x8386) || operand.entity_ref.is_some() {
+    if operand.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386)
+        || operand.entity_ref.is_some()
+    {
         return None;
     }
     let candidates = markers_by_id
@@ -3531,15 +3527,15 @@ pub(super) fn profile_loci_by_marker(
                 operand.kind,
                 FeatureInputOperandKind::D6
                     | FeatureInputOperandKind::Native(
-                        0x80cc
-                            | 0x8152
-                            | 0x81b2
-                            | 0x837b
-                            | 0x8ab6
-                            | 0x8dcb
-                            | 0x929d
-                            | 0xbc7c
-                            | 0xbd69,
+                        NativeOperandTag::TAG_80CC
+                            | NativeOperandTag::TAG_8152
+                            | NativeOperandTag::TAG_81B2
+                            | NativeOperandTag::TAG_837B
+                            | NativeOperandTag::TAG_8AB6
+                            | NativeOperandTag::TAG_8DCB
+                            | NativeOperandTag::TAG_929D
+                            | NativeOperandTag::TAG_BC7C
+                            | NativeOperandTag::TAG_BD69
                     )
             )
         })
@@ -3728,7 +3724,7 @@ pub(super) fn profile_loci_by_marker(
                 let Some([u, v]) = marker.coordinates_m else {
                     continue;
                 };
-                let primary_geometry_locus = usize::try_from(marker.offset)
+                let primary_geometry_locus = usize::try_from(marker.offset())
                     .ok()
                     .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
@@ -4074,7 +4070,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                         continue;
                     };
                     if primary_only
-                        && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                        && usize::try_from(marker.offset()).ok().is_none_or(|offset| {
                             !marker_is_geometry_locus(&lane.native_payload, offset)
                         })
                     {

@@ -443,6 +443,10 @@ impl TryFrom<u8> for CatiaCircleLayout {
 
 /// One complete consolidated `B:19` arc-length circle support.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "CatiaConsolidatedCircleWire",
+    into = "CatiaConsolidatedCircleWire"
+)]
 pub struct CatiaConsolidatedCircle {
     /// Stable native-record identity.
     pub id: String,
@@ -460,10 +464,65 @@ pub struct CatiaConsolidatedCircle {
     pub radius: f64,
     /// Arc-length parameter interval.
     pub range: [f64; 2],
-    /// Whether the interval spans one complete circumference.
-    pub full_circle: bool,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
+}
+
+impl CatiaConsolidatedCircle {
+    /// Whether the interval spans one complete circumference.
+    pub fn full_circle(&self) -> bool {
+        crate::families::b2::records::circle_range_is_full_turn(self.radius, self.range)
+    }
+}
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedCircleWire {
+    id: String,
+    byte_offset: u64,
+    layout: CatiaCircleLayout,
+    record_id: u32,
+    frame_token: u8,
+    center_pair: [f64; 2],
+    radius: f64,
+    range: [f64; 2],
+    full_circle: bool,
+    chart_shift: f64,
+}
+impl TryFrom<CatiaConsolidatedCircleWire> for CatiaConsolidatedCircle {
+    type Error = String;
+    fn try_from(wire: CatiaConsolidatedCircleWire) -> Result<Self, Self::Error> {
+        let circle = Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            layout: wire.layout,
+            record_id: wire.record_id,
+            frame_token: wire.frame_token,
+            center_pair: wire.center_pair,
+            radius: wire.radius,
+            range: wire.range,
+            chart_shift: wire.chart_shift,
+        };
+        if wire.full_circle != circle.full_circle() {
+            return Err("full_circle does not match radius and range".into());
+        }
+        Ok(circle)
+    }
+}
+impl From<CatiaConsolidatedCircle> for CatiaConsolidatedCircleWire {
+    fn from(circle: CatiaConsolidatedCircle) -> Self {
+        let full_circle = circle.full_circle();
+        Self {
+            full_circle,
+            id: circle.id,
+            byte_offset: circle.byte_offset,
+            layout: circle.layout,
+            record_id: circle.record_id,
+            frame_token: circle.frame_token,
+            center_pair: circle.center_pair,
+            radius: circle.radius,
+            range: circle.range,
+            chart_shift: circle.chart_shift,
+        }
+    }
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
@@ -7024,7 +7083,6 @@ fn consolidated_circles(
             center_pair: circle.center_pair,
             radius: circle.radius,
             range: circle.range,
-            full_circle: circle.full_circle,
             chart_shift: circle.chart_shift,
         })
         .collect()
@@ -7799,13 +7857,13 @@ fn zero_entity_support_runs(
                                 byte_offset: loop_record.pos as u64,
                                 record_ordinal: loop_record.record_ordinal,
                                 tag: loop_record.tag,
-                                member_ids: loop_record.member_ids,
+                                member_ids: loop_record.members.member_ids().collect(),
                                 typed_references: loop_record.typed_references,
                                 typed_records,
                                 support_record_ordinals: loop_record.support_record_ordinals,
-                                terminal_id: loop_record.terminal_id,
-                                gap: loop_record.gap,
-                                loop_class: loop_record.loop_class,
+                                terminal_id: loop_record.members.terminal_id(),
+                                gap: loop_record.members.gap(),
+                                loop_class: loop_record.loop_class.as_byte(),
                                 forward_senses: loop_record.forward_senses,
                                 oriented_model_endpoints: loop_record.oriented_model_endpoints,
                             }
@@ -7892,8 +7950,8 @@ fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroE
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
-            topology_refs: record.topology_refs,
-            surface_support_refs: record.surface_support_refs,
+            topology_refs: record.topology_refs(),
+            surface_support_refs: record.surface_support_refs(),
         })
         .collect()
 }
@@ -7902,6 +7960,8 @@ fn zero_entity_oriented_use_pairs(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    use crate::families::zero_entity::records::ZeroEntityUseSlot;
+
     crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
         .into_iter()
         .enumerate()
@@ -7909,12 +7969,16 @@ fn zero_entity_oriented_use_pairs(
             id: format!("catia:zero-entity:oriented-use-pair#{index}"),
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
-            base_columns: pair.base_columns,
-            uses: pair.uses.map(|use_| CatiaZeroEntityOrientedUse {
+            base_columns: pair.base_columns(),
+            uses: [
+                (ZeroEntityUseSlot::First, &pair.uses[0]),
+                (ZeroEntityUseSlot::Second, &pair.uses[1]),
+            ]
+            .map(|(slot, use_)| CatiaZeroEntityOrientedUse {
                 byte_offset: use_.pos as u64,
                 record_ordinal: use_.record_ordinal,
-                side: use_.side,
-                allocations: use_.allocations,
+                side: slot.side(),
+                allocations: pair.allocations(slot),
             }),
         })
         .collect()

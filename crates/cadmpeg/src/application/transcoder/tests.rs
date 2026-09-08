@@ -36,23 +36,15 @@ fn loss_policy_assigns_each_refusal_phase() {
 }
 
 #[test]
-fn destination_policy_discards_flags_irrelevant_to_the_destination() {
-    let file = DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true);
-    assert_eq!(
-        file,
-        DestinationPolicy::File {
-            path: PathBuf::from("part.step"),
-            overwrite: true,
-        }
-    );
+fn destination_policy_paths() {
+    let file = DestinationPolicy::File(FileDestination {
+        path: PathBuf::from("part.step"),
+        overwrite: true,
+    });
     assert_eq!(file.path(), Some(Path::new("part.step")));
-    let stdout = DestinationPolicy::new(None, true, false);
-    assert_eq!(
-        stdout,
-        DestinationPolicy::Stdout {
-            allow_binary: false,
-        }
-    );
+    let stdout = DestinationPolicy::Stdout {
+        allow_binary: false,
+    };
     assert_eq!(stdout.path(), None);
 }
 

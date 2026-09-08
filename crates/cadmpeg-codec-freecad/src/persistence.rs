@@ -17,7 +17,7 @@ const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 struct DependencyInfo {
     dependencies: Vec<String>,
-    allow_partial: Option<i64>,
+    allow_partial: Option<std::num::NonZeroU64>,
     order: usize,
 }
 
@@ -132,14 +132,11 @@ fn parse_document(
         }
         let allow_partial = node
             .attribute("AllowPartial")
-            .map(str::parse::<i64>)
+            .map(str::parse::<std::num::NonZeroU64>)
             .transpose()
-            .map_err(|_| CodecError::Malformed("ObjectDeps AllowPartial is invalid".into()))?;
-        if allow_partial.is_some_and(|value| value <= 0) {
-            return Err(CodecError::Malformed(
-                "ObjectDeps AllowPartial must be positive".into(),
-            ));
-        }
+            .map_err(|_| {
+                CodecError::Malformed("ObjectDeps AllowPartial must be positive".into())
+            })?;
         if dependency_map
             .insert(
                 name.clone(),
@@ -225,11 +222,15 @@ fn parse_document(
                 .map_or_else(Vec::new, |dependency| dependency.dependencies.clone()),
             dependency_allow_partial: dependency.and_then(|dependency| dependency.allow_partial),
             order,
-            data: data_node.map(|data| crate::native::ObjectData {
-                raw_xml: text[data.range()].to_owned(),
-                byte_start: data.range().start as u64,
-                byte_end: data.range().end as u64,
-            }),
+            data: data_node
+                .map(|data| {
+                    crate::native::RetainedXml::from_text(
+                        text[data.range()].to_owned(),
+                        data.range().start as u64,
+                    )
+                })
+                .transpose()
+                .map_err(CodecError::Malformed)?,
         });
     }
 
@@ -483,9 +484,11 @@ fn parse_properties(
                 .and_then(|value| value.parse().ok()),
             body: crate::native::PropertyBody::Transient,
             order,
-            raw_xml: text[node.range()].to_owned(),
-            byte_start: node.range().start as u64,
-            byte_end: node.range().end as u64,
+            xml: crate::native::RetainedXml::from_text(
+                text[node.range()].to_owned(),
+                node.range().start as u64,
+            )
+            .map_err(CodecError::Malformed)?,
         });
     }
     for (order, node) in nodes.into_iter().enumerate() {
@@ -510,7 +513,6 @@ fn parse_properties(
                     ctx.charge_retained(
                         u64::try_from(len).unwrap_or(u64::MAX),
                         "fcstd_property_value_xml",
-                        None,
                     )?;
                 }
                 Ok(ValueRecord {
@@ -569,9 +571,11 @@ fn parse_properties(
                 }),
             },
             order,
-            raw_xml: text[node.range()].to_owned(),
-            byte_start: node.range().start as u64,
-            byte_end: node.range().end as u64,
+            xml: crate::native::RetainedXml::from_text(
+                text[node.range()].to_owned(),
+                node.range().start as u64,
+            )
+            .map_err(CodecError::Malformed)?,
         });
     }
     Ok(())

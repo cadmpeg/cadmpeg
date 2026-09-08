@@ -75,11 +75,10 @@ fn projection_caches_end_after_history_consumers() {
 fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
     let side =
         |header_value, scalars: Vec<i32>| crate::records::topology::DesignTopologyRecipeSide {
-            field_count: std::num::NonZeroU32::new(3).unwrap(),
             header_value,
             scalars,
             payload_prefix: vec![0],
-            payload_entry_count: 0,
+
             entries: Vec::new(),
         };
     let structure = crate::records::topology::DesignEdgeRecipeStructure {

@@ -36,10 +36,10 @@ use crate::brep::{self, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 
-struct DecodedBrep {
+struct DecodedBrep<'a> {
     /// Representative stream whose header is common to every merged site.
     /// This can be present for an unresolved merge without selecting a site.
-    metadata_stream: Option<usize>,
+    metadata_header: Option<&'a StreamHeader>,
     brep: Brep,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 }
@@ -74,7 +74,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let classification = crate::dialect::classify_layers(&scan);
     let form_padding = classification.host().form_code_padding();
@@ -102,9 +102,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &classification) {
-            let source_header = decoded
-                .metadata_stream
-                .and_then(|index| streams.get(index).map(|stream| stream.header));
+            let source_header = decoded.metadata_header;
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &scan,
@@ -1969,11 +1967,11 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
 /// Decode the available Parasolid body streams into one B-rep. Returns `None`
 /// when the streams frame but yield neither geometry nor a valid empty
 /// partition/deltas model, so the caller falls back to metadata.
-fn try_decode_brep(
+fn try_decode_brep<'a>(
     scan: &ContainerScan,
-    streams: &[ActiveParasolidSite<'_>],
+    streams: &[ActiveParasolidSite<'a>],
     classification: &crate::dialect::LayerClassification,
-) -> Option<(DecodedBrep, DecodeBody)> {
+) -> Option<(DecodedBrep<'a>, DecodeBody)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
@@ -2047,18 +2045,20 @@ fn try_decode_brep(
         }
     }
     let active_stream = resolved_active_site.map(|site| decoded_sites[site].1);
-    let metadata_stream = active_stream.or_else(|| {
-        let first = decoded_sites.first()?.1;
-        let first_header = streams[first].header;
-        decoded_sites
-            .iter()
-            .all(|(_, representative, _)| {
-                let header = streams[*representative].header;
-                header.schema == first_header.schema
-                    && header.description == first_header.description
-            })
-            .then_some(first)
-    });
+    let metadata_header = active_stream
+        .map(|index| streams[index].header)
+        .or_else(|| {
+            let first = decoded_sites.first()?.1;
+            let first_header = streams[first].header;
+            decoded_sites
+                .iter()
+                .all(|(_, representative, _)| {
+                    let header = streams[*representative].header;
+                    header.schema == first_header.schema
+                        && header.description == first_header.description
+                })
+                .then_some(first_header)
+        });
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key);
@@ -2098,7 +2098,7 @@ fn try_decode_brep(
     let report = build_geometry_report(scan, &decoded, classification);
     Some((
         DecodedBrep {
-            metadata_stream,
+            metadata_header,
             brep: decoded,
             configuration_bodies,
         },
@@ -2204,7 +2204,7 @@ fn build_geometry_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
-    decoded: DecodedBrep,
+    decoded: DecodedBrep<'_>,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
@@ -2217,7 +2217,7 @@ fn build_geometry_ir(
     CodecError,
 > {
     let DecodedBrep {
-        metadata_stream: _,
+        metadata_header: _,
         mut brep,
         configuration_bodies,
     } = decoded;
@@ -2460,7 +2460,12 @@ fn build_geometry_ir(
         .collect::<Vec<_>>();
     let face_producers = face_identities
         .iter()
-        .map(|(target, identity)| (target.as_str().to_owned(), identity.feature_source_id))
+        .map(|(target, identity)| {
+            (
+                target.as_str().to_owned(),
+                identity.feature_source_id.value(),
+            )
+        })
         .collect::<Vec<_>>();
     let body_modifiers = brep
         .body_modifiers
@@ -2762,7 +2767,7 @@ fn build_geometry_ir(
                     table_index,
                     candidates
                         .iter()
-                        .map(u32::to_string)
+                        .map(|source| source.value().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 ));
@@ -2822,18 +2827,11 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model.tessellations.push(
-                cadmpeg_ir::tessellation::Tessellation::from_decoded(
-                    id,
-                    mesh.vertices,
-                    mesh.triangles,
-                    mesh.strip_lengths,
-                    mesh.normals,
-                    Vec::new(),
-                    mesh.channels,
-                )
-                .expect("decoded SLDPRT display mesh is a valid tessellation"),
-            );
+            ir.model
+                .tessellations
+                .push(mesh.into_tessellation(id).map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?);
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(
@@ -2862,7 +2860,7 @@ fn build_geometry_ir(
                 "feature source ID(s) {} have no agreeing DisplayFace persistent reference",
                 unmatched_feature_sources
                     .iter()
-                    .map(u32::to_string)
+                    .map(|source| source.value().to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -2885,7 +2883,7 @@ fn build_geometry_ir(
     );
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
-    ));
+    )?);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
         annotation_builder.derived(&id, "body").derived(id, "faces");
@@ -3190,7 +3188,7 @@ fn build_geometry_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
     DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),
@@ -4505,7 +4503,7 @@ fn build_container_report(
     classification.append_losses(&mut losses);
 
     DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),

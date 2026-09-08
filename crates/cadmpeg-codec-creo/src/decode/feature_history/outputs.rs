@@ -253,8 +253,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
         return None;
     };
     let generated = unique_table(29)?;
-    (owner.class_id == 200
-        && owner.source_entity_id() == Some(feature_id)
+    (owner.source_entity_id() == Some(feature_id)
         && output.entity_id == owner.entity_id
         && generated.surface_ids().contains(&output.class_id)
         && generated
@@ -578,7 +577,7 @@ pub(in super::super) fn feature_parameters(
                 &mut parameters,
                 "sweep_direction",
                 transform
-                    .normal
+                    .normal()
                     .iter()
                     .map(f64::to_string)
                     .collect::<Vec<_>>()

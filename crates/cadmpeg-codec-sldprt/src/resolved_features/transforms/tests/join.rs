@@ -79,13 +79,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     }
     native_payload[81 + 23..81 + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     let mut marker_a = marker("marker-a", Some([0.0, 0.0]));
-    marker_a.offset = 0;
+    marker_a = marker_a.with_test_position(marker_a.ordinal(), 0);
     let mut marker_b = marker("marker-b", Some([0.01, 0.0]));
-    marker_b.offset = 27;
+    marker_b = marker_b.with_test_position(marker_b.ordinal(), 27);
     let mut marker_c = marker("marker-c", Some([0.01, 0.01]));
-    marker_c.offset = 54;
+    marker_c = marker_c.with_test_position(marker_c.ordinal(), 54);
     let mut display = marker("display", Some([0.1, 0.1]));
-    display.offset = 81;
+    display = display.with_test_position(display.ordinal(), 81);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -681,8 +681,8 @@ fn line_handle_interior_points_identify_profile_entities() {
         let offset = ordinal * 27;
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         let mut handle = marker(id, Some(coordinates_m));
-        handle.ordinal = ordinal as u32;
-        handle.offset = offset as u64;
+        handle = handle.with_test_position(ordinal as u32, handle.offset());
+        handle = handle.with_test_position(handle.ordinal(), offset as u64);
         handle.kind = SketchInputKind::LineOrCircle;
         markers.push(handle);
     }
@@ -870,8 +870,8 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
     let mut handle = marker("circle-marker", Some([0.0, 0.0]));
     handle.kind = SketchInputKind::LineOrCircle;
     let mut point = marker("point-marker", Some([0.01, 0.0]));
-    point.ordinal = 1;
-    point.offset = 27;
+    point = point.with_test_position(1, point.offset());
+    point = point.with_test_position(point.ordinal(), 27);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,

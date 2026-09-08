@@ -126,7 +126,7 @@ pub(crate) fn generated_feature_source_ids(
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
-pub fn sync_neutral_features(
+pub(crate) fn sync_neutral_features(
     model: &cadmpeg_ir::document::Model,
     parameters: &[DesignParameter],
     bodies: &[Body],
@@ -141,21 +141,18 @@ pub fn sync_neutral_features(
         }
         return Ok(());
     }
-    if native.is_none() {
-        *native = Some(crate::native::SldprtNative {
-            feature_histories: vec![FeatureHistory {
-                id: "sldprt:generated:feature-history#0".into(),
-                part_name: None,
-                properties: BTreeMap::new(),
-                content: Vec::new(),
-                configurations: Vec::new(),
-                features: Vec::new(),
-            }],
-            feature_input_lanes: Vec::new(),
-            pmi_dimensions: Vec::new(),
-        });
-    }
-    let native = native.as_mut().expect("initialized above");
+    let native = native.get_or_insert_with(|| crate::native::SldprtNative {
+        feature_histories: vec![FeatureHistory {
+            id: "sldprt:generated:feature-history#0".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: Vec::new(),
+        }],
+        feature_input_lanes: Vec::new(),
+        pmi_dimensions: Vec::new(),
+    });
     let original_parameters = native
         .feature_histories
         .iter()

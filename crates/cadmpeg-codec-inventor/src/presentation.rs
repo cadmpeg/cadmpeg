@@ -905,7 +905,7 @@ impl<'a> Cursor<'a> {
                 "Inventor presentation {field} byte length overflows"
             ))
         })?;
-        ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string", None)?;
+        ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string")?;
         self.source
             .utf16_le(units)
             .map(|value| value.trim_end_matches('\0').to_owned())
@@ -917,15 +917,17 @@ impl<'a> Cursor<'a> {
     }
 
     fn guid(&mut self, field: &str) -> Result<String, CodecError> {
-        let bytes: [u8; 16] = self.take(16, field)?.try_into().expect("16-byte read");
+        let first = self.u32(field)?;
+        let second = self.u16(field)?;
+        let third = self.u16(field)?;
+        let tail: [u8; 8] = self.source.array().ok_or_else(|| {
+            CodecError::malformed(format_args!("truncated Inventor presentation {field}"))
+        })?;
         Ok(format!(
-            "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{}",
-            View::u32_le_at(&bytes, 0).expect("four-byte group"),
-            View::u16_le_at(&bytes, 4).expect("two-byte group"),
-            View::u16_le_at(&bytes, 6).expect("two-byte group"),
-            bytes[8],
-            bytes[9],
-            hex(&bytes[10..])
+            "{first:08x}-{second:04x}-{third:04x}-{:02x}{:02x}-{}",
+            tail[0],
+            tail[1],
+            hex(&tail[2..])
         ))
     }
 

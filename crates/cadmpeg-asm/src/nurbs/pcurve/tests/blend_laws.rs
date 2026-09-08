@@ -136,14 +136,16 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
 
         let decoded = crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
             .unwrap_or_else(|| panic!("law surface at width {int_width}"));
-        let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
+        let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Law(construction) = definition else {
             panic!("expected law surface at width {int_width}")
         };
         assert_eq!(construction.parameter_ranges, None);
         assert_eq!(construction.primary.name(), "primary-law");
         assert_eq!(construction.additional.len(), 1);
         assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
-        assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
+        assert_eq!(cache_fit_tolerance, Some(0.07));
     }
 }
 
@@ -166,7 +168,9 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
 
         let decoded = crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
             .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
-        let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
+        let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+        let (definition, _) = decoded.into_parts();
+        let DecodedProceduralSurfaceDefinition::Law(construction) = definition else {
             panic!("expected legacy law surface")
         };
         assert_eq!(
@@ -177,7 +181,7 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
         ));
-        assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
+        assert_eq!(cache_fit_tolerance, Some(0.07));
     }
 }
 
@@ -222,10 +226,12 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
             let decoded =
                 crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
                     .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
-            let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
+            let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+            let (definition, _) = decoded.into_parts();
+            let DecodedProceduralSurfaceDefinition::Law(construction) = definition else {
                 panic!("expected law surface")
             };
-            assert_eq!(decoded.cache_fit_tolerance, None);
+            assert_eq!(cache_fit_tolerance, None);
             assert!(matches!(
                 (&construction.tail, selector),
                 (cadmpeg_ir::geometry::LawSurfaceTail::Summary { .. }, 1)
@@ -256,10 +262,12 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
             let decoded =
                 crate::nurbs::proc_surface::sub_spl_sur(&lex_test_span(&bytes, int_width))
                     .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
+            let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
+            let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::SubSurface {
                 support,
                 parameter_ranges,
-            } = decoded.definition
+            } = definition
             else {
                 panic!("expected sub-surface")
             };
@@ -269,7 +277,7 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
                 SurfaceGeometry::Plane { origin, .. }
                     if origin == Point3::new(1.0, -2.0, 3.0)
             ));
-            assert_eq!(decoded.cache_fit_tolerance, None);
+            assert_eq!(cache_fit_tolerance, None);
         }
     }
 }

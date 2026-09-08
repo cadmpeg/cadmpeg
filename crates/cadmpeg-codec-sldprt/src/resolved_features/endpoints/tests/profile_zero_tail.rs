@@ -33,31 +33,36 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
     payload[zero_tail_92::SIGNED_SELECTOR..zero_tail_92::ZERO_TAIL]
         .copy_from_slice(&zero_tail_92::SIGNED_SELECTOR_VALUE.to_le_bytes());
 
-    let entity = |id: &str, offset, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));

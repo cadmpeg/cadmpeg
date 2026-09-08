@@ -201,31 +201,34 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:native:sketch-point#0".into(),
         record_index: 20,
         owner_reference: Some(100),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             20,
             crate::records::SketchPointClosure::Selector0State0,
             Some(2),
             0.0,
-            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(120.0, 30.0),
-    };
+    })
+    .unwrap();
     let mut identityless_point = point.clone();
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
-    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 {
-        flag: false,
-        companion: None,
-    };
+    identityless_point
+        .try_set_record_form(crate::records::SketchPointRecordForm::Version0 { flag: false })
+        .unwrap();
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
@@ -811,22 +814,28 @@ fn sketch_member_run_backfills_relation_free_owners() {
         )
         .expect("valid module registration"),
     };
-    let point = |record_index: u32| SketchPoint {
-        id: format!("f3d:native:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: None,
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        byte_offset: u64::from(record_index),
-        coordinate_offset: 141,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            Some(2),
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
+    let point = |record_index: u32| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("f3d:native:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: None,
+            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            byte_offset: u64::from(record_index),
+            coordinate_offset: 141,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                Some(2),
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
     };
 
     // Relation-free geometry named by the container's member run binds to

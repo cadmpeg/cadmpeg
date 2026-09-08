@@ -31,6 +31,7 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
+use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::{
     circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
     extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
@@ -198,6 +199,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     );
     let mut wrong_class = table.clone();
     wrong_class.entries[2].class_id = 201;
+    wrong_class.entries[2].payload = crate::feature::EntryPayload::Plain;
     assert_eq!(
         generated_surface_id_for_feature(&[wrong_class], 17, 9),
         None
@@ -1125,7 +1127,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .iter()
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
-            matches!(geometry, SurfaceGeometry::Cylinder { origin, axis, radius, .. }
+            matches!(geometry, crate::decode::holes::placement::HoleCylinder { origin, axis, radius, .. }
                 if *origin == Point3::new(1.0, 2.0, 3.0)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
                     && (*radius - 0.098).abs() < 1.0e-12)
@@ -1216,12 +1218,9 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
 
 #[test]
 fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
-    let frame = |origin, axis, radius| crate::surface::PositionalCylinderFrame {
-        origin,
-        axis,
-        ref_direction: [0.0, 1.0, 0.0],
-        radius,
-        length: None,
+    let frame = |origin, axis, radius| {
+        crate::surface::PositionalCylinderFrame::new(origin, axis, [0.0, 1.0, 0.0], radius, None)
+            .expect("valid positional cylinder frame")
     };
     let first = frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.25);
     let shifted = frame([7.0, -3.0, 4.0], [-1.0, 0.0, 0.0], 0.25);
@@ -1241,11 +1240,6 @@ fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
     .is_none());
     assert!(simple_drilled_axis_placement_from_frames(
         &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.3)],
-        0.5,
-    )
-    .is_none());
-    assert!(simple_drilled_axis_placement_from_frames(
-        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], f64::NAN,)],
         0.5,
     )
     .is_none());
@@ -1796,12 +1790,12 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
     })
     .expect("valid test fixture");
     let counterclockwise = vec![
-        (arc.clone(), false, [1.0, 0.0], [-1.0, 0.0]),
-        (line.clone(), false, [-1.0, 0.0], [1.0, 0.0]),
+        ProfileEntity::new(arc.clone(), false).expect("valid profile entity"),
+        ProfileEntity::new(line.clone(), false).expect("valid profile entity"),
     ];
     let clockwise = vec![
-        (arc, true, [-1.0, 0.0], [1.0, 0.0]),
-        (line, true, [1.0, 0.0], [-1.0, 0.0]),
+        ProfileEntity::new(arc, true).expect("valid profile entity"),
+        ProfileEntity::new(line, true).expect("valid profile entity"),
     ];
     assert!(
         (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
@@ -1819,7 +1813,7 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
 
 #[test]
 fn full_turn_arc_remains_a_closed_extrusion_profile() {
-    let profile = vec![(
+    let profile = vec![ProfileEntity::new(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
@@ -1828,12 +1822,18 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
         })
         .expect("valid test fixture"),
         false,
-        [2.0, 0.0],
-        [2.0, 0.0],
-    )];
-    let (profiles, area) = ordered_extrusion_profiles(vec![profile.clone()])
+    )
+    .expect("valid profile entity")];
+    let profiles = ordered_extrusion_profiles(vec![profile.clone()])
         .expect("a full-turn arc is a closed profile");
-    assert_eq!(profiles, vec![profile]);
+    let area = profiles[0].area();
+    assert_eq!(
+        profiles
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        vec![profile]
+    );
     assert!((area - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
     assert_eq!(
         oriented_arc_parameterization(false, 0.0, std::f64::consts::TAU).1,
@@ -1878,9 +1878,21 @@ fn circle_remains_a_closed_extrusion_profile() {
     ));
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
-    assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);
-    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
-    assert_eq!(ordered, profiles);
+    assert_eq!(
+        profiles,
+        vec![vec![
+            ProfileEntity::new(circle.clone(), false).expect("valid profile entity")
+        ]]
+    );
+    let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
+    let area = ordered[0].area();
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        profiles
+    );
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
@@ -1911,7 +1923,9 @@ fn circle_remains_a_closed_extrusion_profile() {
             ]
         );
         assert_eq!(
-            profile_arc(&(circle.clone(), reversed, seam, seam)),
+            profile_arc(
+                &ProfileEntity::new(circle.clone(), reversed).expect("valid profile entity")
+            ),
             Some((
                 [1.0, -2.0],
                 3.0,
@@ -1926,7 +1940,8 @@ fn circle_remains_a_closed_extrusion_profile() {
     }
     assert!(point_on_profile_arc(
         seam,
-        profile_arc(&(circle, false, seam, seam)).expect("circle arc"),
+        profile_arc(&ProfileEntity::new(circle, false).expect("valid profile entity"))
+            .expect("circle arc"),
         1.0e-9,
     ));
     assert_eq!(

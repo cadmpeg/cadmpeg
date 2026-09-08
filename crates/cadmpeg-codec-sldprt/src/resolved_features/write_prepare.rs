@@ -37,7 +37,7 @@ use super::write_generate::{
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub fn prepare_sketches_for_write(
+pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -183,7 +183,7 @@ fn patch_spatial_sketches(
                         .sketch_entities
                         .iter()
                         .find(|marker| marker.id == native_ref)?;
-                    let offset = usize::try_from(marker.offset).ok()?;
+                    let offset = usize::try_from(marker.offset()).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
                     if coordinate_offset.is_none()
@@ -588,8 +588,12 @@ fn validate_generated_marker_constraint(
         return Ok(());
     }
     let (entity_id, axis) = match constraint.definition.kind() {
-        SketchConstraintDefinitionInput::Horizontal { entity } => (entity, Some(false)),
-        SketchConstraintDefinitionInput::Vertical { entity } => (entity, Some(true)),
+        SketchConstraintDefinitionInput::Horizontal { entity } => {
+            (entity, Some(SketchCoordinateAxis::U))
+        }
+        SketchConstraintDefinitionInput::Vertical { entity } => {
+            (entity, Some(SketchCoordinateAxis::V))
+        }
         SketchConstraintDefinitionInput::Fixed { entity } => (entity, None),
         SketchConstraintDefinitionInput::ArcAngle { entity, angle } => {
             if arc_angle_relation_kind(angle.0).is_none() {
@@ -662,10 +666,9 @@ fn validate_generated_marker_constraint(
             constraint.id.as_str()
         )));
     };
-    let delta = if axis {
-        (end.u - start.u).abs()
-    } else {
-        (end.v - start.v).abs()
+    let delta = match axis {
+        SketchCoordinateAxis::U => (end.v - start.v).abs(),
+        SketchCoordinateAxis::V => (end.u - start.u).abs(),
     };
     if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(

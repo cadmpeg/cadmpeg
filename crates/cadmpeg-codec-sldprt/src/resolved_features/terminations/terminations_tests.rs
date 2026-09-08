@@ -663,9 +663,11 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
 fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
         condition: super::FaceCondition::ToFace,
-        reference: Some(reference.into()),
+        reference: super::FaceReference::Lane {
+            reference: reference.into(),
+            canonical: Some("components:1,2,3".into()),
+        },
         identity: identity.into(),
-        canonical: Some("components:1,2,3".into()),
     };
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");

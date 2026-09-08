@@ -50,7 +50,6 @@ pub(super) use crate::solve::missing_edge::{
     DuplicateFaceAssignmentVisit, MeshBoundaryEdgeCandidate, MeshEdgeRun,
     MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
-pub(super) use crate::solve::UnionFind;
 pub(super) use cadmpeg_core::decode::WorkBudget;
 
 fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {

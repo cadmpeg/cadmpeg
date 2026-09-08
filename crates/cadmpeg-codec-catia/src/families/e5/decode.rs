@@ -263,7 +263,7 @@ pub(crate) fn try_decode_e5(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            geometry_transferred: true,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage: cadmpeg_ir::Coverage::default(),
             losses,
             notes: Vec::new(),
@@ -2936,7 +2936,6 @@ mod route_tests {
             edges.insert(
                 edge_ref,
                 E5Edge {
-                    record_id: edge_ref,
                     support: 0,
                     start_vertex,
                     end_vertex,
@@ -3015,7 +3014,6 @@ mod route_tests {
                 (
                     10,
                     E5Edge {
-                        record_id: 10,
                         support: 0,
                         start_vertex: 1,
                         end_vertex: 2,
@@ -3027,7 +3025,6 @@ mod route_tests {
                 (
                     11,
                     E5Edge {
-                        record_id: 11,
                         support: 0,
                         start_vertex: 1,
                         end_vertex: 3,
@@ -3154,7 +3151,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 1,
                 E5Edge {
-                    record_id: 1,
                     support: 0,
                     start_vertex: 0,
                     end_vertex: 0,
@@ -3168,7 +3164,6 @@ mod route_tests {
                 (
                     10,
                     E5Bounds {
-                        record_id: 10,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 1.0,
@@ -3179,7 +3174,6 @@ mod route_tests {
                 (
                     11,
                     E5Bounds {
-                        record_id: 11,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 1.0,
@@ -3231,7 +3225,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 200,
                 E5Edge {
-                    record_id: 200,
                     support: 300,
                     start_vertex: 400,
                     end_vertex: 401,
@@ -3253,7 +3246,6 @@ mod route_tests {
                 (
                     500,
                     E5Bounds {
-                        record_id: 500,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 0.0,
@@ -3264,7 +3256,6 @@ mod route_tests {
                 (
                     501,
                     E5Bounds {
-                        record_id: 501,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 0.0,
@@ -3276,7 +3267,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    record_id: 300,
                     kind: E5CurveSupportKind::Boundary(20),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3325,7 +3315,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 200,
                 E5Edge {
-                    record_id: 200,
                     support: 300,
                     start_vertex: 400,
                     end_vertex: 401,
@@ -3339,7 +3328,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    record_id: 300,
                     kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3417,7 +3405,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 200,
                 E5Edge {
-                    record_id: 200,
                     support: 300,
                     start_vertex: 400,
                     end_vertex: 401,
@@ -3452,7 +3439,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    record_id: 300,
                     kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3503,7 +3489,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 20,
                 E5Edge {
-                    record_id: 20,
                     support: 40,
                     start_vertex: 10,
                     end_vertex: 11,
@@ -3525,7 +3510,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 40,
                 E5CurveSupport {
-                    record_id: 40,
                     kind: E5CurveSupportKind::Boundary(30),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3614,8 +3598,7 @@ mod route_tests {
                 orientation_hint: None,
             }],
         };
-        let edge = |record_id| E5Edge {
-            record_id,
+        let edge = || E5Edge {
             support: 20,
             start_vertex: 30,
             end_vertex: 31,
@@ -3628,7 +3611,7 @@ mod route_tests {
             faces,
             edges: edges
                 .into_iter()
-                .map(|record_id| (record_id, edge(record_id)))
+                .map(|record_id| (record_id, edge()))
                 .collect(),
             pcurves: BTreeMap::new(),
             bounds: BTreeMap::new(),
