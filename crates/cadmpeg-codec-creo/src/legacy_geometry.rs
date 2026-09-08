@@ -456,6 +456,13 @@ fn surface_carrier(
     reals: &RealFieldIndex<'_>,
     namespace: LegacySurfaceNamespace,
 ) -> Option<LegacySurfaceCarrier> {
+    enum AnalyticFamily {
+        Plane,
+        Cylinder,
+        Cone,
+        TorusOrSphere,
+    }
+
     let mut primitives = children
         .get(&row_object.offset)?
         .iter()
@@ -463,12 +470,6 @@ fn surface_carrier(
         .filter(|object| object.name.starts_with("srf_prim_ptr("));
     let primitive = primitives.next()?;
     primitives.next().is_none().then_some(())?;
-    enum AnalyticFamily {
-        Plane,
-        Cylinder,
-        Cone,
-        TorusOrSphere,
-    }
     let (family, expected_name) = match row.kind {
         SurfaceKind::Plane => (AnalyticFamily::Plane, "srf_prim_ptr(plane)"),
         SurfaceKind::Cylinder => (AnalyticFamily::Cylinder, "srf_prim_ptr(cylinder)"),
