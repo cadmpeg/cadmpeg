@@ -4966,15 +4966,18 @@ pub(super) fn exact_legacy_mirror_scope_count(
         || owner.frame_length != u64::try_from(mirror_441_count::LEN).ok()?
         || owner.parameter_record_index != count_record_index.checked_add(2)?
         || owner.companion_record_index != count_record_index.checked_add(1)?
-        || owner.evaluated_value_offset != u64::try_from(mirror_441_count::COUNT).ok()?
+        || owner.evaluated_value_offset
+            != crate::design::decode::parameters::FrameRelative(
+                u64::try_from(mirror_441_count::COUNT).ok()?,
+            )
     {
         return None;
     }
     Some((
         count_record_index,
-        u64::try_from(*start)
-            .ok()?
-            .checked_add(owner.evaluated_value_offset)?,
+        owner
+            .evaluated_value_offset
+            .absolute(u64::try_from(*start).ok()?)?,
     ))
 }
 
