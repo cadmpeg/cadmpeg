@@ -581,8 +581,8 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
         serde_json::to_string(&operation).expect("copy body wire"),
         wire
     );
-    assert_eq!(operation.bodies[1].source.value, 13);
-    assert_eq!(operation.bodies[1].copied.value, 14);
+    assert_eq!(operation.bodies()[1].source.value, 13);
+    assert_eq!(operation.bodies()[1].copied.value, 14);
     let value: serde_json::Value = serde_json::from_str(wire).expect("copy JSON");
     for field in [
         "body_operand_record_indices",
@@ -1738,3 +1738,5 @@ mod fillet_law;
 mod thread;
 
 mod combine;
+
+mod copied_bodies;

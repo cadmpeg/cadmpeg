@@ -610,29 +610,31 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     if let crate::records::feature::DesignScopePayload::CopyPasteBodies(slot) =
         &mut copy_paste_bodies.payload
     {
-        *slot = Some(DesignCopyPasteBodiesOperation {
-            bodies: vec![crate::records::feature::DesignCopiedBody {
-                operand: crate::records::Located {
-                    value: 502,
-                    offset: 0,
-                },
-                source: crate::records::Located {
-                    value: 11,
-                    offset: 0,
-                },
-                copied: crate::records::Located {
-                    value: 12,
-                    offset: 0,
-                },
-            }],
-            body_group_record_index: 501,
-            body_group_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
-                .unwrap(),
-            body_group_byte_offset: 0,
-            relation_record_index: 503,
-            relation_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            relation_byte_offset: 0,
-        });
+        *slot = Some(
+            DesignCopyPasteBodiesOperation::try_new(
+                vec![crate::records::feature::DesignCopiedBody {
+                    operand: crate::records::Located {
+                        value: 502,
+                        offset: 26,
+                    },
+                    source: crate::records::Located {
+                        value: 11,
+                        offset: 25,
+                    },
+                    copied: crate::records::Located {
+                        value: 12,
+                        offset: 40,
+                    },
+                }],
+                501,
+                crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                0,
+                503,
+                crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                0,
+            )
+            .unwrap(),
+        );
     }
 
     let mut base_feature = DesignParameterScope::empty(

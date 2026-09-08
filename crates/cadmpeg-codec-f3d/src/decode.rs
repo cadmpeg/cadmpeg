@@ -4272,11 +4272,11 @@ fn extend_related_design_records(
                     .push(crate::records::DesignRecordHeader {
                         id: format!(
                             "{stream}:design-record-header#{}",
-                            operation.relation_byte_offset
+                            operation.relation_byte_offset()
                         ),
                         record_index: operation.relation_record_index,
                         class_tag: operation.relation_class_tag.clone(),
-                        byte_offset: operation.relation_byte_offset,
+                        byte_offset: operation.relation_byte_offset(),
                     });
             }
         }
