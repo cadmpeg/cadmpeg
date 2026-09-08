@@ -609,7 +609,8 @@ mod tests {
             push_u32(&mut bytes, 8);
             bytes.extend_from_slice(&2u16.to_le_bytes());
             with_context(&bytes, |ctx| {
-                let table = parse_revisions(ctx, &bytes).unwrap();
+                let table = parse_revisions(ctx, &bytes)
+                    .expect("revision fixture follows current selector framing");
                 assert_eq!(table.entries.len(), 2);
                 assert_eq!(
                     table.entries[0].payload,
