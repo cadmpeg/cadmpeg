@@ -221,7 +221,7 @@ pub(crate) fn transfer_neutral(
             .flat_map(|joint| joint.references().into_iter().cloned())
             .filter(|reference| reference.document.is_none())
             .filter_map(|reference| reference.object().map(str::to_owned))
-            .filter(|object| !object.is_empty() && !occurrence_objects.contains(object.as_str())),
+            .filter(|object| !occurrence_objects.contains(object.as_str())),
     );
     component_objects.sort();
     component_objects.dedup();

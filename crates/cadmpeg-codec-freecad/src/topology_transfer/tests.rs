@@ -926,7 +926,10 @@ Co 1001000 +2 0 *
         .expect("GUI properties");
     assert_eq!(gui_providers.len(), 1);
     assert_eq!(
-        gui_providers[0].object.as_deref(),
+        gui_providers[0]
+            .object
+            .as_ref()
+            .map(|object| object.as_str()),
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);

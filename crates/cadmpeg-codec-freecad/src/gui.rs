@@ -632,7 +632,10 @@ fn transfer_neutral_presentation(
                 "state",
             ))
             .expect("identity grammar"),
-            object: provider.object.clone(),
+            object: provider
+                .object
+                .as_ref()
+                .map(|object| object.as_str().to_owned()),
             order: provider.order as u32,
             expanded: provider.expanded,
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
@@ -972,7 +975,13 @@ fn append_native_provider(
     let id = crate::native::native_id("gui-view-provider", name);
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
-        object: object.map(str::to_owned),
+        object: object
+            .map(|object| {
+                cadmpeg_ir::products::NonEmptyString::new(object).ok_or_else(|| {
+                    CodecError::Malformed("GUI provider object must not be empty".into())
+                })
+            })
+            .transpose()?,
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
@@ -3476,7 +3485,7 @@ fn transfer_shape_appearances(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     for provider in &graph.providers {
-        let Some(object_id) = provider.object.as_deref() else {
+        let Some(object_id) = provider.object.as_ref().map(|object| object.as_str()) else {
             continue;
         };
         let Some(property) = graph.properties.iter().find(|property| {
