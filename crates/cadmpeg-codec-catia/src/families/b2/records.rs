@@ -1894,6 +1894,7 @@ pub struct B2Circle {
     pub chart_shift: f64,
 }
 
+#[cfg(test)]
 impl B2Circle {
     /// Whether the interval spans one complete circumference.
     pub fn full_circle(&self) -> bool {
