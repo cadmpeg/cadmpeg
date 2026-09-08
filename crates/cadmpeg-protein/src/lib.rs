@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
-use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -466,13 +465,7 @@ fn decode_record(
                 let targets = read_connections(record, &mut at)
                     .map_err(|error| connection_error(error, at))?;
                 match count {
-                    Some(count) => match NonZeroUsize::new(count) {
-                        Some(count) => PropertyContent::MultipleReferences { count, targets },
-                        None => PropertyContent::Value {
-                            value: PropertyValue::Multiple(Vec::new()),
-                            connections: targets,
-                        },
-                    },
+                    Some(count) => PropertyContent::MultipleReferences { count, targets },
                     None => PropertyContent::Reference(targets),
                 }
             }
@@ -791,18 +784,12 @@ mod tests {
             assert!(outcome.rejected.is_empty(), "{:?}", outcome.rejected);
             let records = outcome.records;
             assert_eq!(records.len(), 1);
+            assert!(records[0].properties["targets"].value().is_none());
             assert_eq!(
                 records[0].properties["targets"].content,
-                if count == 0 {
-                    PropertyContent::Value {
-                        value: PropertyValue::Multiple(Vec::new()),
-                        connections: vec!["target".into()],
-                    }
-                } else {
-                    PropertyContent::MultipleReferences {
-                        count: NonZeroUsize::new(2).expect("positive reference count"),
-                        targets: vec!["target".into()],
-                    }
+                PropertyContent::MultipleReferences {
+                    count: count as usize,
+                    targets: vec!["target".into()],
                 }
             );
         }
