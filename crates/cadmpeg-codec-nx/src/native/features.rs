@@ -2616,7 +2616,7 @@ pub struct FeaturePointConstructionHeader {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
     /// Serialized header mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::PointHeaderMode,
     /// Absolute file offset of the reference width marker.
     pub source_offset: u64,
 }
@@ -3608,7 +3608,7 @@ fn visit_feature_history_operation_records(
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
-                == link.section_offset
+                == link.location.section_offset()
         }) else {
             continue;
         };
@@ -3644,7 +3644,7 @@ fn visit_feature_history_unlabeled_operation_records(
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
-                == link.section_offset
+                == link.location.section_offset()
         }) else {
             continue;
         };
@@ -3671,12 +3671,18 @@ pub(crate) fn canonical_feature_history_links(
         .collect::<Vec<_>>();
     links.sort_by(|first, second| {
         first
-            .section_offset
-            .cmp(&second.section_offset)
-            .then_with(|| first.source_offset.cmp(&second.source_offset))
+            .location
+            .section_offset()
+            .cmp(&second.location.section_offset())
+            .then_with(|| {
+                first
+                    .location
+                    .source_offset()
+                    .cmp(&second.location.source_offset())
+            })
             .then_with(|| first.id.cmp(&second.id))
     });
-    links.dedup_by_key(|link| link.section_offset);
+    links.dedup_by_key(|link| link.location.section_offset());
     links
 }
 
@@ -3764,7 +3770,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
-                == link.section_offset
+                == link.location.section_offset()
         }) else {
             continue;
         };
@@ -7169,19 +7175,19 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
             members.extend(
                 crate::om::operation_body_members(record.body_view())
                     .into_iter()
-                    .map(|member| FeatureOperationBodyMember {
+                    .flat_map(|group| group.members.into_iter().enumerate().map(move |(ordinal, member)| FeatureOperationBodyMember {
                         id: format!(
                             "nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{}",
-                            member.body_reference_ordinal, member.ordinal
+                            group.body_reference_ordinal, ordinal as u32
                         ),
                         operation_label: format!(
                             "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                         ),
-                        body_reference_ordinal: member.body_reference_ordinal,
-                        body_object_index: member.body_object_index,
-                        ordinal: member.ordinal,
-                        member: LocatedCompactIndex { atom: member.member.atom, offset: entry_offset + member.member.offset as u64 },
-                    }),
+                        body_reference_ordinal: group.body_reference_ordinal,
+                        body_object_index: group.body_object_index,
+                        ordinal: ordinal as u32,
+                        member: LocatedCompactIndex { atom: member.atom, offset: entry_offset + member.offset as u64 },
+                    })),
             );
         },
     );
@@ -7898,21 +7904,20 @@ pub fn feature_block_dimensions(
                         expression,
                         crate::native::expression_length_in_millimeters(
                             &expression.unit,
-                            expression.value.filter(|value| value.is_finite())?,
+                            expression.value?.get(),
                         )?,
                     ))
                 })
                 .collect::<Option<Vec<_>>>()?
                 .try_into()
                 .ok()?;
-            if resolved[0].0.source_table.is_empty()
-                || resolved
-                    .iter()
-                    .zip(run)
-                    .any(|((expression, _), declaration)| {
-                        expression.source_entry != declaration.source_entry
-                            || expression.source_table != resolved[0].0.source_table
-                    })
+            if resolved
+                .iter()
+                .zip(run)
+                .any(|((expression, _), declaration)| {
+                    expression.source_entry != declaration.source_entry
+                        || expression.source_table != resolved[0].0.source_table
+                })
             {
                 return None;
             }

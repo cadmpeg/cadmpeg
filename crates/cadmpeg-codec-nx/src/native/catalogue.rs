@@ -13,7 +13,7 @@ use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::om::object_uuid::ObjectUuidValue;
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use std::collections::BTreeMap;
@@ -294,7 +294,7 @@ impl ContainerNoted for DataBlockAbrReferenceLane {
 }
 impl ContainerNoted for SegmentOmLink {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.location.source_offset())
     }
 }
 impl ContainerNoted for OmRecordArea {
@@ -2072,10 +2072,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
-            note: |m, r, tag, a| note_container(&m.om.operation_state_groups, r, tag, a),
+            note: |m, r, tag, a| {
+                for table in &m.om.operation_state_groups {
+                    note_container(table.groups(), r, tag, a);
+                }
+            },
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_groups, r, ns),
-        len: |m| m.om.operation_state_groups.len(),
+        emit: |m, r, ns| {
+            let groups =
+                m.om.operation_state_groups
+                    .iter()
+                    .flat_map(OmRollForwardStateTable::groups)
+                    .collect::<Vec<_>>();
+            emit_arena(&groups, r, ns)
+        },
+        len: |m| {
+            m.om.operation_state_groups
+                .iter()
+                .map(|table| table.groups().len())
+                .sum()
+        },
         counts_toward_emptiness: true,
     },
     CatalogueRow {

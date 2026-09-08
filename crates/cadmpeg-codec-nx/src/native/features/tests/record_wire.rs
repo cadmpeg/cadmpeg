@@ -974,3 +974,20 @@ fn draft_reference_requires_the_payload_token_grammar() {
     invalid["raw_object_index"] = serde_json::json!([0]);
     assert!(serde_json::from_value::<FeatureDraftConstructionReference>(invalid).is_err());
 }
+
+#[test]
+fn point_header_mode_admits_only_two_wire_bytes() {
+    for mode in 0..=u8::MAX {
+        let wire = serde_json::json!({
+            "id": "header", "operation_label": "operation", "object_index": 1,
+            "raw_object_index": [240, 1], "mode": mode, "source_offset": 10
+        });
+        let header =
+            serde_json::from_value::<super::super::FeaturePointConstructionHeader>(wire.clone());
+        if matches!(mode, 2 | 3) {
+            assert_eq!(serde_json::to_value(header.unwrap()).unwrap(), wire);
+        } else {
+            assert!(header.unwrap_err().to_string().contains("mode"));
+        }
+    }
+}

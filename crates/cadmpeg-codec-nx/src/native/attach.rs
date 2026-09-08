@@ -2895,7 +2895,7 @@ fn attach_feature_operations(
             );
             source_properties.insert(
                 "point_construction_mode".to_string(),
-                format!("{:02x}", header.mode),
+                format!("{:02x}", u8::from(header.mode)),
             );
         }
         if let Some(lane) = point_construction_scalar_lanes_by_operation.get(label.id.as_str()) {
@@ -8705,14 +8705,7 @@ pub(crate) fn attach_expression_parameters(
         .collect::<BTreeMap<_, _>>();
     let mut tables = BTreeMap::<String, Vec<&crate::native::om::Expression>>::new();
     for expression in expressions {
-        let table = if expression.source_table.is_empty() {
-            let Some((section, _)) = expression.id.split_once(":expression#") else {
-                continue;
-            };
-            section
-        } else {
-            expression.source_table.as_str()
-        };
+        let table = expression.source_table.as_str();
         tables
             .entry(table.to_string())
             .or_default()
@@ -8845,11 +8838,11 @@ pub(crate) fn attach_expression_parameters(
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter
                 | crate::native::om::ExpressionUnit::Inch => {
-                    crate::native::expression_length_in_millimeters(&expression.unit, value)
+                    crate::native::expression_length_in_millimeters(&expression.unit, value.get())
                         .map(|value| ParameterValue::Length(Length(value)))
                 }
                 crate::native::om::ExpressionUnit::Degree => {
-                    Some(ParameterValue::Angle(Angle(value.to_radians())))
+                    Some(ParameterValue::Angle(Angle(value.get().to_radians())))
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });
