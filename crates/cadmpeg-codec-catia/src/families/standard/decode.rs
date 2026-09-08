@@ -241,7 +241,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut surface_bindings = HashMap::<SurfaceId, usize>::new();
+    let mut surface_bindings = HashMap::<SurfaceId, Option<usize>>::new();
     for face in &ir.model.faces {
         if !unknown_surfaces.contains(&face.surface) {
             continue;
@@ -299,13 +299,16 @@ fn bind_consolidated_revolution_faces_and_seams(
         surface_bindings
             .entry(face.surface.clone())
             .and_modify(|stored| {
-                if *stored != binding {
-                    *stored = usize::MAX;
+                if *stored != Some(binding) {
+                    *stored = None;
                 }
             })
-            .or_insert(binding);
+            .or_insert(Some(binding));
     }
-    surface_bindings.retain(|_, binding| *binding != usize::MAX);
+    let surface_bindings = surface_bindings
+        .into_iter()
+        .filter_map(|(surface, binding)| binding.map(|index| (surface, index)))
+        .collect::<HashMap<_, _>>();
     for (surface_id, binding) in &surface_bindings {
         if let Some(surface) = ir
             .model
