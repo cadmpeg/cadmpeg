@@ -399,13 +399,13 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         crate::records::feature::DesignFeatureKind::JointOrigin,
         20,
     );
-    origin.with_joint_origin_transform(identity_matrix().try_into().unwrap());
+    origin.with_joint_origin_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     let mut internal_origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#30"),
         crate::records::feature::DesignFeatureKind::JointOrigin,
         30,
     );
-    internal_origin.with_joint_origin_transform(identity_matrix().try_into().unwrap());
+    internal_origin.with_joint_origin_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     let scopes = vec![assembly, origin.clone(), internal_origin.clone()];
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
@@ -540,7 +540,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
         crate::records::feature::DesignFeatureKind::JointOrigin,
         20,
     );
-    origin.with_joint_origin_transform(identity_matrix().try_into().unwrap());
+    origin.with_joint_origin_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     let scopes = vec![envelope(10), envelope(11), origin];
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
