@@ -86,7 +86,7 @@ jobs:
         # docs/dialects.toml. Ids are pinned from the commit that adds them.
         run: |
           set -euo pipefail
-          python3 scripts/check-dialects.py --self-test
+          python3 -m unittest discover -q -s scripts -p test_check_dialects.py
           python3 scripts/check-dialects.py
 
       - name: Dialect capability registry
@@ -96,7 +96,7 @@ jobs:
         # here: a row with no fixture cannot claim a read score.
         run: |
           set -euo pipefail
-          python3 scripts/check-dialect-support.py --self-test
+          python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
           python3 scripts/check-dialect-support.py
 
       - name: Rendered capability tables
@@ -106,7 +106,7 @@ jobs:
         # a registry edit without a re-render fails here.
         run: |
           set -euo pipefail
-          python3 scripts/render-format-support.py --self-test
+          python3 -m unittest discover -q -s scripts -p test_render_format_support.py
           python3 scripts/render-format-support.py --check
 
       - name: Format check

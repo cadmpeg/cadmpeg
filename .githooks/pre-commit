@@ -11,12 +11,20 @@ if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
   python3 scripts/check-doc-anchors.py
 fi
 
-# Dialect ids are pinned forever, so a bad edit to the registry must not reach
-# a commit. Run the checker's own synthesized-violation suite first: it is the
-# only thing that proves the rules still fire.
+# Run checker tests only when their implementation, dependencies, or tests change.
+if git diff --cached --name-only | grep -qE '^scripts/(check-dialects|test_check_dialects)\.py$'; then
+  python3 -m unittest discover -q -s scripts -p test_check_dialects.py
+fi
+if git diff --cached --name-only | grep -qE '^scripts/(check-dialect-support|dialect_support_data|test_check_dialect_support)\.py$'; then
+  python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
+fi
+if git diff --cached --name-only | grep -qE '^scripts/(render-format-support|dialect_support_data|test_render_format_support)\.py$'; then
+  python3 -m unittest discover -q -s scripts -p test_render_format_support.py
+fi
+
+# Dialect ids are pinned forever. Check registry inputs before committing.
 if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$|^crates/[^/]+/src/.*\.rs$'; then
   echo "pre-commit: scripts/check-dialects.py"
-  python3 scripts/check-dialects.py --self-test
   python3 scripts/check-dialects.py
 fi
 
@@ -25,7 +33,6 @@ fi
 if git diff --cached --name-only \
     | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^scripts/(check-dialect-support\.py|dialect_support_data\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
   echo "pre-commit: scripts/check-dialect-support.py"
-  python3 scripts/check-dialect-support.py --self-test
   python3 scripts/check-dialect-support.py
 fi
 
@@ -43,7 +50,6 @@ fi
 if git diff --cached --name-only \
     | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(dialect_support_data\.py|render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
   echo "pre-commit: scripts/render-format-support.py --check"
-  python3 scripts/render-format-support.py --self-test
   python3 scripts/render-format-support.py --check
 fi
 
