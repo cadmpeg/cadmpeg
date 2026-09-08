@@ -4,6 +4,7 @@
 //! NURBS surface carriers from a zero-entity record stream.
 
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -125,6 +126,52 @@ impl ZeroEntityFace {
     }
 }
 
+/// A nonempty descending run of logical loop members below its terminal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityLoopMembers {
+    terminal_id: u32,
+    gap: u32,
+    member_count: NonZeroUsize,
+}
+
+impl ZeroEntityLoopMembers {
+    /// Admit a nonempty run with a positive gap and no identifier underflow.
+    pub fn try_new(terminal_id: u32, gap: u32, member_count: NonZeroUsize) -> Option<Self> {
+        if gap == 0 {
+            return None;
+        }
+        terminal_id
+            .checked_sub(gap)?
+            .checked_sub(u32::try_from(member_count.get() - 1).ok()?)?;
+        Some(Self {
+            terminal_id,
+            gap,
+            member_count,
+        })
+    }
+
+    /// Terminal even-lane logical identifier.
+    pub const fn terminal_id(&self) -> u32 {
+        self.terminal_id
+    }
+
+    /// Difference between the terminal and first member identifiers.
+    pub const fn gap(&self) -> u32 {
+        self.gap
+    }
+
+    /// Nonterminal identifiers in source order.
+    pub fn member_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        std::iter::successors(Some(self.terminal_id - self.gap), |id| id.checked_sub(1))
+            .take(self.member_count.get())
+    }
+
+    /// Face-local support slots in member order.
+    pub fn support_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        (self.gap..=self.terminal_id).take(self.member_count.get())
+    }
+}
+
 /// One counted zero-entity `62xx` loop record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityLoop {
@@ -134,16 +181,12 @@ pub struct ZeroEntityLoop {
     pub record_ordinal: u32,
     /// Complete two-byte record tag.
     pub tag: [u8; 2],
-    /// Nonterminal even-lane logical member identifiers.
-    pub member_ids: Vec<u32>,
+    /// Nonterminal even-lane arithmetic run.
+    pub members: ZeroEntityLoopMembers,
     /// Odd-lane typed references in member order.
     pub typed_references: Vec<u32>,
     /// Face-local support record ordinals selected by the logical members.
     pub support_record_ordinals: Vec<u32>,
-    /// Terminal even-lane logical identifier.
-    pub terminal_id: u32,
-    /// Difference between the terminal and first member identifiers.
-    pub gap: u32,
     /// Stored loop-class byte.
     pub loop_class: u8,
     /// Absolute coedge senses in member order; `true` is forward.
@@ -764,7 +807,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
         .collect::<Vec<_>>();
     let loop_terminals = loops
         .iter()
-        .map(|loop_record| loop_record.terminal_id)
+        .map(|loop_record| loop_record.members.terminal_id())
         .collect::<Vec<_>>();
     let loop_roster_is_valid = flattened_terminals == loop_terminals && {
         let mut loop_index = 0;
@@ -828,12 +871,9 @@ fn bind_face_support_occurrences(
         .iter()
         .map(|loop_record| {
             loop_record
-                .member_ids
-                .iter()
-                .map(|member| {
-                    let slot = loop_record.terminal_id.checked_sub(*member)?;
-                    supports_by_slot.get(&slot).copied().flatten()
-                })
+                .members
+                .support_slots()
+                .map(|slot| supports_by_slot.get(&slot).copied().flatten())
                 .collect::<Option<Vec<_>>>()
         })
         .collect::<Option<Vec<_>>>();
@@ -996,14 +1036,9 @@ fn zero_entity_loops_from_records(
             }
             let terminal_id = *references.last()?;
             let gap = terminal_id.checked_sub(*member_ids.first()?)?;
-            if gap == 0
-                || !member_ids.iter().enumerate().all(|(index, member)| {
-                    u32::try_from(index)
-                        .ok()
-                        .and_then(|index| terminal_id.checked_sub(gap)?.checked_sub(index))
-                        == Some(*member)
-                })
-            {
+            let members =
+                ZeroEntityLoopMembers::try_new(terminal_id, gap, NonZeroUsize::new(edge_count)?)?;
+            if !members.member_ids().eq(member_ids) {
                 return None;
             }
             let trailer = record
@@ -1039,11 +1074,9 @@ fn zero_entity_loops_from_records(
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
-                member_ids,
+                members,
                 typed_references,
                 support_record_ordinals: Vec::new(),
-                terminal_id,
-                gap,
                 loop_class: data[trailer + 1],
                 forward_senses,
                 oriented_model_endpoints: Vec::new(),
@@ -2024,6 +2057,21 @@ fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loop_member_run_bounds_preserve_zero_members_and_terminal_slots() {
+        let count = NonZeroUsize::new(3).unwrap();
+        let members = ZeroEntityLoopMembers::try_new(4, 2, count).unwrap();
+        assert_eq!(members.member_ids().collect::<Vec<_>>(), [2, 1, 0]);
+        assert_eq!(members.support_slots().collect::<Vec<_>>(), [2, 3, 4]);
+        assert!(ZeroEntityLoopMembers::try_new(4, 0, count).is_none());
+        assert!(ZeroEntityLoopMembers::try_new(4, 3, count).is_none());
+        let singleton =
+            ZeroEntityLoopMembers::try_new(u32::MAX, u32::MAX, NonZeroUsize::MIN).unwrap();
+        assert_eq!(singleton.member_ids().collect::<Vec<_>>(), [0]);
+        assert_eq!(singleton.support_slots().collect::<Vec<_>>(), [u32::MAX]);
+    }
+
     use crate::test_support::{
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
@@ -2901,10 +2949,10 @@ mod tests {
         };
         assert_eq!(loop_record.record_ordinal, 4);
         assert_eq!(loop_record.tag, [0x62, 0x14]);
-        assert_eq!(loop_record.member_ids, [6]);
+        assert_eq!(loop_record.members.member_ids().collect::<Vec<_>>(), [6]);
         assert_eq!(loop_record.typed_references, [1]);
-        assert_eq!(loop_record.terminal_id, 7);
-        assert_eq!(loop_record.gap, 1);
+        assert_eq!(loop_record.members.terminal_id(), 7);
+        assert_eq!(loop_record.members.gap(), 1);
         assert_eq!(loop_record.loop_class, 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());

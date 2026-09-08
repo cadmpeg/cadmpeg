@@ -904,11 +904,15 @@ mod tests {
                     pos: face_ordinal as usize + 1,
                     record_ordinal: face_ordinal + 100,
                     tag: [0x62, 0x14],
-                    member_ids: vec![6, 5, 4],
+                    members: crate::families::zero_entity::records::ZeroEntityLoopMembers::try_new(
+                        7,
+                        1,
+                        std::num::NonZeroUsize::new(3).unwrap(),
+                    )
+                    .unwrap(),
                     typed_references: vec![1, 2, 3],
                     support_record_ordinals,
-                    terminal_id: 7,
-                    gap: 1,
+
                     loop_class: 0x41,
                     forward_senses: vec![true, true, true],
                     oriented_model_endpoints: order

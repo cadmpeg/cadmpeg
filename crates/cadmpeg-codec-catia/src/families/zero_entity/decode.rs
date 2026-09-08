@@ -937,8 +937,10 @@ pub(crate) fn try_decode_zero_entity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::families::zero_entity::records::ZeroEntityLoopMembers;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurve};
     use cadmpeg_ir::math::Vector3;
+    use std::num::NonZeroUsize;
 
     fn support(
         record_ordinal: u32,
@@ -1010,11 +1012,14 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            terminal_id: 8,
-                            gap: 1,
                             loop_class: 0x41,
                             forward_senses: vec![true, true],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
@@ -1090,11 +1095,14 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            terminal_id: 8,
-                            gap: 1,
                             loop_class: 0x41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
@@ -1103,11 +1111,14 @@ mod tests {
                             pos: 25,
                             record_ordinal: 6,
                             tag: [0x62, 0x14],
-                            member_ids: vec![9, 8],
+                            members: ZeroEntityLoopMembers::try_new(
+                                9,
+                                1,
+                                NonZeroUsize::new(2).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![4, 5],
                             support_record_ordinals: vec![5, 4],
-                            terminal_id: 9,
-                            gap: 1,
                             loop_class: 0x41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
@@ -1116,11 +1127,14 @@ mod tests {
                             pos: 30,
                             record_ordinal: 7,
                             tag: [0x62, 0x14],
-                            member_ids: vec![10],
+                            members: ZeroEntityLoopMembers::try_new(
+                                10,
+                                1,
+                                NonZeroUsize::new(1).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![3],
                             support_record_ordinals: vec![99],
-                            terminal_id: 10,
-                            gap: 1,
                             loop_class: 0x50,
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, corner]],
@@ -1247,11 +1261,14 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            terminal_id: 8,
-                            gap: 1,
                             loop_class: 0x41,
                             forward_senses: vec![true, true],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
@@ -1352,11 +1369,14 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 4],
-                            terminal_id: 8,
-                            gap: 1,
                             loop_class: 0x41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
@@ -1444,11 +1464,14 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(1).unwrap(),
+                            )
+                            .unwrap(),
                             typed_references: vec![1],
                             support_record_ordinals: vec![4],
-                            terminal_id: 8,
-                            gap: 1,
                             loop_class: 0x41,
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, second]],
