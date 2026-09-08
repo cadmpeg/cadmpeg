@@ -4222,7 +4222,7 @@ pub(crate) fn bind_form_cages(
                     let mut matches = cages.iter().filter(|cage| {
                         cage.source_object
                             .as_ref()
-                            .and_then(|source| source.object_id.rsplit('/').next())
+                            .and_then(|source| source.object_id.as_str().rsplit('/').next())
                             == Some(entry_name)
                     });
                     let Some(cage) = matches.next() else {
@@ -4275,7 +4275,7 @@ pub(crate) fn bind_form_cages(
                 let mut matches = cages.iter().filter(|cage| {
                     cage.source_object
                         .as_ref()
-                        .and_then(|source| source.object_id.rsplit('/').next())
+                        .and_then(|source| source.object_id.as_str().rsplit('/').next())
                         == Some(entry_name.as_str())
                 });
                 let Some(cage) = matches.next() else {
@@ -4347,7 +4347,7 @@ pub(crate) fn bind_form_cages(
                 let mut matches = cages.iter().filter(|cage| {
                     cage.source_object
                         .as_ref()
-                        .and_then(|source| source.object_id.rsplit('/').next())
+                        .and_then(|source| source.object_id.as_str().rsplit('/').next())
                         == Some(entry_name)
                 });
                 let cage = matches.next()?;

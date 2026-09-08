@@ -27,7 +27,7 @@ fn add_bounded_curve(
     end: Point3,
     parameter_range: [f64; 2],
     tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
-) -> EdgeId {
+) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let stem = format!("D{}", entry.sequence);
     let start_point =
         PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
@@ -66,7 +66,7 @@ fn add_bounded_curve(
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry,
-        source_object: Some(source_object(entry)),
+        source_object: Some(source_object(entry)?),
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
@@ -76,7 +76,7 @@ fn add_bounded_curve(
         param_range: Some(parameter_range),
         tolerance,
     });
-    edge
+    Ok(edge)
 }
 
 fn endpoint_agrees_with_coefficient_carrier(
@@ -418,7 +418,14 @@ pub(super) fn project(
         } else {
             None
         };
-        let edge = add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance);
+        let edge =
+            match add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance) {
+                Ok(edge) => edge,
+                Err(error) => {
+                    losses.push(entity_loss(entry, error.to_string()));
+                    continue;
+                }
+            };
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

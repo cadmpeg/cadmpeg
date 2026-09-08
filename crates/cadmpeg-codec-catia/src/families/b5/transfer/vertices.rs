@@ -72,7 +72,7 @@ pub(super) fn emit_vertices(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
     let vertex_tolerances = &plan.vertex_tolerances;
     for (index, coordinates) in graph.vertex_points.iter().enumerate() {
@@ -124,7 +124,7 @@ pub(super) fn emit_vertices(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
-            source_object: Some(cgm_source("vertex", vertex.object_id)),
+            source_object: Some(cgm_source("vertex", vertex.object_id)?),
         });
         let vertex_id =
             VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
@@ -142,4 +142,5 @@ pub(super) fn emit_vertices(
             tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
+    Ok(())
 }

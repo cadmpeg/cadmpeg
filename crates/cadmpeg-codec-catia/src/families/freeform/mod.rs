@@ -50,7 +50,7 @@ pub(crate) fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
-) -> Vec<ConsolidatedRevolutionBinding> {
+) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
     let mut bindings = Vec::new();
     for carrier in resolved {
         let index = carrier.revolution_index;
@@ -105,7 +105,7 @@ pub(crate) fn append_consolidated_revolutions(
                 ref_direction: direction_y,
                 radius: profile.radius,
             },
-            source_object: Some(cgm_source("profile-circle", profile.record_id)),
+            source_object: Some(cgm_source("profile-circle", profile.record_id)?),
         });
         let surface = SurfaceId::mint(format!(
             "catia:consolidated:surface-revolution-surface#{index}"
@@ -175,7 +175,7 @@ pub(crate) fn append_consolidated_revolutions(
             source_object: Some(cgm_source(
                 "revolution",
                 u32::from(revolution.profile_allocation_id),
-            )),
+            )?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
@@ -206,7 +206,7 @@ pub(crate) fn append_consolidated_revolutions(
             });
         }
     }
-    bindings
+    Ok(bindings)
 }
 
 fn typed_face_counts(
@@ -434,9 +434,11 @@ pub(crate) fn try_decode_freeform_surfaces(
         );
     let typed_vertex_incidence_roster_member_count =
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
-    let mut fallback_surfaces = b5_graph
-        .is_none()
-        .then(|| freeform_surface_carriers(&scan.data, &consolidated_records));
+    let mut fallback_surfaces = if b5_graph.is_none() {
+        Some(freeform_surface_carriers(&scan.data, &consolidated_records).ok()?)
+    } else {
+        None
+    };
     let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
         &scan.data,
         &consolidated_records,
@@ -495,9 +497,10 @@ pub(crate) fn try_decode_freeform_surfaces(
         annotations = topology_annotations;
     }
     if !topology_transferred {
-        let surfaces = fallback_surfaces
-            .take()
-            .unwrap_or_else(|| freeform_surface_carriers(&scan.data, &consolidated_records));
+        let surfaces = match fallback_surfaces.take() {
+            Some(surfaces) => surfaces,
+            None => freeform_surface_carriers(&scan.data, &consolidated_records).ok()?,
+        };
         for (index, surface) in surfaces.iter().enumerate() {
             let id = SurfaceId::mint(format!("catia:a8:surf#{index}")).expect("identity grammar");
             annotate(
@@ -519,14 +522,16 @@ pub(crate) fn try_decode_freeform_surfaces(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    );
-    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
+    )
+    .ok()?;
+    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data).ok()?;
     let mut standalone_wires = append_consolidated_line_profiles(
         &mut ir,
         &mut annotations,
         &scan.data,
         &consolidated_records,
-    );
+    )
+    .ok()?;
     for curve in b2_nurbs_curves {
         let id = CurveId::mint(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()))
             .expect("identity grammar");
@@ -545,10 +550,9 @@ pub(crate) fn try_decode_freeform_surfaces(
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Nurbs(curve.geometry),
-            source_object: Some(cgm_source_key(
-                "b2-nurbs-curve-frame",
-                format!("{:010}", curve.pos),
-            )),
+            source_object: Some(
+                cgm_source_key("b2-nurbs-curve-frame", format!("{:010}", curve.pos)).ok()?,
+            ),
         });
         standalone_wires.push((id, parameter_range, curve.pos));
     }
@@ -570,10 +574,9 @@ pub(crate) fn try_decode_freeform_surfaces(
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Nurbs(curve.geometry),
-            source_object: Some(cgm_source_key(
-                "a5-nurbs-curve-frame",
-                format!("{:010}", curve.pos),
-            )),
+            source_object: Some(
+                cgm_source_key("a5-nurbs-curve-frame", format!("{:010}", curve.pos)).ok()?,
+            ),
         });
         standalone_wires.push((id, parameter_range, curve.pos));
     }
@@ -603,10 +606,9 @@ pub(crate) fn try_decode_freeform_surfaces(
                 ref_direction: circle.ref_direction,
                 radius: circle.radius,
             },
-            source_object: Some(cgm_source_key(
-                "b2-spatial-circle-frame",
-                format!("{:010}", circle.pos),
-            )),
+            source_object: Some(
+                cgm_source_key("b2-spatial-circle-frame", format!("{:010}", circle.pos)).ok()?,
+            ),
         });
         standalone_wires.push((id, parameter_range, circle.pos));
     }
@@ -971,88 +973,115 @@ fn attach_standalone_wires(
 fn freeform_surface_carriers(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<FreeformSurfaceCarrier> {
+) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data)
         .into_iter()
         .chain(crate::families::a5a8::records::a5_surfaces_from_records(
             data, records,
         ))
         .map(|surface| {
-            let (source_object, source_tag) = freeform_surface_source(&surface);
-            FreeformSurfaceCarrier {
+            let (source_object, source_tag) = freeform_surface_source(&surface)?;
+            Ok::<_, cadmpeg_core::CodecError>(FreeformSurfaceCarrier {
                 pos: surface.pos,
                 geometry: SurfaceGeometry::Nurbs(surface.geometry),
                 source_object,
                 source_tag: format!("freeform:{source_tag}"),
-            }
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     surfaces.extend(
         crate::families::b2::records::b2_cylinders_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: surface.surface_geometry(),
-                source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
-            }),
+            .map(|surface| {
+                Ok(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: surface.surface_geometry(),
+                    source_object: cgm_source_key(
+                        "b2-03-28-frame",
+                        format!("{:010}", surface.pos),
+                    )?,
+                    source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
+                })
+            })
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
     );
     surfaces.extend(
         crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: surface.cylinder.surface_geometry(),
-                source_object: cgm_source("surface", surface.object_id),
-                source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
-            }),
+            .map(|surface| {
+                Ok(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: surface.cylinder.surface_geometry(),
+                    source_object: cgm_source("surface", surface.object_id)?,
+                    source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
+                })
+            })
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
     );
     surfaces.extend(
         crate::families::b2::records::b2_cones_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: crate::families::b2::records::b2_cone_geometry(&surface),
-                source_object: cgm_source_key("b2-03-29-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
-            }),
+            .map(|surface| {
+                Ok(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: crate::families::b2::records::b2_cone_geometry(&surface),
+                    source_object: cgm_source_key(
+                        "b2-03-29-frame",
+                        format!("{:010}", surface.pos),
+                    )?,
+                    source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
+                })
+            })
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
     );
     surfaces.extend(
         crate::families::b2::records::b2_spheres_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: crate::families::b2::records::b2_sphere_geometry(&surface),
-                source_object: cgm_source_key("b2-03-2a-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
-            }),
+            .map(|surface| {
+                Ok(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: crate::families::b2::records::b2_sphere_geometry(&surface),
+                    source_object: cgm_source_key(
+                        "b2-03-2a-frame",
+                        format!("{:010}", surface.pos),
+                    )?,
+                    source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
+                })
+            })
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
     );
     surfaces.extend(
         crate::families::b2::records::b2_tori_from_records(data, records)
             .into_iter()
-            .map(|surface| FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: crate::families::b2::records::b2_torus_geometry(&surface),
-                source_object: cgm_source_key("b2-03-2b-frame", format!("{:010}", surface.pos)),
-                source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
-            }),
+            .map(|surface| {
+                Ok(FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: crate::families::b2::records::b2_torus_geometry(&surface),
+                    source_object: cgm_source_key(
+                        "b2-03-2b-frame",
+                        format!("{:010}", surface.pos),
+                    )?,
+                    source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
+                })
+            })
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
     );
-    surfaces
+    Ok(surfaces)
 }
 
 fn freeform_surface_source(
     surface: &crate::families::a5a8::records::FreeformSurface,
-) -> (cadmpeg_ir::SourceObjectAssociation, String) {
-    match surface.identity {
+) -> Result<(cadmpeg_ir::SourceObjectAssociation, String), cadmpeg_core::CodecError> {
+    Ok(match surface.identity {
         Some(object_id) => (
-            cgm_source("surface", object_id),
+            cgm_source("surface", object_id)?,
             format!("object_id:{object_id:08x}"),
         ),
         None => (
-            cgm_source_key("a5-surface-frame", format!("{:010}", surface.pos)),
+            cgm_source_key("a5-surface-frame", format!("{:010}", surface.pos))?,
             format!("frame_offset:{:010}", surface.pos),
         ),
-    }
+    })
 }
 
 /// Index standard carrier surfaces by their serialized carrier tag.
@@ -1072,6 +1101,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         }
         let Some(tag) = source
             .object_id
+            .as_str()
             .strip_prefix("cgm-carrier:")
             .and_then(|value| u32::from_str_radix(value, 16).ok())
         else {
@@ -1106,7 +1136,7 @@ fn append_consolidated_line_profiles(
     annotations: &mut AnnotationBuilder,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<(CurveId, [f64; 2], usize)> {
+) -> Result<Vec<(CurveId, [f64; 2], usize)>, cadmpeg_core::CodecError> {
     let mut standalone_wires = Vec::new();
     for (index, line) in crate::families::b2::records::b2_line_profiles_from_records(data, records)
         .into_iter()
@@ -1131,11 +1161,11 @@ fn append_consolidated_line_profiles(
             source_object: Some(cgm_source_key(
                 "b2-03-0e-frame",
                 format!("{:010}", line.pos),
-            )),
+            )?),
         });
         standalone_wires.push((id, line.range, line.pos));
     }
-    standalone_wires
+    Ok(standalone_wires)
 }
 
 /// Append standalone freeform carriers and return the number of consolidated
@@ -1146,14 +1176,14 @@ pub(crate) fn append_freeform_surface_pools(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
-) -> ConsolidatedCurveBindingCounts {
+) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
         data, records,
     ));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
-        let (source_object, source_tag) = freeform_surface_source(surface);
+        let (source_object, source_tag) = freeform_surface_source(surface)?;
         let index = ir.model.surfaces.len();
         let id = SurfaceId::mint(format!("catia:freeform:surf#{index}")).expect("identity grammar");
         carrier_ids.push(id.clone());
@@ -1233,7 +1263,7 @@ pub(crate) fn append_freeform_surface_pools(
         );
     }
 
-    let _ = append_consolidated_line_profiles(ir, annotations, data, records);
+    let _ = append_consolidated_line_profiles(ir, annotations, data, records)?;
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
@@ -1390,7 +1420,7 @@ pub(crate) fn append_freeform_surface_pools(
         ));
     }
 
-    append_a8_rolling_ball_pools(ir, annotations, data);
+    append_a8_rolling_ball_pools(ir, annotations, data)?;
     append_resolved_consolidated_surface_curves(
         ir,
         annotations,
@@ -1513,7 +1543,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
-) -> ConsolidatedCurveBindingCounts {
+) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
@@ -1812,114 +1842,114 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 continue;
             }
             let (key, carrier, source_object, chart, annotation_kind, id_kind) = match binding {
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos }) => {
-                    let Some(cylinder) = standalone.get(pos) else {
-                        continue;
-                    };
-                    let carrier = cylinder.surface_geometry();
-                    let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
-                        continue;
-                    };
-                    if radius <= 0.0 || !radius.is_finite() {
-                        continue;
-                    }
-                    (
-                        (*pos, None),
-                        carrier,
-                        None,
-                        ConsolidatedCarrierChart::Cylinder { radius },
-                        "consolidated_b2_03_28_cylinder",
-                        "cylinder",
-                    )
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos }) => {
+                let Some(cylinder) = standalone.get(pos) else {
+                    continue;
+                };
+                let carrier = cylinder.surface_geometry();
+                let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                    continue;
+                };
+                if radius <= 0.0 || !radius.is_finite() {
+                    continue;
                 }
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
-                    let Some(value) = embedded.get(pos) else {
-                        continue;
-                    };
-                    let carrier = value.cylinder.surface_geometry();
-                    let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
-                        continue;
-                    };
-                    if radius <= 0.0 || !radius.is_finite() {
-                        continue;
-                    }
-                    (
-                        (*pos, None),
-                        carrier,
-                        Some(cgm_source("surface", value.object_id)),
-                        ConsolidatedCarrierChart::Cylinder { radius },
-                        "consolidated_b2_03_60_cylinder",
-                        "cylinder",
-                    )
-                }
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
-                    let Some(cone) = cones.get(pos) else {
-                        continue;
-                    };
-                    if cone.angular_scale <= 0.0
-                        || !cone.angular_scale.is_finite()
-                        || !cone.half_angle.is_finite()
-                    {
-                        continue;
-                    }
-                    (
-                        (*pos, None),
-                        crate::families::b2::records::b2_cone_geometry(cone),
-                        None,
-                        ConsolidatedCarrierChart::Cone { cone },
-                        "consolidated_b2_03_29_cone",
-                        "cone",
-                    )
-                }
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos }) => {
-                    let Some(sphere) = spheres.get(pos) else {
-                        continue;
-                    };
-                    (
-                        (*pos, None),
-                        crate::families::b2::records::b2_sphere_geometry(sphere),
-                        None,
-                        ConsolidatedCarrierChart::Identity,
-                        "consolidated_b2_03_2a_sphere",
-                        "sphere",
-                    )
-                }
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
-                    let Some(torus) = tori.get(pos) else {
-                        continue;
-                    };
-                    (
-                        (*pos, None),
-                        crate::families::b2::records::b2_torus_geometry(torus),
-                        None,
-                        ConsolidatedCarrierChart::Torus { torus },
-                        "consolidated_b2_03_2b_torus",
-                        "torus",
-                    )
-                }
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
-                    let Some(plane) = planes.get(pos) else {
-                        continue;
-                    };
-                    let Some(carrier) = crate::families::b2::records::b2_plane_geometry(plane)
-                    else {
-                        continue;
-                    };
-                    (
-                        (*pos, None),
-                        carrier,
-                        None,
-                        ConsolidatedCarrierChart::Identity,
-                        "consolidated_b2_03_27_plane",
-                        "plane",
-                    )
-                }
-                Some(
-                    crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
-                    | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
+                (
+                    (*pos, None),
+                    carrier,
+                    None,
+                    ConsolidatedCarrierChart::Cylinder { radius },
+                    "consolidated_b2_03_28_cylinder",
+                    "cylinder",
                 )
-                | None => continue,
-            };
+            }
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
+                let Some(value) = embedded.get(pos) else {
+                    continue;
+                };
+                let carrier = value.cylinder.surface_geometry();
+                let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                    continue;
+                };
+                if radius <= 0.0 || !radius.is_finite() {
+                    continue;
+                }
+                (
+                    (*pos, None),
+                    carrier,
+                    Some(cgm_source("surface", value.object_id)?),
+                    ConsolidatedCarrierChart::Cylinder { radius },
+                    "consolidated_b2_03_60_cylinder",
+                    "cylinder",
+                )
+            }
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
+                let Some(cone) = cones.get(pos) else {
+                    continue;
+                };
+                if cone.angular_scale <= 0.0
+                    || !cone.angular_scale.is_finite()
+                    || !cone.half_angle.is_finite()
+                {
+                    continue;
+                }
+                (
+                    (*pos, None),
+                    crate::families::b2::records::b2_cone_geometry(cone),
+                    None,
+                    ConsolidatedCarrierChart::Cone { cone },
+                    "consolidated_b2_03_29_cone",
+                    "cone",
+                )
+            }
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos }) => {
+                let Some(sphere) = spheres.get(pos) else {
+                    continue;
+                };
+                (
+                    (*pos, None),
+                    crate::families::b2::records::b2_sphere_geometry(sphere),
+                    None,
+                    ConsolidatedCarrierChart::Identity,
+                    "consolidated_b2_03_2a_sphere",
+                    "sphere",
+                )
+            }
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
+                let Some(torus) = tori.get(pos) else {
+                    continue;
+                };
+                (
+                    (*pos, None),
+                    crate::families::b2::records::b2_torus_geometry(torus),
+                    None,
+                    ConsolidatedCarrierChart::Torus { torus },
+                    "consolidated_b2_03_2b_torus",
+                    "torus",
+                )
+            }
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
+                let Some(plane) = planes.get(pos) else {
+                    continue;
+                };
+                let Some(carrier) = crate::families::b2::records::b2_plane_geometry(plane)
+                else {
+                    continue;
+                };
+                (
+                    (*pos, None),
+                    carrier,
+                    None,
+                    ConsolidatedCarrierChart::Identity,
+                    "consolidated_b2_03_27_plane",
+                    "plane",
+                )
+            }
+            Some(
+                crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
+                | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
+            )
+            | None => continue,
+        };
             let surface = if let Some(id) = surface_ids.get(&key) {
                 id.clone()
             } else {
@@ -2394,7 +2424,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         }
     }
     binding_counts.partner_supports = partner_support_blocks.len();
-    binding_counts
+    Ok(binding_counts)
 }
 
 /// Tolerance in millimetres for consolidated definition-site agreement.
@@ -2720,7 +2750,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
@@ -2750,7 +2780,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
                 construction: procedural_id.clone(),
                 cache: None,
             },
-            source_object: Some(cgm_source("surface", jet.object_id)),
+            source_object: Some(cgm_source("surface", jet.object_id)?),
         });
 
         annotate(
@@ -2769,6 +2799,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, definition, None));
     }
+    Ok(())
 }
 
 pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
@@ -2888,7 +2919,8 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
-        );
+        )
+        .expect("valid source object identity");
         assert_eq!(wires.len(), 1);
         assert!(attach_standalone_wires(
             &mut ir,
@@ -2921,7 +2953,8 @@ mod tests {
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &HashMap::new(),
-        );
+        )
+        .expect("valid source object identity");
 
         assert!(matches!(
             ir.model.curves.as_slice(),
@@ -2944,7 +2977,8 @@ mod tests {
         bytes.extend_from_slice(&crate::test_support::b2_embedded_cylinder_stream());
 
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers = freeform_surface_carriers(&bytes, &records);
+        let carriers =
+            freeform_surface_carriers(&bytes, &records).expect("valid source object identity");
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -3242,7 +3276,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        );
+        )
+        .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
         assert_eq!(ir.model.pcurves.len(), 0);
@@ -3291,7 +3326,10 @@ mod tests {
                 normal: Vector3::new(0.0, 0.0, 1.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
-            source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
+            source_object: Some(
+                crate::assemble::cgm_source("carrier", 0x1234)
+                    .expect("valid source object identity"),
+            ),
         });
 
         let counts = append_resolved_consolidated_surface_curves(
@@ -3302,7 +3340,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        );
+        )
+        .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
         let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -3343,7 +3382,10 @@ mod tests {
                 normal: Vector3::new(0.0, 0.0, 1.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
-            source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
+            source_object: Some(
+                crate::assemble::cgm_source("carrier", 0x1234)
+                    .expect("valid source object identity"),
+            ),
         });
 
         let counts = append_resolved_consolidated_surface_curves(
@@ -3354,7 +3396,8 @@ mod tests {
             &[],
             &[],
             &HashMap::from([(0x5678, Some(0x1234))]),
-        );
+        )
+        .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
         let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -3396,7 +3439,10 @@ mod tests {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("catia:test:surface#{id}")).expect("identity grammar"),
                 geometry,
-                source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
+                source_object: Some(
+                    crate::assemble::cgm_source("carrier", 0x1234)
+                        .expect("valid source object identity"),
+                ),
             });
         }
 
@@ -3498,7 +3544,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        );
+        )
+        .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
         let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -3689,7 +3736,8 @@ mod tests {
     fn freeform_fallback_retains_exact_consolidated_spheres() {
         let bytes = crate::test_support::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers = freeform_surface_carriers(&bytes, &records);
+        let carriers =
+            freeform_surface_carriers(&bytes, &records).expect("valid source object identity");
         assert!(matches!(
             carriers.as_slice(),
             [carrier]
@@ -3711,7 +3759,8 @@ mod tests {
     fn freeform_fallback_retains_exact_consolidated_tori() {
         let bytes = crate::test_support::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers = freeform_surface_carriers(&bytes, &records);
+        let carriers =
+            freeform_surface_carriers(&bytes, &records).expect("valid source object identity");
         assert!(matches!(
             carriers.as_slice(),
             [carrier]
@@ -3734,7 +3783,8 @@ mod tests {
     fn freeform_fallback_retains_range_origin_cylinder_carriers() {
         let bytes = crate::test_support::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers = freeform_surface_carriers(&bytes, &records);
+        let carriers =
+            freeform_surface_carriers(&bytes, &records).expect("valid source object identity");
         assert!(matches!(
             carriers.as_slice(),
             [carrier]

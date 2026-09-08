@@ -433,7 +433,8 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
     assert!(ir.model.surfaces.is_empty());

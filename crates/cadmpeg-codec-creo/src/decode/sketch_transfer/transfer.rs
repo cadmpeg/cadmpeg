@@ -61,7 +61,7 @@ pub(in super::super) fn transfer_sketches(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> SketchSegmentTransferCoverage {
+) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
     let mut available_parameter_ids = ir
         .model
@@ -442,7 +442,7 @@ pub(in super::super) fn transfer_sketches(
             &materialized_saved_section_external_ids,
             profiles,
             &profile_entities,
-        );
+        )?;
         for (external_id, offset) in solver_only_section_entities(definition) {
             let id = sketch_entity_id(&sketch_id, external_id);
             if entities.iter().any(|entity| entity.id() == &id) {
@@ -866,5 +866,5 @@ pub(in super::super) fn transfer_sketches(
             });
         }
     }
-    coverage
+    Ok(coverage)
 }

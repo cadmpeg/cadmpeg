@@ -1265,7 +1265,7 @@ pub(super) fn project(
                 normal,
                 u_axis,
             },
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         decoded.insert(entry.sequence);
     }
@@ -1370,7 +1370,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -1506,7 +1506,7 @@ pub(super) fn project(
                         basis: Box::new(directrix_geometry),
                         transform: transform.body_transform(),
                     },
-                    source_object: Some(source_object(entry)),
+                    source_object: Some(source_object(entry)?),
                 });
                 placed_id
             };
@@ -1523,7 +1523,7 @@ pub(super) fn project(
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -1620,7 +1620,7 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: placed_id.clone(),
                 geometry: CurveGeometry::Nurbs(placed_directrix.clone()),
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             placed_id
         };
@@ -1648,7 +1648,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -1794,7 +1794,7 @@ pub(super) fn project(
                         basis: Box::new(directrix_geometry),
                         transform: transform.body_transform(),
                     },
-                    source_object: Some(source_object(entry)),
+                    source_object: Some(source_object(entry)?),
                 });
                 procedural_axis_origin = transform.point(axis_origin);
                 let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
@@ -1819,7 +1819,7 @@ pub(super) fn project(
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -1931,7 +1931,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let mut procedural_directrix =
             CurveId::mint(format!("iges:model:curve#D{generatrix_sequence}"))
@@ -1966,7 +1966,7 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Nurbs(placed_generatrix),
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             procedural_axis_origin = transform.point(axis_origin);
             let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
@@ -2355,7 +2355,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -2490,7 +2490,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,

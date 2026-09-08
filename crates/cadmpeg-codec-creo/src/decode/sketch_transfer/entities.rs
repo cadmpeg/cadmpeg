@@ -55,7 +55,7 @@ pub(super) fn transfer_section_entities(
     materialized_saved_section_external_ids: &BTreeSet<u32>,
     mut profiles: Vec<Vec<SketchEntityUse>>,
     profile_entities: &BTreeSet<SketchEntityId>,
-) -> (Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>) {
+) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let segment_geometry = |segment: &crate::feature::FeatureSegment| {
         if section_degenerate_axis_line(definition, segment) {
             return segment_geometries
@@ -725,10 +725,13 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!(
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
-                    ),
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -771,10 +774,13 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!(
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
-                    ),
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -818,10 +824,13 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!(
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
-                    ),
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -850,7 +859,7 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: external_id.map_or_else(
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(external_id.map_or_else(
                         || format!("FeatDefs:saved_entity#{internal_id}"),
                         |external_id| {
                             format!(
@@ -858,7 +867,10 @@ pub(super) fn transfer_section_entities(
                                 sketch_identity_scope(sketch_id)
                             )
                         },
-                    ),
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -868,5 +880,5 @@ pub(super) fn transfer_section_entities(
             });
         }
     }
-    (entities, profiles)
+    Ok((entities, profiles))
 }

@@ -529,7 +529,7 @@ pub(super) fn project(
 
     for curve in &mut ir.model.curves {
         if let Some(source) = &mut curve.source_object {
-            source.color = source_sequence(&source.object_id)
+            source.color = source_sequence(source.object_id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
@@ -537,7 +537,7 @@ pub(super) fn project(
     }
     for surface in &mut ir.model.surfaces {
         if let Some(source) = &mut surface.source_object {
-            source.color = source_sequence(&source.object_id)
+            source.color = source_sequence(source.object_id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);

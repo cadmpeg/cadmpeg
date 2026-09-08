@@ -190,7 +190,8 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
         .curves
         .extend((0..curve_count).map(|_| saved_spline_curve()));
     let transferred =
-        transfer_resolved_revolution_surfaces(&scan, &mut ir, &mut AnnotationBuilder::new());
+        transfer_resolved_revolution_surfaces(&scan, &mut ir, &mut AnnotationBuilder::new())
+            .expect("valid source object identity");
     (transferred, ir)
 }
 

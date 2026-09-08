@@ -140,43 +140,6 @@ fn check_symmetries(
     }
 }
 
-fn check_source(
-    source: Option<&crate::provenance::SourceObjectAssociation>,
-    owner: &str,
-    findings: &mut Vec<Finding>,
-) {
-    let Some(source) = source else { return };
-    if source.object_id.is_empty() {
-        bounds_err(
-            findings,
-            owner,
-            "source association object_id must not be empty",
-        );
-    }
-}
-
-pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for surface in &ir.model.surfaces {
-        check_source(
-            surface.source_object.as_ref(),
-            surface.id.as_str(),
-            findings,
-        );
-    }
-    for curve in &ir.model.curves {
-        check_source(curve.source_object.as_ref(), curve.id.as_str(), findings);
-    }
-    for point in &ir.model.points {
-        check_source(point.source_object.as_ref(), point.id.as_str(), findings);
-    }
-    for mesh in &ir.model.tessellations {
-        check_source(mesh.source_object.as_ref(), &mesh.id, findings);
-    }
-    for subd in &ir.model.subds {
-        check_source(subd.source_object.as_ref(), subd.id.as_str(), findings);
-    }
-}
-
 pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for subd in &ir.model.subds {
         let vertex_count = subd.vertices.len();

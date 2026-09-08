@@ -403,7 +403,15 @@ pub(crate) fn try_decode_geometry(
                         },
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Nx,
-                            object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
+                            object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                "nx:s{si}:offset-surface-record#{}",
+                                offset.xmt
+                            ))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
                             name: None,
                             color: None,
                             visible: None,
@@ -458,7 +466,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: format!("nx:s{si}:blend-surface-record#{}", blend.xmt),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "nx:s{si}:blend-surface-record#{}",
+                        blend.xmt
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -713,7 +727,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "nx:s{si}:intersection-record#{}",
+                        construction.xmt
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,

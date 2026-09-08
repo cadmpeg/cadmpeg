@@ -174,7 +174,8 @@ fn source_less_circle_round_trips_with_its_frame() {
             .source_object
             .as_ref()
             .expect("generated object identity")
-            .object_id,
+            .object_id
+            .as_str(),
         expected
     );
 }
