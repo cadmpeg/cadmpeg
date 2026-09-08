@@ -296,19 +296,15 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for document in &gui_documents {
-        if document.states.iter().enumerate().any(|(order, state)| {
-            state.order != order
-                || state
-                    .side_entries
-                    .iter()
-                    .any(|entry| !entry_names.contains(entry.as_str()))
+        if document.states.iter().any(|state| {
+            state
+                .side_entries
+                .iter()
+                .any(|entry| !entry_names.contains(entry.as_str()))
         }) {
             findings.push(finding(
                 Check::NativeLinks,
-                format!(
-                    "{} has invalid GUI state order, span, or asset",
-                    document.id
-                ),
+                format!("{} has a missing GUI state asset", document.id),
                 Some(document.id.clone()),
             ));
         }

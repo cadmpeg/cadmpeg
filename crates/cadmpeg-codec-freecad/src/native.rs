@@ -50,6 +50,24 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn gui_state_order_is_derived_from_collection_position() {
+        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
+        let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
+        assert!(
+            serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("order")
+        );
+        wire["states"][1]["order"] = serde_json::json!(1);
+        let mut record = serde_json::from_value::<super::GuiDocumentRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        record.states.remove(0);
+        let moved = serde_json::to_value(record).unwrap();
+        assert_eq!(moved["states"][0]["order"], 0);
+    }
+
+    #[test]
     fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut matrix = crate::product::identity();
@@ -499,6 +517,7 @@ impl From<RetainedXml> for RetainedXmlWire {
 
 /// Document-level GUI state outside application-object view providers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "GuiDocumentRecordWire", into = "GuiDocumentRecordWire")]
 pub struct GuiDocumentRecord {
     /// Stable GUI document identity.
     pub id: String,
@@ -517,8 +536,6 @@ pub struct GuiStateRecord {
     pub id: String,
     /// Persisted XML element name.
     pub kind: String,
-    /// Source order among document-level state elements.
-    pub order: usize,
     /// Exact element attributes.
     pub attributes: BTreeMap<String, String>,
     /// Ordered descendant value elements.
@@ -528,6 +545,58 @@ pub struct GuiStateRecord {
     /// Retained XML and its byte span.
     #[serde(flatten)]
     pub xml: RetainedXml,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GuiStateRecordWire {
+    order: usize,
+    #[serde(flatten)]
+    state: GuiStateRecord,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GuiDocumentRecordWire {
+    id: String,
+    schema_version: Option<String>,
+    attributes: BTreeMap<String, String>,
+    states: Vec<GuiStateRecordWire>,
+}
+impl From<GuiDocumentRecord> for GuiDocumentRecordWire {
+    fn from(value: GuiDocumentRecord) -> Self {
+        Self {
+            id: value.id,
+            schema_version: value.schema_version,
+            attributes: value.attributes,
+            states: value
+                .states
+                .into_iter()
+                .enumerate()
+                .map(|(order, state)| GuiStateRecordWire { order, state })
+                .collect(),
+        }
+    }
+}
+impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
+    type Error = String;
+    fn try_from(wire: GuiDocumentRecordWire) -> Result<Self, Self::Error> {
+        let states = wire
+            .states
+            .into_iter()
+            .enumerate()
+            .map(|(order, wire)| {
+                if wire.order != order {
+                    return Err("GUI state order disagrees with its states position".to_owned());
+                }
+                Ok(wire.state)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            id: wire.id,
+            schema_version: wire.schema_version,
+            attributes: wire.attributes,
+            states,
+        })
+    }
 }
 
 /// A supported semantic annotation runtime type.

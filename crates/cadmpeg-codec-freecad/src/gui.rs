@@ -570,7 +570,8 @@ fn transfer_neutral_presentation(
             states: document
                 .states
                 .iter()
-                .map(|state| PresentationState {
+                .enumerate()
+                .map(|(order, state)| PresentationState {
                     kind: if state.kind == "Camera" {
                         PresentationStateKind::Camera(camera.clone().unwrap_or(CameraState {
                             position: None,
@@ -580,7 +581,7 @@ fn transfer_neutral_presentation(
                     } else {
                         PresentationStateKind::Native(state.kind.clone())
                     },
-                    order: state.order as u32,
+                    order: order as u32,
                     attributes: state.attributes.clone(),
                     assets: state
                         .side_entries
@@ -928,7 +929,6 @@ fn gui_state(
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", format!("{}:{order}", node.tag_name().name())),
         kind: node.tag_name().name().to_owned(),
-        order,
         attributes: node
             .attributes()
             .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
