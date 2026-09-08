@@ -169,7 +169,10 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, super::entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("FEM table boundary");
         assert_eq!(groups.token_start, expected_end);

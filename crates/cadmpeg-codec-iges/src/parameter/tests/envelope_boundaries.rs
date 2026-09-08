@@ -330,7 +330,10 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &BTreeMap::new())),
+        1
+    );
     let groups = analysis.groups().expect("unique structural group");
     assert!(!groups.fully_valid());
     assert_eq!(groups.association_pointers[0].raw_pointer, 99);
@@ -362,7 +365,10 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("unique valid group");
     assert!(groups.fully_valid());
@@ -397,7 +403,10 @@ fn type123_entity_table_boundary_precedes_a_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 123 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -431,7 +440,10 @@ fn type110_entity_table_boundary_precedes_valid_generic_alternatives() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 110 table boundary");
     assert_eq!(groups.token_start, 7);
@@ -467,7 +479,10 @@ fn type102_entity_table_boundary_follows_declared_child_count() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 102 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -519,7 +534,10 @@ fn type102_malformed_count_does_not_enable_generic_recovery() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -554,7 +572,11 @@ fn type402_group_entity_table_boundary_precedes_valid_generic_alternatives() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1,
+            "Form {form}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
         let groups = analysis.groups().expect("Type 402 table boundary");
         assert_eq!(groups.token_start, 4, "Form {form}");
@@ -622,7 +644,10 @@ fn type402_malformed_member_count_does_not_enable_generic_recovery() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -663,7 +688,10 @@ fn type402_single_parent_boundary_follows_child_count() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 402 Form 9 table boundary");
         assert_eq!(groups.token_start, expected_start);
@@ -696,7 +724,10 @@ fn type402_single_parent_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 402 Form 9 table boundary");
     assert_eq!(groups.token_start, 6);
@@ -736,7 +767,10 @@ fn type402_single_parent_malformed_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            0
+        );
         assert_eq!(analysis.valid_candidate_count(), 0);
         assert!(analysis.groups().is_none());
     }
@@ -775,7 +809,11 @@ fn type230_entity_table_boundary_follows_island_count() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1, "N={island_count}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1,
+            "N={island_count}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 1, "N={island_count}");
         let groups = analysis.groups().expect("Type 230 table boundary");
         assert_eq!(groups.token_start, expected_start, "N={island_count}");
@@ -814,7 +852,10 @@ fn type230_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 230 table boundary");
     assert_eq!(groups.token_start, 10);
@@ -853,7 +894,10 @@ fn type230_malformed_island_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            0
+        );
         assert_eq!(analysis.valid_candidate_count(), 0);
         assert!(analysis.groups().is_none());
     }
@@ -890,7 +934,10 @@ fn type132_fixed_primary_boundary_follows_fourteen_fields() {
     );
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 132 table boundary");
     assert_eq!(groups.token_start, 15);
@@ -948,7 +995,10 @@ fn type132_table_boundary_precedes_valid_generic_alternative() {
         vec![14, 15]
     );
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 132 table boundary");
     assert_eq!(groups.token_start, 15);
@@ -986,7 +1036,10 @@ fn type132_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(
         analysis
@@ -1002,7 +1055,14 @@ fn type132_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
     ] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(7, &values), &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(7, &values),
+                entity_primary_end(&integer_parameter_record(7, &values), &directory)
+            ),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1060,7 +1120,7 @@ fn type320_entity_table_boundary_follows_member_and_connect_counts() {
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1,
             "NA={member_count}, NC={connect_count}"
         );
@@ -1099,7 +1159,10 @@ fn type320_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 320 table boundary");
     assert_eq!(groups.token_start, 10);
@@ -1139,7 +1202,10 @@ fn type320_malformed_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            0
+        );
         assert_eq!(analysis.valid_candidate_count(), 0);
         assert!(analysis.groups().is_none());
     }
@@ -1156,7 +1222,11 @@ fn type180_forms_share_postorder_boundary() {
         let record = integer_parameter_record(1, &[180, 3, -3, -5, 1, 1, 7, 0]);
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1,
+            "Form {form}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
         let groups = analysis.groups().expect("Type 180 table boundary");
         assert_eq!(groups.token_start, 5, "Form {form}");
@@ -1184,7 +1254,10 @@ fn type180_table_boundary_precedes_generic_candidate() {
     assert_eq!(generic[0].token_start, 6);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1202,7 +1275,11 @@ fn type180_malformed_length_or_terms_do_not_enable_generic_recovery() {
     ] {
         let record = integer_parameter_record(1, &values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1210,7 +1287,10 @@ fn type180_malformed_length_or_terms_do_not_enable_generic_recovery() {
     let mut record = integer_parameter_record(1, &[180, 5, -3, -5, 1, 7, 0]);
     record.tokens[1].value = TokenValue::Real(5.0);
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1225,7 +1305,10 @@ fn type202_form0_boundary_follows_eight_primary_fields() {
     let record = integer_parameter_record(9, &[202, 1, 0, 0, 0, 0, 2, 3, 5, 1, 1, 1, 5]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 202 table boundary");
     assert_eq!(groups.token_start, 9);
@@ -1255,7 +1338,10 @@ fn type202_form0_boundary_precedes_generic_candidate() {
     assert_eq!(valid_starts, vec![8, 9]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(
         analysis
@@ -1291,7 +1377,10 @@ fn type202_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(analysis.groups().expect("Type 202 boundary").token_start, 9);
 
@@ -1301,7 +1390,14 @@ fn type202_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
     ] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(9, &values), &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(9, &values),
+                entity_primary_end(&integer_parameter_record(9, &values), &directory)
+            ),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1316,7 +1412,10 @@ fn type204_form0_follows_seven_fixed_primary_fields() {
     let record = integer_parameter_record(13, &[204, 1, 5, 0, 7, 9, 0, 0, 1, 3, 1, 11]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 204 table boundary");
     assert_eq!(groups.token_start, 8);
@@ -1348,7 +1447,10 @@ fn type204_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![7, 8]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 204 table boundary");
     assert_eq!(groups.token_start, 8);
@@ -1380,7 +1482,10 @@ fn type204_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(analysis.groups().expect("Type 204 boundary").token_start, 8);
 
@@ -1390,7 +1495,14 @@ fn type204_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
     ] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(13, &values), &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(13, &values),
+                entity_primary_end(&integer_parameter_record(13, &values), &directory)
+            ),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1405,7 +1517,10 @@ fn type206_form0_follows_five_fixed_primary_fields() {
     let record = integer_parameter_record(11, &[206, 1, 5, 0, 10, 20, 1, 3, 1, 9]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 206 table boundary");
     assert_eq!(groups.token_start, 6);
@@ -1437,7 +1552,10 @@ fn type206_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![5, 6]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 206 table boundary");
     assert_eq!(groups.token_start, 6);
@@ -1467,14 +1585,24 @@ fn type206_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(analysis.groups().expect("Type 206 boundary").token_start, 6);
 
     for values in [vec![206, 1, 5, 0, 10], vec![206, 1, 5, 0, 10, 20, 1, 3, 1]] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(11, &values), &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(11, &values),
+                entity_primary_end(&integer_parameter_record(11, &values), &directory)
+            ),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1491,7 +1619,11 @@ fn type216_forms_share_five_fixed_primary_field_boundary() {
         let record = integer_parameter_record(11, &[216, 1, 3, 5, 0, 0, 1, 7, 1, 9]);
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1, "form {form}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1,
+            "form {form}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 1, "form {form}");
         let groups = analysis.groups().expect("Type 216 table boundary");
         assert_eq!(groups.token_start, 6, "form {form}");
@@ -1533,7 +1665,10 @@ fn type216_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![5, 6]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 216 table boundary");
     assert_eq!(groups.token_start, 6);
@@ -1564,14 +1699,24 @@ fn type216_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(analysis.groups().expect("Type 216 boundary").token_start, 6);
 
     for values in [vec![216, 1, 3, 5, 0], vec![216, 1, 3, 5, 0, 0, 1, 7, 1]] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(11, &values), &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(11, &values),
+                entity_primary_end(&integer_parameter_record(11, &values), &directory)
+            ),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1586,7 +1731,10 @@ fn type220_form0_follows_three_fixed_primary_fields() {
     let record = integer_parameter_record(13, &[220, 1, 3, 0, 1, 9, 1, 11]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 220 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -1618,7 +1766,10 @@ fn type220_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![3, 4]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 220 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -1648,7 +1799,10 @@ fn type220_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
     let wrong_value = integer_parameter_record(13, &[220, 1, 3, 99, 1, 9, 1, 11]);
     for record in [&wrong_field, &wrong_value] {
         let analysis = analyze_trailing_pointer_groups(record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(record, entity_primary_end(record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         assert_eq!(analysis.groups().expect("Type 220 boundary").token_start, 4);
     }
@@ -1656,7 +1810,14 @@ fn type220_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
     for values in [vec![220, 1, 3], vec![220, 1, 3, 5, 1, 9, 1]] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(13, &values), &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(13, &values),
+                entity_primary_end(&integer_parameter_record(13, &values), &directory)
+            ),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -1677,7 +1838,11 @@ fn type222_forms_follow_fixed_primary_fields() {
         let directory = BTreeMap::from([(7, &association), (9, &property), (11, &source)]);
         let record = integer_parameter_record(11, &values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1,
+            "Form {form}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
         let groups = analysis.groups().expect("Type 222 table boundary");
         assert_eq!(groups.token_start, expected_start, "Form {form}");
@@ -1718,7 +1883,10 @@ fn type222_form0_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![4, 5]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 222 table boundary");
     assert_eq!(groups.token_start, 5);
@@ -1781,7 +1949,11 @@ fn type222_complete_wrong_fields_keep_boundaries_and_truncated_spans_do_not_reco
         let directory = BTreeMap::from([(7, &association), (9, &property), (11, &source)]);
         for record in &records {
             let analysis = analyze_trailing_pointer_groups(record, &directory);
-            assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+            assert_eq!(
+                analysis.candidate_count(record, entity_primary_end(record, &directory)),
+                1,
+                "Form {form}"
+            );
             assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
             assert_eq!(
                 analysis
@@ -1806,7 +1978,10 @@ fn type222_complete_wrong_fields_keep_boundaries_and_truncated_spans_do_not_reco
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(11, &values), &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &integer_parameter_record(11, &values),
+                entity_primary_end(&integer_parameter_record(11, &values), &directory)
+            ),
             0,
             "Form {form}, values={values:?}"
         );
