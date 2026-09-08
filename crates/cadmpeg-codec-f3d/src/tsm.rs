@@ -1460,19 +1460,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .map(|(index, vertices)| {
             let crease = creased_edges.contains(&(index as u32));
             let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
-            SubdEdge {
+            SubdEdge::new(
                 vertices,
-                sharpness: [sharpness; 2],
-                tag: if crease {
+                [sharpness; 2],
+                if crease {
                     SubdEdgeTag::Crease
                 } else {
                     SubdEdgeTag::Smooth
                 },
-                knot_interval: Some(edge_knot_intervals_ir[index]),
-                sector_coefficients: [0.0, 0.0],
-            }
+                Some(edge_knot_intervals_ir[index]),
+                [0.0, 0.0],
+            )
+            .map_err(|error| malformed(name, &error.to_string()))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let source_key = name
         .rsplit_once('/')
         .map_or(name, |(_, base)| base)
@@ -1722,10 +1723,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         .expect("knot intervals");
         let expected = [0.5, 0.25, 0.125, 0.0625];
         for (edge, expected) in cage.surface.cage.edges().iter().zip(expected) {
-            let actual = edge.knot_interval.expect("knot interval");
+            let actual = edge.knot_interval().expect("knot interval");
             assert!((actual - expected).abs() < EPS_KNOT_INTERVAL);
             assert!(edge
-                .sharpness
+                .sharpness()
                 .iter()
                 .all(|sharpness| (*sharpness - 1.0).abs() < EPS_KNOT_INTERVAL));
         }

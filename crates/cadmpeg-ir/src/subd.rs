@@ -128,25 +128,13 @@ impl SubdCage {
 
     fn validate(&self) -> Result<(), SubdError> {
         for (index, edge) in self.edges.iter().enumerate() {
-            if edge.vertices[0] == edge.vertices[1]
-                || edge
-                    .vertices
-                    .iter()
-                    .any(|vertex| *vertex as usize >= self.vertices.len())
-                || edge
-                    .sharpness
-                    .iter()
-                    .any(|value| !value.is_finite() || *value < 0.0)
-                || edge
-                    .knot_interval
-                    .is_some_and(|value| !value.is_finite() || value <= 0.0)
-                || edge
-                    .sector_coefficients
-                    .iter()
-                    .any(|value| !value.is_finite())
+            if edge
+                .vertices
+                .iter()
+                .any(|vertex| *vertex as usize >= self.vertices.len())
             {
                 return Err(SubdError(format!(
-                    "edges[{index}] has invalid endpoints or numeric payloads"
+                    "edges[{index}].vertices contains an out-of-range index"
                 )));
             }
         }
@@ -192,6 +180,7 @@ impl SubdCage {
         }
         Ok(())
     }
+
     fn validate_vertices(&self, vertices: &[SubdVertex]) -> Result<(), SubdError> {
         let mut grip_indices = std::collections::BTreeSet::new();
         for (index, vertex) in vertices.iter().enumerate() {
@@ -669,18 +658,102 @@ pub enum SubdVertexTag {
 /// A control-cage edge with endpoint sharpness and sector coefficients.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdEdgeWire")]
 pub struct SubdEdge {
     /// Indices of the two distinct endpoint vertices.
-    pub vertices: [u32; 2],
+    vertices: [u32; 2],
     /// Sharpness at the start and end endpoints.
-    pub sharpness: [f64; 2],
+    sharpness: [f64; 2],
     /// Subdivision edge tag.
     pub tag: SubdEdgeTag,
     /// Parametric knot interval, when the source cage exposes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub knot_interval: Option<f64>,
+    knot_interval: Option<f64>,
     /// Sector coefficients at the two endpoints.
-    pub sector_coefficients: [f64; 2],
+    sector_coefficients: [f64; 2],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdEdgeWire {
+    vertices: [u32; 2],
+    sharpness: [f64; 2],
+    tag: SubdEdgeTag,
+    #[serde(default)]
+    knot_interval: Option<f64>,
+    sector_coefficients: [f64; 2],
+}
+
+impl TryFrom<SubdEdgeWire> for SubdEdge {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdEdgeWire) -> Result<Self, Self::Error> {
+        Self::new(
+            wire.vertices,
+            wire.sharpness,
+            wire.tag,
+            wire.knot_interval,
+            wire.sector_coefficients,
+        )
+    }
+}
+
+impl SubdEdge {
+    /// Construct an edge with distinct endpoints and admitted numeric controls.
+    pub fn new(
+        vertices: [u32; 2],
+        sharpness: [f64; 2],
+        tag: SubdEdgeTag,
+        knot_interval: Option<f64>,
+        sector_coefficients: [f64; 2],
+    ) -> Result<Self, SubdError> {
+        if vertices[0] == vertices[1] {
+            return Err(SubdError("vertices must name distinct endpoints".into()));
+        }
+        if sharpness
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+        {
+            return Err(SubdError(
+                "sharpness must be finite and non-negative".into(),
+            ));
+        }
+        if knot_interval.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+            return Err(SubdError(
+                "knot_interval must be finite and positive".into(),
+            ));
+        }
+        if sector_coefficients.iter().any(|value| !value.is_finite()) {
+            return Err(SubdError("sector_coefficients must be finite".into()));
+        }
+        Ok(Self {
+            vertices,
+            sharpness,
+            tag,
+            knot_interval,
+            sector_coefficients,
+        })
+    }
+
+    /// Indices of the two distinct endpoint vertices.
+    pub const fn vertices(&self) -> [u32; 2] {
+        self.vertices
+    }
+
+    /// Sharpness at the two endpoints.
+    pub const fn sharpness(&self) -> [f64; 2] {
+        self.sharpness
+    }
+
+    /// Parametric knot interval, when present.
+    pub const fn knot_interval(&self) -> Option<f64> {
+        self.knot_interval
+    }
+
+    /// Sector coefficients at the two endpoints.
+    pub const fn sector_coefficients(&self) -> [f64; 2] {
+        self.sector_coefficients
+    }
 }
 
 /// A control-cage edge tag.
