@@ -956,7 +956,7 @@ impl LinkArray {
             .into_iter()
             .any(|length| length != 0 && length != effective)
         {
-            return Err("element_count disagrees with link-array carrier lengths".to_owned());
+            return Err("element_count has inconsistent link-array counts".to_owned());
         }
         Ok(Self {
             count,
