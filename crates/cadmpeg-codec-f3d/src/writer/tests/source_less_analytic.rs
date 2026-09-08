@@ -91,7 +91,14 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
         let mut order = configuration.variant_order().to_vec();
         order.push("Narrow".into());
-        configuration.try_set_payload(payload, order).unwrap();
+        *configuration = crate::records::DesignConfiguration::try_new(
+            configuration.id.clone(),
+            configuration.entry_name.clone(),
+            configuration.kind(),
+            order,
+            payload,
+        )
+        .unwrap();
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
         &f3d_native(&retained).design_configurations,

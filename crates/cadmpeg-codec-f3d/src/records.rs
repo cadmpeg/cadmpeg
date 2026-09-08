@@ -2496,23 +2496,6 @@ impl DesignConfiguration {
     pub fn payload(&self) -> &serde_json::Map<String, serde_json::Value> {
         &self.payload
     }
-
-    /// Replace the payload and order after admission succeeds.
-    pub fn try_set_payload(
-        &mut self,
-        payload: serde_json::Map<String, serde_json::Value>,
-        variant_order: Vec<String>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let replacement = Self::try_new(
-            self.id.clone(),
-            self.entry_name.clone(),
-            self.kind,
-            variant_order,
-            payload,
-        )?;
-        *self = replacement;
-        Ok(())
-    }
 }
 
 impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
