@@ -1800,9 +1800,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ]) && scope.base_flange_profile().is_some_and(|profile| {
                     profile.record_index == operation.profile_record_index
                         && profile.scope_reference_ordinal == 1
-                }) && operation.thickness.is_finite()
-                    && operation.thickness > 0.0
-                    && operation.thickness_offset == scope.byte_offset.saturating_add(123)
+                }) && operation.thickness_offset == scope.byte_offset.saturating_add(123)
                     && operation.thickness_offset < scope.paired_byte_offset
             }
         };
@@ -2698,7 +2696,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .values()
                         .any(|value| value == &operation.opposite_angle_record_index)
                     && operation.angle_record_index != operation.opposite_angle_record_index
-                    && operation.angle.is_finite()
                     && operation.angle_offset > scope.paired_byte_offset
                     && operation.opposite_angle_offset > operation.angle_offset
                     && records_by_index.contains_key(&(native_stream, operation.angle_record_index))
@@ -3709,9 +3706,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             None => true,
         } && match &scope.payload {
             records::feature::DesignScopePayload::SurfaceStitch(Some(operation)) => {
-                operation.gap_tolerance.is_finite()
-                    && operation.gap_tolerance > 0.0
-                    && operation.gap_tolerance_offset > scope.paired_byte_offset
+                operation.gap_tolerance_offset > scope.paired_byte_offset
                     && scope.reference_members.len() >= 4
                     && scope.reference_members.len().is_multiple_of(2)
                     && scope.reference_members.values().rev().nth(1)
@@ -4795,7 +4790,6 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             records::feature::DesignScopePayload::Revolve(Some(
                 crate::records::feature::DesignRevolveConstruction {
                     operation,
-                    angle,
                     angle_record_index,
                     opposite_angle,
                     ..
@@ -4805,12 +4799,10 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     + role_count(DesignOperandRole::BODIES_B);
                 let expected_body_count =
                     usize::from(*operation != records::feature::DesignExtrudeOperation::NewBody);
-                angle.is_finite()
-                    && *angle > 0.0
-                    && scope
-                        .reference_members
-                        .values()
-                        .any(|value| value == angle_record_index)
+                scope
+                    .reference_members
+                    .values()
+                    .any(|value| value == angle_record_index)
                     && opposite_angle.is_none_or(|located| {
                         scope
                             .reference_members

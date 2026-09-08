@@ -508,7 +508,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     {
         let value = Some(DesignBaseFlangeOperation {
-            thickness: 0.2,
+            thickness: crate::records::feature::DesignPositiveScalar::new(0.2).unwrap(),
             thickness_offset: 0,
             profile_group_record_index: 100,
             profile_record_index: 101,
@@ -566,7 +566,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         &mut surface_stitch.payload
     {
         *slot = Some(DesignSurfaceStitchOperation {
-            gap_tolerance: 0.01,
+            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 0,
             tolerance_record_index: 302,
             settings_record_index: 303,

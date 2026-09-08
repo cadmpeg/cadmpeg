@@ -124,7 +124,7 @@ fn parameter_scope_parses_named_variable_tail() {
         &owners,
     )
     .expect("owner-lane Draft operation");
-    assert_eq!(operation.angle, 0.0);
+    assert_eq!(operation.angle.get(), 0.0);
     assert_eq!(operation.angle_record_index, 327);
     assert_eq!(operation.opposite_angle_record_index, 330);
     assert_eq!(operation.angle_offset, 111);

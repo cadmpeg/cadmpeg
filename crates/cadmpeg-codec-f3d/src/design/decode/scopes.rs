@@ -7101,7 +7101,9 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: angle.evaluated_value(),
+                    angle: crate::records::feature::DesignPositiveScalar::new(
+                        angle.evaluated_value(),
+                    )?,
                     angle_record_index: angle.record_index(),
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -7139,7 +7141,7 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: angle.value,
+                    angle: crate::records::feature::DesignPositiveScalar::new(angle.value)?,
                     angle_record_index: *angle_record_index,
                     angle_offset: angle.value_offset,
                     opposite_angle: Some(crate::records::Located {
@@ -7170,7 +7172,9 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
                     operation_offset: u64::try_from(start + 21).ok()?,
-                    angle: angle.evaluated_value(),
+                    angle: crate::records::feature::DesignPositiveScalar::new(
+                        angle.evaluated_value(),
+                    )?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -7194,7 +7198,9 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
-                    angle: angle.evaluated_value(),
+                    angle: crate::records::feature::DesignPositiveScalar::new(
+                        angle.evaluated_value(),
+                    )?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -8660,7 +8666,7 @@ pub(crate) fn exact_draft_operation_with_owners(
         return None;
     }
     Some(DesignDraftOperation {
-        angle: *angle,
+        angle: crate::records::feature::DesignFiniteScalar::new(*angle)?,
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         opposite_angle_record_index: *opposite_angle_record_index,

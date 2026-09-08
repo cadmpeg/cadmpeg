@@ -1626,11 +1626,11 @@ fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
 #[test]
 fn bend_radius_requires_a_positive_finite_value() {
     for value in [0.0, -0.0, -1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
-        assert!(crate::records::feature::DesignBendRadius::new(value).is_none());
+        assert!(crate::records::feature::DesignPositiveScalar::new(value).is_none());
     }
     for radius in [f64::MIN_POSITIVE, 0.25, f64::MAX] {
-        let value =
-            crate::records::feature::DesignBendRadius::new(radius).expect("positive finite radius");
+        let value = crate::records::feature::DesignPositiveScalar::new(radius)
+            .expect("positive finite radius");
         assert_eq!(value.get(), radius);
         let wire = serde_json::json!({
             "edge_wrapper_record_index": 1, "edge_group_record_index": 2,
@@ -1727,3 +1727,5 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
     wire["cell_entries"] = serde_json::json!([]);
     assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire).is_err());
 }
+
+mod scalars;
