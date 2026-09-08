@@ -2671,28 +2671,30 @@ fn legacy_edge_flange_operation_at(
     )
     .ok()?;
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
-            edges,
-            Some(layout.width_mode),
-            width_distance_owner_record_indices,
-            width_distance_owner_record_indices_by_edge,
-            layout.width_parameter_source,
-            DesignEdgeFlangeHeightExtent::Distance,
-        )
-        .ok()?,
-        aggregate_group_record_index,
         height_owner_record_index,
         angle_owner_record_index,
         auxiliary_reference_record_indices,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-
         height_datum,
         bend_position: DesignBendPosition::from_code(View::u32_le_at(
             bytes,
             start.checked_add(layout.bend_position_offset)?,
         )?),
+        selection: crate::records::feature::DesignEdgeFlangeSelection::try_new(
+            crate::records::feature::DesignEdgeFlangeShape::from_wire(
+                edges,
+                Some(layout.width_mode),
+                width_distance_owner_record_indices,
+                width_distance_owner_record_indices_by_edge,
+                layout.width_parameter_source,
+                DesignEdgeFlangeHeightExtent::Distance,
+            )
+            .ok()?,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -2764,7 +2766,7 @@ fn edge_flange_operation_at(
     let aggregate_operand_record_index =
         claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let edge_group_record_index = claim(first_edge_group, &mut unclaimed)?;
-    let edge_operand_record_index = claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
+    claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
 
     if unclaimed.len() > MAX_EDGE_WIDTH_DISTANCE_OWNERS {
         return None;
@@ -2780,30 +2782,31 @@ fn edge_flange_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
-            vec![crate::records::feature::DesignEdgeFlangeEdge {
-                wrapper_record_index: edge_wrapper_record_index,
-                group_record_index: edge_group_record_index,
-                operand_record_index: edge_operand_record_index,
-                aggregate_operand_record_index,
-            }],
-            None,
-            width_distance_owner_record_indices,
-            Vec::new(),
-            DesignEdgeFlangeWidthParameterSource::EdgeWidth,
-            DesignEdgeFlangeHeightExtent::Distance,
-        )
-        .ok()?,
-        aggregate_group_record_index,
         height_owner_record_index,
         angle_owner_record_index,
         auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-
         height_datum,
         bend_position,
+        selection: crate::records::feature::DesignEdgeFlangeSelection::try_new(
+            crate::records::feature::DesignEdgeFlangeShape::from_wire(
+                vec![crate::records::feature::DesignEdgeFlangeEdge {
+                    wrapper_record_index: edge_wrapper_record_index,
+                    group_record_index: edge_group_record_index,
+                    aggregate_operand_record_index,
+                }],
+                None,
+                width_distance_owner_record_indices,
+                Vec::new(),
+                DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+                DesignEdgeFlangeHeightExtent::Distance,
+            )
+            .ok()?,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -2928,7 +2931,7 @@ fn edge_flange_to_object_operation_at(
         claim(target_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let aggregate_operand_record_index =
         claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let [offset_owner_record_index] = unclaimed.as_slice() else {
         return None;
     };
@@ -2937,30 +2940,31 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::feature::DesignEdgeFlangeShape::FullEdge {
-            edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
-                wrapper_record_index: edge_wrapper_record_index,
-                group_record_index: edge_group_record_index,
-                operand_record_index: edge_operand_record_index,
-                aggregate_operand_record_index,
-            }],
-            height: DesignEdgeFlangeHeightExtent::ToObject {
-                target_group_record_index,
-                target_operand_record_index,
-                offset_owner_record_index: *offset_owner_record_index,
-                reference_record_indices,
-            },
-        },
-        aggregate_group_record_index,
         height_owner_record_index,
         angle_owner_record_index,
         auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-
         height_datum,
         bend_position,
+        selection: crate::records::feature::DesignEdgeFlangeSelection::try_new(
+            crate::records::feature::DesignEdgeFlangeShape::FullEdge {
+                edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
+                    wrapper_record_index: edge_wrapper_record_index,
+                    group_record_index: edge_group_record_index,
+                    aggregate_operand_record_index,
+                }],
+                height: DesignEdgeFlangeHeightExtent::ToObject {
+                    target_group_record_index,
+                    target_operand_record_index,
+                    offset_owner_record_index: *offset_owner_record_index,
+                    reference_record_indices,
+                },
+            },
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -3147,9 +3151,8 @@ fn hem_gap_length_operation_at(
 
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     if !unclaimed.is_empty() {
         return None;
     }
@@ -3157,9 +3160,7 @@ fn hem_gap_length_operation_at(
     Some(DesignHemOperation {
         edge_wrapper_record_index,
         edge_group_record_index,
-        edge_operand_record_index,
         aggregate_group_record_index,
-        aggregate_operand_record_index,
         parameter_owners: DesignHemParameterOwners::GapLength {
             gap_owner_record_index,
             length_owner_record_index,
@@ -3218,9 +3219,8 @@ fn hem_radius_angle_operation_at(
     )?)?;
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     if !unclaimed.is_empty() {
         return None;
     }
@@ -3228,9 +3228,7 @@ fn hem_radius_angle_operation_at(
     Some(DesignHemOperation {
         edge_wrapper_record_index,
         edge_group_record_index,
-        edge_operand_record_index,
         aggregate_group_record_index,
-        aggregate_operand_record_index,
         parameter_owners: DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index,
             angle_owner_record_index,
@@ -3285,9 +3283,8 @@ fn hem_gap_length_radius_operation_at(
     )?)?;
     let aggregate_group_record_index = slot(118, &mut unclaimed)?;
     let edge_group_record_index = slot(145, &mut unclaimed)?;
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     if !unclaimed.is_empty() {
         return None;
     }
@@ -3295,9 +3292,7 @@ fn hem_gap_length_radius_operation_at(
     Some(DesignHemOperation {
         edge_wrapper_record_index,
         edge_group_record_index,
-        edge_operand_record_index,
         aggregate_group_record_index,
-        aggregate_operand_record_index,
         parameter_owners: DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index,
             length_owner_record_index,

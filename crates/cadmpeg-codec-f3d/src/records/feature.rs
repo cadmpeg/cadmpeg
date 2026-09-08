@@ -8323,11 +8323,14 @@ pub enum DesignEdgeFlangeHeightExtent {
 pub struct DesignEdgeFlangeEdge {
     pub wrapper_record_index: u32,
     pub group_record_index: u32,
-    pub operand_record_index: u32,
     pub aggregate_operand_record_index: u32,
 }
 
 impl DesignEdgeFlangeEdge {
+    pub(crate) fn operand_record_index(&self) -> u32 {
+        self.group_record_index.saturating_add(3)
+    }
+
     pub(crate) fn from_columns(
         wrappers: Vec<u32>,
         groups: Vec<u32>,
@@ -8340,20 +8343,26 @@ impl DesignEdgeFlangeEdge {
         {
             return Err("edge_wrapper_record_indices, edge_group_record_indices, edge_operand_record_indices, and aggregate_operand_record_indices must have equal lengths".into());
         }
+        if groups
+            .iter()
+            .zip(&operands)
+            .any(|(group, operand)| *operand != group.saturating_add(3))
+        {
+            return Err(
+                "edge_operand_record_indices must equal edge_group_record_indices + 3".into(),
+            );
+        }
         Ok(wrappers
             .into_iter()
             .zip(groups)
-            .zip(operands)
             .zip(aggregate_operands)
             .map(
-                |(
-                    ((wrapper_record_index, group_record_index), operand_record_index),
-                    aggregate_operand_record_index,
-                )| Self {
-                    wrapper_record_index,
-                    group_record_index,
-                    operand_record_index,
-                    aggregate_operand_record_index,
+                |((wrapper_record_index, group_record_index), aggregate_operand_record_index)| {
+                    Self {
+                        wrapper_record_index,
+                        group_record_index,
+                        aggregate_operand_record_index,
+                    }
                 },
             )
             .collect())
@@ -8426,10 +8435,8 @@ impl From<DesignFiniteScalar> for f64 {
     into = "DesignEdgeFlangeOperationSerde"
 )]
 pub struct DesignEdgeFlangeOperation {
-    /// Selected edges, width law, and height extent.
-    pub shape: DesignEdgeFlangeShape,
-    /// Role-`0x43` aggregate operand-group record.
-    pub aggregate_group_record_index: u32,
+    /// Selected flange edges and their aggregate operand group.
+    pub selection: DesignEdgeFlangeSelection,
     /// Height parameter-owner record.
     pub height_owner_record_index: u32,
     /// Angle parameter-owner record.
@@ -8448,6 +8455,43 @@ pub struct DesignEdgeFlangeOperation {
     pub height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
     pub bend_position: DesignBendPosition,
+}
+
+/// Flange edge shape paired with its aggregate operand group.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignEdgeFlangeSelection {
+    shape: DesignEdgeFlangeShape,
+    aggregate_group_record_index: u32,
+}
+
+impl DesignEdgeFlangeSelection {
+    pub(crate) fn try_new(
+        shape: DesignEdgeFlangeShape,
+        aggregate_group_record_index: u32,
+    ) -> Result<Self, String> {
+        let mismatched_aggregate = {
+            let mut edges = shape.edges();
+            let first = edges.next();
+            edges.next().is_none()
+                && first.is_some_and(|edge| {
+                    edge.aggregate_operand_record_index
+                        != aggregate_group_record_index.saturating_add(3)
+                })
+        };
+        if mismatched_aggregate {
+            return Err("single-edge aggregate_operand_record_indices must equal aggregate_group_record_index + 3".into());
+        }
+        Ok(Self {
+            shape,
+            aggregate_group_record_index,
+        })
+    }
+    pub(crate) fn shape(&self) -> &DesignEdgeFlangeShape {
+        &self.shape
+    }
+    pub(crate) fn aggregate_group_record_index(&self) -> u32 {
+        self.aggregate_group_record_index
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -8492,15 +8536,17 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             wire.aggregate_operand_record_indices,
         )?;
         Ok(Self {
-            shape: DesignEdgeFlangeShape::from_wire(
-                edges,
-                wire.width_mode,
-                wire.width_distance_owner_record_indices,
-                wire.width_distance_owner_record_indices_by_edge,
-                wire.width_parameter_source,
-                wire.height_extent,
+            selection: DesignEdgeFlangeSelection::try_new(
+                DesignEdgeFlangeShape::from_wire(
+                    edges,
+                    wire.width_mode,
+                    wire.width_distance_owner_record_indices,
+                    wire.width_distance_owner_record_indices_by_edge,
+                    wire.width_parameter_source,
+                    wire.height_extent,
+                )?,
+                wire.aggregate_group_record_index,
             )?,
-            aggregate_group_record_index: wire.aggregate_group_record_index,
             height_owner_record_index: wire.height_owner_record_index,
             angle_owner_record_index: wire.angle_owner_record_index,
             auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
@@ -8516,10 +8562,14 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
 
 impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
     fn from(operation: DesignEdgeFlangeOperation) -> Self {
-        let width_mode = Some(operation.shape.mode());
-        let width_distance_owner_record_indices =
-            operation.shape.owner_indices().copied().collect();
-        let width_distance_owner_record_indices_by_edge = match &operation.shape {
+        let width_mode = Some(operation.selection.shape().mode());
+        let width_distance_owner_record_indices = operation
+            .selection
+            .shape()
+            .owner_indices()
+            .copied()
+            .collect();
+        let width_distance_owner_record_indices_by_edge = match operation.selection.shape() {
             DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } => {
                 edges.iter().map(|row| row.owners).collect()
             }
@@ -8527,34 +8577,38 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
         };
         Self {
             edge_wrapper_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.wrapper_record_index)
                 .collect(),
             edge_group_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.group_record_index)
                 .collect(),
             edge_operand_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index)
+                .map(|edge| edge.operand_record_index())
                 .collect(),
-            aggregate_group_record_index: operation.aggregate_group_record_index,
+            aggregate_group_record_index: operation.selection.aggregate_group_record_index(),
             aggregate_operand_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.aggregate_operand_record_index)
                 .collect(),
             height_owner_record_index: operation.height_owner_record_index,
-            height_extent: operation.shape.height(),
+            height_extent: operation.selection.shape().height(),
             angle_owner_record_index: operation.angle_owner_record_index,
             width_mode,
             width_distance_owner_record_indices,
             width_distance_owner_record_indices_by_edge,
             auxiliary_reference_record_indices: operation.auxiliary_reference_record_indices,
-            width_parameter_source: operation.shape.source(),
+            width_parameter_source: operation.selection.shape().source(),
             settings_record_index: operation.settings_record_index,
             bend_radius: operation.bend_radius.get(),
             bend_radius_offset: operation.bend_radius_offset,
@@ -8603,12 +8657,8 @@ pub struct DesignHemOperation {
     pub edge_wrapper_record_index: u32,
     /// Role-`0x08` operand-group record.
     pub edge_group_record_index: u32,
-    /// Recipe-backed role-`0x08` operand record.
-    pub edge_operand_record_index: u32,
     /// Role-`0x43` aggregate operand-group record.
     pub aggregate_group_record_index: u32,
-    /// Recipe-backed role-`0x43` operand record.
-    pub aggregate_operand_record_index: u32,
     /// Parameter-owner layout selected by the owned source kinds.
     pub parameter_owners: DesignHemParameterOwners,
     /// Indexed operation-settings record.
@@ -8645,6 +8695,15 @@ struct DesignHemOperationWire {
     reference_side_code: u32,
 }
 
+impl DesignHemOperation {
+    pub(crate) fn edge_operand_record_index(&self) -> u32 {
+        self.edge_group_record_index.saturating_add(3)
+    }
+    pub(crate) fn aggregate_operand_record_index(&self) -> u32 {
+        self.aggregate_group_record_index.saturating_add(3)
+    }
+}
+
 impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
     type Error = String;
 
@@ -8661,12 +8720,20 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
         if wire.reference_side_code != 4 {
             return Err("reference_side_code must be 4".into());
         }
+        if wire.edge_operand_record_index != wire.edge_group_record_index.saturating_add(3) {
+            return Err("edge_operand_record_index must equal edge_group_record_index + 3".into());
+        }
+        if wire.aggregate_operand_record_index
+            != wire.aggregate_group_record_index.saturating_add(3)
+        {
+            return Err(
+                "aggregate_operand_record_index must equal aggregate_group_record_index + 3".into(),
+            );
+        }
         Ok(Self {
             edge_wrapper_record_index: wire.edge_wrapper_record_index,
             edge_group_record_index: wire.edge_group_record_index,
-            edge_operand_record_index: wire.edge_operand_record_index,
             aggregate_group_record_index: wire.aggregate_group_record_index,
-            aggregate_operand_record_index: wire.aggregate_operand_record_index,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
             bend_radius: DesignPositiveScalar::new(wire.bend_radius)
@@ -8681,9 +8748,9 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
         Self {
             edge_wrapper_record_index: record.edge_wrapper_record_index,
             edge_group_record_index: record.edge_group_record_index,
-            edge_operand_record_index: record.edge_operand_record_index,
+            edge_operand_record_index: record.edge_operand_record_index(),
             aggregate_group_record_index: record.aggregate_group_record_index,
-            aggregate_operand_record_index: record.aggregate_operand_record_index,
+            aggregate_operand_record_index: record.aggregate_operand_record_index(),
             parameter_owners: record.parameter_owners,
             settings_record_index: record.settings_record_index,
             bend_radius: record.bend_radius.get(),

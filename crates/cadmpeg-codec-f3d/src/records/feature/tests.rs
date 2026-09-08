@@ -760,7 +760,7 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
         let expected = serde_json::to_string(&wire).unwrap();
         let native: crate::records::feature::DesignEdgeFlangeOperation =
             serde_json::from_str(&expected).unwrap();
-        assert_eq!(native.shape.edges().count(), count as usize);
+        assert_eq!(native.selection.shape().edges().count(), count as usize);
         assert_eq!(serde_json::to_string(&native).unwrap(), expected);
         for radius in [0.0, -1.0, f64::INFINITY, f64::NAN] {
             let mut invalid = wire.clone();
@@ -1740,3 +1740,5 @@ mod thread;
 mod combine;
 
 mod copied_bodies;
+
+mod sheet_metal_indices;
