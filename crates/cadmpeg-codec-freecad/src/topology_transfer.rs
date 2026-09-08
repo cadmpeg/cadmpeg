@@ -23,11 +23,12 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
+use crate::brep::triangulation::TextTriangulation;
 use crate::brep::{
     surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve, TextCurve2d,
     TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
     TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
-    TextTShapeGeometry, TextTriangulation,
+    TextTShapeGeometry,
 };
 use crate::native::PropertyRecord;
 
@@ -300,14 +301,14 @@ impl<'a> Builder<'a> {
             ir.model.tessellations.push(
                 Tessellation::from_decoded(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
-                    triangulation.nodes.clone(),
+                    triangulation.nodes().to_vec(),
                     triangulation
                         .triangles
                         .iter()
                         .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
                         .collect(),
                     Vec::new(),
-                    triangulation.normals.clone().unwrap_or_default(),
+                    triangulation.normals().unwrap_or_default().to_vec(),
                     Vec::new(),
                     Vec::new(),
                 )
@@ -739,7 +740,7 @@ impl<'a> Builder<'a> {
                 let triangulation = index.resolve(self.tables.triangulations)?;
                 let index = index.index();
                 let vertices = triangulation
-                    .nodes
+                    .nodes()
                     .iter()
                     .map(|point| face_transform.apply_point(*point))
                     .collect::<Vec<_>>();
@@ -787,8 +788,7 @@ impl<'a> Builder<'a> {
         {
             self.emitted_triangulations.insert(index);
             let normals = triangulation
-                .normals
-                .as_ref()
+                .normals()
                 .map(|normals| {
                     normals
                         .iter()
@@ -1103,7 +1103,7 @@ impl<'a> Builder<'a> {
                 usize::try_from(*node)
                     .ok()
                     .and_then(|node| node.checked_sub(1))
-                    .and_then(|node| triangulation.nodes.get(node).copied())
+                    .and_then(|node| triangulation.nodes().get(node).copied())
                     .ok_or_else(|| {
                         CodecError::Malformed(
                             "polygon-on-triangulation node is out of bounds".into(),
