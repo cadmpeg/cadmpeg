@@ -47,6 +47,18 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn element_map_nodes_require_root_on_wire() {
+        assert!(serde_json::from_str::<super::ElementMapNodes>("[]")
+            .unwrap_err()
+            .to_string()
+            .contains("maps"));
+        let wire = serde_json::json!([{"index": 1, "map_id": 0, "groups": []}]);
+        let nodes: super::ElementMapNodes = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(nodes.root().index, 1);
+        assert_eq!(serde_json::to_value(nodes).unwrap(), wire);
+    }
+
+    #[test]
     fn object_wire_rejects_nonpositive_partial_load_capability() {
         for value in [0, -1] {
             let wire = serde_json::json!({
@@ -1905,7 +1917,60 @@ pub struct ElementMapRecord {
     /// Ordered postfix dictionary.
     pub postfixes: Vec<String>,
     /// Ordered child-map records; the last record is the owning shape map.
-    pub maps: Vec<ElementMapNode>,
+    pub maps: ElementMapNodes,
+}
+
+/// A nonempty sequence whose last node is the owning shape map.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<ElementMapNode>", into = "Vec<ElementMapNode>")]
+pub struct ElementMapNodes(Vec<ElementMapNode>);
+
+impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
+    type Error = String;
+
+    fn try_from(nodes: Vec<ElementMapNode>) -> Result<Self, Self::Error> {
+        if nodes.is_empty() {
+            return Err("maps must contain a root node".to_owned());
+        }
+        Ok(Self(nodes))
+    }
+}
+
+impl From<ElementMapNodes> for Vec<ElementMapNode> {
+    fn from(nodes: ElementMapNodes) -> Self {
+        nodes.0
+    }
+}
+
+impl From<ElementMapNode> for ElementMapNodes {
+    fn from(root: ElementMapNode) -> Self {
+        Self(vec![root])
+    }
+}
+
+impl ElementMapNodes {
+    /// Returns the owning shape map.
+    pub fn root(&self) -> &ElementMapNode {
+        &self.0[self.0.len() - 1]
+    }
+
+    /// Returns the owning shape map for node-content edits.
+    pub fn root_mut(&mut self) -> &mut ElementMapNode {
+        let index = self.0.len() - 1;
+        &mut self.0[index]
+    }
+
+    /// Returns nodes in serialized order.
+    pub fn iter(&self) -> std::slice::Iter<'_, ElementMapNode> {
+        self.0.iter()
+    }
+}
+
+impl std::ops::Index<usize> for ElementMapNodes {
+    type Output = ElementMapNode;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
 }
 
 /// One map node, including recursively referenced child maps.
