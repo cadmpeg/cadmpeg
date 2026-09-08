@@ -1188,7 +1188,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     procedural_index,
                     target,
                     pcurve,
-                    tolerance,
+                    cadmpeg_ir::geometry::FitTolerance::try_new(tolerance).ok()?,
                     curve_is_cache_backed_with_index(&model_index, owner),
                 ))
             })();
@@ -1472,7 +1472,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             Some((
                 procedural.id.clone(),
                 pcurves,
-                tolerance,
+                cadmpeg_ir::geometry::FitTolerance::try_new(tolerance).ok()?,
                 curve_is_cache_backed_with_index(&model_index, owner),
                 owner.clone(),
                 range,

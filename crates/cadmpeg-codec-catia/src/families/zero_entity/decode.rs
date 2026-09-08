@@ -124,7 +124,7 @@ fn append_oriented_wire_curve(
     geometry: CurveGeometry,
     source_pos: usize,
     procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
-) {
+) -> Option<()> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
         let construction_id =
             ProceduralCurveId::mint(format!("{}-construction", curve_id.as_str()))
@@ -153,7 +153,7 @@ fn append_oriented_wire_curve(
                     cache,
                 }
             }
-            Err(_) => geometry,
+            Err(_) => return None,
         }
     } else {
         geometry
@@ -172,6 +172,8 @@ fn append_oriented_wire_curve(
         geometry,
         source_object: None,
     });
+
+    Some(())
 }
 
 fn source_wire_procedural(ir: &CadIr, geometry: &CurveGeometry) -> Option<WireSourceProcedural> {
@@ -198,7 +200,7 @@ fn transfer_closed_wire_loops(
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
-) -> WireTransferCounts {
+) -> Option<WireTransferCounts> {
     let mut counts = WireTransferCounts::default();
     let root_owns_support_runs = ownership_root.is_some_and(|root| {
         root.face_slots.len() == support_runs.len()
@@ -467,7 +469,7 @@ fn transfer_closed_wire_loops(
                                     geometry,
                                     support.pos,
                                     procedural,
-                                );
+                                )?;
                                 (oriented_curve_id, Some(edge_range))
                             }
                         } else {
@@ -547,7 +549,7 @@ fn transfer_closed_wire_loops(
 
     if root_owns_support_runs && counts.loops != 0 {
         let Some(root) = ownership_root else {
-            return counts;
+            return Some(counts);
         };
         let identity = root.body_record_ordinal();
         let body_id = BodyId::mint(format!("catia:zero-entity:owned-wire-body#{identity}"))
@@ -605,7 +607,7 @@ fn transfer_closed_wire_loops(
         counts.owned_bodies += 1;
     }
 
-    counts
+    Some(counts)
 }
 
 pub(crate) fn try_decode_zero_entity(
@@ -823,7 +825,7 @@ pub(crate) fn try_decode_zero_entity(
             &support_runs,
             &support_curve_ids,
             ownership_root.as_ref(),
-        )
+        )?
     };
 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
@@ -1053,7 +1055,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts.edges, 2);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
@@ -1163,7 +1166,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             Some(&ownership_root),
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts.bodies, 1);
         assert_eq!(counts.owned_bodies, 1);
@@ -1310,7 +1314,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts.loops, 1);
         assert_eq!(
@@ -1400,7 +1405,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts.bodies, 1);
         assert_eq!(counts.loops, 1);
@@ -1487,7 +1493,8 @@ mod tests {
             &support_runs,
             &HashMap::new(),
             None,
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts, WireTransferCounts::default());
         assert!(ir.model.bodies.is_empty());

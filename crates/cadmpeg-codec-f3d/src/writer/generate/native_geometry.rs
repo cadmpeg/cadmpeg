@@ -1281,7 +1281,7 @@ fn encode_native_g2_blend(
                     ));
                 };
                 native_nurbs_surface(bytes, surface)?;
-                native_f64(bytes, support.tolerance / LEN_TO_MM);
+                native_f64(bytes, support.tolerance.get() / LEN_TO_MM);
             }
         },
         cadmpeg_ir::geometry::G2BlendFirstShape::None {
@@ -1293,7 +1293,7 @@ fn encode_native_g2_blend(
             for coefficient in coefficients {
                 native_f64(bytes, *coefficient);
             }
-            native_f64(bytes, *tolerance / LEN_TO_MM);
+            native_f64(bytes, tolerance.get() / LEN_TO_MM);
             if let Some(extension) = extension {
                 native_bridge_token(bytes, extension)?;
             }
@@ -2358,7 +2358,7 @@ fn encode_native_law_surface(
             for values in parameters {
                 native_compound_loft_float_array(bytes, values)?;
             }
-            native_f64(bytes, fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
             for value in closures.iter().chain(singularities) {
                 native_enum(bytes, *value);
             }
@@ -3508,7 +3508,7 @@ fn native_vertex_blend_boundary(
             }
             native_optional_pcurve(bytes, pcurve.as_ref())?;
             bytes.push(native_bool(*sense));
-            native_f64(bytes, *fit_tolerance);
+            native_f64(bytes, fit_tolerance.get());
         }
         VertexBlendBoundaryGeometry::Plane {
             normal,
@@ -3558,7 +3558,7 @@ fn encode_native_vertex_blend(
         native_vertex_blend_boundary(bytes, target, boundary, construction.revision.is_some())?;
     }
     native_i64(bytes, construction.grid_size);
-    native_f64(bytes, construction.fit_tolerance / LEN_TO_MM);
+    native_f64(bytes, construction.fit_tolerance.get() / LEN_TO_MM);
     bytes.push(0x10);
     Ok(())
 }
@@ -6007,7 +6007,7 @@ fn native_revision_tail_head(
                 ))
             })?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, *fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
             native_enum(bytes, 2);
@@ -6043,7 +6043,7 @@ fn native_variable_blend_revision_tail_head(
                 CodecError::Malformed("variable blend tail form `0` requires a solved cache".into())
             })?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, *fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::VariableBlendCache::Stale => {
             return Err(CodecError::Malformed(
@@ -6121,7 +6121,7 @@ fn native_cache_first_curve_context(
                 )
             })?;
             native_nurbs_curve(bytes, solved_cache)?;
-            native_f64(bytes, *fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
             native_enum(bytes, 2);
@@ -6621,7 +6621,9 @@ mod revision_surface_tail_tests {
     #[test]
     fn solved_tail_form_without_a_cache_is_refused() {
         let mut bytes = Vec::new();
-        let cache = cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance: 0.5 };
+        let cache = cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
+            fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(0.5).unwrap(),
+        };
         assert!(native_revision_tail_head(&mut bytes, "test carrier", &cache, None).is_err());
     }
 }

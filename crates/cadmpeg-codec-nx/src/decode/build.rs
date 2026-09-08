@@ -417,7 +417,7 @@ pub(crate) fn try_decode_geometry(
                 .note(&procedural_id, source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
             annotations.derived(&procedural_id, "definition");
-            if let Ok(procedural) = ProceduralSurface::try_new(
+            let procedural = ProceduralSurface::try_new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset {
                     support,
@@ -432,11 +432,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 cache_fit_tolerance,
                 None,
-            ) {
-                let _attached = ir
-                    .model
-                    .add_procedural_surface(surface_id.clone(), procedural);
-            }
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
+            let _attached = ir
+                .model
+                .add_procedural_surface(surface_id.clone(), procedural);
+
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
         }
@@ -485,7 +487,8 @@ pub(crate) fn try_decode_geometry(
                         native: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             if attached.is_ok() {
                 pending_blend_supports.push((
@@ -513,14 +516,16 @@ pub(crate) fn try_decode_geometry(
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            procedural.edit_definition(|definition| {
-                if let ProceduralSurfaceDefinition::Blend {
-                    supports: slots, ..
-                } = definition
-                {
-                    *slots = supports;
-                }
-            });
+            procedural
+                .edit_definition(|definition| {
+                    if let ProceduralSurfaceDefinition::Blend {
+                        supports: slots, ..
+                    } = definition
+                    {
+                        *slots = supports;
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
 
         for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
@@ -773,13 +778,15 @@ pub(crate) fn try_decode_geometry(
                     record: Some(unknown_id),
                 }
             };
-            if let Ok(procedural) = ProceduralCurve::try_new(
+            let procedural = ProceduralCurve::try_new(
                 procedural_id,
                 definition,
                 charted.map(|charted| charted.fit_tolerance),
-            ) {
-                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
-            }
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
+            let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
+
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
@@ -790,11 +797,13 @@ pub(crate) fn try_decode_geometry(
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            procedural.edit_definition(|definition| {
-                if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
-                    *slot = Some(spine);
-                }
-            });
+            procedural
+                .edit_definition(|definition| {
+                    if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
+                        *slot = Some(spine);
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();

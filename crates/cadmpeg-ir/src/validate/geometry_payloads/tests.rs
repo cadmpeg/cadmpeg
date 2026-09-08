@@ -192,7 +192,8 @@ fn revolution_rejects_equal_intervals() {
                     revision_form: None,
                 },
                 None,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
     assert!(validate_neutral(&ir, Vec::new())

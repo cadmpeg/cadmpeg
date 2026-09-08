@@ -1602,20 +1602,23 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: 1.0,
-            u_sense: Some(0),
-            v_sense: Some(0),
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Offset {
+                support,
+                distance: 1.0,
+                u_sense: Some(0),
+                v_sense: Some(0),
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
             1,

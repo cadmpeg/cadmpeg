@@ -226,7 +226,11 @@ fn transfer_complete(
         return false;
     };
     let pcurve_uses = pcurves::emit_pcurves(ir, annotations, graph, &plan);
-    let edge_id_map = edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids);
+    let Some(edge_id_map) =
+        edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids)
+    else {
+        return false;
+    };
     if !faces::emit_faces(
         ir,
         annotations,

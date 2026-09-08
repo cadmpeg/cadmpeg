@@ -321,7 +321,7 @@ pub enum EmbeddedVertexBlendBoundaryGeometry {
         /// The sense boolean of the boundary.
         sense: bool,
         /// The fit tolerance of the boundary approximation.
-        fit_tolerance: f64,
+        fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
     },
     /// A planar boundary carried by a normal and an embedded curve.
     Plane {
@@ -361,7 +361,7 @@ pub struct EmbeddedVertexBlend {
     /// The approximation grid size.
     pub grid_size: i64,
     /// The fit tolerance of the patch approximation.
-    pub fit_tolerance: f64,
+    pub fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
 }
 
 /// Embedded native rolling-ball graph before stable IR ids are assigned.
@@ -417,13 +417,13 @@ pub struct EmbeddedG2Side {
 /// The shape block serialized after a G2 blend's first side.
 pub enum EmbeddedG2FirstShape {
     /// The full form: an optional surface cache and tolerance.
-    Full(Option<(NurbsSurface, f64)>),
+    Full(Option<(NurbsSurface, cadmpeg_ir::geometry::FitTolerance)>),
     /// The reduced form: nine coefficients and a tolerance.
     None {
         /// Nine shape coefficients.
         coefficients: [f64; 9],
         /// The fit tolerance.
-        tolerance: f64,
+        tolerance: cadmpeg_ir::geometry::FitTolerance,
         /// The bridge token serialized after the tolerance, when present.
         extension: Option<cadmpeg_ir::geometry::LoftBridgeToken>,
         /// The embedded parameter curve closing the block, when present.
@@ -594,7 +594,7 @@ fn g2_blend_spl_sur(
                     shape_parameter,
                     shape_length,
                     shape_tail,
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     tail_extensions,
@@ -613,14 +613,18 @@ fn g2_blend_spl_sur(
             cur.set_pos(saved);
             let (surface, surface_end) = surface_block(span, cur.pos())?;
             cur.set_pos(surface_end);
-            EmbeddedG2FirstShape::Full(Some((surface, cur.take_f64()? * LEN_TO_MM)))
+            EmbeddedG2FirstShape::Full(Some((
+                surface,
+                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?,
+            )))
         }
     } else {
         let mut coefficients = [0.0; 9];
         for coefficient in &mut coefficients {
             *coefficient = cur.take_f64()?;
         }
-        let tolerance = cur.take_f64()? * LEN_TO_MM;
+        let tolerance =
+            cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
         let extension = (!matches!(cur.peek(), Some(token)
             if matches!(token, Token::Str(_)) || token.is_payload_ident()))
         .then(|| bridge_token(&mut cur))
@@ -1781,7 +1785,7 @@ fn revision_loft(
                 revision,
                 flags,
                 ints,
-                cache: cache.into_form(),
+                cache: cache.into_form()?,
                 discontinuities,
                 tail_flag,
             }),
@@ -1981,7 +1985,7 @@ fn revision_compound_loft(
         definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
                 revision,
-                cache: cache.into_form(),
+                cache: cache.into_form()?,
                 discontinuities,
                 tail_flag,
                 base_profile,
@@ -2499,7 +2503,8 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         }
         1 => {
             let parameters = [cur.take_float_array()?, cur.take_float_array()?];
-            let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
+            let fit_tolerance =
+                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
             let closures = [cur.take_enum()?, cur.take_enum()?];
             let singularities = [cur.take_enum()?, cur.take_enum()?];
             (
@@ -2997,7 +3002,7 @@ fn revision_sweep_sur(
                 primary_flag,
                 profile_endpoints,
                 path_endpoints,
-                cache: cache.into_form(),
+                cache: cache.into_form()?,
             }),
             layout,
             discontinuities,
@@ -3070,7 +3075,7 @@ fn taper_spl_sur(
                     reference_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3192,11 +3197,13 @@ impl RevisionSurfaceCache {
     }
 
     /// Convert cache metadata to its neutral representation.
-    pub(crate) fn into_form(self) -> RevisionCacheForm {
-        match self {
-            Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache { fit_tolerance },
+    pub(crate) fn into_form(self) -> Option<RevisionCacheForm> {
+        Some(match self {
+            Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache {
+                fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(fit_tolerance).ok()?,
+            },
             Self::Parameterized(parameters) => RevisionCacheForm::Parameterization(parameters),
-        }
+        })
     }
 }
 
@@ -3314,7 +3321,7 @@ fn off_spl_sur(
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: flags.try_into().ok()?,
-                        cache: cache.into_form(),
+                        cache: cache.into_form()?,
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -3413,7 +3420,7 @@ fn rot_spl_sur(
                     reference_endpoints: profile_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3499,7 +3506,7 @@ fn sum_spl_sur(
                     reference_endpoints: first_endpoints,
                     second_endpoints,
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3603,7 +3610,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: Vec::new(),
-                        cache: cache.into_form(),
+                        cache: cache.into_form()?,
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -3677,7 +3684,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             reference_endpoints: [None; 2],
             second_endpoints: [None; 2],
             flags: Vec::new(),
-            cache: cache.into_form(),
+            cache: cache.into_form()?,
             discontinuities: tail_discontinuities,
             tail_flag,
             trailing_flags: Vec::new(),
@@ -3991,7 +3998,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities: discontinuities.clone(),
                     tail_flag,
                     trailing_flags: Vec::new(),

@@ -156,7 +156,7 @@ fn g2_full_support_keeps_the_flat_wire_shape() {
         support: Some(crate::geometry::G2BlendFullSupport {
             surface: crate::ids::SurfaceId::mint("test:model:surface#support")
                 .expect("valid identity"),
-            tolerance: 0.02,
+            tolerance: crate::geometry::FitTolerance::try_new(0.02).unwrap(),
         }),
     };
     let value = serde_json::to_value(&shape).unwrap();
@@ -760,6 +760,7 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
 
 mod compound_components;
 mod compound_loft;
+mod fit_tolerance;
 mod nurbs_invariants;
 
 mod vertex_blend_twists;

@@ -220,11 +220,9 @@ pub(crate) fn try_decode_e5(
         annotations
             .derived(&procedural_id, "surface")
             .derived(&procedural_id, "definition");
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
-            jet.definition()?,
-            None,
-        ));
+        ir.model
+            .procedural_surfaces
+            .push(ProceduralSurface::new(procedural_id, jet.definition()?, None).ok()?);
     }
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();

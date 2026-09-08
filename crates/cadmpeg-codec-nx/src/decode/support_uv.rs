@@ -1344,7 +1344,11 @@ fn complete_support_uv_wave(
                     }
                     reproduces
                 };
-                if reproduces_chart {
+                let admitted_fit_tolerance =
+                    cadmpeg_ir::geometry::FitTolerance::try_new(effective_fit_tolerance).ok();
+                if let Some(admitted_fit_tolerance) =
+                    admitted_fit_tolerance.filter(|_| reproduces_chart)
+                {
                     if all_parameters_certified {
                         endpoint_values = [
                             uv.first().and_then(|sample_uv| {
@@ -1392,7 +1396,7 @@ fn complete_support_uv_wave(
                         procedural_id.clone(),
                         side,
                         pcurve,
-                        effective_fit_tolerance,
+                        admitted_fit_tolerance,
                     ));
                 } else {
                     failed_attempts.insert(

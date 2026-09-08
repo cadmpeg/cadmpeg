@@ -686,7 +686,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
                 ),
             },
             None,
-        );
+        )
+        .unwrap();
         (owner, procedural)
     };
     for ordinal in 0..2 {
@@ -815,7 +816,8 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
                 ),
             },
             None,
-        );
+        )
+        .unwrap();
         (owner, procedural)
     };
     for ordinal in 0..2 {
@@ -930,7 +932,8 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                 ),
             },
             None,
-        );
+        )
+        .unwrap();
         (owner, procedural)
     };
     for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
@@ -962,7 +965,8 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                 unreachable!()
             };
             *support = SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar");
-        });
+        })
+        .unwrap();
     assert!(
         super::thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output))
             .is_none()
@@ -977,7 +981,8 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                 unreachable!()
             };
             *distance = 7.0;
-        });
+        })
+        .unwrap();
     assert!(super::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());
 }
 
@@ -1036,7 +1041,8 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 native: None,
             },
             None,
-        );
+        )
+        .unwrap();
         (owner, procedural)
     };
     let (first_owner, first) = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
@@ -1084,21 +1090,23 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
     let second_support = SurfaceId::mint("nx:s4:blend-support#b").expect("identity grammar");
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
-        procedural.edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
-                unreachable!()
-            };
-            *supports = [
-                Some(BlendSupport {
-                    surface: first_support.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: second_support.clone(),
-                    reversed: true,
-                }),
-            ];
-        });
+        procedural
+            .edit_definition(|definition| {
+                let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                    unreachable!()
+                };
+                *supports = [
+                    Some(BlendSupport {
+                        surface: first_support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: second_support.clone(),
+                        reversed: true,
+                    }),
+                ];
+            })
+            .unwrap();
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);
@@ -1187,7 +1195,8 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             native: None,
         },
         None,
-    );
+    )
+    .unwrap();
     attach_test_body_procedural_surface(
         &mut ir,
         &BodyId::mint("nx:s4:body#3").expect("identity grammar"),

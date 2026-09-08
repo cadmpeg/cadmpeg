@@ -1447,15 +1447,16 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         },
         source_object: None,
     });
-    ir.model
-        .procedural_surfaces
-        .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+    ir.model.procedural_surfaces.push(
+        cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound {
                 components: Vec::new(),
             },
             None,
-        ));
+        )
+        .unwrap(),
+    );
 
     let report = write_step(
         &ir,

@@ -200,17 +200,21 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
             .unwrap(),
     );
-    ir.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Sweep {
-            native: Some(native),
-            ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        let form = native.revision_form.as_mut().expect("revision sweep form");
-        form.cache = crate::geometry::RevisionCacheForm::SolvedCache { fit_tolerance: 0.0 };
-    });
+    ir.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Sweep {
+                native: Some(native),
+                ..
+            } = definition
+            else {
+                unreachable!()
+            };
+            let form = native.revision_form.as_mut().expect("revision sweep form");
+            form.cache = crate::geometry::RevisionCacheForm::SolvedCache {
+                fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
+            };
+        })
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -223,26 +227,28 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    ir.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Sweep {
-            native: Some(native),
-            ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        let form = native.revision_form.as_mut().expect("revision sweep form");
-        form.cache = crate::geometry::RevisionCacheForm::Parameterization(
-            RevisionSurfaceParameterization::default(),
-        );
-        if let SweepSurfaceLayout::LawDriven { first_law, .. } = &mut native.layout {
-            **first_law = LawExpression::Text {
-                value: "unsupported-law".into(),
+    ir.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Sweep {
+                native: Some(native),
+                ..
+            } = definition
+            else {
+                unreachable!()
             };
-        } else {
-            unreachable!()
-        }
-    });
+            let form = native.revision_form.as_mut().expect("revision sweep form");
+            form.cache = crate::geometry::RevisionCacheForm::Parameterization(
+                RevisionSurfaceParameterization::default(),
+            );
+            if let SweepSurfaceLayout::LawDriven { first_law, .. } = &mut native.layout {
+                **first_law = LawExpression::Text {
+                    value: "unsupported-law".into(),
+                };
+            } else {
+                unreachable!()
+            }
+        })
+        .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).is_none());
     assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_none());

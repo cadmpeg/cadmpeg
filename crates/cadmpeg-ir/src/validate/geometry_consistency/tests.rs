@@ -898,14 +898,14 @@ fn pcurve_surface_mismatch_is_flagged() {
         "procedural UVs must not be evaluated on the solved cache, got: {:?}",
         procedural_report.findings
     );
-    procedural.model.procedural_surfaces[0].replace_definition(
-        ProceduralSurfaceDefinition::Exact {
+    procedural.model.procedural_surfaces[0]
+        .replace_definition(ProceduralSurfaceDefinition::Exact {
             spline: crate::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
                 extension: 0,
             },
-        },
-    );
+        })
+        .unwrap();
     let exact_report = validate_neutral(&procedural, Vec::new());
     assert!(
         !exact_report

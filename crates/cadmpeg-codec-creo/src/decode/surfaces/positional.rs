@@ -260,7 +260,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let replay_bound_surfaces = scan
         .curves
         .tabulated_cylinder_replays
@@ -399,11 +399,12 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     revision_form: None,
                 },
                 None,
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn section_contains_offset(
@@ -433,7 +434,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
         *replay_counts.entry(replay.surface_id).or_default() += 1;
@@ -552,9 +553,10 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     revision_form: None,
                 },
                 None,
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

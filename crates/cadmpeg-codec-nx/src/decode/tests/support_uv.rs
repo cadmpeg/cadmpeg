@@ -360,20 +360,23 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        offset_construction,
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: 0.75,
-            u_sense: None,
-            v_sense: None,
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            offset_construction,
+            ProceduralSurfaceDefinition::Offset {
+                support,
+                distance: 0.75,
+                u_sense: None,
+                v_sense: None,
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        )
+        .unwrap(),
+    );
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Unknown { record: None },

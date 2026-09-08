@@ -1173,27 +1173,30 @@ fn blend_contact_transfer_fixture(
             },
         ),
     );
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-contact-construction")
-            .expect("identity grammar"),
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface: support.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: other_support,
-                    reversed: false,
-                }),
-            ],
-            spine: Some(spine),
-            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-contact-construction")
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other_support,
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine),
+                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
 
     for index in 0..candidate_count {
         let curve = CurveId::mint(format!(
@@ -1304,26 +1307,29 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         ),
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        target_construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface: source.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: other_support,
-                    reversed: false,
-                }),
-            ],
-            spine: Some(spine),
-            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            target_construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: source.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other_support,
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine),
+                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
 
     let curve =
         CurveId::mint("test:model:entity#synthetic:solved-boundary").expect("identity grammar");

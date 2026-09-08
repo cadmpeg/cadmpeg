@@ -108,7 +108,10 @@ pub struct Brep {
 
 impl Brep {
     /// Qualify every document-arena identity and internal reference by one site key.
-    pub(crate) fn qualify_ids(&mut self, site: &str) {
+    pub(crate) fn qualify_ids(
+        &mut self,
+        site: &str,
+    ) -> Result<(), cadmpeg_ir::geometry::CacheFitToleranceError> {
         let qualify = |value: &str| {
             value.split_once('#').map_or_else(
                 || value.to_owned(),
@@ -304,7 +307,7 @@ impl Brep {
                         .expect("qualified identity");
                 }
                 _ => {}
-            });
+            })?;
         }
         for curve in &mut self.curves {
             curve.id = qualify(curve.id.as_str())
@@ -354,6 +357,8 @@ impl Brep {
         let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
         annotations.map_exactness_ids(qualify);
         self.annotations = annotations.build();
+
+        Ok(())
     }
 }
 
@@ -605,7 +610,7 @@ fn emit_offset_surface(
     annotations
         .note(&surface, source_stream, offset.offset as u64)
         .tag("00_3c");
-    out.procedural_surfaces.push(ProceduralSurface::new(
+    let geometry = match ProceduralSurface::new(
         construction.clone(),
         ProceduralSurfaceDefinition::Offset {
             support,
@@ -618,14 +623,24 @@ fn emit_offset_surface(
             ),
         },
         None,
-    ));
+    ) {
+        Ok(procedural) => {
+            out.procedural_surfaces.push(procedural);
+            SurfaceGeometry::Procedural {
+                construction,
+                cache: None,
+            }
+        }
+        Err(_) => {
+            out.stats.unknown_surface_faces += 1;
+            annotations.exactness(&surface, Exactness::Unknown);
+            SurfaceGeometry::Unknown { record: None }
+        }
+    };
     out.surfaces.push(Surface {
         id: surface,
         source_object: None,
-        geometry: SurfaceGeometry::Procedural {
-            construction,
-            cache: None,
-        },
+        geometry,
     });
 }
 
@@ -1819,7 +1834,7 @@ fn decode_graph(
                         f.bridge_attr
                     ))
                     .expect("identity grammar");
-                    out.procedural_surfaces.push(ProceduralSurface::new(
+                    let geometry = match ProceduralSurface::new(
                         procedural_id.clone(),
                         ProceduralSurfaceDefinition::Blend {
                             supports: [
@@ -1840,17 +1855,27 @@ fn decode_graph(
                             native: None,
                         },
                         None,
-                    ));
+                    ) {
+                        Ok(procedural) => {
+                            out.procedural_surfaces.push(procedural);
+                            SurfaceGeometry::Procedural {
+                                construction: procedural_id,
+                                cache: None,
+                            }
+                        }
+                        Err(_) => {
+                            out.stats.unknown_surface_faces += 1;
+                            annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
+                            SurfaceGeometry::Unknown { record: None }
+                        }
+                    };
                     annotations
                         .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
                         .tag("00_38");
                     out.surfaces.push(Surface {
                         id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         source_object: None,
-                        geometry: SurfaceGeometry::Procedural {
-                            construction: procedural_id,
-                            cache: None,
-                        },
+                        geometry,
                     });
                 } else if let Some((geometry, offset, tag, derived)) =
                     resolve_sweep_surface(carriers, t, f)
@@ -6217,7 +6242,8 @@ mod tests {
                     native: None,
                 },
                 None,
-            )],
+            )
+            .unwrap()],
             ..Default::default()
         };
 

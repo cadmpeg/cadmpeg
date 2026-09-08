@@ -45,16 +45,22 @@ pub(super) fn normalize_model_lengths(
         scale_curve_geometry(&mut curve.geometry, length_scale_mm)?;
     }
     for procedural in &mut ir.model.procedural_surfaces {
-        procedural.edit_definition(|definition| {
-            scale_procedural_surface_definition(definition, length_scale_mm);
-        });
-        procedural.scale_cache_fit_tolerance(length_scale_mm);
+        procedural
+            .edit_definition(|definition| {
+                scale_procedural_surface_definition(definition, length_scale_mm);
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        procedural
+            .scale_cache_fit_tolerance(length_scale_mm)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for procedural in &mut ir.model.procedural_curves {
         procedural.edit_definition(|definition| {
             scale_procedural_curve_definition(definition, length_scale_mm);
         });
-        procedural.scale_cache_fit_tolerance(length_scale_mm);
+        procedural
+            .scale_cache_fit_tolerance(length_scale_mm)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for point in &mut ir.model.points {
         scale_point3(&mut point.position, length_scale_mm);

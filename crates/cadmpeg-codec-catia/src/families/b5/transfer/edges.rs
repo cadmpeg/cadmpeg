@@ -282,7 +282,7 @@ pub(super) fn emit_edges(
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-) -> HashMap<u32, EdgeId> {
+) -> Option<HashMap<u32, EdgeId>> {
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
@@ -366,11 +366,10 @@ pub(super) fn emit_edges(
             if cache_fit_tolerance.is_some() {
                 annotations.derived(&procedural_id, "cache_fit_tolerance");
             }
-            if let Ok(procedural) =
-                ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance)
-            {
-                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
-            }
+            let procedural =
+                ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance).ok()?;
+
+            let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }
         annotate(
             annotations,
@@ -398,5 +397,5 @@ pub(super) fn emit_edges(
             tolerance: edge_tolerance,
         });
     }
-    edge_id_map
+    Some(edge_id_map)
 }

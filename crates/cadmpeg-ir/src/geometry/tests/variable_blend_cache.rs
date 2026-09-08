@@ -15,7 +15,7 @@ fn variable_blend_cache_preserves_native_prefix_and_flat_wire() {
     for prefix in [-3, 1, 11] {
         let cache = VariableBlendCache::Current {
             shape_prefix: NonZeroI64::new(prefix).unwrap(),
-            fit_tolerance: 0.125,
+            fit_tolerance: crate::geometry::FitTolerance::try_new(0.125).unwrap(),
         };
         let mut wire = serde_json::to_value(CacheWire {
             cache: cache.clone(),

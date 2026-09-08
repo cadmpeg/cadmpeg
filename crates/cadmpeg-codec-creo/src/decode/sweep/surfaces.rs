@@ -458,7 +458,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -725,12 +725,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         revision_form: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]
