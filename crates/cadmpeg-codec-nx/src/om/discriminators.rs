@@ -266,3 +266,32 @@ impl TryFrom<u8> for OperationBodyReferenceBranch {
         }
     }
 }
+
+/// Admitted modes of a point construction header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum PointHeaderMode {
+    /// Serialized `0x02` form.
+    Form02 = 0x02,
+    /// Serialized `0x03` form.
+    Form03 = 0x03,
+}
+
+impl From<PointHeaderMode> for u8 {
+    fn from(mode: PointHeaderMode) -> Self {
+        mode as Self
+    }
+}
+
+impl TryFrom<u8> for PointHeaderMode {
+    type Error = &'static str;
+
+    fn try_from(mode: u8) -> Result<Self, Self::Error> {
+        match mode {
+            0x02 => Ok(Self::Form02),
+            0x03 => Ok(Self::Form03),
+            _ => Err("PointHeaderMode.mode is not an admitted discriminator"),
+        }
+    }
+}

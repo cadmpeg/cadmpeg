@@ -871,7 +871,7 @@ impl<'a> Cursor<'a> {
         } else {
             size
         };
-        ctx.charge_retained(byte_len as u64, "retain OLE property string", None)?;
+        ctx.charge_retained(byte_len as u64, "retain OLE property string")?;
         decode_code_page(self.take(byte_len, field)?, code_page)
     }
 
@@ -884,7 +884,7 @@ impl<'a> Cursor<'a> {
         let byte_len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
         })?;
-        ctx.charge_retained(byte_len as u64, "retain OLE Unicode property string", None)?;
+        ctx.charge_retained(byte_len as u64, "retain OLE Unicode property string")?;
         let value = self.view.utf16_le(count).ok_or_else(|| {
             if self.view.remaining() < byte_len {
                 self.truncated(field)

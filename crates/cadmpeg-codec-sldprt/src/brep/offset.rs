@@ -16,11 +16,11 @@ const COMMON_REFERENCE_COUNT: usize = 5;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OffsetCarrier {
     /// Attribute of the support-surface carrier.
-    pub support: u16,
+    pub(crate) support: u16,
     /// Signed offset distance in millimetres.
-    pub distance: f64,
+    pub(crate) distance: f64,
     /// Byte offset of the `00 3c` tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 fn parse_payload(

@@ -206,6 +206,7 @@ pub(crate) struct ProteinAppearanceEdit {
 pub(crate) fn patch_protein_appearances(
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
+    notes: &mut Vec<String>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
@@ -231,7 +232,7 @@ pub(crate) fn patch_protein_appearances(
         }
         let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
         if name.ends_with("AssetData/InstanceProperties.bin") {
-            patch_instance_colors(protein, &mut bytes, edits, &mut patched)?;
+            patch_instance_colors(protein, &mut bytes, edits, &mut patched, notes)?;
         }
         zip.start_file(name, options).map_err(|error| {
             CodecError::malformed(format_args!("cannot write nested Protein entry: {error}"))
@@ -250,18 +251,26 @@ fn patch_instance_colors(
     bytes: &mut [u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
+    notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let frames = cadmpeg_protein::record_frames(bytes).ok_or_else(|| {
+    let frames = cadmpeg_protein::framing::record_frames(bytes).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein InstanceProperties pages".into())
     })?;
     let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
-        cadmpeg_protein::decode(protein, bytes)?
+        let outcome = cadmpeg_protein::decode_detailed(protein, bytes)?;
+        notes.extend(outcome.rejected.iter().map(|rejected| {
+            format!(
+                "Protein record {} rejected: {}",
+                rejected.ordinal, rejected.detail
+            )
+        }));
+        outcome.records
     } else {
         Vec::new()
     };
     for frame in frames {
-        let record = frame.bytes.as_slice();
+        let record = frame.bytes();
         let mut position = RECORD_MARKER.len();
         let schema = take_lp_utf8(record, &mut position).ok_or_else(|| {
             CodecError::Malformed("Protein appearance schema is truncated".into())
@@ -278,7 +287,7 @@ fn patch_instance_colors(
                 decoded
                     .iter()
                     .find(|decoded| {
-                        decoded.logical_offset == frame.logical_offset
+                        decoded.logical_offset == frame.logical_offset()
                             && decoded.schema == schema
                             && decoded.guid == guid
                     })
@@ -337,7 +346,7 @@ fn patch_instance_colors(
             for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
                 patch_logical_f64(
                     bytes,
-                    frame.logical_offset + relative + ordinal * 8,
+                    frame.logical_offset() + relative + ordinal * 8,
                     f64::from(value),
                 )?;
             }
@@ -407,7 +416,7 @@ fn patch_instance_colors(
                     }
                 }
             };
-            patch_logical_f64(bytes, frame.logical_offset + relative, *value)?;
+            patch_logical_f64(bytes, frame.logical_offset() + relative, *value)?;
         }
         patched.insert(guid);
     }
@@ -476,6 +485,8 @@ pub struct DecodedMaterials {
     /// Distance-valued texture properties omitted because their unit tag has
     /// no defined model-space conversion.
     pub untyped_distance_properties: usize,
+    /// Rejected Protein record diagnostics.
+    pub notes: Vec<String>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -500,6 +511,7 @@ pub fn decode_with_body_bindings<'a>(
     body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
+    let mut notes = Vec::new();
     let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
@@ -512,12 +524,20 @@ pub fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let record_frames = cadmpeg_protein::record_frames(instance.window()).ok_or_else(|| {
-            CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
-        })?;
+        let record_frames =
+            cadmpeg_protein::framing::record_frames(instance.window()).ok_or_else(|| {
+                CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
+            })?;
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
-            let records = cadmpeg_protein::decode(protein.window(), instance.window())?;
+            let outcome = cadmpeg_protein::decode_detailed(protein.window(), instance.window())?;
+            notes.extend(outcome.rejected.iter().map(|rejected| {
+                format!(
+                    "Protein {} record {} rejected: {}",
+                    entry.name, rejected.ordinal, rejected.detail
+                )
+            }));
+            let records = outcome.records;
             let (mut decoded, untyped_count) = appearances_from_schema_records(&records)?;
             untyped_distance_properties = untyped_distance_properties
                 .checked_add(untyped_count)
@@ -652,6 +672,7 @@ pub fn decode_with_body_bindings<'a>(
         face_assignments,
         has_topology_assignments,
         untyped_distance_properties,
+        notes,
     })
 }
 
@@ -1848,12 +1869,12 @@ fn definition_catalog<'a>(
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::record_frames(entry.window()).ok_or_else(|| {
+    let frames = cadmpeg_protein::framing::record_frames(entry.window()).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein DefinitionIteratorProperties pages".into())
     })?;
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
-        let definition = decode_definition_catalog_record(&frame.bytes)?;
+        let definition = decode_definition_catalog_record(frame.bytes())?;
         merge_definition_catalog_record(&mut definitions, definition);
     }
     Ok(definitions
@@ -1970,10 +1991,12 @@ pub(crate) fn nested_entry<'a>(
 
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
 /// Protein assets package schemas and use the schema-driven path instead.
-fn decode_fixed_logical_records(frames: &[cadmpeg_protein::RecordFrame]) -> Vec<Appearance> {
+fn decode_fixed_logical_records(
+    frames: &[cadmpeg_protein::framing::RecordFrame],
+) -> Vec<Appearance> {
     frames
         .iter()
-        .filter_map(|frame| decode_fixed_record(&frame.bytes))
+        .filter_map(|frame| decode_fixed_record(frame.bytes()))
         .collect()
 }
 

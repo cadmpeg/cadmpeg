@@ -309,7 +309,6 @@ pub enum TargetRefusalKind {
 /// The refusal carries the encoder catalog once, beside the request-state
 /// reason, so every reason is rendered and reported against the same catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct TargetRefusal {
     kind: TargetRefusalKind,
     available: TargetCatalog,

@@ -702,7 +702,7 @@ pub(crate) fn resolve_transform(
         return Err("transformation pointer names an even Directory sequence".into());
     }
     let _nested = ctx
-        .map(|ctx| ctx.enter_nested("iges_transform_chain", None))
+        .map(|ctx| ctx.enter_nested("iges_transform_chain"))
         .transpose()
         .map_err(|error| error.to_string())?;
     let depth_limit = ctx
@@ -849,7 +849,6 @@ pub(crate) fn enforce_transform_depth(
                     "iges_transform_depth",
                     depth_limit as u64,
                     depth.saturating_add(1) as u64,
-                    None,
                 ));
             }
             if !path.insert(sequence) {
@@ -1159,14 +1158,9 @@ pub(super) fn curve_geometry_coplanar(
         CurveGeometry::Transformed {
             basis,
             transform: map,
-        } => curve_geometry_coplanar(
-            basis,
-            index,
-            transform.compose(*map),
-            plane,
-            resolution,
-            active,
-        ),
+        } => transform.compose(*map).is_ok_and(|transform| {
+            curve_geometry_coplanar(basis, index, transform, plane, resolution, active)
+        }),
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
     }
 }

@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     if !ir.model.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
@@ -264,7 +264,11 @@ fn transform_surface(
         }
         SurfaceGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = transform.compose(*carrier),
+        } => {
+            *carrier = transform.compose(*carrier).map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+            })?;
+        }
     }
     Ok(())
 }
@@ -328,7 +332,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Composite { .. } => {}
         CurveGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = transform.compose(*carrier),
+        } => {
+            *carrier = transform.compose(*carrier).map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+            })?;
+        }
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "cannot bake a transform into a non-explicit curve".into(),

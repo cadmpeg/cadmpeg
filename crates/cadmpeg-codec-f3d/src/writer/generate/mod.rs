@@ -117,7 +117,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name()
                 )));
             }
-            let valid_name = match configuration.kind {
+            let valid_name = match configuration.kind() {
                 crate::records::DesignConfigurationKind::Table => {
                     configuration.entry_name().ends_with(".dsgcfg")
                 }

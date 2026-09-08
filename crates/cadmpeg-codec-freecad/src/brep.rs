@@ -1603,7 +1603,7 @@ pub fn parse_payloads(
 }
 
 fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid exact-shape property XML {}: {error}",
             property.id
@@ -1968,7 +1968,9 @@ pub(crate) fn parse_binary_prefix(
                     let power = cursor.i32("binary location power")?;
                     let powered =
                         transform_power(locations[referenced - 1].transform, i64::from(power))?;
-                    transform = powered.compose(transform);
+                    transform = powered
+                        .compose(transform)
+                        .map_err(location_transform_error)?;
                     factors.push(LocationFactor {
                         location: referenced,
                         power: i64::from(power),
@@ -3312,7 +3314,9 @@ fn parse_locations(
                     }
                     let power = cursor.integer("location factor power")?;
                     let powered = transform_power(locations[referenced - 1].transform, power)?;
-                    transform = powered.compose(transform);
+                    transform = powered
+                        .compose(transform)
+                        .map_err(location_transform_error)?;
                     factors.push(LocationFactor {
                         location: referenced,
                         power,
@@ -3493,20 +3497,25 @@ fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecE
     let mut result = Transform::identity();
     while exponent > 0 {
         if exponent & 1 == 1 {
-            result = result.compose(base);
+            result = result.compose(base).map_err(location_transform_error)?;
         }
         exponent >>= 1;
         if exponent > 0 {
-            base = base.compose(base);
+            base = base.compose(base).map_err(location_transform_error)?;
         }
     }
     Ok(result)
 }
 
+/// Converts location arithmetic failure to the shape decoder error.
+pub(crate) fn location_transform_error(error: cadmpeg_ir::transform::TransformError) -> CodecError {
+    CodecError::malformed(format_args!("invalid location transform: {error}"))
+}
+
 fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
     transform
         .try_inverse_affine()
-        .ok_or_else(|| CodecError::Malformed("location transform is not invertible".into()))
+        .map_err(location_transform_error)
 }
 
 fn parse_polygons3d(
@@ -5578,10 +5587,12 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
-                .into(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text(
+                r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
+                    .into(),
+                0,
+            )
+            .unwrap(),
         };
         let entry = EntryRecord {
             id: crate::native::native_id("entry", "empty.brp"),
@@ -5620,9 +5631,11 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text(
+                r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
+                0,
+            )
+            .unwrap(),
         };
         let payloads = parse_payloads(&[property], &[]).expect("nested carrier is ignored");
         assert!(payloads.is_empty());
@@ -5644,10 +5657,11 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#
-                .into(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text(
+                r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#.into(),
+                0,
+            )
+            .unwrap(),
         };
         assert!(parse_payloads(&[property], &[]).is_err());
     }
@@ -5663,11 +5677,12 @@ pub(crate) mod tests {
             status: Some(152),
             body: crate::native::PropertyBody::Transient,
             order: 0,
-            raw_xml:
+            xml: crate::native::RetainedXml::from_text(
                 r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#
                     .into(),
-            byte_start: 0,
-            byte_end: 0,
+                0,
+            )
+            .unwrap(),
         };
         let payloads = parse_payloads(&[property], &[]).expect("transient shape is retained");
         assert!(payloads.is_empty());
@@ -5689,9 +5704,7 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: String::new(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
         };
 
         let payloads = parse_payloads(&[property], &[]).expect("unknown type is retained");

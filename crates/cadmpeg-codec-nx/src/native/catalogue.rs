@@ -13,7 +13,7 @@ use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::om::object_uuid::ObjectUuidValue;
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use std::collections::BTreeMap;
@@ -74,7 +74,7 @@ fn note_container<T: ContainerNoted>(
     let stream = a.stream("nx:container");
     for record in records {
         let (id, offset) = record.container_note();
-        let note = a.note(id, stream, offset);
+        let note = a.note(id, &stream, offset);
         if let Some(tag) = tag {
             note.tag(tag);
         }
@@ -94,7 +94,7 @@ fn note_per_stream<T: StreamNoted>(
     for record in records {
         let (id, stream_ordinal, offset) = record.stream_note();
         let stream = a.stream(format!("nx:s{stream_ordinal}"));
-        let note = a.note(id, stream, offset);
+        let note = a.note(id, &stream, offset);
         if let Some(tag) = tag {
             note.tag(tag);
         }
@@ -294,7 +294,7 @@ impl ContainerNoted for DataBlockAbrReferenceLane {
 }
 impl ContainerNoted for SegmentOmLink {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.location.source_offset())
     }
 }
 impl ContainerNoted for OmRecordArea {
@@ -697,11 +697,11 @@ fn note_display_jt_display_jt_indices(
 ) {
     let annotation_stream = a.stream("nx:container");
     for index in &m.display_jt.display_jt_indices {
-        a.note(&index.id, annotation_stream, index.source_offset)
+        a.note(&index.id, &annotation_stream, index.source_offset)
             .tag("DISPLAY_JT_INDEX");
         a.exactness(&index.id, Exactness::ByteExact);
         for row in index.rows() {
-            a.note(&row.id, annotation_stream, row.source_offset)
+            a.note(&row.id, &annotation_stream, row.source_offset)
                 .tag("DISPLAY_JT_INDEX_ROW");
             a.exactness(&row.id, Exactness::ByteExact);
         }
@@ -716,11 +716,11 @@ fn note_display_jt_display_jt_documents(
 ) {
     let annotation_stream = a.stream("nx:container");
     for document in &m.display_jt.display_jt_documents {
-        a.note(&document.id, annotation_stream, document.source_offset)
+        a.note(&document.id, &annotation_stream, document.source_offset)
             .tag("DISPLAY_JT_DOCUMENT");
         a.exactness(&document.id, Exactness::ByteExact);
         for entry in &document.toc_entries {
-            a.note(&entry.id, annotation_stream, entry.source_offset)
+            a.note(&entry.id, &annotation_stream, entry.source_offset)
                 .tag("DISPLAY_JT_TOC_ENTRY");
             a.exactness(&entry.id, Exactness::ByteExact);
         }
@@ -735,7 +735,7 @@ fn note_parasolid_parasolid_intersection_records(
 ) {
     for record in &m.parasolid.parasolid_intersection_records {
         let source_stream = a.stream(format!("nx:s{}", record.stream_ordinal));
-        a.note(&record.id, source_stream, record.inflated_offset)
+        a.note(&record.id, &source_stream, record.inflated_offset)
             .tag(if record.delta_twin {
                 "INTERSECTION_DATA"
             } else {
@@ -762,7 +762,7 @@ fn note_parasolid_parasolid_attribute_class_uses(
             .copied()
             .expect("class use owns a type-81 entity");
         let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
-        a.note(&class_use.id, source_stream, entity.inflated_offset)
+        a.note(&class_use.id, &source_stream, entity.inflated_offset)
             .tag("ATTRIBUTE_CLASS_USE");
         a.exactness(&class_use.id, Exactness::Derived);
     }
@@ -797,7 +797,7 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
             .get(class_use.entity_51_record.as_str())
             .copied()
             .expect("class use owns a type-81 entity");
-        a.note(&class_use.id, source_stream, entity.inflated_offset)
+        a.note(&class_use.id, &source_stream, entity.inflated_offset)
             .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
         a.exactness(&class_use.id, Exactness::Derived);
     }
@@ -813,7 +813,7 @@ fn note_features_feature_sketch_point_uses(
     for point_use in &m.features.feature_sketch_point_uses {
         a.note(
             &point_use.id,
-            annotation_stream,
+            &annotation_stream,
             point_use.references[0].source_offset,
         )
         .tag("SKETCH_POINT_USE");
@@ -829,8 +829,12 @@ fn note_features_feature_input_block_identity_groups(
 ) {
     let annotation_stream = a.stream("nx:container");
     for group in &m.features.feature_input_block_identity_groups {
-        a.note(&group.id, annotation_stream, group.members[0].source_offset)
-            .tag("FEATURE_INPUT_BLOCK_IDENTITY_GROUP");
+        a.note(
+            &group.id,
+            &annotation_stream,
+            group.members[0].source_offset,
+        )
+        .tag("FEATURE_INPUT_BLOCK_IDENTITY_GROUP");
         a.exactness(&group.id, Exactness::ByteExact);
     }
 }
@@ -845,7 +849,7 @@ fn note_features_feature_parameter_uses(
     for parameter_use in &m.features.feature_parameter_uses {
         a.note(
             &parameter_use.id,
-            annotation_stream,
+            &annotation_stream,
             parameter_use.bindings[0].source_offset,
         )
         .tag("FEATURE_PARAMETER_USE");
@@ -2068,10 +2072,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
-            note: |m, r, tag, a| note_container(&m.om.operation_state_groups, r, tag, a),
+            note: |m, r, tag, a| {
+                for table in &m.om.operation_state_groups {
+                    note_container(table.groups(), r, tag, a);
+                }
+            },
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_groups, r, ns),
-        len: |m| m.om.operation_state_groups.len(),
+        emit: |m, r, ns| {
+            let groups =
+                m.om.operation_state_groups
+                    .iter()
+                    .flat_map(OmRollForwardStateTable::groups)
+                    .collect::<Vec<_>>();
+            emit_arena(&groups, r, ns)
+        },
+        len: |m| {
+            m.om.operation_state_groups
+                .iter()
+                .map(|table| table.groups().len())
+                .sum()
+        },
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2571,7 +2591,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 let stream = a.stream("nx:container");
                 for entry in &m.toggle.entries {
                     let id = entry.id();
-                    let note = a.note(&id, stream, entry.source_offset());
+                    let note = a.note(&id, &stream, entry.source_offset());
                     if let Some(tag) = tag {
                         note.tag(tag);
                     }

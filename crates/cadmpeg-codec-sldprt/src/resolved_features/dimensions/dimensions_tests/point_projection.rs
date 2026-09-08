@@ -1,4 +1,5 @@
 use super::super::project_relation_point_dimensioned_circles;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
@@ -33,7 +34,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(0x829a),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
             entity_index: 0,
             entity_ref: Some("center".into()),
         }],
@@ -63,22 +64,22 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             feature_ref: Some("feature".into()),
             ordinal: 0,
             offset: 20,
-            kind: FeatureInputOperandKind::Native(0x829a),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
             class_ref: Some("class".into()),
             object_index: 0,
         }],
-        sketch_entities: vec![SketchInputEntity {
-            id: "center".into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: 0,
-            offset: 10,
-            object_index: Some(0),
-            local_id: Some(0),
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.001, 0.002]),
-            links: None,
+        sketch_entities: vec![{
+            let marker_id: String = "center".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 0, 10, SketchInputKind::Point);
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker.object_index = Some(0);
+            constructed_marker.local_id = Some(0);
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some([0.001, 0.002]);
+            constructed_marker.links = None;
+            constructed_marker
         }],
     };
     let feature = Feature {
@@ -157,7 +158,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     object_index_lane.sketch_entities[0].object_index = Some(1);
     object_index_lane.sketch_entities[0].local_id = None;
     object_index_lane.relation_instances[0].operands[0].kind =
-        FeatureInputOperandKind::Native(0x814c);
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C);
     object_index_lane.relation_instances[0].operands[0].entity_index = 1;
     let mut object_index_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(

@@ -20,10 +20,26 @@ use crate::records::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_SPATIAL_OWNER_DEPTH: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12: f64 = 1.0e-12;
+
+fn spatial_geometry_owners(
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) -> HashSet<(String, u32)> {
+    curves
+        .iter()
+        .filter(|curve| sketch_curve_is_spatial(curve))
+        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
+        .chain(points.iter().filter_map(|point| {
+            (sketch_point_depth(point)?.abs() > EPS_SPATIAL_OWNER_DEPTH)
+                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
+        }))
+        .collect()
+}
 
 fn sketch_text_horizontal_alignment(
     code: Option<u32>,
@@ -144,15 +160,7 @@ pub fn project_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let spatial_owners = curves
-        .iter()
-        .filter(|curve| sketch_curve_is_spatial(curve))
-        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
-        .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9)
-                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
-        }))
-        .collect::<HashSet<_>>();
+    let spatial_owners = spatial_geometry_owners(points, curves);
     let mut sketches = placements
         .iter()
         .filter(|placement| {
@@ -374,21 +382,13 @@ pub fn project_spatial_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let spatial_owners = curves
-        .iter()
-        .filter(|curve| sketch_curve_is_spatial(curve))
-        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
-        .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9)
-                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
-        }))
-        .chain(surfaces.iter().filter_map(|surface| {
-            Some((
-                native_stream(&surface.id)?.to_owned(),
-                surface.owner_reference?,
-            ))
-        }))
-        .collect::<HashSet<_>>();
+    let mut spatial_owners = spatial_geometry_owners(points, curves);
+    spatial_owners.extend(surfaces.iter().filter_map(|surface| {
+        Some((
+            native_stream(&surface.id)?.to_owned(),
+            surface.owner_reference?,
+        ))
+    }));
     let curves_by_record = curves
         .iter()
         .filter_map(|curve| Some(((native_stream(&curve.id)?, curve.record_index), curve)))

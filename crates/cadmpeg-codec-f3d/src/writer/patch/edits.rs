@@ -1625,12 +1625,12 @@ pub(crate) fn validate_configuration_edits(
     let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
-        if before.id() != after.id() || before.kind != after.kind {
+        if before.id() != after.id() || before.kind() != after.kind() {
             return Err(CodecError::NotImplemented(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload != after.payload || before.variant_order != after.variant_order {
+        if before.payload() != after.payload() || before.variant_order() != after.variant_order() {
             edits.insert(
                 name.to_owned(),
                 crate::design::configurations::encode_configuration_payload(after)?,

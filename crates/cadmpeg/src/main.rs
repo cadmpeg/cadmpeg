@@ -162,9 +162,11 @@ enum Command {
             num_args = 0..=1,
             require_equals = true,
             default_missing_value = "any",
+            default_value_t = LossPolicy::Allow,
+            hide_default_value = true,
             value_name = "SCOPE"
         )]
-        reject_lossy: Option<LossPolicy>,
+        reject_lossy: LossPolicy,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -336,7 +338,7 @@ fn main() -> ExitCode {
         Command::Inspect(inspect::InspectArgs::Summary(args)) => commands::inspect(
             &inputs,
             args.file.path(),
-            args.input_args.input_format,
+            args.input_format,
             args.json,
             FileDestination::optional(args.report, args.force).as_ref(),
             args.limits.limits(),
@@ -353,7 +355,15 @@ fn main() -> ExitCode {
         } => commands::dump(
             &inputs,
             file.path(),
-            &DestinationPolicy::new(output, force, false),
+            &match output {
+                Some(path) => DestinationPolicy::File(FileDestination {
+                    path,
+                    overwrite: force,
+                }),
+                None => DestinationPolicy::Stdout {
+                    allow_binary: false,
+                },
+            },
             FileDestination::optional(report, force).as_ref(),
             input_args.input_format,
             &decode,
@@ -416,10 +426,18 @@ fn main() -> ExitCode {
             decode,
         } => {
             let conversion_args = commands::ConversionArgs {
-                losses: reject_lossy.unwrap_or_default(),
+                losses: reject_lossy,
                 allow_errors,
                 allow_empty,
-                destination: DestinationPolicy::new(output, force, binary_stdout),
+                destination: match output {
+                    Some(path) => DestinationPolicy::File(FileDestination {
+                        path,
+                        overwrite: force,
+                    }),
+                    None => DestinationPolicy::Stdout {
+                        allow_binary: binary_stdout,
+                    },
+                },
                 report: FileDestination::optional(report, force),
                 forced_input: input_args.input_format,
             };

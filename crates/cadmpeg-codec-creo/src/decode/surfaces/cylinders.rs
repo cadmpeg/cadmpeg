@@ -2,6 +2,7 @@
 //! Hole, split, round, and positional cylinders and cones.
 
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -22,7 +23,6 @@ use super::super::holes::{
     counterbore_patch_geometries, cylinder_from_complementary_outline_bounds, simple_hole_geometry,
 };
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
 use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled_model_plane};
@@ -523,7 +523,7 @@ fn round_edge_cylinder_frame(
     };
     let mut candidates = Vec::new();
     for (first_index, first_support) in support_planes.iter().copied().enumerate() {
-        let Some(first_normal) = normalized(first_support.normal) else {
+        let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
         let first_support = PlaneEquation {
@@ -531,7 +531,7 @@ fn round_edge_cylinder_frame(
             normal: first_normal,
         };
         for second_support in support_planes.iter().copied().skip(first_index + 1) {
-            let Some(second_normal) = normalized(second_support.normal) else {
+            let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
             let second_support = PlaneEquation {
@@ -580,7 +580,7 @@ fn round_edge_cylinder_frame(
                     let radial = std::array::from_fn(|index| {
                         relative[index] - axis[index] * dot(relative, axis)
                     });
-                    let Some(ref_direction) = normalized(radial) else {
+                    let Some(ref_direction) = normalize(radial) else {
                         continue;
                     };
                     let axial_span = dot(
@@ -631,11 +631,11 @@ fn unique_tangent_axial_interval_corner_frame(
         .iter()
         .copied()
         .filter_map(|candidate| {
-            let axis = normalized(candidate.axis())?;
+            let axis = normalize(candidate.axis())?;
             let score = support_planes
                 .iter()
                 .filter(|plane| {
-                    let Some(normal) = normalized(plane.normal) else {
+                    let Some(normal) = normalize(plane.normal) else {
                         return false;
                     };
                     if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
@@ -662,12 +662,12 @@ fn unique_support_tangent_cylinder_frame(
     stored: crate::surface::PositionalCylinderFrame,
     support_planes: &[PlaneEquation],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    let axis = normalized(stored.axis())?;
+    let axis = normalize(stored.axis())?;
     let mut origins = vec![stored.origin()];
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
     for plane in support_planes {
-        let normal = normalized(plane.normal)?;
+        let normal = normalize(plane.normal)?;
         if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
             return None;
         }
@@ -783,7 +783,7 @@ fn perpendicular_round_edge_cylinder_frame(
     let mut has_endpoint_incidence = false;
     let mut has_equal_radius_projections = false;
     for (first_index, first_support) in support_planes.iter().copied().enumerate() {
-        let Some(first_normal) = normalized(first_support.normal) else {
+        let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
         let first_support = PlaneEquation {
@@ -791,7 +791,7 @@ fn perpendicular_round_edge_cylinder_frame(
             normal: first_normal,
         };
         for second_support in support_planes.iter().copied().skip(first_index + 1) {
-            let Some(second_normal) = normalized(second_support.normal) else {
+            let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
             if dot(first_normal, second_normal).abs() > EPS_ROUND_EDGE_RELATIVE {
@@ -1243,8 +1243,8 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         .chain(&second.center)
         .map(|value| value.abs())
         .fold(radius_scale, f64::max);
-    let first_axis = normalized(first.axis)?;
-    let second_axis = normalized(second.axis)?;
+    let first_axis = normalize(first.axis)?;
+    let second_axis = normalize(second.axis)?;
     ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
     let displacement: [f64; 3] =
         std::array::from_fn(|index| second.center[index] - first.center[index]);

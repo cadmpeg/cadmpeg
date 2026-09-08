@@ -844,7 +844,7 @@ pub(crate) fn resolved_historical_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let faces = historical_face_group_slots(group, operands, false)?;
+    let faces = historical_face_group_slots(group, operands, FaceGroupMembers::Resolved)?;
     historical_face_selection_in_state(scope, group, previous_state_id?, faces)
 }
 
@@ -914,7 +914,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
     {
         return None;
     }
-    let faces = historical_face_group_slots(group, operands, true)?;
+    let faces = historical_face_group_slots(group, operands, FaceGroupMembers::SplitFaceContext)?;
     historical_face_selection_in_state(scope, group, previous_state_id?, faces)
 }
 
@@ -1000,10 +1000,16 @@ fn split_face_updated_target_slots(
     (represented == updated).then_some(faces)
 }
 
+#[derive(Clone, Copy)]
+enum FaceGroupMembers {
+    Resolved,
+    SplitFaceContext,
+}
+
 fn historical_face_group_slots(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-    allow_split_face_context_members: bool,
+    members: FaceGroupMembers,
 ) -> Option<Vec<i64>> {
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members().len());
@@ -1027,7 +1033,7 @@ fn historical_face_group_slots(
             return None;
         }
         let member_slots = if operand.resolved_face_slots.is_empty() {
-            if allow_split_face_context_members {
+            if matches!(members, FaceGroupMembers::SplitFaceContext) {
                 if let Some(slots) = split_face_complete_candidate_slots(operand) {
                     Some(slots)
                 } else if is_split_face_context_member(operand) {

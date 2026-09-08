@@ -21,6 +21,7 @@ use super::transforms::{
 };
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
@@ -107,7 +108,7 @@ fn native_dimensioned_circle_construction_state(
             .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
             .filter(|marker| marker.coordinates_m.is_some())
             .collect::<Vec<_>>();
-        roster.sort_unstable_by_key(|marker| marker.offset);
+        roster.sort_unstable_by_key(|marker| marker.offset());
         for (_, radial_index, construction) in radial_circle_records(&lane.native_payload) {
             let Some(radial) = roster.get(radial_index) else {
                 continue;
@@ -139,10 +140,10 @@ fn native_radial_record_for_marker(
         })?;
         radial_circle_records(&lane.native_payload)
             .into_iter()
-            .find(|(offset, ..)| usize::try_from(marker.offset).ok() == Some(*offset))
+            .find(|(offset, ..)| usize::try_from(marker.offset()).ok() == Some(*offset))
             .map(|(_, radial_index, construction)| (radial_index, construction))
             .or_else(|| {
-                let offset = usize::try_from(marker.offset).ok()?;
+                let offset = usize::try_from(marker.offset()).ok()?;
                 extended_radial_circle_index(&lane.native_payload, offset)
                     .map(|radial_index| (radial_index, false))
             })
@@ -177,7 +178,7 @@ fn unique_native_radial_witness(
         .iter()
         .filter(|candidate| {
             candidate.feature_ref == center.feature_ref
-                && candidate.offset > center.offset
+                && candidate.offset() > center.offset()
                 && matches!(
                     candidate.kind,
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
@@ -218,7 +219,7 @@ fn dimensioned_arc_native_geometry(
         &markers_by_id,
         &object_markers,
     );
-    let inline = usize::try_from(marker.offset)
+    let inline = usize::try_from(marker.offset())
         .ok()
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset));
     let ([center, start, end], endpoint_pair) = if let Some(coordinates) = inline {
@@ -288,7 +289,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
         .iter()
         .filter(|handle| {
             handle.feature_ref.as_deref() == Some(feature)
-                && handle.offset < operand.offset
+                && handle.offset() < operand.offset
                 && handle.coordinates_m.is_none()
                 && handle.kind == SketchInputKind::LineOrCircle
         })
@@ -302,7 +303,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
             let arc = lane.sketch_entities.iter().find(|candidate| {
                 candidate.id == first.entity_ref
                     && candidate.feature_ref.as_deref() == Some(feature)
-                    && candidate.offset < handle.offset
+                    && candidate.offset() < handle.offset()
                     && candidate.local_id == Some(u32::from(first.local_id))
                     && candidate.coordinates_m.is_some()
                     && candidate.kind == SketchInputKind::Arc
@@ -391,7 +392,7 @@ fn dimensioned_relation_carrier<'a>(
             construction: Some(true),
         });
     }
-    if operand.kind == FeatureInputOperandKind::Native(0x836e) {
+    if operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E) {
         let marker = declared_entity_handle_indexed_circle_dimension_center(
             lanes, feature, operand, radius,
         )?;
@@ -403,7 +404,7 @@ fn dimensioned_relation_carrier<'a>(
     }
     if matches!(
         operand.kind,
-        FeatureInputOperandKind::Native(0x80d4 | 0x80d5)
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D4 | NativeOperandTag::TAG_80D5)
     ) {
         let marker = declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
         return Some(DimensionedRelationCarrier {
@@ -420,7 +421,7 @@ fn dimensioned_relation_carrier<'a>(
     });
     let explicit_current_arc_handle_point = explicit_point_marker
         && explicit.is_some_and(|marker| {
-            let Ok(offset) = usize::try_from(marker.offset) else {
+            let Ok(offset) = usize::try_from(marker.offset()) else {
                 return false;
             };
             lanes.iter().any(|lane| {
@@ -1102,7 +1103,7 @@ pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
     {
         return None;
     }
-    pairs.sort_unstable_by_key(|(center, _)| center.offset);
+    pairs.sort_unstable_by_key(|(center, _)| center.offset());
     Some(pairs)
 }
 
@@ -1355,7 +1356,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     )
                 })
                 .collect::<Vec<_>>();
-            roster.sort_unstable_by_key(|marker| marker.offset);
+            roster.sort_unstable_by_key(|marker| marker.offset());
             let centers = roster
                 .iter()
                 .enumerate()
@@ -1468,7 +1469,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .sketch_entities
                     .iter()
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .map(|marker| marker.offset as usize)
+                    .map(|marker| marker.offset() as usize)
                     .collect::<Vec<_>>();
                 let start = range.iter().min().copied().unwrap_or(0);
                 let end = range.iter().max().copied().unwrap_or(0);
@@ -1504,7 +1505,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                     .filter(|marker| marker.coordinates_m.is_some())
                     .collect::<Vec<_>>();
-                roster.sort_unstable_by_key(|marker| marker.offset);
+                roster.sort_unstable_by_key(|marker| marker.offset());
                 radial_dimensions
                     .iter()
                     .filter_map(|(parameter, radius)| {
@@ -1556,7 +1557,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         !*construction
                             && lane.sketch_entities.iter().any(|marker| {
                                 marker.feature_ref.as_deref() == Some(native_ref)
-                                    && marker.offset == *candidate_offset as u64
+                                    && marker.offset() == *candidate_offset as u64
                             })
                             && (*candidate_offset == *offset
                                 || pair_radial_object_indices.contains(
@@ -1620,7 +1621,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                     .filter(|marker| marker.coordinates_m.is_some())
                     .collect::<Vec<_>>();
-                roster.sort_unstable_by_key(|marker| marker.offset);
+                roster.sort_unstable_by_key(|marker| marker.offset());
                 let Some(radial) = roster.get(radial_index).copied() else {
                     continue;
                 };
@@ -1649,7 +1650,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                         ))
                     })
                     .collect::<Vec<_>>();
-                candidates.sort_unstable_by_key(|(center, marker, _, _)| (*center, marker.offset));
+                candidates
+                    .sort_unstable_by_key(|(center, marker, _, _)| (*center, marker.offset()));
                 candidates.dedup_by_key(|(center, _, _, _)| *center);
                 let [(center, marker, parameter, radius)] = candidates.as_slice() else {
                     continue;

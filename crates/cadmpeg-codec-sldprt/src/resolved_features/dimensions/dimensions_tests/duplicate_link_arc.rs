@@ -1,4 +1,5 @@
 use super::super::{dimensioned_relation_carrier, DimensionedCurveNative};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind, SketchInputLink,
@@ -7,7 +8,7 @@ use std::collections::HashMap;
 
 #[test]
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
-    let kind = FeatureInputOperandKind::Native(0x8c44);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8C44);
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -15,20 +16,24 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         entity_index: 0,
         entity_ref: None,
     };
-    let marker =
-        |id: &str, offset, marker_kind, object_index, local_id, coordinates_m| SketchInputEntity {
-            id: id.into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: u32::try_from(offset).unwrap(),
+    let marker = |id: &str, offset, marker_kind, object_index, local_id, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
             offset,
-            object_index,
-            local_id,
-            kind: marker_kind,
-            state_value: None,
-            coordinates_m,
-            links: None,
-        };
+            marker_kind,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = local_id;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
+    };
     let center = marker(
         "unrelated-center",
         10,

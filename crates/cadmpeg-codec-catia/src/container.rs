@@ -55,10 +55,20 @@ pub struct FinjplSegment {
     pub range: Range<usize>,
     /// Big-endian type word immediately following the marker.
     pub type_word: u32,
-    /// Classified type family.
-    pub kind: FinjplKind,
     /// Primary length-prefixed ASCII block name, when present.
     pub name: Option<String>,
+}
+
+impl FinjplSegment {
+    /// Classified type family.
+    pub fn kind(&self) -> FinjplKind {
+        match self.type_word {
+            0x0000_0080 | 0x0000_0082 | 0x0000_0084 | 0x0000_0086 | 0x0000_008e | 0x0000_0090
+            | 0x0000_0092 => FinjplKind::Storage,
+            0x0101_0001..=0x0101_0003 => FinjplKind::ProjectFlags,
+            _ => FinjplKind::Other,
+        }
+    }
 }
 
 /// One complete JPEG preview embedded in a summary-information segment.
@@ -129,16 +139,9 @@ pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<F
         .filter_map(|(index, &pos)| {
             let type_word = View::u32_be_at(data, pos + FINJPL_MARKER.len())?;
             let segment_end = positions.get(index + 1).copied().unwrap_or(end);
-            let kind = match type_word {
-                0x0000_0080 | 0x0000_0082 | 0x0000_0084 | 0x0000_0086 | 0x0000_008e
-                | 0x0000_0090 | 0x0000_0092 => FinjplKind::Storage,
-                0x0101_0001..=0x0101_0003 => FinjplKind::ProjectFlags,
-                _ => FinjplKind::Other,
-            };
             Some(FinjplSegment {
                 range: pos..segment_end,
                 type_word,
-                kind,
                 name: finjpl_primary_name(data, pos, segment_end),
             })
         })
@@ -233,7 +236,7 @@ fn external_references_in_segments(
     const STORAGE: &[u8] = b"\x34\x12CATStorageProperty";
     segments
         .iter()
-        .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
+        .filter(|segment| segment.kind() == FinjplKind::ProjectFlags)
         .flat_map(|segment| {
             let bytes = &data[segment.range.clone()];
             bytes
@@ -1463,7 +1466,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         );
         attributes.insert(
             "family".to_string(),
-            match segment.kind {
+            match segment.kind() {
                 FinjplKind::Storage => "storage",
                 FinjplKind::ProjectFlags => "project-flags",
                 FinjplKind::Other => "other",

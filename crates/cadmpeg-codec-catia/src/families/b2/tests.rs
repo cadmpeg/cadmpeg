@@ -571,7 +571,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
         .expect("first owner-chart side");
 
     let mut wrong_selector = valid.clone();
-    wrong_selector[side_05.payload.start] = 0x09;
+    wrong_selector[side_05.payload().unwrap().start] = 0x09;
     let records = crate::wire::records::consolidated_records(&wrong_selector);
     assert!(
         crate::families::b2::records::b2_owner_charts_from_records(&wrong_selector, &records)
@@ -579,7 +579,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     );
 
     let mut wrong_bound = valid.clone();
-    wrong_bound[side_05.payload.start + 2..side_05.payload.start + 10]
+    wrong_bound[side_05.payload().unwrap().start + 2..side_05.payload().unwrap().start + 10]
         .copy_from_slice(&8.0f64.to_le_bytes());
     let records = crate::wire::records::consolidated_records(&wrong_bound);
     assert!(
@@ -588,7 +588,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     );
 
     let mut separated = valid;
-    separated.insert(side_05.range.start, 0x00);
+    separated.insert(side_05.byte_offset(), 0x00);
     let records = crate::wire::records::consolidated_records(&separated);
     assert!(
         crate::families::b2::records::b2_owner_charts_from_records(&separated, &records).is_empty()

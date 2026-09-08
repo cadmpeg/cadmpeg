@@ -21,13 +21,13 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
     assert!(scan
         .ledger
         .iter()
-        .any(|span| span.role.as_str() == "local-extra" && span.end > span.start));
+        .any(|span| span.role.as_str() == "local-extra" && span.span.end() > span.span.start()));
     let descriptor = scan
         .ledger
         .iter()
         .find(|span| span.role.as_str() == "data-descriptor")
         .expect("ZIP64 descriptor");
-    assert_eq!(descriptor.end - descriptor.start, 24);
+    assert_eq!(descriptor.span.end() - descriptor.span.start(), 24);
 }
 
 #[test]
@@ -43,7 +43,10 @@ fn frames_streaming_data_descriptor_separately_from_padding() {
         .filter(|span| span.role.as_str() == "data-descriptor")
         .collect::<Vec<_>>();
     assert_eq!(descriptors.len(), 1);
-    assert!(matches!(descriptors[0].end - descriptors[0].start, 16 | 24));
+    assert!(matches!(
+        descriptors[0].span.end() - descriptors[0].span.start(),
+        16 | 24
+    ));
 }
 
 #[test]
@@ -88,9 +91,11 @@ fn inspects_and_closes_physical_ledger() {
         .expect("namespace")
         .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
         .expect("ledger");
-    assert_eq!(ledger.first().map(|span| span.start), Some(0));
-    assert_eq!(ledger.last().map(|span| span.end), Some(archive_len));
-    assert!(ledger.windows(2).all(|pair| pair[0].end == pair[1].start));
+    assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
+    assert_eq!(ledger.last().map(|span| span.span.end()), Some(archive_len));
+    assert!(ledger
+        .windows(2)
+        .all(|pair| pair[0].span.end() == pair[1].span.start()));
     assert!(crate::validate_native(result.ir()).is_empty());
     for role in [
         "local-signature",

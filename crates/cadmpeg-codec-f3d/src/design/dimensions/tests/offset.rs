@@ -619,6 +619,10 @@ fn counted_roles_require_matching_solved_geometry() {
         Some(SketchConstraintDefinition::Vertical { entity })
             if &entity == vertical.id()
     ));
+    assert!(matches!(
+        counted_role_relation(&[&horizontal], 0x20_0000_0040),
+        Some(SketchConstraintDefinition::Horizontal { entity }) if &entity == horizontal.id()
+    ));
     assert!(counted_role_relation(&[&horizontal], 0x80).is_none());
     assert!(counted_role_relation(&[&horizontal, &vertical], 0x40).is_none());
 
@@ -703,7 +707,7 @@ fn counted_roles_require_matching_solved_geometry() {
     assert!(matches!(
         crate::design::dimensions::counted_role_relation_at_tolerance(
             &[&tangent_circle, &rounded_tangent_arc],
-            0x100,
+            &[crate::records::SketchConstraintKind::Tangent],
             TEST_LINEAR_TOLERANCE,
         ),
         Some(SketchConstraintDefinition::Tangent { first, second })

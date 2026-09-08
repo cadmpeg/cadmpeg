@@ -2013,6 +2013,12 @@ struct DesignDimensionLocusGroupWire {
 }
 
 impl DesignDimensionLocusGroup {
+    /// Constraint kinds selected by the owner mask.
+    #[must_use]
+    pub fn owner_kinds(&self) -> Vec<SketchConstraintKind> {
+        constraint_kinds_from_state(u64::from(self.owner_role)).0
+    }
+
     #[must_use]
     pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
         constraint_kinds_from_state(u64::from(self.state)).0
@@ -2253,14 +2259,14 @@ pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
 /// A finite affine placement with orthonormal basis columns.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub struct SketchPlacementMatrix([[f64; 4]; 4]);
+pub struct SketchPlacementMatrix(DesignAffineTransform);
 
 impl SketchPlacementMatrix {
     /// The identity placement.
-    pub const IDENTITY: Self = Self(IDENTITY_MATRIX);
+    pub const IDENTITY: Self = Self(DesignAffineTransform(IDENTITY_MATRIX));
     /// The row-major matrix coefficients.
     pub fn rows(self) -> [[f64; 4]; 4] {
-        self.0
+        self.0.rows()
     }
     /// The matrix rows in storage order.
     pub fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
@@ -2283,7 +2289,7 @@ impl std::ops::Index<usize> for SketchPlacementMatrix {
 
 impl From<SketchPlacementMatrix> for [[f64; 4]; 4] {
     fn from(matrix: SketchPlacementMatrix) -> Self {
-        matrix.0
+        matrix.0.rows()
     }
 }
 
@@ -2291,7 +2297,7 @@ impl TryFrom<[[f64; 4]; 4]> for SketchPlacementMatrix {
     type Error = String;
     fn try_from(value: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
         if valid_sketch_transform(&value) {
-            Ok(Self(value))
+            Ok(Self(DesignAffineTransform::try_from(value)?))
         } else {
             Err("transform must be a finite affine matrix with orthonormal columns".into())
         }
@@ -2914,17 +2920,11 @@ impl NativeRecordId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
 pub struct DesignConfiguration {
-    /// Stable identity derived from the ZIP entry name.
     id: String,
-    /// Complete ZIP entry name used for native regeneration.
     entry_name: String,
-    /// Native configuration entry family.
-    pub kind: DesignConfigurationKind,
-    /// Variant names in serialized object-member order.
-    #[serde(default)]
-    pub variant_order: Vec<String>,
-    /// Complete decoded JSON payload, including unrecognized fields.
-    pub payload: serde_json::Value,
+    kind: DesignConfigurationKind,
+    variant_order: Vec<String>,
+    payload: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Serialized configuration identity and payload.
@@ -2936,21 +2936,78 @@ pub struct DesignConfigurationWire {
     pub entry_name: String,
     /// Native configuration entry family.
     pub kind: DesignConfigurationKind,
-    /// Variant names in serialized object-member order.
+    /// Variant names in authored order.
     #[serde(default)]
     pub variant_order: Vec<String>,
-    /// Complete decoded JSON payload, including unrecognized fields.
+    /// Complete decoded JSON payload.
     pub payload: serde_json::Value,
+}
+
+impl DesignConfiguration {
+    /// Admit the entry identity, object payload, and authored variant order.
+    pub fn try_new(
+        id: String,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        if id != crate::ids::configuration_entry_id(&entry_name) {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "configuration.id must identify entry_name"
+            )));
+        }
+        let value = Self {
+            id,
+            entry_name,
+            kind,
+            variant_order,
+            payload,
+        };
+        crate::design::configurations::validate_configuration_payload(
+            &value.entry_name,
+            kind,
+            &value.payload,
+        )?;
+        crate::design::configurations::validate_configuration_variant_order(&value)?;
+        Ok(value)
+    }
+    /// Returns the admitted native identity.
+    pub(crate) fn id(&self) -> &String {
+        &self.id
+    }
+    /// Returns the configuration entry name.
+    pub(crate) fn entry_name(&self) -> &String {
+        &self.entry_name
+    }
+    /// Native configuration entry family.
+    pub fn kind(&self) -> DesignConfigurationKind {
+        self.kind
+    }
+    /// Variant names in authored order.
+    pub fn variant_order(&self) -> &[String] {
+        &self.variant_order
+    }
+    /// Complete object payload including unrecognized fields.
+    pub fn payload(&self) -> &serde_json::Map<String, serde_json::Value> {
+        &self.payload
+    }
 }
 
 impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
     type Error = String;
     fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
-        let record = Self::new(wire.entry_name, wire.kind, wire.variant_order, wire.payload);
-        if wire.id != record.id {
-            return Err("configuration.id must identify entry_name".into());
-        }
-        Ok(record)
+        let serde_json::Value::Object(payload) = wire.payload else {
+            return Err("payload must be an object".into());
+        };
+        Self::try_new(
+            wire.id,
+            wire.entry_name,
+            wire.kind,
+            wire.variant_order,
+            payload,
+        )
+        .map_err(|error| error.to_string())
     }
 }
 impl From<DesignConfiguration> for DesignConfigurationWire {
@@ -2960,34 +3017,8 @@ impl From<DesignConfiguration> for DesignConfigurationWire {
             entry_name: value.entry_name,
             kind: value.kind,
             variant_order: value.variant_order,
-            payload: value.payload,
+            payload: serde_json::Value::Object(value.payload),
         }
-    }
-}
-impl DesignConfiguration {
-    /// Constructs a configuration with the identity of its entry name.
-    pub(crate) fn new(
-        entry_name: String,
-        kind: DesignConfigurationKind,
-        variant_order: Vec<String>,
-        payload: serde_json::Value,
-    ) -> Self {
-        Self {
-            id: crate::ids::configuration_entry_id(&entry_name),
-            entry_name,
-            kind,
-            variant_order,
-            payload,
-        }
-    }
-
-    /// Returns the admitted native identity.
-    pub(crate) fn id(&self) -> &String {
-        &self.id
-    }
-    /// Returns the configuration entry name.
-    pub(crate) fn entry_name(&self) -> &String {
-        &self.entry_name
     }
 }
 
@@ -4662,6 +4693,40 @@ impl DesignMeshBody {
             container_mesh_uuid: value.container_mesh_uuid,
             tessellation_id: value.tessellation_id,
         })
+    }
+}
+
+/// A finite row-major affine placement.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
+pub struct DesignAffineTransform([[f64; 4]; 4]);
+
+impl DesignAffineTransform {
+    /// Four row-major rows.
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        self.0
+    }
+}
+
+impl TryFrom<[[f64; 4]; 4]> for DesignAffineTransform {
+    type Error = String;
+    fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        cadmpeg_ir::transform::Transform::from_rows(rows)
+            .map(|_| Self(rows))
+            .ok_or_else(|| "transform must be finite and affine".into())
+    }
+}
+
+impl From<DesignAffineTransform> for [[f64; 4]; 4] {
+    fn from(value: DesignAffineTransform) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for DesignAffineTransform {
+    type Target = [[f64; 4]; 4];
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

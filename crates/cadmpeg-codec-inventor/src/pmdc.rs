@@ -300,7 +300,7 @@ impl<'a> Cursor<'a> {
         let len = units.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor PmDc string", None)?;
+        ctx.charge_retained(len as u64, "retain Inventor PmDc string")?;
         self.source.utf16_le(units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })

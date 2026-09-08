@@ -375,13 +375,13 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     assert!(census.iter().any(|record| {
         record.object == "fcstd:native:object#Seed"
             && record.semantic_kind == "stored_geometry"
-            && record.neutral
+            && record.neutral()
             && !record.post_processed
     }));
     assert!(census.iter().any(|record| {
         record.object == "fcstd:native:object#Custom"
             && record.semantic_kind == "pattern"
-            && record.neutral
+            && record.neutral()
     }));
     let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
     assert!(
@@ -392,7 +392,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     );
     let mut corrupted = result.ir().clone();
     let mut stale_census = census;
-    stale_census[0].neutral = !stale_census[0].neutral;
+    stale_census[0].semantic_kind = "native".to_owned();
     corrupted
         .native
         .namespace_mut("fcstd")

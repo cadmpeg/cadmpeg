@@ -150,8 +150,6 @@ impl Layout {
 /// One enumerated binary section.
 #[derive(Debug, Clone)]
 pub struct Section {
-    /// Section name with any `ND:0:` prefix / `ModelView#N` suffix stripped.
-    pub name: String,
     /// Raw name as it appeared in the header, when decorated.
     pub raw_name: String,
     /// Byte offset of the section header within the file.
@@ -160,8 +158,18 @@ pub struct Section {
     pub length: usize,
     /// Expanded payload length from the TOC, excluding the section header.
     pub expanded_length: Option<usize>,
-    /// Role classification.
-    pub role: SectionRole,
+}
+
+impl Section {
+    /// Normalized section name.
+    pub fn name(&self) -> &str {
+        normalize_name(&self.raw_name)
+    }
+
+    /// Payload role derived from the section name.
+    pub fn role(&self) -> SectionRole {
+        classify(self.name())
+    }
 }
 
 /// The five payload roles admitted by a Creo section.
@@ -514,16 +522,11 @@ fn line_at(data: &[u8], start: usize) -> String {
 
 /// Normalize a decorated section name to its base ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)): strip a
 /// `ModelView#N` suffix and an `ND:0:<Name>:N` decoration.
-fn normalize_name(raw: &str) -> String {
+fn normalize_name(raw: &str) -> &str {
     let base = raw.split('#').next().unwrap_or(raw);
-    if let Some(rest) = base.strip_prefix("ND:") {
-        // ND:0:Name:N  ->  parts = ["0", "Name", "N"]; the name is index 1.
-        let parts: Vec<&str> = rest.split(':').collect();
-        if parts.len() >= 2 {
-            return parts[1].to_string();
-        }
-    }
-    base.to_string()
+    base.strip_prefix("ND:")
+        .and_then(|rest| rest.split(':').nth(1))
+        .unwrap_or(base)
 }
 
 /// Classify a normalized section name by what it carries ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
@@ -590,15 +593,11 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
     let mut sections = Vec::with_capacity(hits.len());
     for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
         let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
-        let name = normalize_name(raw);
-        let role = classify(&name);
         sections.push(Section {
-            name,
             raw_name: raw.clone(),
             offset: *hdr_off,
             length: end.saturating_sub(*hdr_off),
             expanded_length: None,
-            role,
         });
     }
     sections
@@ -682,10 +681,7 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
             {
                 continue;
             }
-            let normalized = normalize_name(&raw_name);
             sections.push(Section {
-                role: classify(&normalized),
-                name: normalized,
                 raw_name,
                 offset,
                 length,
@@ -817,10 +813,7 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         {
             continue;
         }
-        let normalized = normalize_name(raw_name);
         sections.push(Section {
-            role: classify(&normalized),
-            name: normalized,
             raw_name: raw_name.to_string(),
             offset,
             length,
@@ -850,7 +843,7 @@ fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> 
             }
             let expanded = crate::compress::decode(payload, expected_length)?;
             Some(ExpandedSection {
-                name: section.name.clone(),
+                name: section.name().to_string(),
                 source_offset,
                 compressed_length: payload.len(),
                 data: expanded,
@@ -865,7 +858,7 @@ pub(crate) fn expanded_section_for<'a>(
     section: &Section,
 ) -> Option<&'a ExpandedSection> {
     scan.framing.expanded_sections.iter().find(|expanded| {
-        expanded.name == section.name
+        expanded.name == section.name()
             && expanded.source_offset > section.offset
             && expanded.source_offset < section.offset.saturating_add(section.length)
     })
@@ -955,7 +948,7 @@ fn identify_layout(
     legacy_ascii: Option<LegacyAsciiFraming>,
 ) -> Layout {
     let has_depdb_root = sections.iter().any(|section| {
-        if section.name != "DEPDB_DATA" {
+        if section.name() != "DEPDB_DATA" {
             return false;
         }
         let Some(header_end) = section.offset.checked_add(section.raw_name.len() + 2) else {
@@ -967,7 +960,9 @@ fn identify_layout(
         data.get(header_end..section_end)
             .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD))
     });
-    let has_depdb_section = sections.iter().any(|section| section.name == "DEPDB_DATA");
+    let has_depdb_section = sections
+        .iter()
+        .any(|section| section.name() == "DEPDB_DATA");
     let has_nd_decoration = sections.iter().any(|s| s.raw_name.starts_with("ND:"));
     if has_depdb_section {
         if has_depdb_root {
@@ -1021,8 +1016,8 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Option<u32> {
 fn geom_census(data: &[u8], sections: &[Section]) -> GeomCensus {
     let Some(vg) = sections
         .iter()
-        .find(|s| s.name == VISIBGEOM)
-        .or_else(|| sections.iter().find(|s| s.name == "DEPDB_DATA"))
+        .find(|s| s.name() == VISIBGEOM)
+        .or_else(|| sections.iter().find(|s| s.name() == "DEPDB_DATA"))
     else {
         return GeomCensus::default();
     };
@@ -1068,7 +1063,7 @@ fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
-        if section.role == SectionRole::Thumbnail {
+        if section.role() == SectionRole::Thumbnail {
             continue;
         }
         let end = section
@@ -1119,7 +1114,7 @@ fn relation_model_name(filename: &str) -> Option<&str> {
 fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> {
     let section = sections
         .iter()
-        .find(|section| section.name == "FamilyInf")?;
+        .find(|section| section.name() == "FamilyInf")?;
     let end = (section.offset + section.length).min(data.len());
     let label = b"drv_tbl_ptr\0";
     let offset = find(data, label, section.offset)? + label.len();
@@ -1139,7 +1134,7 @@ fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> 
 
 fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
     let visible_namespace_present = sections.iter().any(|candidate| {
-        if candidate.name != VISIBGEOM {
+        if candidate.name() != VISIBGEOM {
             return false;
         }
         let end = (candidate.offset + candidate.length).min(data.len());
@@ -1150,8 +1145,8 @@ fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
         .iter()
         .filter(|section| {
             if visible_namespace_present {
-                section.name == VISIBGEOM
-            } else if section.name == "DEPDB_DATA" {
+                section.name() == VISIBGEOM
+            } else if section.name() == "DEPDB_DATA" {
                 let end = section
                     .offset
                     .saturating_add(section.length)
@@ -1188,7 +1183,7 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
     let mut rows = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1264,7 +1259,7 @@ fn cross_section_surface_parameters(
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1308,7 +1303,7 @@ fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<Surf
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1347,7 +1342,6 @@ fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
             record.frame_offset += section.offset;
             record.offset += section.offset;
             record.body_offset += section.offset;
-            record.end += section.offset;
             record
         }));
     }
@@ -1399,7 +1393,7 @@ fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<P
     let mut systems = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1442,7 +1436,7 @@ fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<Plane
     let mut envelopes = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1625,7 +1619,7 @@ fn cross_section_curve_rows(data: &[u8], sections: &[Section]) -> Vec<DepdbCurve
     let mut rows = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1649,7 +1643,7 @@ fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<Curv
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "Xsections")
+        .filter(|section| section.name() == "Xsections")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1669,7 +1663,7 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlaneRecord> {
     let mut planes = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "ActDatums")
+        .filter(|section| section.name() == "ActDatums")
     {
         let end = (section.offset + section.length).min(data.len());
         planes.extend(
@@ -1693,7 +1687,7 @@ fn datum_cylinders(data: &[u8], sections: &[Section]) -> Vec<DatumCylinder> {
     let mut cylinders = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "ActDatums")
+        .filter(|section| section.name() == "ActDatums")
     {
         let end = (section.offset + section.length).min(data.len());
         cylinders.extend(
@@ -1725,7 +1719,7 @@ fn structural_feature_ids(
     );
     for section in sections
         .iter()
-        .filter(|section| section.role == SectionRole::PsbGeometry)
+        .filter(|section| section.role() == SectionRole::PsbGeometry)
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1847,7 +1841,7 @@ fn feature_entity_tables(
     let mut tables = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "AllFeatur")
+        .filter(|section| section.name() == "AllFeatur")
     {
         let end = (section.offset + section.length).min(data.len());
         tables.extend(
@@ -1872,7 +1866,7 @@ fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<F
     let mut rows = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "AllFeatur")
+        .filter(|section| section.name() == "AllFeatur")
     {
         let end = (section.offset + section.length).min(data.len());
         rows.extend(feature::rows(
@@ -1889,7 +1883,10 @@ fn feature_entity_graph(
     data: &[u8],
     sections: &[Section],
 ) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
-    let Some(section) = sections.iter().find(|section| section.name == "AllFeatur") else {
+    let Some(section) = sections
+        .iter()
+        .find(|section| section.name() == "AllFeatur")
+    else {
         return (Vec::new(), Vec::new());
     };
     let end = (section.offset + section.length).min(data.len());
@@ -1998,12 +1995,12 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
     let mut definitions = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "FeatDefs" || section.name == "DEPDB_DATA")
+        .filter(|section| section.name() == "FeatDefs" || section.name() == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
         definitions.extend(
-            (if section.name == "DEPDB_DATA" {
+            (if section.name() == "DEPDB_DATA" {
                 feature::depdb_definitions(payload)
             } else {
                 feature::definitions(payload)
@@ -2014,7 +2011,7 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
                 definition
             }),
         );
-        if section.name == "DEPDB_DATA" {
+        if section.name() == "DEPDB_DATA" {
             let recipe_operations = feature::operations(payload)
                 .into_iter()
                 .filter(|operation| operation.recipe.resolved().is_some())
@@ -2056,7 +2053,7 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
 fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Vec<(usize, usize)> {
     let mut ranges = sections
         .iter()
-        .filter(|section| section.name == "DEPDB_DATA")
+        .filter(|section| section.name() == "DEPDB_DATA")
         .map(|section| {
             (
                 section.offset,
@@ -2075,7 +2072,10 @@ fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Ve
 
 fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
-    for section in sections.iter().filter(|section| section.name == "FeatDefs") {
+    for section in sections
+        .iter()
+        .filter(|section| section.name() == "FeatDefs")
+    {
         let end = (section.offset + section.length).min(data.len());
         definitions.extend(
             feature::positional_replay_definitions(&data[section.offset..end])
@@ -2094,7 +2094,7 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "MdlStatus" || section.name == "DEPDB_DATA")
+        .filter(|section| section.name() == "MdlStatus" || section.name() == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
@@ -2121,7 +2121,7 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
 fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureReferenceName> {
     sections
         .iter()
-        .filter(|section| section.name == "MdlRefInfo")
+        .filter(|section| section.name() == "MdlRefInfo")
         .flat_map(|section| {
             let end = section
                 .offset
@@ -2141,7 +2141,7 @@ fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOpe
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "MdlStatus" || section.name == "DEPDB_DATA")
+        .filter(|section| section.name() == "MdlStatus" || section.name() == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
@@ -2172,7 +2172,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
     let mut rows = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "DEPDB_DATA")
+        .filter(|section| section.name() == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -2215,7 +2215,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
 fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {
     let section = sections
         .iter()
-        .find(|section| section.name == "Geomlists")?;
+        .find(|section| section.name() == "Geomlists")?;
     let end = (section.offset + section.length).min(data.len());
     let payload = &data[section.offset..end];
     let value_offset = find(payload, label, 0)? + label.len();
@@ -2231,6 +2231,7 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
 fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str) -> Option<u32> {
     let mut values = persistence
         .integer_values
+        .rows
         .iter()
         .filter(|record| record.name == field_name)
         .filter_map(|record| {
@@ -2345,7 +2346,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             });
     let reference_lines = sections
         .iter()
-        .filter(|section| section.name == "MdlRefInfo")
+        .filter(|section| section.name() == "MdlRefInfo")
         .flat_map(|section| {
             let end = section
                 .offset
@@ -2362,7 +2363,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .collect();
     let reference_circles = sections
         .iter()
-        .filter(|section| section.name == "MdlRefInfo")
+        .filter(|section| section.name() == "MdlRefInfo")
         .flat_map(|section| {
             let end = section
                 .offset
@@ -2378,7 +2379,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .collect();
     let reference_conics: Vec<ReferenceConic> = sections
         .iter()
-        .filter(|section| section.name == "MdlRefInfo")
+        .filter(|section| section.name() == "MdlRefInfo")
         .flat_map(|section| {
             let end = section
                 .offset
@@ -2418,7 +2419,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = sections
         .iter()
-        .filter(|section| section.name == "NovisGeom")
+        .filter(|section| section.name() == "NovisGeom")
         .cloned()
         .collect::<Vec<_>>();
     let mut loop_array_sections = model_geometry_sections.clone();
@@ -2427,7 +2428,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         sections
             .iter()
             .filter(|section| {
-                if section.name != "Xsections" {
+                if section.name() != "Xsections" {
                     return false;
                 }
                 let end = (section.offset + section.length).min(data.len());
@@ -2771,7 +2772,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
     scan.framing
         .sections
         .iter()
-        .filter(|s| s.role == SectionRole::Thumbnail)
+        .filter(|s| s.role() == SectionRole::Thumbnail)
         .any(|section| {
             let end = section
                 .offset
@@ -2807,7 +2808,7 @@ pub fn summarize(
         .map(|s| {
             let mut attributes = BTreeMap::new();
             attributes.insert("offset".to_string(), s.offset.to_string());
-            if s.raw_name != s.name {
+            if s.raw_name != s.name() {
                 attributes.insert("raw_name".to_string(), s.raw_name.clone());
             }
             let expanded = expanded_section_for(scan, s);
@@ -2818,8 +2819,8 @@ pub fn summarize(
                 );
             }
             ContainerEntry {
-                name: s.name.clone(),
-                role: s.role.into(),
+                name: s.name().to_string(),
+                role: s.role().into(),
                 compression: expanded
                     .map_or(EntryCompression::None, |_| EntryCompression::UnixCompress),
                 compressed_size: s.length as u64,

@@ -73,7 +73,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     assert!(native.legacy_entity_runs[0]
         .identities
         .iter()
-        .all(|identity| identity.lead == 0x81));
+        .all(|identity| u8::from(identity.lead) == 0x81));
     assert_eq!(
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
@@ -285,14 +285,6 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store invalid legacy type name");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
-    let mut invalid_lead = native.clone();
-    invalid_lead.legacy_entity_runs[0].identities[0].lead = 0xe6;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_lead
-        .store(&mut namespace)
-        .expect("store invalid legacy identity lead");
-    assert!(crate::native::CatiaNative::load(&namespace).is_err());
-
     let mut invalid_name = native.clone();
     invalid_name.legacy_entity_runs[0].scalar_values[0].name = Some("Other".to_string());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -386,4 +378,25 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         1
     );
     assert_eq!(decoded.ir().model.parameters.len(), 1);
+}
+
+#[test]
+fn identity_lead_wire_admits_only_defined_bytes() {
+    for lead in u8::MIN..=u8::MAX {
+        let wire = serde_json::json!({"byte_offset": 0, "entity_id": 1, "lead": lead});
+        let identity =
+            serde_json::from_value::<crate::native::CatiaLegacyEntityIdentity>(wire.clone());
+        assert_eq!(identity.is_ok(), matches!(lead, 0x81 | 0x82 | 0xe5 | 0xfd));
+        match identity {
+            Ok(identity) => assert_eq!(serde_json::to_value(identity).unwrap(), wire),
+            Err(error) => assert!(error.to_string().contains("lead")),
+        }
+    }
+    let missing = serde_json::json!({"byte_offset": 0, "entity_id": 1});
+    assert!(
+        serde_json::from_value::<crate::native::CatiaLegacyEntityIdentity>(missing)
+            .unwrap_err()
+            .to_string()
+            .contains("lead")
+    );
 }

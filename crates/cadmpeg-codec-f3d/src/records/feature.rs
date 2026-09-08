@@ -2070,24 +2070,26 @@ impl DesignAssemblyLegacyOperands {
     pub(crate) fn frames(
         &self,
         solved: &DesignAssemblySolvedFrame,
-    ) -> [DesignAssemblyOperandFrame; 2] {
+    ) -> Result<[DesignAssemblyOperandFrame; 2], String> {
         let references = self.references();
         let positions = [
             self.point.construction.position,
             self.hole.construction.position,
         ];
-        [0, 1].map(|index| {
-            let mut transform = solved.transform;
+        let frames: [Result<DesignAssemblyOperandFrame, String>; 2] = [0, 1].map(|index| {
+            let mut transform = solved.transform.rows();
             for (row, value) in positions[index].into_iter().enumerate() {
-                transform.0[row][3] = value;
+                transform[row][3] = value;
             }
-            DesignAssemblyOperandFrame {
+            Ok(DesignAssemblyOperandFrame {
                 reference_record_index: references[index].value,
                 reference_offset: references[index].offset,
-                transform,
+                transform: transform.try_into()?,
                 transform_offset: solved.transform_offset,
-            }
-        })
+            })
+        });
+        let [first, second] = frames;
+        Ok([first?, second?])
     }
 
     fn from_wire(
@@ -2137,7 +2139,7 @@ impl DesignAssemblyLegacyOperands {
                 reference_offset: hole.frame.reference_offset,
             },
         )?;
-        if [point.frame, hole.frame] != carriers.frames(solved) {
+        if [point.frame, hole.frame] != carriers.frames(solved)? {
             return Err(
                 "legacy_operand_carriers frame disagrees with construction and solved_frame".into(),
             );
@@ -2145,9 +2147,12 @@ impl DesignAssemblyLegacyOperands {
         Ok(carriers)
     }
 
-    fn into_wire(self, solved: &DesignAssemblySolvedFrame) -> [DesignAssemblyLegacyOperandWire; 2] {
-        let [point_frame, hole_frame] = self.frames(solved);
-        [
+    fn into_wire(
+        self,
+        solved: &DesignAssemblySolvedFrame,
+    ) -> Result<[DesignAssemblyLegacyOperandWire; 2], String> {
+        let [point_frame, hole_frame] = self.frames(solved)?;
+        Ok([
             DesignAssemblyLegacyOperandWire {
                 construction_record_index: self.point.construction.point_record_index,
                 construction_byte_offset: self.point.construction.point_record_byte_offset,
@@ -2164,7 +2169,7 @@ impl DesignAssemblyLegacyOperands {
                 selection: self.hole.selection,
                 frame: hole_frame,
             },
-        ]
+        ])
     }
 }
 
@@ -2229,11 +2234,8 @@ pub struct DesignAssemblyLegacySelection {
 }
 
 /// Alignment scalars carried by an assembly-operation scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignAssemblyAlignmentSerde",
-    into = "DesignAssemblyAlignmentSerde"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignAssemblyAlignmentSerde")]
 pub struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
     angle: f64,
@@ -2337,7 +2339,7 @@ impl DesignAssemblyAlignment {
                 carriers,
                 solved_frame,
                 ..
-            } => Some(carriers.frames(solved_frame)),
+            } => carriers.frames(solved_frame).ok(),
             DesignAssemblyAlignmentForm::DatumEnvelope { .. }
             | DesignAssemblyAlignmentForm::LimitsOnly { .. }
             | DesignAssemblyAlignmentForm::SolvedOnly { .. }
@@ -2452,7 +2454,8 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             ),
             (Some(carriers), Some(solved_frame), frames, None, limits, None) => {
                 let carriers = DesignAssemblyLegacyOperands::from_wire(carriers, &solved_frame)?;
-                if frames.as_ref().is_some_and(|frames| frames != &carriers.frames(&solved_frame)) {
+                let derived_frames = carriers.frames(&solved_frame)?;
+                if frames.as_ref().is_some_and(|frames| frames != &derived_frames) {
                     return Err("operand_frames must match legacy_operand_carriers frames".into());
                 }
                 Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, frames_field_present: frames.is_some() })
@@ -2480,8 +2483,17 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
     }
 }
 
-impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
-    fn from(alignment: DesignAssemblyAlignment) -> Self {
+impl Serialize for DesignAssemblyAlignment {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignAssemblyAlignmentSerde::try_from(self.clone())
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
+    type Error = String;
+    fn try_from(alignment: DesignAssemblyAlignment) -> Result<Self, Self::Error> {
         let (
             operand_frames,
             legacy_operand_carriers,
@@ -2514,8 +2526,10 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
                 limits,
                 frames_field_present,
             }) => {
-                let frames = frames_field_present.then(|| carriers.frames(&solved_frame));
-                let carriers = carriers.into_wire(&solved_frame);
+                let frames = frames_field_present
+                    .then(|| carriers.frames(&solved_frame))
+                    .transpose()?;
+                let carriers = carriers.into_wire(&solved_frame)?;
                 (
                     frames,
                     Some(carriers),
@@ -2558,7 +2572,7 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
             .into_iter()
             .map(|owner| (owner.value, owner.offset))
             .unzip();
-        Self {
+        Ok(Self {
             angle: alignment.angle,
             offset: alignment.offset,
             owner_record_indices,
@@ -2569,7 +2583,7 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
             operand_qualifiers,
             limits,
             joint_origin_scope_record_index,
-        }
+        })
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

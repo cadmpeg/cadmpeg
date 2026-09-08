@@ -36,7 +36,7 @@ use super::write_generate::{
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub fn prepare_sketches_for_write(
+pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -176,7 +176,7 @@ fn patch_spatial_sketches(
                         .sketch_entities
                         .iter()
                         .find(|marker| marker.id == native_ref)?;
-                    let offset = usize::try_from(marker.offset).ok()?;
+                    let offset = usize::try_from(marker.offset()).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
                     if coordinate_offset.is_none()

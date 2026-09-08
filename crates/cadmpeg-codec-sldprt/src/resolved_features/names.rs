@@ -15,7 +15,7 @@ pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonEmptyString
         FeatureInputOperandKind::D6 => "d6".into(),
         FeatureInputOperandKind::E1 => "e1".into(),
         FeatureInputOperandKind::Native(tag) => {
-            let [first, second] = tag.to_le_bytes();
+            let [first, second] = tag.value().to_le_bytes();
             format!("{first:02x}{second:02x}")
         }
     })

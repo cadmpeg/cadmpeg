@@ -477,13 +477,11 @@ fn derived_zero_entity_endpoint_pairs(
 
 pub(super) fn validate_zero_entity_endpoint_locus_candidates(
     endpoint_loci: &[CatiaZeroEntityEndpointLocusCandidate],
-    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
     let expected = zero_entity_endpoint_locus_candidates(
         crate::families::zero_entity::topology::endpoint_locus_candidates(&derived_pairs),
-        endpoint_pairs,
     );
     if endpoint_loci != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(

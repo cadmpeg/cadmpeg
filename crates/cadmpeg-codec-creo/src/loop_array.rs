@@ -48,15 +48,6 @@ impl serde::Serialize for LayoutMarker {
     }
 }
 
-/// Retention of positional rows in a loop-array frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopArrayFrameRows {
-    /// Number of complete positional rows retained.
-    Materialized(usize),
-    /// Additional validated rows exceed the declared extent.
-    Overfull,
-}
-
 /// One validated `lo_array` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopArrayFrame {
@@ -73,8 +64,8 @@ pub struct LoopArrayFrame {
     pub prototype_end: usize,
     /// Byte offset of the next array label or the section end.
     pub end: usize,
-    /// Retention of this frame's positional rows.
-    pub rows: LoopArrayFrameRows,
+    /// Additional validated rows exceed the declared extent.
+    pub overfull: bool,
 }
 
 /// One complete positional `lo_array` row.
@@ -102,8 +93,6 @@ pub struct LoopArrayRecord {
     pub offset: usize,
     /// Byte offset of the first body byte.
     pub body_offset: usize,
-    /// Exclusive byte offset after the row close.
-    pub end: usize,
 }
 
 /// Results of scanning all `lo_array` frames in one section payload.
@@ -274,16 +263,13 @@ fn parse_frame(
             body: data[prefix.body_offset..=close].to_vec(),
             offset: cursor,
             body_offset: prefix.body_offset,
-            end: close + 1,
         });
         cursor = close + 1;
     }
-    let rows = if records.len() == max_records && row_prefix(data, cursor, end).is_some() {
+    let overfull = records.len() == max_records && row_prefix(data, cursor, end).is_some();
+    if overfull {
         records.clear();
-        LoopArrayFrameRows::Overfull
-    } else {
-        LoopArrayFrameRows::Materialized(records.len())
-    };
+    }
     Some((
         LoopArrayFrame {
             offset,
@@ -292,7 +278,7 @@ fn parse_frame(
             class_id,
             prototype_end,
             end,
-            rows,
+            overfull,
         },
         records,
     ))

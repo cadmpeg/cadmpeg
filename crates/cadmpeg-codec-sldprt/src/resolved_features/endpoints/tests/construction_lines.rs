@@ -22,18 +22,17 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, object_index, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", Some(1), None, SketchInputKind::LineOrCircle);
     let point_impostor = entity(

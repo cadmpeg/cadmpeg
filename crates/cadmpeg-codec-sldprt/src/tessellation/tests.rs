@@ -591,7 +591,7 @@ fn mesh_from(
 
 fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> PersistentFaceIdentity {
     PersistentFaceIdentity {
-        feature_source_id: source,
+        feature_source_id: source.try_into().unwrap(),
         local_id: local,
         trailing_fields: trailing_fields.to_vec(),
     }
@@ -637,7 +637,7 @@ fn opaque_surface_suffix_remains_source_only() {
     assert_eq!(
         references,
         vec![PersistentSurfaceReference::SourceOnly {
-            feature_source_id: 7,
+            feature_source_id: 7_u32.try_into().unwrap(),
             local_surface_id: 3,
         }]
     );
@@ -647,7 +647,10 @@ fn opaque_surface_suffix_remains_source_only() {
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: references,
     };
-    assert_eq!(face.feature_source_id(), Some(7));
+    assert_eq!(
+        face.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
     assert_eq!(face.persistent_surface_identity(), None);
 }
 
@@ -662,7 +665,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
             PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
         ],
     };
-    assert_eq!(face.feature_source_id(), Some(7));
+    assert_eq!(
+        face.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
     assert_eq!(
         face.persistent_surface_identity(),
         Some(persistent_identity(7, 3, &[]))
@@ -672,7 +678,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
         identity.local_id = 4;
     }
-    assert_eq!(conflicting.feature_source_id(), Some(7));
+    assert_eq!(
+        conflicting.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
     assert_eq!(conflicting.persistent_surface_identity(), None);
 }
 
@@ -1305,12 +1314,12 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
 #[test]
 fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
     let trim = PlanarTrim {
-        frame: PlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
+        frame: PlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-3.0, -3.0),
             Point2::new(3.0, -3.0),
@@ -1356,12 +1365,12 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 #[test]
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
     let trim = PlanarTrim {
-        frame: PlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
+        frame: PlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-4.0, -4.0),
             Point2::new(4.0, -4.0),
@@ -1840,4 +1849,19 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(4.0, 0.0),
     ];
     assert!(!is_simple_polygon(&crossing, CONTAINMENT_TOLERANCE));
+}
+
+#[test]
+fn persistent_surface_source_sentinels_are_absent() {
+    for source in [0, u32::MAX] {
+        let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
+        let references = persistent_surface_references(
+            &payload,
+            ByteRange {
+                start: 0,
+                end: payload.len(),
+            },
+        );
+        assert!(references.is_empty());
+    }
 }
