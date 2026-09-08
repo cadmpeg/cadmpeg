@@ -2687,84 +2687,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         else {
                             return false;
                         };
-                        let utf16_end = |offset: u64, value: &str| {
-                            u64::try_from(value.encode_utf16().count())
-                                .ok()?
-                                .checked_mul(2)?
-                                .checked_add(offset)
-                        };
-                        let Some(selector_asset_end) = utf16_end(
-                            identity.selector_asset_id_offset,
-                            identity.selector_asset_id.as_str(),
-                        ) else {
-                            return false;
-                        };
-                        let Some(selector_context_end) = utf16_end(
-                            identity.selector_context_id_offset,
-                            identity.selector_context_id.as_str(),
-                        ) else {
-                            return false;
-                        };
-                        let Some(external_asset_end) = utf16_end(
-                            identity.external_asset_id_offset,
-                            identity.external_asset_id.as_str(),
-                        ) else {
-                            return false;
-                        };
-                        let Some(external_link_name_end) = utf16_end(
-                            identity.external_link_name_offset,
-                            &identity.external_link_name,
-                        ) else {
-                            return false;
-                        };
-                        let optional_tail_is_valid = match &identity.external_version {
-                            None => {
-                                external_link_name_end.checked_add(7)
-                                    == Some(identity.tail_value_offsets[0])
-                            }
-                            Some(version) => {
-                                let property_key = version.property_key.value.as_str();
-                                let property_key_offset = version.property_key.offset;
-                                let version_urn = version.version_urn.value.as_str();
-                                let version_urn_offset = version.version_urn.offset;
-                                let property_key_offset_is_valid = external_link_name_end
-                                    .checked_add(5)
-                                    == Some(property_key_offset);
-                                let property_key_end = utf16_end(property_key_offset, property_key);
-                                let version_urn_offset_is_valid = property_key_end
-                                    .and_then(|end| end.checked_add(4))
-                                    == Some(version_urn_offset);
-                                let tail_offset_is_valid =
-                                    utf16_end(version_urn_offset, version_urn)
-                                        .and_then(|end| end.checked_add(6))
-                                        == Some(identity.tail_value_offsets[0]);
-                                !version_urn.is_empty()
-                                    && property_key_offset_is_valid
-                                    && version_urn_offset_is_valid
-                                    && tail_offset_is_valid
-                            }
-                        };
-                        identity.external_asset_id == identity.selector_asset_id
-                            && identity.occurrence_reference != 0
-                            && identity.external_body_reference != 0
-                            && !identity.external_link_name.is_empty()
-                            && header.byte_offset.checked_add(44)
-                                == Some(identity.selector_asset_id_offset)
-                            && selector_asset_end.checked_add(4)
-                                == Some(identity.selector_context_id_offset)
-                            && selector_context_end.checked_add(13)
-                                == Some(identity.occurrence_reference_offset)
-                            && identity.occurrence_reference_offset.checked_add(15)
-                                == Some(identity.external_body_reference_offset)
-                            && identity.external_body_reference_offset.checked_add(9)
-                                == Some(identity.external_segment_offset)
-                            && identity.external_segment_offset.checked_add(8)
-                                == Some(identity.external_asset_id_offset)
-                            && external_asset_end.checked_add(5)
-                                == Some(identity.external_link_name_offset)
-                            && optional_tail_is_valid
-                            && identity.tail_value_offsets[0].checked_add(12)
-                                == Some(identity.tail_value_offsets[1])
+                        header.byte_offset.checked_add(44)
+                            == Some(identity.selector_asset_id_offset())
                     })
                 };
                 let compact_scope = scope.class_tag.as_str() == "387"

@@ -580,35 +580,41 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
 fn combine_external_tools_retain_complete_occurrence_local_identities() {
     use cadmpeg_ir::features::BodySelection;
 
-    let identity =
-        |occurrence_reference| crate::records::feature::DesignCombineExternalBodyIdentity {
+    let identity = |occurrence_reference| {
+        crate::records::feature::DesignCombineExternalBodyIdentityWire {
             selector_asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_asset_id_offset: 0,
+            selector_asset_id_offset: 44,
             selector_context_id: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_context_id_offset: 0,
+            selector_context_id_offset: 120,
             occurrence_reference,
-            occurrence_reference_offset: 0,
+            occurrence_reference_offset: 205,
             external_body_reference: 700,
-            external_body_reference_offset: 0,
+            external_body_reference_offset: 220,
             external_segment: 2,
-            external_segment_offset: 0,
+            external_segment_offset: 229,
             external_asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            external_asset_id_offset: 0,
+            external_asset_id_offset: 237,
             external_link_name: "component-body-link".into(),
-            external_link_name_offset: 0,
-            external_version: None,
+            external_link_name_offset: 314,
+            external_property_key: None,
+            external_property_key_offset: None,
+            external_version_urn: None,
+            external_version_urn_offset: None,
             tail_values: [0, 0],
-            tail_value_offsets: [0, 12],
-        };
+            tail_value_offsets: [359, 371],
+        }
+        .try_into()
+        .unwrap()
+    };
     let tool =
         |record_index, occurrence_reference| crate::records::feature::DesignCombineBodySelection {
             record_index,

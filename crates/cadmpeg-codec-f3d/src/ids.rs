@@ -244,19 +244,17 @@ pub(crate) fn neutral_feature_id_parts(
 pub(crate) fn neutral_combine_external_body_id(
     identity: &DesignCombineExternalBodyIdentity,
 ) -> String {
-    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
-    let selector_context = identity_key_component(identity.selector_context_id.as_str());
-    let external_asset = identity_key_component(identity.external_asset_id.as_str());
-    let link_name = identity_key_component(&identity.external_link_name);
+    let selector_asset = identity_key_component(identity.selector_asset_id().as_str());
+    let selector_context = identity_key_component(identity.selector_context_id().as_str());
+    let external_asset = identity_key_component(identity.external_asset_id().as_str());
+    let link_name = identity_key_component(identity.external_link_name());
     let property_key = identity
-        .external_version
-        .as_ref()
+        .external_version()
         .map(|version| version.property_key.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     let version_urn = identity
-        .external_version
-        .as_ref()
+        .external_version()
         .map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
@@ -266,17 +264,17 @@ pub(crate) fn neutral_combine_external_body_id(
         selector_asset,
         selector_context.len(),
         selector_context,
-        identity.occurrence_reference,
-        identity.external_body_reference,
-        identity.external_segment,
+        identity.occurrence_reference(),
+        identity.external_body_reference(),
+        identity.external_segment(),
         external_asset.len(),
         external_asset,
         link_name.len(),
         link_name,
-        u8::from(identity.external_version.is_some()),
+        u8::from(identity.external_version().is_some()),
         property_key.len(),
         property_key,
-        u8::from(identity.external_version.is_some()),
+        u8::from(identity.external_version().is_some()),
         version_urn.len(),
         version_urn,
     )
