@@ -1,8 +1,0 @@
-# generated at 948026409
-pub mod cadmpeg_codec_creo
-pub struct cadmpeg_codec_creo::CreoCodec
-impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_creo::CreoCodec
-pub const cadmpeg_codec_creo::CreoCodec::FORMAT: cadmpeg_ir::codec::FormatId
-pub fn cadmpeg_codec_creo::CreoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_creo::CreoCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_creo::CreoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>

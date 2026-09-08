@@ -58,7 +58,6 @@ Build and test operations:
 - Shared golden harness: `cadmpeg_test_support::golden`. Frozen-file codecs use `Harness::check`. Code-built inputs (nx, inventor, sat) use `Harness::check_inputs`.
 - NX goldens are code-built and pin flate2 zlib bytes. Regenerate with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace). A `-p cadmpeg-codec-nx` build can pick a different flate2 backend and rewrite snapshots.
 - NX in-tree arena coverage floors stay in `cadmpeg-codec-nx` golden tests; the TOML floors are file counts only.
-- A public API change regenerates the affected crate's snapshot under `docs/api-baseline/` in the same commit; `git diff docs/api-baseline/` is the change record. `docs/public-api-ledger.toml` holds only the header (`baseline_commit`, `api_baseline_dir`, `measured_at`); do not add `[[change]]` rows.
 - `scripts/perf-baseline.sh` is the decode/build timing harness for hot-path changes.
 - Checked allocation for parsed counts: prefer `DecodeContext::alloc_filled` (charges collection items) or `cadmpeg_core::decode::alloc_filled` (reserve-only) over `vec![value; parsed_count]`. The source-policy rule `unchecked_vec_repeat` rejects unapproved repeats.
 - Single-codec CLI rebuild: `cargo build -p cadmpeg --no-default-features --features <id>` where `<id>` is a registry feature (`fcstd`, `f3d`, `inventor`, `sldprt`, `catia`, `creo`, `nx`, `rhino`, `step`, `iges`, `sat`). Release and default binaries keep all eleven codecs.

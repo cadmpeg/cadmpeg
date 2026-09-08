@@ -3,8 +3,7 @@
 """Check crate-root pub names of cadmpeg-codec-* against docs/codec-facade.toml.
 
 Codec crate roots are facades. Each ``lib.rs`` crate-root ``pub`` name must
-match the ledger. Implementation stays ``pub(crate)`` or private. Do not fold
-this into ``scripts/check-public-api-ledger.py``.
+match the ledger. Implementation stays ``pub(crate)`` or private.
 """
 
 from __future__ import annotations

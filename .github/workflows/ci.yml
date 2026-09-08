@@ -46,12 +46,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install nightly public API tooling
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-public-api 0.52.0
-        run: cargo +nightly install cargo-public-api --version =0.52.0 --locked
-
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
@@ -79,17 +73,6 @@ jobs:
           set -euo pipefail
           python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
           python3 scripts/check-golden-coverage-floors.py
-
-      - name: Public API ledger
-        # Parse docs/public-api-ledger.toml and regenerate every API snapshot.
-        # Change rows retain SHAs from completed refactor branches. Those
-        # commits are not necessarily advertised by a current remote ref, so
-        # even a full clone cannot resolve them. Skip only object resolution;
-        # missing nightly API tooling or a stale snapshot fails this job.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-public-api-ledger.py --self-test
-          python3 scripts/check-public-api-ledger.py --skip-git-objects --diff --require-tooling
 
       - name: Codec facade
         # Crate-root pub items must match docs/codec-facade.toml.

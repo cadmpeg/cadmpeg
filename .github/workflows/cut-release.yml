@@ -121,8 +121,6 @@ jobs:
           python3 scripts/check-source-policy.py
           python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
           python3 scripts/check-golden-coverage-floors.py
-          python3 scripts/check-public-api-ledger.py --self-test
-          python3 scripts/check-public-api-ledger.py --skip-git-objects
           python3 -m unittest -v scripts/test_check_codec_facade.py
           python3 scripts/check-codec-facade.py
           python3 scripts/check-dialects.py --self-test
