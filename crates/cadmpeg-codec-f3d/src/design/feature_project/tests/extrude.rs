@@ -850,12 +850,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             },
             ..
         } if state == &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
-            && faces == &[
+            && faces.as_slice() == &[
                 crate::ids::history_input_face_id(&prefix, 12),
                 crate::ids::history_input_face_id(&prefix, 19),
                 crate::ids::history_input_face_id(&prefix, 27),
             ]
-            && native == &target_shape_group.id
+            && native.as_str() == &target_shape_group.id
     ));
 
     let mut multi_target_group = target_shape_group.clone();
@@ -876,7 +876,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         resolved_body_recipe_shape(&scope, &multi_target_group, &operands),
         Some(FaceSelection::Historical { faces, .. })
-            if faces == [
+            if faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 12),
                 crate::ids::history_input_face_id(&prefix, 19),
                 crate::ids::history_input_face_id(&prefix, 27),

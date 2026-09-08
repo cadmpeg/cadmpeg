@@ -741,16 +741,16 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     assert_eq!(
         generated_surface_face_refs(&[98, 145], &rows, &result_surface_ids, &producers),
         Some(vec![
-            GeneratedFaceRef {
-                feature: IrFeatureId::mint("creo:model:feature#97".to_string())
-                    .expect("identity grammar"),
-                local_id: "surface#98".to_string(),
-            },
-            GeneratedFaceRef {
-                feature: IrFeatureId::mint("creo:model:feature#144".to_string())
-                    .expect("identity grammar"),
-                local_id: "surface#145".to_string(),
-            },
+            GeneratedFaceRef::new(
+                IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
+                "surface#98".to_string()
+            )
+            .unwrap(),
+            GeneratedFaceRef::new(
+                IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
+                "surface#145".to_string()
+            )
+            .unwrap(),
         ])
     );
     assert_eq!(
@@ -861,13 +861,11 @@ fn generated_face_dependencies_follow_the_producer_feature() {
     let producer =
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
     let definition = IrFeatureDefinition::Thicken {
-        faces: FaceSelection::Generated {
-            faces: vec![GeneratedFaceRef {
-                feature: producer.clone(),
-                local_id: "surface#98".to_string(),
-            }],
-            native: "creo:allfeatur:thicken#9".to_string(),
-        },
+        faces: FaceSelection::generated(
+            vec![GeneratedFaceRef::new(producer.clone(), "surface#98".to_string()).unwrap()],
+            "creo:allfeatur:thicken#9".to_string(),
+        )
+        .unwrap(),
         thickness: None,
         side: None,
     };
@@ -878,13 +876,11 @@ fn generated_face_dependencies_follow_the_producer_feature() {
 fn generated_edge_dependencies_follow_the_producer_feature() {
     let producer =
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
-    let generated_edges = EdgeSelection::Generated {
-        edges: vec![GeneratedEdgeRef {
-            feature: producer.clone(),
-            local_id: "curve#77".to_string(),
-        }],
-        native: "creo:allfeatur:fillet#9".to_string(),
-    };
+    let generated_edges = EdgeSelection::generated(
+        vec![GeneratedEdgeRef::new(producer.clone(), "curve#77".to_string()).unwrap()],
+        "creo:allfeatur:fillet#9".to_string(),
+    )
+    .unwrap();
     let fillet = IrFeatureDefinition::Fillet {
         groups: vec![cadmpeg_ir::features::FilletGroup {
             edges: generated_edges.clone(),
@@ -1003,16 +999,16 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
     assert_eq!(
         generated_curve_edge_refs(&[45, 46], &rows, &producers, &result_edge_ids),
         Some(vec![
-            GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#12".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#45".to_string(),
-            },
-            GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#18".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#46".to_string(),
-            },
+            GeneratedEdgeRef::new(
+                IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
+                "curve#45".to_string()
+            )
+            .unwrap(),
+            GeneratedEdgeRef::new(
+                IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
+                "curve#46".to_string()
+            )
+            .unwrap(),
         ])
     );
     assert_eq!(
@@ -1251,11 +1247,11 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             &BTreeMap::from([(50, vec![61])]),
             &available_features,
         ),
-        Some(vec![GeneratedFaceRef {
-            feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                .expect("identity grammar"),
-            local_id: "surface#61".to_string(),
-        }])
+        Some(vec![GeneratedFaceRef::new(
+            IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
+            "surface#61".to_string()
+        )
+        .unwrap()])
     );
     assert_eq!(
         generated_curve_edge_refs(
@@ -1264,11 +1260,11 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             &available_features,
             &BTreeMap::from([(50, vec![59])]),
         ),
-        Some(vec![GeneratedEdgeRef {
-            feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                .expect("identity grammar"),
-            local_id: "curve#59".to_string(),
-        }])
+        Some(vec![GeneratedEdgeRef::new(
+            IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
+            "curve#59".to_string()
+        )
+        .unwrap()])
     );
     scan.features
         .affected_ids
@@ -1280,14 +1276,18 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         });
     assert_eq!(
         feature_edge_selection(&scan, &CadIr::empty(), 10),
-        Some(EdgeSelection::Generated {
-            edges: vec![GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#59".to_string(),
-            }],
-            native: "creo:allfeatur:edgs_affected#10:59".to_string(),
-        })
+        Some(
+            EdgeSelection::generated(
+                vec![GeneratedEdgeRef::new(
+                    IrFeatureId::mint("creo:model:feature#50".to_string())
+                        .expect("identity grammar"),
+                    "curve#59".to_string()
+                )
+                .unwrap()],
+                "creo:allfeatur:edgs_affected#10:59".to_string()
+            )
+            .unwrap()
+        )
     );
 }
 

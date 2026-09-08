@@ -229,7 +229,8 @@ pub(in super::super) fn knit_surface_feature_definition(
                     )
                 });
             match generated {
-                Some(faces) => FaceSelection::Generated { faces, native },
+                Some(faces) => FaceSelection::generated(faces, native.clone())
+                    .unwrap_or_else(|_| FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }
         },
@@ -523,10 +524,7 @@ pub(in super::super) fn generated_surface_face_refs(
                 && result_surface_ids
                     .get(&row.feature_id)
                     .is_some_and(|ids| ids.contains(surface_id)))
-            .then_some(GeneratedFaceRef {
-                feature,
-                local_id: format!("surface#{surface_id}"),
-            })
+            .then_some(GeneratedFaceRef::new(feature, format!("surface#{surface_id}")).ok()?)
         })
         .collect()
 }

@@ -79,11 +79,12 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Fillet {
             groups: vec![FilletGroup {
-                edges: EdgeSelection::Historical {
-                    state: state_id.clone(),
-                    edges: vec![historical_edge],
-                    native: "edge:local".into(),
-                },
+                edges: EdgeSelection::historical(
+                    state_id.clone(),
+                    vec![historical_edge],
+                    "edge:local".into(),
+                )
+                .unwrap(),
                 radius: RadiusSpec::Constant {
                     radius: crate::features::PositiveLength::new(1.0).unwrap(),
                 },
@@ -116,7 +117,9 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
         unreachable!("test fillet uses a historical selection")
     };
-    edges[0] = HistoricalEdgeId::mint(missing).expect("valid identity");
+    *edges = vec![HistoricalEdgeId::mint(missing).expect("valid identity")]
+        .try_into()
+        .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

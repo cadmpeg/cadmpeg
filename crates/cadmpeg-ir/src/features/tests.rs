@@ -1001,33 +1001,32 @@ fn edge_selections_round_trip_through_json() {
     use crate::features::EdgeSelection;
     use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
 
-    let selections =
-        vec![
-            EdgeSelection::Unresolved,
-            EdgeSelection::Edges(vec![
-                EdgeId::mint("synthetic:test:edge#0").expect("valid identity")
-            ]),
-            EdgeSelection::Resolved {
-                edges: vec![EdgeId::mint("synthetic:test:edge#0").expect("valid identity")],
-                native: "edge:10".into(),
-            },
-            EdgeSelection::Historical {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                edges: vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0")
-                    .expect("valid identity")],
-                native: "edge:9".into(),
-            },
-            EdgeSelection::HistoricalPartial {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                edges: vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0")
-                    .expect("valid identity")],
-                unresolved: vec!["native:edge-operand#1".into()],
-                native: "edge:9".into(),
-            },
-            EdgeSelection::Native("sldprt:history:feature#10:0".into()),
-        ];
+    let selections = vec![
+        EdgeSelection::Unresolved,
+        EdgeSelection::Edges(vec![
+            EdgeId::mint("synthetic:test:edge#0").expect("valid identity")
+        ]),
+        EdgeSelection::Resolved {
+            edges: vec![EdgeId::mint("synthetic:test:edge#0").expect("valid identity")],
+            native: "edge:10".into(),
+        },
+        EdgeSelection::historical(
+            FeatureInputTopologyId::mint("synthetic:history-input:state#0")
+                .expect("valid identity"),
+            vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity")],
+            "edge:9".into(),
+        )
+        .unwrap(),
+        EdgeSelection::historical_partial(
+            FeatureInputTopologyId::mint("synthetic:history-input:state#0")
+                .expect("valid identity"),
+            vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity")],
+            vec!["native:edge-operand#1".into()],
+            "edge:9".into(),
+        )
+        .unwrap(),
+        EdgeSelection::Native("sldprt:history:feature#10:0".into()),
+    ];
     let json = serde_json::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<EdgeSelection>>(&json).unwrap(),
@@ -1058,33 +1057,32 @@ fn face_selections_round_trip_through_json() {
     use crate::features::FaceSelection;
     use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
 
-    let selections =
-        vec![
-            FaceSelection::Unresolved,
-            FaceSelection::Faces(vec![
-                FaceId::mint("synthetic:test:face#0").expect("valid identity")
-            ]),
-            FaceSelection::Resolved {
-                faces: vec![FaceId::mint("synthetic:test:face#0").expect("valid identity")],
-                native: "face:14".into(),
-            },
-            FaceSelection::Historical {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                faces: vec![HistoricalFaceId::mint("synthetic:history-input:face#0")
-                    .expect("valid identity")],
-                native: "face:13".into(),
-            },
-            FaceSelection::HistoricalPartial {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                faces: vec![HistoricalFaceId::mint("synthetic:history-input:face#0")
-                    .expect("valid identity")],
-                unresolved: vec!["native:face-operand#1".into()],
-                native: "face:12".into(),
-            },
-            FaceSelection::Native("sldprt:history:feature#14:0".into()),
-        ];
+    let selections = vec![
+        FaceSelection::Unresolved,
+        FaceSelection::Faces(vec![
+            FaceId::mint("synthetic:test:face#0").expect("valid identity")
+        ]),
+        FaceSelection::Resolved {
+            faces: vec![FaceId::mint("synthetic:test:face#0").expect("valid identity")],
+            native: "face:14".into(),
+        },
+        FaceSelection::historical(
+            FeatureInputTopologyId::mint("synthetic:history-input:state#0")
+                .expect("valid identity"),
+            vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
+            "face:13".into(),
+        )
+        .unwrap(),
+        FaceSelection::historical_partial(
+            FeatureInputTopologyId::mint("synthetic:history-input:state#0")
+                .expect("valid identity"),
+            vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
+            vec!["native:face-operand#1".into()],
+            "face:12".into(),
+        )
+        .unwrap(),
+        FaceSelection::Native("sldprt:history:feature#14:0".into()),
+    ];
     let json = serde_json::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<FaceSelection>>(&json).unwrap(),
@@ -2790,3 +2788,5 @@ fn resolved_plane_serde_checks_used_geometry_and_preserves_ignored_legacy_geomet
 
 mod edge_treatments;
 mod patterns;
+
+mod selections;

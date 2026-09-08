@@ -345,30 +345,26 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
     use cadmpeg_ir::features::{FaceSelection, FeatureId, GeneratedFaceRef};
     use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalFaceId};
 
-    assert!(face_selection_is_resolved(&FaceSelection::Generated {
-        faces: vec![GeneratedFaceRef {
-            feature: FeatureId::mint("test:model:feature#source").expect("identity grammar"),
-            local_id: "test:model:face#1".into(),
-        }],
-        native: "native:generated-face".into(),
-    }));
     assert!(face_selection_is_resolved(
-        &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1")
-                .expect("identity grammar"),
-            faces: vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
-            unresolved: Vec::new(),
-            native: "native:historical-face".into(),
-        }
+        &FaceSelection::generated(
+            vec![GeneratedFaceRef::new(
+                FeatureId::mint("test:model:feature#source").expect("identity grammar"),
+                "test:model:face#1".into()
+            )
+            .unwrap()],
+            "native:generated-face".into()
+        )
+        .unwrap()
     ));
     assert!(!face_selection_is_resolved(
-        &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1")
+        &FaceSelection::historical_partial(
+            FeatureInputTopologyId::mint("test:model:feature-input#state:1")
                 .expect("identity grammar"),
-            faces: vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
-            unresolved: vec!["native:missing-face".into()],
-            native: "native:historical-face".into(),
-        }
+            vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
+            vec!["native:missing-face".into()],
+            "native:historical-face".into()
+        )
+        .unwrap()
     ));
 }
 
@@ -1460,16 +1456,13 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     else {
         unreachable!();
     };
-    groups[2].edges = cadmpeg_ir::features::EdgeSelection::Historical {
-        state: cadmpeg_ir::ids::FeatureInputTopologyId::mint(
-            "test:model:feature-input#history-input",
-        )
-        .expect("identity grammar"),
-        edges: vec![
-            cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge").expect("identity grammar")
-        ],
-        native: "native:partial-edges".into(),
-    };
+    groups[2].edges = cadmpeg_ir::features::EdgeSelection::historical(
+        cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#history-input")
+            .expect("identity grammar"),
+        vec![cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge").expect("identity grammar")],
+        "native:partial-edges".into(),
+    )
+    .unwrap();
     assert_eq!(
         design_projection_gaps(&ir, &native).unrepaired_lost_edge_references,
         0

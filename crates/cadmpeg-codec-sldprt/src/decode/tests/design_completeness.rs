@@ -661,7 +661,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             cadmpeg_ir::features::LinearTermination::ToVertex {
-                vertex: cadmpeg_ir::features::VertexSelection::Native("vertex".into()),
+                vertex: cadmpeg_ir::features::VertexSelection::native("vertex".into()).unwrap(),
             },
         ),
         FeatureDefinition::OffsetSurface {

@@ -90,13 +90,12 @@ pub(super) fn write_native_selection(
 
 pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> {
     match selection {
-        FaceSelection::Native(native)
-        | FaceSelection::Resolved { native, .. }
-        | FaceSelection::Generated { native, .. }
+        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
         }
+        FaceSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
         FaceSelection::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
@@ -110,12 +109,11 @@ pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> 
 
 pub(super) fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
     match selection {
-        VertexSelection::Native(native)
-        | VertexSelection::Generated { native, .. }
-        | VertexSelection::Historical { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
+        VertexSelection::Native(native) | VertexSelection::Generated { native, .. } => {
+            Some(native.as_str().to_owned())
+        }
+        VertexSelection::Historical { native, .. } if !native.as_str().trim().is_empty() => {
+            Some(native.as_str().to_owned())
         }
         _ => None,
     }
@@ -123,13 +121,12 @@ pub(super) fn vertex_selection_value(selection: &VertexSelection) -> Option<Stri
 
 pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
     match selection {
-        EdgeSelection::Native(native)
-        | EdgeSelection::Resolved { native, .. }
-        | EdgeSelection::Generated { native, .. }
+        EdgeSelection::Native(native) | EdgeSelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
         }
+        EdgeSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
         EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()

@@ -769,7 +769,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         faces.as_slice(),
         &[crate::ids::history_input_face_id(&prefix, 158)]
     );
-    assert_eq!(native, &groups[1].id);
+    assert_eq!(native.as_str(), &groups[1].id);
 
     selection
         .historical_face_candidates

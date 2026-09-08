@@ -89,11 +89,12 @@ fn historical_vertex_selection_requires_input_state_membership() {
             position: crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0))
                 .unwrap(),
             construction: Some(Box::new(DatumPointConstruction::Vertex {
-                vertex: VertexSelection::Historical {
-                    state: state_id.clone(),
-                    vertex: historical_vertex,
-                    native: "vertex:local".into(),
-                },
+                vertex: VertexSelection::historical(
+                    state_id.clone(),
+                    historical_vertex,
+                    "vertex:local".into(),
+                )
+                .unwrap(),
             })),
         },
         native_ref: None,
@@ -154,11 +155,7 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
     let other_vertex =
         HistoricalVertexId::mint("test:model:historical-vertex#4").expect("valid identity");
     let historical = |state: &FeatureInputTopologyId, vertex: &HistoricalVertexId, native: &str| {
-        VertexSelection::Historical {
-            state: state.clone(),
-            vertex: vertex.clone(),
-            native: native.into(),
-        }
+        VertexSelection::historical(state.clone(), vertex.clone(), native.into()).unwrap()
     };
 
     let mut ir = CadIr::empty();
@@ -694,13 +691,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToVertex {
-                        vertex: VertexSelection::Generated {
-                            vertex: GeneratedVertexRef {
-                                feature: source.clone(),
-                                local_id: "vertex-0".into(),
-                            },
-                            native: "test:vertex-selection".into(),
-                        },
+                        vertex: VertexSelection::generated(
+                            GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
+                            "test:vertex-selection".into(),
+                        )
+                        .unwrap(),
                     },
                     draft: None,
                 },
@@ -765,29 +760,6 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .expect("configured extrude");
     state.dependencies.push(source);
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&extrude)
-        .expect("configured extrude");
-    let FeatureDefinition::Extrude { extent, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    let ExtrudeExtent::OneSided { side } = extent else {
-        unreachable!()
-    };
-    let LinearTermination::ToVertex {
-        vertex: VertexSelection::Generated { native, .. },
-    } = &mut side.termination
-    else {
-        unreachable!()
-    };
-    native.clear();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.message == "configuration generated termination vertex is invalid"
-        }));
 }
 
 #[test]

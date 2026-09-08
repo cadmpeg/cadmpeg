@@ -428,11 +428,12 @@ pub(crate) fn validate_compact_edge_selection_edits(
                     .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
+                Some(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok()?)
             })
             .collect::<Option<Vec<_>>>();
         let expected = match generated.filter(|edges| !edges.is_empty()) {
-            Some(edges) => EdgeSelection::Generated { edges, native },
+            Some(edges) => EdgeSelection::generated(edges, native.clone())
+                .unwrap_or_else(|_| EdgeSelection::Native(native)),
             None => EdgeSelection::Native(native),
         };
         if *edges != &expected {
@@ -527,13 +528,12 @@ pub(crate) fn validate_compact_surface_selection_edits(
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => FaceSelection::Generated {
-                        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                            feature: feature.clone(),
-                            local_id: local_id.to_string(),
-                        }],
-                        native,
-                    },
+                    Some((feature, local_id)) => cadmpeg_ir::features::GeneratedFaceRef::new(
+                        feature.clone(),
+                        local_id.to_string(),
+                    )
+                    .and_then(|face| FaceSelection::generated(vec![face], native.clone()))
+                    .unwrap_or_else(|_| FaceSelection::Native(native)),
                     None => FaceSelection::Native(native),
                 };
                 faces != &expected
@@ -546,14 +546,15 @@ pub(crate) fn validate_compact_surface_selection_edits(
             }
             SelectionSlot::Vertex(vertex) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => VertexSelection::Generated {
-                        vertex: cadmpeg_ir::features::GeneratedVertexRef {
-                            feature: feature.clone(),
-                            local_id: local_id.to_string(),
-                        },
-                        native,
-                    },
-                    None => VertexSelection::Native(native),
+                    Some((feature, local_id)) => cadmpeg_ir::features::GeneratedVertexRef::new(
+                        feature.clone(),
+                        local_id.to_string(),
+                    )
+                    .and_then(|vertex| VertexSelection::generated(vertex, native.clone()))
+                    .unwrap_or_else(|_| {
+                        VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved)
+                    }),
+                    None => VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved),
                 };
                 vertex != &expected
             }

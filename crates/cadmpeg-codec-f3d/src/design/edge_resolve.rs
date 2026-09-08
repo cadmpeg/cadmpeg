@@ -114,9 +114,9 @@ pub(crate) fn resolved_surface_patch_edge_group(
         .as_str()
         .split_once('#')
         .map_or(feature_id.as_str(), |(_, key)| key);
-    cadmpeg_ir::features::EdgeSelection::Historical {
-        state: feature_input_topology_id(feature_id, state_id),
-        edges: edge_slots
+    cadmpeg_ir::features::EdgeSelection::historical(
+        feature_input_topology_id(feature_id, state_id),
+        edge_slots
             .into_iter()
             .map(|edge_slot| {
                 ids::history_input_edge_id(
@@ -125,8 +125,9 @@ pub(crate) fn resolved_surface_patch_edge_group(
                 )
             })
             .collect(),
-        native: group.id.clone(),
-    }
+        group.id.clone(),
+    )
+    .unwrap_or_else(|_| cadmpeg_ir::features::EdgeSelection::Native(group.id.clone()))
 }
 
 #[derive(Debug, PartialEq)]
@@ -251,9 +252,9 @@ pub(crate) fn resolved_edge_flange_group(
         .split_once('#')
         .map_or(feature_id.as_str(), |(_, key)| key);
     let state = feature_input_topology_id(feature_id, previous_state_id);
-    EdgeSelection::Historical {
+    EdgeSelection::historical(
         state,
-        edges: edges
+        edges
             .into_iter()
             .map(|edge_slot| {
                 ids::history_input_edge_id(
@@ -262,8 +263,9 @@ pub(crate) fn resolved_edge_flange_group(
                 )
             })
             .collect(),
-        native: group.id.clone(),
-    }
+        group.id.clone(),
+    )
+    .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()))
 }
 
 fn edge_flange_updated_edge_candidate(operand: &DesignEdgeOperand) -> Option<Vec<i64>> {
@@ -571,9 +573,9 @@ fn resolved_edge_group_with_transition_chain(
         if resolved_edges.is_empty() {
             return unmatched_selection(Some(state_id));
         }
-        return EdgeSelection::Historical {
-            state: feature_input_topology_id(feature_id, state_id),
-            edges: resolved_edges
+        return EdgeSelection::historical(
+            feature_input_topology_id(feature_id, state_id),
+            resolved_edges
                 .into_iter()
                 .map(|edge_slot| {
                     ids::history_input_edge_id(
@@ -582,8 +584,9 @@ fn resolved_edge_group_with_transition_chain(
                     )
                 })
                 .collect(),
-            native: group.id.clone(),
-        };
+            group.id.clone(),
+        )
+        .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
     }
     let identity_matches = group
         .members
@@ -781,16 +784,13 @@ fn resolved_edge_group_with_transition_chain(
                     )
                 })
                 .collect();
-            return EdgeSelection::Historical {
-                state,
-                edges,
-                native: group.id.clone(),
-            };
+            return EdgeSelection::historical(state, edges, group.id.clone())
+                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
-            return EdgeSelection::Historical {
+            return EdgeSelection::historical(
                 state,
-                edges: edges
+                edges
                     .iter()
                     .map(|edge_slot| {
                         ids::history_input_edge_id(
@@ -799,13 +799,14 @@ fn resolved_edge_group_with_transition_chain(
                         )
                     })
                     .collect(),
-                native: group.id.clone(),
-            };
+                group.id.clone(),
+            )
+            .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
         }
         if let Some(edges) = identity_group_transition_slots.as_ref() {
-            return EdgeSelection::Historical {
+            return EdgeSelection::historical(
                 state,
-                edges: edges
+                edges
                     .iter()
                     .map(|edge_slot| {
                         ids::history_input_edge_id(
@@ -814,14 +815,15 @@ fn resolved_edge_group_with_transition_chain(
                         )
                     })
                     .collect(),
-                native: group.id.clone(),
-            };
+                group.id.clone(),
+            )
+            .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
         }
         if identity_matches.len() == 1 && identity_matches[0].resolved_edge_slot.is_none() {
             if let Some(edges) = identity_transition_slots.as_ref() {
-                return EdgeSelection::Historical {
+                return EdgeSelection::historical(
                     state,
-                    edges: edges
+                    edges
                         .iter()
                         .map(|edge_slot| {
                             ids::history_input_edge_id(
@@ -830,8 +832,9 @@ fn resolved_edge_group_with_transition_chain(
                             )
                         })
                         .collect(),
-                    native: group.id.clone(),
-                };
+                    group.id.clone(),
+                )
+                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
             }
         }
         let members = identity_matches
@@ -849,11 +852,8 @@ fn resolved_edge_group_with_transition_chain(
                     )
                 })
                 .collect();
-            return EdgeSelection::Historical {
-                state,
-                edges,
-                native: group.id.clone(),
-            };
+            return EdgeSelection::historical(state, edges, group.id.clone())
+                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
         }
         return partial_historical_edge_selection(
             members,
@@ -1001,11 +1001,8 @@ fn resolved_edge_group_with_transition_chain(
                     edges.push(edge);
                 }
             }
-            return EdgeSelection::Historical {
-                state,
-                edges,
-                native: group.id.clone(),
-            };
+            return EdgeSelection::historical(state, edges, group.id.clone())
+                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()));
         }
         let partial_members = matched_operands
             .iter()
@@ -1040,11 +1037,8 @@ fn resolved_edge_group_with_transition_chain(
     if edges.is_empty() {
         EdgeSelection::Native(group.id.clone())
     } else {
-        EdgeSelection::Historical {
-            state,
-            edges,
-            native: group.id.clone(),
-        }
+        EdgeSelection::historical(state, edges, group.id.clone())
+            .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()))
     }
 }
 
@@ -1093,14 +1087,15 @@ pub(crate) fn resolved_hem_edge_group(
         .as_str()
         .split_once('#')
         .map_or(feature_id.as_str(), |(_, key)| key);
-    EdgeSelection::Historical {
-        state: feature_input_topology_id(feature_id, previous_state_id),
-        edges: vec![ids::history_input_edge_id(
+    EdgeSelection::historical(
+        feature_input_topology_id(feature_id, previous_state_id),
+        vec![ids::history_input_edge_id(
             &ids::history_input_prefix(feature_key, previous_state_id),
             edge,
         )],
-        native: group.id.clone(),
-    }
+        group.id.clone(),
+    )
+    .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()))
 }
 
 /// Return the one historical edge a single-member Hem operand identifies.
@@ -1267,20 +1262,23 @@ pub(crate) fn partial_historical_edge_selection<'a>(
     if unresolved.is_empty() || edges.is_empty() {
         return None;
     }
-    Some(EdgeSelection::HistoricalPartial {
-        state,
-        edges: edges
-            .into_iter()
-            .map(|edge_slot| {
-                ids::history_input_edge_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
-                    edge_slot,
-                )
-            })
-            .collect(),
-        unresolved,
-        native: native.to_owned(),
-    })
+    Some(
+        EdgeSelection::historical_partial(
+            state,
+            edges
+                .into_iter()
+                .map(|edge_slot| {
+                    ids::history_input_edge_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        edge_slot,
+                    )
+                })
+                .collect(),
+            unresolved,
+            native.to_owned(),
+        )
+        .unwrap_or_else(|_| EdgeSelection::Native(native.to_owned())),
+    )
 }
 
 pub(crate) fn context_only_edge_group_candidates<'a>(
