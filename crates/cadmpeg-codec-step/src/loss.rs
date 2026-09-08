@@ -896,6 +896,7 @@ mod tests {
                 "drawing.draughting-semantic-definition-untyped",
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
+                "tessellation.invalid-payload",
                 "tessellation.item-undeclared",
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",
