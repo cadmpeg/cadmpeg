@@ -1311,19 +1311,39 @@ pub(crate) struct NativeStoreResult {
 struct NativeView {
     id: String,
     source_entity: String,
-    projection: ViewProjection,
     view_number: Option<i64>,
     scale: Option<f64>,
-    model_to_view: Option<String>,
-    clipping_planes: Vec<Option<String>>,
-    view_plane_normal: Option<[Option<f64>; 3]>,
-    view_reference_point: Option<[Option<f64>; 3]>,
-    center_of_projection: Option<[Option<f64>; 3]>,
-    view_up: Option<[Option<f64>; 3]>,
+    geometry: ViewGeometry,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ViewGeometry {
+    Orthographic {
+        model_to_view: Option<String>,
+        clipping_planes: Vec<Option<String>>,
+    },
+    Perspective(Box<PerspectiveViewGeometry>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PerspectiveViewGeometry {
+    view_plane_normal: [Option<f64>; 3],
+    view_reference_point: [Option<f64>; 3],
+    center_of_projection: [Option<f64>; 3],
+    view_up: [Option<f64>; 3],
     view_plane_distance: Option<f64>,
-    clipping_window: Option<[Option<f64>; 4]>,
+    clipping_window: [Option<f64>; 4],
     depth_clipping: Option<i64>,
-    depth_range: Option<[Option<f64>; 2]>,
+    depth_range: [Option<f64>; 2],
+}
+
+impl ViewGeometry {
+    fn projection(&self) -> ViewProjection {
+        match self {
+            Self::Orthographic { .. } => ViewProjection::OrthographicParallel,
+            Self::Perspective(_) => ViewProjection::Perspective,
+        }
+    }
 }
 
 impl Serialize for NativeView {
@@ -1333,39 +1353,59 @@ impl Serialize for NativeView {
             id: &'a String,
             source_entity: &'a String,
             form: i64,
-            projection: &'a ViewProjection,
-            view_number: &'a Option<i64>,
-            scale: &'a Option<f64>,
-            model_to_view: &'a Option<String>,
-            clipping_planes: &'a Vec<Option<String>>,
-            view_plane_normal: &'a Option<[Option<f64>; 3]>,
-            view_reference_point: &'a Option<[Option<f64>; 3]>,
-            center_of_projection: &'a Option<[Option<f64>; 3]>,
-            view_up: &'a Option<[Option<f64>; 3]>,
-            view_plane_distance: &'a Option<f64>,
-            clipping_window: &'a Option<[Option<f64>; 4]>,
-            depth_clipping: &'a Option<i64>,
-            depth_range: &'a Option<[Option<f64>; 2]>,
+            projection: ViewProjection,
+            view_number: Option<i64>,
+            scale: Option<f64>,
+            model_to_view: Option<&'a str>,
+            clipping_planes: &'a [Option<String>],
+            view_plane_normal: Option<[Option<f64>; 3]>,
+            view_reference_point: Option<[Option<f64>; 3]>,
+            center_of_projection: Option<[Option<f64>; 3]>,
+            view_up: Option<[Option<f64>; 3]>,
+            view_plane_distance: Option<f64>,
+            clipping_window: Option<[Option<f64>; 4]>,
+            depth_clipping: Option<i64>,
+            depth_range: Option<[Option<f64>; 2]>,
         }
-        Wire {
+        let projection = self.geometry.projection();
+        let mut wire = Wire {
             id: &self.id,
             source_entity: &self.source_entity,
-            form: self.projection.form(),
-            projection: &self.projection,
-            view_number: &self.view_number,
-            scale: &self.scale,
-            model_to_view: &self.model_to_view,
-            clipping_planes: &self.clipping_planes,
-            view_plane_normal: &self.view_plane_normal,
-            view_reference_point: &self.view_reference_point,
-            center_of_projection: &self.center_of_projection,
-            view_up: &self.view_up,
-            view_plane_distance: &self.view_plane_distance,
-            clipping_window: &self.clipping_window,
-            depth_clipping: &self.depth_clipping,
-            depth_range: &self.depth_range,
+            form: projection.form(),
+            projection,
+            view_number: self.view_number,
+            scale: self.scale,
+            model_to_view: None,
+            clipping_planes: &[],
+            view_plane_normal: None,
+            view_reference_point: None,
+            center_of_projection: None,
+            view_up: None,
+            view_plane_distance: None,
+            clipping_window: None,
+            depth_clipping: None,
+            depth_range: None,
+        };
+        match &self.geometry {
+            ViewGeometry::Orthographic {
+                model_to_view,
+                clipping_planes,
+            } => {
+                wire.model_to_view = model_to_view.as_deref();
+                wire.clipping_planes = clipping_planes;
+            }
+            ViewGeometry::Perspective(geometry) => {
+                wire.view_plane_normal = Some(geometry.view_plane_normal);
+                wire.view_reference_point = Some(geometry.view_reference_point);
+                wire.center_of_projection = Some(geometry.center_of_projection);
+                wire.view_up = Some(geometry.view_up);
+                wire.view_plane_distance = geometry.view_plane_distance;
+                wire.clipping_window = Some(geometry.clipping_window);
+                wire.depth_clipping = geometry.depth_clipping;
+                wire.depth_range = Some(geometry.depth_range);
+            }
         }
-        .serialize(serializer)
+        wire.serialize(serializer)
     }
 }
 
@@ -4673,60 +4713,46 @@ pub(crate) fn store(
             NativeView {
                 id: format!("iges:presentation:view#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                projection: if entry.form == 0 {
-                    ViewProjection::OrthographicParallel
-                } else {
-                    ViewProjection::Perspective
-                },
                 view_number: record.and_then(|record| record.integer(1)),
                 scale: record.and_then(|record| record.number(2)),
-                model_to_view: (entry.form == 0 && entry.transform > 0)
-                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                clipping_planes: if entry.form == 0 {
-                    (3..=8)
-                        .map(|index| {
-                            record
-                                .and_then(|record| record.integer(index))
-                                .filter(|sequence| *sequence != 0)
-                                .and_then(|sequence| {
-                                    parameter_resolver.resolve_type(
-                                        entry.sequence,
-                                        index,
-                                        sequence,
-                                        108,
-                                        &[],
-                                    )
-                                })
-                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                        })
-                        .collect()
+                geometry: if entry.form == 0 {
+                    ViewGeometry::Orthographic {
+                        model_to_view: (entry.transform > 0)
+                            .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                        clipping_planes: (3..=8)
+                            .map(|index| {
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .filter(|sequence| *sequence != 0)
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve_type(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            108,
+                                            &[],
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect(),
+                    }
                 } else {
-                    Vec::new()
+                    ViewGeometry::Perspective(Box::new(PerspectiveViewGeometry {
+                        view_plane_normal: vector(3),
+                        view_reference_point: vector(6),
+                        center_of_projection: vector(9),
+                        view_up: vector(12),
+                        view_plane_distance: record.and_then(|record| record.number(15)),
+                        clipping_window: std::array::from_fn(|index| {
+                            record.and_then(|record| record.number(16 + index))
+                        }),
+                        depth_clipping: record.and_then(|record| record.integer(20)),
+                        depth_range: std::array::from_fn(|index| {
+                            record.and_then(|record| record.number(21 + index))
+                        }),
+                    }))
                 },
-                view_plane_normal: (entry.form == 1).then(|| vector(3)),
-                view_reference_point: (entry.form == 1).then(|| vector(6)),
-                center_of_projection: (entry.form == 1).then(|| vector(9)),
-                view_up: (entry.form == 1).then(|| vector(12)),
-                view_plane_distance: (entry.form == 1)
-                    .then(|| record.and_then(|record| record.number(15)))
-                    .flatten(),
-                clipping_window: (entry.form == 1).then(|| {
-                    [
-                        record.and_then(|record| record.number(16)),
-                        record.and_then(|record| record.number(17)),
-                        record.and_then(|record| record.number(18)),
-                        record.and_then(|record| record.number(19)),
-                    ]
-                }),
-                depth_clipping: (entry.form == 1)
-                    .then(|| record.and_then(|record| record.integer(20)))
-                    .flatten(),
-                depth_range: (entry.form == 1).then(|| {
-                    [
-                        record.and_then(|record| record.number(21)),
-                        record.and_then(|record| record.number(22)),
-                    ]
-                }),
             }
         })
         .collect::<Vec<_>>();
