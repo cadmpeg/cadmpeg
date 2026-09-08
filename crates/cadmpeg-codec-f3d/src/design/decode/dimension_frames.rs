@@ -1752,7 +1752,7 @@ pub(crate) fn companion_owned_interval<'a>(
             native_stream(owner.id()) == Some(native_scope)
                 && owner.record_index() == companion.owner_record_index
         })
-        .map(|owner| owner.scope_record_index());
+        .map(crate::records::DesignParameterOwner::scope_record_index);
     let foreign_scope_members = scopes
         .iter()
         .filter(|scope| {

@@ -1185,9 +1185,9 @@ pub struct DesignParameterOwner {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParameterFrameOrder {
-    OwnerFirst,
-    ParameterFirst,
-    CompanionFirst,
+    OwnerParameterCompanion,
+    ParameterOwnerCompanion,
+    OwnerCompanionParameter,
 }
 
 impl DesignParameterOwner {
@@ -1211,9 +1211,9 @@ impl DesignParameterOwner {
     pub fn record_index(&self) -> u32 {
         self.base_index
             + match self.order {
-                ParameterFrameOrder::OwnerFirst => 0,
-                ParameterFrameOrder::ParameterFirst => 1,
-                ParameterFrameOrder::CompanionFirst => 0,
+                ParameterFrameOrder::OwnerParameterCompanion => 0,
+                ParameterFrameOrder::ParameterOwnerCompanion => 1,
+                ParameterFrameOrder::OwnerCompanionParameter => 0,
             }
     }
     /// The scope record index value.
@@ -1236,12 +1236,13 @@ impl DesignParameterOwner {
     pub fn parameter_record_index(&self) -> u32 {
         self.base_index
             + match self.order {
-                ParameterFrameOrder::OwnerFirst => 1,
-                ParameterFrameOrder::ParameterFirst => 0,
-                ParameterFrameOrder::CompanionFirst => 2,
+                ParameterFrameOrder::OwnerParameterCompanion => 1,
+                ParameterFrameOrder::ParameterOwnerCompanion => 0,
+                ParameterFrameOrder::OwnerCompanionParameter => 2,
             }
     }
     /// The owned ordinal value.
+    #[cfg(test)]
     pub fn owned_ordinal(&self) -> u32 {
         self.owned_ordinal
     }
@@ -1249,9 +1250,9 @@ impl DesignParameterOwner {
     pub fn companion_record_index(&self) -> u32 {
         self.base_index
             + match self.order {
-                ParameterFrameOrder::OwnerFirst => 2,
-                ParameterFrameOrder::ParameterFirst => 2,
-                ParameterFrameOrder::CompanionFirst => 1,
+                ParameterFrameOrder::OwnerParameterCompanion => 2,
+                ParameterFrameOrder::ParameterOwnerCompanion => 2,
+                ParameterFrameOrder::OwnerCompanionParameter => 1,
             }
     }
 }
@@ -1266,18 +1267,24 @@ impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
             == Some(wire.parameter_record_index)
             && wire.record_index.checked_add(2) == Some(wire.companion_record_index)
         {
-            (wire.record_index, ParameterFrameOrder::OwnerFirst)
+            (
+                wire.record_index,
+                ParameterFrameOrder::OwnerParameterCompanion,
+            )
         } else if wire.parameter_record_index.checked_add(1) == Some(wire.record_index)
             && wire.parameter_record_index.checked_add(2) == Some(wire.companion_record_index)
         {
             (
                 wire.parameter_record_index,
-                ParameterFrameOrder::ParameterFirst,
+                ParameterFrameOrder::ParameterOwnerCompanion,
             )
         } else if wire.record_index.checked_add(1) == Some(wire.companion_record_index)
             && wire.record_index.checked_add(2) == Some(wire.parameter_record_index)
         {
-            (wire.record_index, ParameterFrameOrder::CompanionFirst)
+            (
+                wire.record_index,
+                ParameterFrameOrder::OwnerCompanionParameter,
+            )
         } else {
             return Err("record_index, parameter_record_index, and companion_record_index must follow a parameter frame order".into());
         };
