@@ -515,8 +515,8 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             .unwrap(),
         )
     };
-    let center = point("center", 2.0, 3.0);
-    let annotation = point("annotation", 7.0, 3.0);
+    let center = point("synthetic:test:id#center", 2.0, 3.0);
+    let annotation = point("synthetic:test:id#annotation", 7.0, 3.0);
     let measured = circle("synthetic:test:id#measured", 2.0, 3.0, 5.0);
     let other_center = circle("synthetic:test:id#other-center", 20.0, 30.0, 5.0);
     let other_radius = circle("synthetic:test:id#other-radius", 2.0, 3.0, 7.0);
