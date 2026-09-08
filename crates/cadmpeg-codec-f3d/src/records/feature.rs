@@ -8334,7 +8334,7 @@ impl DesignEdgeFlangeEdge {
     pub(crate) fn from_columns(
         wrappers: Vec<u32>,
         groups: Vec<u32>,
-        operands: Vec<u32>,
+        operands: &[u32],
         aggregate_operands: Vec<u32>,
     ) -> Result<Vec<Self>, String> {
         if groups.len() != wrappers.len()
@@ -8345,7 +8345,7 @@ impl DesignEdgeFlangeEdge {
         }
         if groups
             .iter()
-            .zip(&operands)
+            .zip(operands)
             .any(|(group, operand)| *operand != group.saturating_add(3))
         {
             return Err(
@@ -8532,7 +8532,7 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
         let edges = DesignEdgeFlangeEdge::from_columns(
             wire.edge_wrapper_record_indices,
             wire.edge_group_record_indices,
-            wire.edge_operand_record_indices,
+            &wire.edge_operand_record_indices,
             wire.aggregate_operand_record_indices,
         )?;
         Ok(Self {
@@ -8592,7 +8592,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
                 .selection
                 .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index())
+                .map(DesignEdgeFlangeEdge::operand_record_index)
                 .collect(),
             aggregate_group_record_index: operation.selection.aggregate_group_record_index(),
             aggregate_operand_record_indices: operation
