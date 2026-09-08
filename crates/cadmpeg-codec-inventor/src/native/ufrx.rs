@@ -896,8 +896,12 @@ mod tests {
             "state": [0, 0], "prefix_count": 0, "parameters": [],
             "suffix_len": 77, "suffix_sha256": "a".repeat(64)
         });
-        let record: UfrxModelStateRecord = serde_json::from_value(valid.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), valid);
+        let record: UfrxModelStateRecord =
+            serde_json::from_value(valid.clone()).expect("valid native record fixture");
+        assert_eq!(
+            serde_json::to_value(record).expect("valid native record fixture"),
+            valid
+        );
         for (field, value) in [
             ("name", serde_json::json!("")),
             ("suffix_len", serde_json::json!(76)),
@@ -935,7 +939,7 @@ mod tests {
                 suffix_len: 77,
                 suffix_sha256: "0".repeat(64),
             })
-            .unwrap()],
+            .expect("valid native record fixture")],
             external_references: vec![],
             embedded_references: vec![],
             occurrences: vec![],
