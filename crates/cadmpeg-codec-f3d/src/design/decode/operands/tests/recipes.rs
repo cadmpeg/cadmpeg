@@ -325,7 +325,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
                     trailing_transforms: Vec::new(),
                     trailing_dual_transforms: Vec::new(),
                     trailing_flags: Vec::new(),
-                    opaque_index: 0,
+                    opaque_index: 1,
                     opaque_index_offset: 18,
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,

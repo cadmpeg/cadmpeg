@@ -658,7 +658,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                         trailing_transforms: Vec::new(),
                         trailing_dual_transforms: Vec::new(),
                         trailing_flags: Vec::new(),
-                        opaque_index: 0,
+                        opaque_index: 1,
                         opaque_index_offset: 18,
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
