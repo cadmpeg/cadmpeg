@@ -640,8 +640,102 @@ pub struct DisplayJtVertexFlags {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JtVertexVersion {
+    One,
+    Two(u64),
+}
+
+impl TryFrom<(u16, Option<u64>)> for JtVertexVersion {
+    type Error = &'static str;
+    fn try_from((version, bindings): (u16, Option<u64>)) -> Result<Self, Self::Error> {
+        match (version, bindings) {
+            (1, None) => Ok(Self::One),
+            (2, Some(bindings)) => Ok(Self::Two(bindings)),
+            _ => Err("vertex_version/version_2_vertex_bindings: version 1 has no repeated bindings and version 2 requires them"),
+        }
+    }
+}
+
+impl JtVertexVersion {
+    fn into_wire(self) -> (u16, Option<u64>) {
+        match self {
+            Self::One => (1, None),
+            Self::Two(bindings) => (2, Some(bindings)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JtReflectivity(f32);
+
+impl TryFrom<f32> for JtReflectivity {
+    type Error = &'static str;
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        if value.is_finite() && (0.0..=1.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err("reflectivity: expected a finite fraction in 0..=1")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum JtMaterialVersion {
+    One,
+    Two(JtReflectivity),
+}
+
+impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
+    type Error = &'static str;
+    fn try_from((version, reflectivity): (u16, Option<f32>)) -> Result<Self, Self::Error> {
+        match (version, reflectivity) {
+            (1, None) => Ok(Self::One),
+            (2, Some(value)) => Ok(Self::Two(JtReflectivity::try_from(value)?)),
+            _ => Err("version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1"),
+        }
+    }
+}
+
+impl JtMaterialVersion {
+    fn into_wire(self) -> (u16, Option<f32>) {
+        match self {
+            Self::One => (1, None),
+            Self::Two(value) => (2, Some(value.0)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<f32>", into = "Vec<f32>")]
+struct JtRangeLimits(Vec<f32>);
+
+impl TryFrom<Vec<f32>> for JtRangeLimits {
+    type Error = &'static str;
+    fn try_from(values: Vec<f32>) -> Result<Self, Self::Error> {
+        if values
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+            || values.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err("range_limits: expected finite nonnegative strictly increasing distances");
+        }
+        Ok(Self(values))
+    }
+}
+
+impl From<JtRangeLimits> for Vec<f32> {
+    fn from(value: JtRangeLimits) -> Self {
+        value.0
+    }
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtTriStripShapeNodeWire",
+    into = "DisplayJtTriStripShapeNodeWire"
+)]
 pub struct DisplayJtTriStripShapeNode {
     /// Globally unique shape-node identity.
     pub id: String,
@@ -666,7 +760,7 @@ pub struct DisplayJtTriStripShapeNode {
     /// Qualitative compression level in the inclusive range zero through one.
     pub compression_level: f32,
     /// Vertex-shape data version.
-    pub vertex_version: u16,
+    vertex_version: JtVertexVersion,
     /// Packed vertex-channel binding mask.
     pub vertex_bindings: u64,
     /// Quantization bits per vertex coordinate component.
@@ -677,10 +771,84 @@ pub struct DisplayJtTriStripShapeNode {
     pub texture_quantization_bits: u8,
     /// Quantization bits per color component.
     pub color_quantization_bits: u8,
-    /// Version-2 repeated vertex-channel binding mask.
-    pub version_2_vertex_bindings: Option<u64>,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtTriStripShapeNodeWire {
+    id: String,
+    base_node: String,
+    object_id: u32,
+    reserved_bounds: [[f32; 3]; 2],
+    untransformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    memory_byte_len: u32,
+    compression_level: f32,
+    vertex_version: u16,
+    vertex_bindings: u64,
+    vertex_quantization_bits: u8,
+    normal_quantization_factor: u8,
+    texture_quantization_bits: u8,
+    color_quantization_bits: u8,
+    version_2_vertex_bindings: Option<u64>,
+    source_offset: u64,
+}
+impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtTriStripShapeNodeWire) -> Result<Self, Self::Error> {
+        let vertex_version =
+            JtVertexVersion::try_from((wire.vertex_version, wire.version_2_vertex_bindings))?;
+        Ok(Self {
+            id: wire.id,
+            base_node: wire.base_node,
+            object_id: wire.object_id,
+            reserved_bounds: wire.reserved_bounds,
+            untransformed_bounds: wire.untransformed_bounds,
+            area: wire.area,
+            vertex_count_range: wire.vertex_count_range,
+            node_count_range: wire.node_count_range,
+            polygon_count_range: wire.polygon_count_range,
+            memory_byte_len: wire.memory_byte_len,
+            compression_level: wire.compression_level,
+            vertex_version,
+            vertex_bindings: wire.vertex_bindings,
+            vertex_quantization_bits: wire.vertex_quantization_bits,
+            normal_quantization_factor: wire.normal_quantization_factor,
+            texture_quantization_bits: wire.texture_quantization_bits,
+            color_quantization_bits: wire.color_quantization_bits,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
+    fn from(value: DisplayJtTriStripShapeNode) -> Self {
+        let (vertex_version, version_2_vertex_bindings) = value.vertex_version.into_wire();
+        Self {
+            id: value.id,
+            base_node: value.base_node,
+            object_id: value.object_id,
+            reserved_bounds: value.reserved_bounds,
+            untransformed_bounds: value.untransformed_bounds,
+            area: value.area,
+            vertex_count_range: value.vertex_count_range,
+            node_count_range: value.node_count_range,
+            polygon_count_range: value.polygon_count_range,
+            memory_byte_len: value.memory_byte_len,
+            compression_level: value.compression_level,
+            vertex_version,
+            vertex_bindings: value.vertex_bindings,
+            vertex_quantization_bits: value.vertex_quantization_bits,
+            normal_quantization_factor: value.normal_quantization_factor,
+            texture_quantization_bits: value.texture_quantization_bits,
+            color_quantization_bits: value.color_quantization_bits,
+            version_2_vertex_bindings,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// One object element decoded from a compressed JT segment payload.
@@ -911,6 +1079,10 @@ pub struct DisplayJtGeometricTransformAttribute {
 
 /// One JT material attribute attached to logical scene nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtMaterialAttributeWire",
+    into = "DisplayJtMaterialAttributeWire"
+)]
 pub struct DisplayJtMaterialAttribute {
     /// Globally unique material-attribute identity.
     pub id: String,
@@ -923,7 +1095,7 @@ pub struct DisplayJtMaterialAttribute {
     /// Base-attribute field-inhibit flags.
     pub field_inhibit_flags: u32,
     /// Material-record version.
-    pub version: u16,
+    version: JtMaterialVersion,
     /// Material blending and vertex-color override flags.
     pub data_flags: u16,
     /// Ambient RGBA components.
@@ -936,11 +1108,69 @@ pub struct DisplayJtMaterialAttribute {
     pub emission: [f32; 4],
     /// Specular exponent in the inclusive range 1 through 128.
     pub shininess: f32,
-    /// Reflected fraction for version 2 material records.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reflectivity: Option<f32>,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtMaterialAttributeWire {
+    id: String,
+    element: String,
+    object_id: u32,
+    state_flags: u8,
+    field_inhibit_flags: u32,
+    version: u16,
+    data_flags: u16,
+    ambient: [f32; 4],
+    diffuse: [f32; 4],
+    specular: [f32; 4],
+    emission: [f32; 4],
+    shininess: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reflectivity: Option<f32>,
+    source_offset: u64,
+}
+impl TryFrom<DisplayJtMaterialAttributeWire> for DisplayJtMaterialAttribute {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtMaterialAttributeWire) -> Result<Self, Self::Error> {
+        let version = JtMaterialVersion::try_from((wire.version, wire.reflectivity))?;
+        Ok(Self {
+            id: wire.id,
+            element: wire.element,
+            object_id: wire.object_id,
+            state_flags: wire.state_flags,
+            field_inhibit_flags: wire.field_inhibit_flags,
+            version,
+            data_flags: wire.data_flags,
+            ambient: wire.ambient,
+            diffuse: wire.diffuse,
+            specular: wire.specular,
+            emission: wire.emission,
+            shininess: wire.shininess,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
+    fn from(value: DisplayJtMaterialAttribute) -> Self {
+        let (version, reflectivity) = value.version.into_wire();
+        Self {
+            id: value.id,
+            element: value.element,
+            object_id: value.object_id,
+            state_flags: value.state_flags,
+            field_inhibit_flags: value.field_inhibit_flags,
+            version,
+            data_flags: value.data_flags,
+            ambient: value.ambient,
+            diffuse: value.diffuse,
+            specular: value.specular,
+            emission: value.emission,
+            shininess: value.shininess,
+            reflectivity,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Extra partition-node bounds selected by flag bit zero.
@@ -1101,7 +1331,7 @@ pub struct DisplayJtRangeLodNode {
     /// Range-LOD data version.
     pub range_version: u16,
     /// Strictly increasing nonnegative eye-distance limits.
-    pub range_limits: Vec<f32>,
+    range_limits: JtRangeLimits,
     /// Model-coordinate centre for range selection.
     pub center: [f32; 3],
     /// Absolute source offset of the owning compressed envelope.
@@ -1285,13 +1515,12 @@ pub(crate) struct ParsedJtTriStripShapeNode {
     pub(crate) polygon_count_range: [i32; 2],
     pub(crate) memory_byte_len: u32,
     pub(crate) compression_level: f32,
-    pub(crate) vertex_version: u16,
+    vertex_version: JtVertexVersion,
     pub(crate) vertex_bindings: u64,
     pub(crate) vertex_quantization_bits: u8,
     pub(crate) normal_quantization_factor: u8,
     pub(crate) texture_quantization_bits: u8,
     pub(crate) color_quantization_bits: u8,
-    pub(crate) version_2_vertex_bindings: Option<u64>,
 }
 
 pub(crate) fn parse_jt9_tri_strip_shape_node_body(
@@ -1344,9 +1573,11 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     let normal_quantization_factor = family[jt_family::NORMAL_QUANTIZATION_FACTOR];
     let texture_quantization_bits = family[jt_family::TEXTURE_QUANTIZATION_BITS];
     let color_quantization_bits = family[jt_family::COLOR_QUANTIZATION_BITS];
-    let version_2_vertex_bindings = (vertex_version == 2).then(|| {
-        View::u64_le_at(family, jt_family::LEN).expect("version-2 binding lane is fixed-width")
-    });
+    let vertex_version = match vertex_version {
+        1 => JtVertexVersion::One,
+        2 => JtVertexVersion::Two(View::u64_le_at(family, jt_family::LEN)?),
+        _ => return None,
+    };
     if vertex_quantization_bits > 24
         || normal_quantization_factor > 13
         || texture_quantization_bits > 24
@@ -1369,7 +1600,6 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
         normal_quantization_factor,
         texture_quantization_bits,
         color_quantization_bits,
-        version_2_vertex_bindings,
     })
 }
 
@@ -1478,7 +1708,7 @@ pub(crate) struct ParsedJtRangeLodNode {
     pub(crate) reserved_values: Vec<f32>,
     pub(crate) reserved_value: i32,
     pub(crate) range_version: u16,
-    pub(crate) range_limits: Vec<f32>,
+    range_limits: JtRangeLimits,
     pub(crate) center: [f32; 3],
 }
 
@@ -1502,11 +1732,7 @@ pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRange
     let reserved_value = View::i32_le_at(family, 0)?;
     let range_version = View::u16_le_at(family, 4)?;
     let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
-    if range_limits.iter().any(|value| *value < 0.0)
-        || range_limits.windows(2).any(|pair| pair[0] >= pair[1])
-    {
-        return None;
-    }
+    let range_limits = JtRangeLimits::try_from(range_limits).ok()?;
     let center = [
         View::f32_le_at(remaining, 0)?,
         View::f32_le_at(remaining, 4)?,
@@ -1586,9 +1812,9 @@ pub(crate) fn parse_jt9_geometric_transform_body(
     Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
 }
 
-type ParsedJt9Material = (u8, u32, u16, u16, [[f32; 4]; 4], f32, Option<f32>);
+type ParsedJt9Material = (u8, u32, JtMaterialVersion, u16, [[f32; 4]; 4], f32);
 
-pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
+fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     let base_version = View::u16_le_at(body, 0)?;
     let state_flags = *body.get(2)?;
     let field_inhibit_flags = View::u32_le_at(body, 3)?;
@@ -1632,9 +1858,7 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
     let reflectivity = (version == 2)
         .then(|| scalar(79).filter(|value| (0.0..=1.0).contains(value)))
         .flatten();
-    if version == 2 && reflectivity.is_none() {
-        return None;
-    }
+    let version = JtMaterialVersion::try_from((version, reflectivity)).ok()?;
     Some((
         state_flags,
         field_inhibit_flags,
@@ -1642,7 +1866,6 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
         data_flags,
         colors,
         shininess,
-        reflectivity,
     ))
 }
 
@@ -3318,15 +3541,8 @@ pub fn display_jt_material_attributes(
             if element.object_base_type != 3 {
                 return Vec::new();
             }
-            let Some((
-                state_flags,
-                field_inhibit_flags,
-                version,
-                data_flags,
-                colors,
-                shininess,
-                reflectivity,
-            )) = parse_jt9_material_body(element.body)
+            let Some((state_flags, field_inhibit_flags, version, data_flags, colors, shininess)) =
+                parse_jt9_material_body(element.body)
             else {
                 return Vec::new();
             };
@@ -3343,7 +3559,7 @@ pub fn display_jt_material_attributes(
                 specular: colors[2],
                 emission: colors[3],
                 shininess,
-                reflectivity,
+
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -3540,7 +3756,7 @@ pub fn display_jt_tri_strip_shape_nodes(
                 normal_quantization_factor: node.normal_quantization_factor,
                 texture_quantization_bits: node.texture_quantization_bits,
                 color_quantization_bits: node.color_quantization_bits,
-                version_2_vertex_bindings: node.version_2_vertex_bindings,
+
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -3597,14 +3813,12 @@ fn accumulate_display_jt_material(
         return;
     }
     let rgb_inhibited = match attribute.version {
-        1 => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
-        2 => attribute.field_inhibit_flags & DIFFUSE_RGB != 0,
-        _ => true,
+        JtMaterialVersion::One => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
+        JtMaterialVersion::Two(_) => attribute.field_inhibit_flags & DIFFUSE_RGB != 0,
     };
     let alpha_inhibited = match attribute.version {
-        1 => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
-        2 => attribute.field_inhibit_flags & DIFFUSE_ALPHA != 0,
-        _ => true,
+        JtMaterialVersion::One => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
+        JtMaterialVersion::Two(_) => attribute.field_inhibit_flags & DIFFUSE_ALPHA != 0,
     };
     if !rgb_inhibited {
         for (target, component) in path.diffuse[..3].iter_mut().zip(attribute.diffuse) {
@@ -4195,6 +4409,31 @@ pub(crate) fn display_jt_tessellations(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn range_limits_admit_only_finite_nonnegative_increasing_values() {
+        for valid in [vec![], vec![0.0], vec![0.0, 1.0, 2.0]] {
+            let admitted = super::JtRangeLimits::try_from(valid.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(&admitted).unwrap(),
+                serde_json::json!(valid)
+            );
+            assert_eq!(
+                serde_json::from_value::<super::JtRangeLimits>(serde_json::json!(valid)).unwrap(),
+                admitted
+            );
+        }
+        for invalid in [
+            vec![-1.0],
+            vec![1.0, 1.0],
+            vec![2.0, 1.0],
+            vec![f32::NAN],
+            vec![f32::INFINITY],
+        ] {
+            assert!(super::JtRangeLimits::try_from(invalid).is_err());
+        }
+        assert!(serde_json::from_str::<super::JtRangeLimits>("[2,1]").is_err());
+    }
+
     #[test]
     fn compression_wire_checks_constants_and_length_without_changing_evidence() {
         let valid = serde_json::json!({
@@ -4842,16 +5081,26 @@ mod tests {
             object_id: 13,
             state_flags: 0,
             field_inhibit_flags: 0,
-            version: 1,
+            version: super::JtMaterialVersion::One,
             data_flags: 0x20,
             ambient: [0.1, 0.1, 0.1, 1.0],
             diffuse: [0.2, 0.3, 0.4, 0.5],
             specular: [0.0, 0.0, 0.0, 1.0],
             emission: [0.0, 0.0, 0.0, 1.0],
             shininess: 1.0,
-            reflectivity: None,
             source_offset: 126,
         };
+        let material_wire = serde_json::to_value(&material).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DisplayJtMaterialAttribute>(material_wire.clone()).unwrap(),
+            material
+        );
+        for (version, reflectivity) in [(1, Some(0.5)), (2, None), (3, None), (2, Some(-0.5))] {
+            let mut wire = material_wire.clone();
+            wire["version"] = version.into();
+            wire["reflectivity"] = serde_json::json!(reflectivity);
+            assert!(serde_json::from_value::<DisplayJtMaterialAttribute>(wire).is_err());
+        }
         let node = DisplayJtTriStripShapeNode {
             id: "shape-node".into(),
             base_node: "base".into(),
@@ -4864,15 +5113,25 @@ mod tests {
             polygon_count_range: [0, 0],
             memory_byte_len: 0,
             compression_level: 0.0,
-            vertex_version: 1,
+            vertex_version: super::JtVertexVersion::One,
             vertex_bindings: 2,
             vertex_quantization_bits: 0,
             normal_quantization_factor: 0,
             texture_quantization_bits: 0,
             color_quantization_bits: 0,
-            version_2_vertex_bindings: None,
             source_offset: 120,
         };
+        let node_wire = serde_json::to_value(&node).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DisplayJtTriStripShapeNode>(node_wire.clone()).unwrap(),
+            node
+        );
+        for (version, bindings) in [(1, Some(4)), (2, None), (3, None)] {
+            let mut wire = node_wire.clone();
+            wire["vertex_version"] = version.into();
+            wire["version_2_vertex_bindings"] = serde_json::json!(bindings);
+            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire).is_err());
+        }
         let vertex_header = DisplayJtCompressedVertexRecordsHeader {
             id: "vertex-header".into(),
             element: "shape-element".into(),
@@ -5185,13 +5444,13 @@ mod tests {
         assert_eq!(node.polygon_count_range, [11, 12]);
         assert_eq!(node.memory_byte_len, 4096);
         assert_eq!(node.compression_level, 0.75);
-        assert_eq!(node.vertex_version, 2);
+        assert_eq!(node.vertex_version.into_wire().0, 2);
         assert_eq!(node.vertex_bindings, 0x102);
         assert_eq!(node.vertex_quantization_bits, 24);
         assert_eq!(node.normal_quantization_factor, 13);
         assert_eq!(node.texture_quantization_bits, 16);
         assert_eq!(node.color_quantization_bits, 8);
-        assert_eq!(node.version_2_vertex_bindings, Some(0x304));
+        assert_eq!(node.vertex_version.into_wire().1, Some(0x304));
 
         let mut malformed = body.clone();
         malformed[60..64].copy_from_slice(&(-1.0_f32).to_le_bytes());
@@ -5253,8 +5512,9 @@ mod tests {
         }
         body.extend_from_slice(&64.0_f32.to_le_bytes());
         body.extend_from_slice(&0.25_f32.to_le_bytes());
-        let (state, inhibit, version, flags, colors, shininess, reflectivity) =
+        let (state, inhibit, version, flags, colors, shininess) =
             super::parse_jt9_material_body(&body).expect("required invariant");
+        let (version, reflectivity) = version.into_wire();
         assert_eq!(state, 0x02);
         assert_eq!(inhibit, 0x41);
         assert_eq!(version, 2);
@@ -5284,14 +5544,13 @@ mod tests {
             object_id: 1,
             state_flags,
             field_inhibit_flags,
-            version: 2,
+            version: super::JtMaterialVersion::try_from((2, Some(0.0))).unwrap(),
             data_flags: 0,
             ambient: [0.0, 0.0, 0.0, 1.0],
             diffuse,
             specular: [0.0, 0.0, 0.0, 1.0],
             emission: [0.0, 0.0, 0.0, 1.0],
             shininess: 1.0,
-            reflectivity: None,
             source_offset: 0,
         };
         let mut path = super::DisplayJtPath {
@@ -5400,7 +5659,7 @@ mod tests {
         assert_eq!(node.reserved_values, [0.25]);
         assert_eq!(node.reserved_value, -2);
         assert_eq!(node.range_version, 1);
-        assert_eq!(node.range_limits, [10.0, 20.0]);
+        assert_eq!(node.range_limits.0, [10.0, 20.0]);
         assert_eq!(node.center, [1.0, 2.0, 3.0]);
 
         let range_offset = body.len() - 20;
