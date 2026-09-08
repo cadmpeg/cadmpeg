@@ -373,19 +373,11 @@ enum CarrierFailureKind {
     NoValidCandidate,
 }
 
-fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> Option<CarrierFailureKind> {
-    if diagnostics.unique_solutions != 0 {
-        return None;
-    }
-    let generated_candidates = diagnostics
-        .pair_intersections
-        .saturating_add(diagnostics.triple_intersections);
-    if generated_candidates == 0 {
-        Some(CarrierFailureKind::NoGeometricCandidate)
-    } else if diagnostics.valid_candidates == 0 {
-        Some(CarrierFailureKind::NoValidCandidate)
+fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> CarrierFailureKind {
+    if diagnostics.pair_intersections == 0 && diagnostics.triple_intersections == 0 {
+        CarrierFailureKind::NoGeometricCandidate
     } else {
-        None
+        CarrierFailureKind::NoValidCandidate
     }
 }
 
@@ -437,7 +429,6 @@ pub struct TopologicalVertexSolveDiagnostics {
     pub carrier_pair_candidates: usize,
     pub carrier_triple_candidates: usize,
     pub carrier_valid_candidates: usize,
-    pub carrier_zero_candidate_vertices: usize,
     pub carrier_ambiguous_candidate_vertices: usize,
     pub carrier_no_geometric_candidate_vertices: usize,
     pub carrier_no_valid_candidate_vertices: usize,
@@ -495,18 +486,15 @@ pub fn solve_topological_vertices(
         diagnostics.carrier_pair_candidates += carrier_diagnostics.pair_intersections;
         diagnostics.carrier_triple_candidates += carrier_diagnostics.triple_intersections;
         diagnostics.carrier_valid_candidates += carrier_diagnostics.valid_candidates;
-        let failure_kind = carrier_failure_kind(carrier_diagnostics);
         match carrier_diagnostics.unique_solutions {
             0 => {
-                diagnostics.carrier_zero_candidate_vertices += 1;
-                match failure_kind {
-                    Some(CarrierFailureKind::NoGeometricCandidate) => {
+                match carrier_failure_kind(carrier_diagnostics) {
+                    CarrierFailureKind::NoGeometricCandidate => {
                         diagnostics.carrier_no_geometric_candidate_vertices += 1;
                     }
-                    Some(CarrierFailureKind::NoValidCandidate) => {
+                    CarrierFailureKind::NoValidCandidate => {
                         diagnostics.carrier_no_valid_candidate_vertices += 1;
                     }
-                    None => {}
                 }
                 if diagnostics.carrier_rejection_samples.len() < CARRIER_VERTEX_SAMPLE_LIMIT {
                     diagnostics
@@ -728,23 +716,14 @@ mod tests {
     fn carrier_failure_kind_distinguishes_generation_from_validation() {
         assert_eq!(
             carrier_failure_kind(CarrierSolveDiagnostics::default()),
-            Some(CarrierFailureKind::NoGeometricCandidate)
+            CarrierFailureKind::NoGeometricCandidate
         );
         assert_eq!(
             carrier_failure_kind(CarrierSolveDiagnostics {
                 triple_intersections: 1,
                 ..CarrierSolveDiagnostics::default()
             }),
-            Some(CarrierFailureKind::NoValidCandidate)
-        );
-        assert_eq!(
-            carrier_failure_kind(CarrierSolveDiagnostics {
-                triple_intersections: 1,
-                valid_candidates: 1,
-                unique_solutions: 1,
-                ..CarrierSolveDiagnostics::default()
-            }),
-            None
+            CarrierFailureKind::NoValidCandidate
         );
     }
 

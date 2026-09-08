@@ -362,7 +362,10 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.vertex_solve.carrier_pair_candidates,
         diagnostics.vertex_solve.carrier_triple_candidates,
         diagnostics.vertex_solve.carrier_valid_candidates,
-        diagnostics.vertex_solve.carrier_zero_candidate_vertices,
+        diagnostics
+            .vertex_solve
+            .carrier_no_geometric_candidate_vertices
+            + diagnostics.vertex_solve.carrier_no_valid_candidate_vertices,
         diagnostics
             .vertex_solve
             .carrier_ambiguous_candidate_vertices,
