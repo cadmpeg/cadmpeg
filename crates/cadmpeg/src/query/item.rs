@@ -121,13 +121,21 @@ struct Capture {
     addressable: Vec<(String, u64)>,
 }
 
-#[derive(Default)]
 struct TargetCapture {
     entry_count: u64,
-    /// Kept raw records (ID hits or first-N).
-    kept: Vec<Box<RawValue>>,
-    /// Every JSON-string `id` observed in the target arena (ID mode).
-    all_ids: Vec<String>,
+    kept: Kept,
+}
+
+enum Kept {
+    Head {
+        limit: usize,
+        records: Vec<Box<RawValue>>,
+    },
+    Ids {
+        ids: Vec<String>,
+        records: Vec<Box<RawValue>>,
+        all_ids: Vec<String>,
+    },
 }
 
 /// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
@@ -172,14 +180,24 @@ pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
         bail!("{}", unknown_arena_message(&target, &capture.addressable));
     };
 
-    match mode {
-        KeepMode::Head(_) => {
-            let values = parse_kept(&target_capture.kept)?;
+    match target_capture.kept {
+        Kept::Head { records, .. } => {
+            let values = parse_kept(&records)?;
             emit_values("item", output, &values)
         }
-        KeepMode::Ids(ids) => {
+        Kept::Ids {
+            ids,
+            records,
+            all_ids,
+        } => {
             let dotted = target.dotted();
-            let (values, errors) = resolve_ids(ids, &target_capture, &dotted)?;
+            let (values, errors) = resolve_ids(
+                &ids,
+                &records,
+                &all_ids,
+                target_capture.entry_count,
+                &dotted,
+            )?;
             match (emit_values("item", output, &values), errors.is_empty()) {
                 (Ok(()), true) => Ok(()),
                 (Ok(()), false) => bail!("{}", errors.join("\n")),
@@ -201,11 +219,13 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
 
 fn resolve_ids(
     ids: &[String],
-    capture: &TargetCapture,
+    kept: &[Box<RawValue>],
+    all_ids: &[String],
+    entry_count: u64,
     dotted: &str,
 ) -> Result<(Vec<serde_json::Value>, Vec<String>)> {
-    let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(capture.kept.len());
-    for raw in &capture.kept {
+    let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(kept.len());
+    for raw in kept {
         indexed.push((string_id(raw), raw.as_ref()));
     }
 
@@ -226,12 +246,7 @@ fn resolve_ids(
                 errors.push(ambiguous_message(request, dotted, &matches));
             }
             Err(ResolveError::Missing) => {
-                errors.push(miss_id_message(
-                    dotted,
-                    request,
-                    capture.entry_count,
-                    &capture.all_ids,
-                ));
+                errors.push(miss_id_message(dotted, request, entry_count, all_ids));
             }
         }
     }
@@ -697,27 +712,38 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
-        let target = self
-            .capture
-            .target
-            .get_or_insert_with(TargetCapture::default);
-        match self.mode {
-            KeepMode::Head(n) => {
-                while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    target.entry_count += 1;
-                    if target.kept.len() < *n {
-                        target.kept.push(raw);
+        let target = self.capture.target.get_or_insert_with(|| TargetCapture {
+            entry_count: 0,
+            kept: match self.mode {
+                KeepMode::Head(limit) => Kept::Head {
+                    limit: *limit,
+                    records: Vec::new(),
+                },
+                KeepMode::Ids(ids) => Kept::Ids {
+                    ids: ids.to_vec(),
+                    records: Vec::new(),
+                    all_ids: Vec::new(),
+                },
+            },
+        });
+        while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
+            target.entry_count += 1;
+            match &mut target.kept {
+                Kept::Head { limit, records } => {
+                    if records.len() < *limit {
+                        records.push(raw);
                     }
                 }
-            }
-            KeepMode::Ids(ids) => {
-                while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    target.entry_count += 1;
-                    let id = string_id(&raw);
-                    if let Some(ref id) = id {
-                        target.all_ids.push(id.clone());
-                        if ids.iter().any(|req| id == req || id.ends_with(req)) {
-                            target.kept.push(raw);
+                Kept::Ids {
+                    ids,
+                    records,
+                    all_ids,
+                } => {
+                    if let Some(id) = string_id(&raw) {
+                        let matched = ids.iter().any(|req| id == *req || id.ends_with(req));
+                        all_ids.push(id);
+                        if matched {
+                            records.push(raw);
                         }
                     }
                 }
