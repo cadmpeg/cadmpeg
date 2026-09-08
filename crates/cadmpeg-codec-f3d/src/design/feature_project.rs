@@ -2183,7 +2183,7 @@ fn project_fillet_arm(
     let Some(radius) = (parameter.source_kind() == "Radius")
         .then(|| design_length(parameter))
         .flatten()
-        .filter(|radius| radius.0.is_finite() && radius.0 > 0.0)
+        .filter(|radius| radius.0 > 0.0)
     else {
         return native();
     };
@@ -2232,9 +2232,8 @@ fn resolved_fillet_assignments<'a>(
             .copied()
             .filter(|parameter| parameter.source_kind() == kind)
     };
-    let length = |record, kind| {
-        design_length(parameter(record, kind)?).filter(|value| value.0.is_finite() && value.0 > 0.0)
-    };
+    let length =
+        |record, kind| design_length(parameter(record, kind)?).filter(|value| value.0 > 0.0);
     assignments
         .iter()
         .map(|&assignment| {
@@ -2289,9 +2288,6 @@ fn resolved_fillet_assignments<'a>(
                             .push((ordinal, parameter(row.parameter_record_index, "MidParams")?));
                     }
                     let (points, _) = variable_fillet_law(&controls)?;
-                    if points.iter().any(|point| !point.radius.0.is_finite()) {
-                        return None;
-                    }
                     RadiusSpec::Variable { points }
                 }
             };
@@ -5131,15 +5127,14 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
 }
 
 pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
+    let value = parameter.evaluated_value * 10.0;
     (parameter
         .unit
         .as_ref()
         .map(|field| field.value.as_str())
         .is_some_and(design_length_unit)
-        && parameter.evaluated_value.is_finite())
-    .then_some(cadmpeg_ir::features::Length(
-        parameter.evaluated_value * 10.0,
-    ))
+        && value.is_finite())
+    .then_some(cadmpeg_ir::features::Length(value))
 }
 
 pub(crate) fn design_length_unit(unit: &str) -> bool {
