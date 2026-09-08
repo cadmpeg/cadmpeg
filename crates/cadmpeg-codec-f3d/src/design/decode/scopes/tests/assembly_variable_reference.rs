@@ -100,9 +100,20 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&1_u32.to_le_bytes());
-        let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+        let append_guid = |bytes: &mut Vec<u8>| {
+            let encoded = guid.encode_utf16().collect::<Vec<_>>();
+            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+        };
+        append_guid(bytes);
+        for _ in 0..2 {
+            append_guid(bytes);
+        }
+        bytes.extend_from_slice(&2_u64.to_le_bytes());
+        for _ in 0..2 {
+            append_guid(bytes);
+        }
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
     };
     let append_wrapper = |bytes: &mut Vec<u8>, record_index: u32, paths: &[u32]| {
         let start = bytes.len();
