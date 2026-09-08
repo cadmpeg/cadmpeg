@@ -205,7 +205,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         stream: container
             .snapshot
             .stream("RSeStorage/RSeSegInfo")
-            .expect("fixture stream at directory index 3")
+            .expect("fixture registry stream")
             .id(),
         schema: 15,
         section_versions: vec![1],
