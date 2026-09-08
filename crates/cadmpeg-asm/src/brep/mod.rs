@@ -425,7 +425,7 @@ pub fn decode_with_purpose(
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
-) -> AsmBrep {
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let header = asm_header::parse(bytes);
     decode_with_header(records, bytes, header, stream, format, purpose)
 }
@@ -443,7 +443,7 @@ pub fn decode_with_header(
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
-) -> AsmBrep {
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
@@ -547,7 +547,7 @@ pub fn decode_with_header(
         stream,
         header_scale,
         format,
-    );
+    )?;
     project_subshell_faces(&mut out, records, &by_index, format);
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format);
     if purpose == DecodePurpose::Model {
@@ -559,7 +559,7 @@ pub fn decode_with_header(
         clamp_edge_ranges_to_carrier_domains(&mut out);
     }
 
-    out
+    Ok(out)
 }
 
 pub(crate) fn inherited_attribute_target(

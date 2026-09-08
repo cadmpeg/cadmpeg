@@ -254,14 +254,13 @@ impl Brep {
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
-pub fn decode(records: &[Record], bytes: &[u8], stream: &str, format: IdFormat<'_>) -> Brep {
-    Brep::from_asm(decode_with_purpose(
-        records,
-        bytes,
-        stream,
-        format,
-        DecodePurpose::Model,
-    ))
+pub fn decode(
+    records: &[Record],
+    bytes: &[u8],
+    stream: &str,
+    format: IdFormat<'_>,
+) -> Result<Brep, cadmpeg_core::CodecError> {
+    decode_with_purpose(records, bytes, stream, format, DecodePurpose::Model).map(Brep::from_asm)
 }
 
 /// Decode a parsed text stream ([`cadmpeg_asm::sat`]) into the IR B-rep graph.
@@ -275,15 +274,16 @@ pub fn decode_text(
     bytes: &[u8],
     entry: &str,
     format: IdFormat<'_>,
-) -> Brep {
-    Brep::from_asm(decode_with_header(
+) -> Result<Brep, cadmpeg_core::CodecError> {
+    decode_with_header(
         &stream.records,
         bytes,
         Some(stream.header.as_kernel_header()),
         entry,
         format,
         DecodePurpose::Model,
-    ))
+    )
+    .map(Brep::from_asm)
 }
 
 /// Decode only the topology and analytic measurements used to bind ASM
@@ -293,14 +293,9 @@ pub(crate) fn decode_history_topology(
     records: &[Record],
     bytes: &[u8],
     format: IdFormat<'_>,
-) -> Brep {
-    Brep::from_asm(decode_with_purpose(
-        records,
-        bytes,
-        "history",
-        format,
-        DecodePurpose::History,
-    ))
+) -> Result<Brep, cadmpeg_core::CodecError> {
+    decode_with_purpose(records, bytes, "history", format, DecodePurpose::History)
+        .map(Brep::from_asm)
 }
 
 /// Resolve one Design body selector within one BREP blob. Exact native keys

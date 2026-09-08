@@ -120,13 +120,11 @@ fn insert_free_vertex_shell(
         })
         .unwrap();
     draft
-        .insert(Shell {
-            id: ShellId::mint(shell_id).expect("valid identity"),
-            region: RegionId::mint(region_id).expect("valid identity"),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: vec![VertexId::mint(vertex_id).expect("valid identity")],
-        })
+        .insert(Shell::with_free_vertex(
+            ShellId::mint(shell_id).expect("valid identity"),
+            RegionId::mint(region_id).expect("valid identity"),
+            VertexId::mint(vertex_id).expect("valid identity"),
+        ))
         .unwrap();
 }
 

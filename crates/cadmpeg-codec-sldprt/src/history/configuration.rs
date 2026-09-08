@@ -1130,7 +1130,7 @@ pub(crate) fn configuration_surface_carriers(
         .shells
         .iter()
         .filter(|shell| shell_ids.contains(&shell.id))
-        .flat_map(|shell| &shell.faces)
+        .flat_map(|shell| shell.faces())
         .collect::<HashSet<_>>();
     let surface_ids = ir
         .model

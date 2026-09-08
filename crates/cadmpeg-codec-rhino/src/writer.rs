@@ -337,7 +337,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .shells
             .iter()
             .filter(|shell| shells.contains(shell.id.as_str()))
-            .flat_map(|shell| shell.faces.iter().map(|id| id.as_str().to_owned()))
+            .flat_map(|shell| shell.faces().iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let surfaces = model
             .faces
@@ -537,7 +537,12 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.free_vertices.iter().map(|id| id.as_str().to_owned()))
+        .flat_map(|shell| {
+            shell
+                .free_vertices()
+                .iter()
+                .map(|id| id.as_str().to_owned())
+        })
         .collect::<BTreeSet<_>>();
     scoped.model.vertices = ir
         .model
@@ -965,9 +970,9 @@ fn planar_sheet_brep_payload(
         || region.body != body.id
         || region.shells != [shell.id.clone()]
         || shell.region != region.id
-        || shell.faces != [face.id.clone()]
-        || !shell.wire_edges.is_empty()
-        || !shell.free_vertices.is_empty()
+        || shell.faces() != [face.id.clone()]
+        || !shell.wire_edges().is_empty()
+        || !shell.free_vertices().is_empty()
         || face.shell != shell.id
         || face.loops.len() != model.loops.len()
         || face
@@ -1432,14 +1437,14 @@ fn multi_face_brep_payload(
         || region.body != body.id
         || region.shells != [shell.id.clone()]
         || shell.region != region.id
-        || shell.faces
+        || shell.faces()
             != model
                 .faces
                 .iter()
                 .map(|face| face.id.clone())
                 .collect::<Vec<_>>()
-        || !shell.wire_edges.is_empty()
-        || !shell.free_vertices.is_empty()
+        || !shell.wire_edges().is_empty()
+        || !shell.free_vertices().is_empty()
     {
         return Err(CodecError::Malformed(
             "multi-face planar sheet ownership graph is inconsistent".into(),
@@ -2943,9 +2948,9 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 CodecError::malformed(format_args!("body {} shell is missing", body.id.as_str()))
             })?;
         if shell.region != region.id
-            || !shell.faces.is_empty()
-            || !shell.wire_edges.is_empty()
-            || shell.free_vertices.is_empty()
+            || !shell.faces().is_empty()
+            || !shell.wire_edges().is_empty()
+            || shell.free_vertices().is_empty()
             || !shells.insert(shell.id.as_str().to_owned())
         {
             return Err(CodecError::malformed(format_args!(
@@ -2953,8 +2958,8 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 body.id.as_str()
             )));
         }
-        let mut group = Vec::with_capacity(shell.free_vertices.len());
-        for vertex_id in &shell.free_vertices {
+        let mut group = Vec::with_capacity(shell.free_vertices().len());
+        for vertex_id in shell.free_vertices() {
             let vertex = model
                 .vertices
                 .iter()

@@ -935,18 +935,24 @@ pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut Annotati
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: ir
-            .model
-            .vertices
-            .iter()
-            .map(|vertex| vertex.id.clone())
-            .collect(),
-    });
+    ir.model.shells.push(
+        match Shell::new(
+            shell_id,
+            region_id,
+            Vec::new(),
+            Vec::new(),
+            ir.model
+                .vertices
+                .iter()
+                .map(|vertex| vertex.id.clone())
+                .collect(),
+        ) {
+            Ok(shell) => shell,
+            Err(_) => {
+                return;
+            }
+        },
+    );
 }
 
 pub(crate) struct E5IntersectionSidePlan {
@@ -1709,18 +1715,25 @@ fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &
             annotations
                 .derived(&shell_id, "region")
                 .derived(&shell_id, "faces");
-            ir.model.shells.push(Shell {
-                id: shell_id,
-                region: region_id,
-                faces: component_faces
-                    .iter()
-                    .map(|face| {
-                        FaceId::mint(format!("catia:e5:face#{face}")).expect("identity grammar")
-                    })
-                    .collect(),
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            });
+            ir.model.shells.push(
+                match Shell::new(
+                    shell_id,
+                    region_id,
+                    component_faces
+                        .iter()
+                        .map(|face| {
+                            FaceId::mint(format!("catia:e5:face#{face}")).expect("identity grammar")
+                        })
+                        .collect(),
+                    Vec::new(),
+                    Vec::new(),
+                ) {
+                    Ok(shell) => shell,
+                    Err(_) => {
+                        return;
+                    }
+                },
+            );
         }
     }
 }

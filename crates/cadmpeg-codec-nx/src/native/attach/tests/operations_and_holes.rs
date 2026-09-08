@@ -1204,9 +1204,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
             .expect("identity grammar");
     intermediate_face.loops.clear();
-    stepped.model.shells[0]
-        .faces
-        .push(intermediate_face.id.clone());
+    stepped.model.shells[0].add_face(intermediate_face.id.clone());
     stepped.model.faces.push(intermediate_face);
     assert_eq!(
         placement(&stepped, dimensions, std::slice::from_ref(&output)),
@@ -1252,9 +1250,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
             .expect("identity grammar");
     curved_face.loops.clear();
-    curved_feature.model.shells[0]
-        .faces
-        .push(curved_face.id.clone());
+    curved_feature.model.shells[0].add_face(curved_face.id.clone());
     curved_feature.model.faces.push(curved_face);
     assert_eq!(
         placement(&curved_feature, dimensions, &[]),
@@ -1289,10 +1285,14 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     let body = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
     let surface = ir.model.faces[0].surface.clone();
-    ir.model.shells[0].faces = vec![face];
+    {
+        let members = vec![face];
+        ir.model.shells[0].edit_topology(|faces, _, _| *faces = members)
+    }
+    .unwrap();
     ir.model
         .faces
-        .retain(|candidate| candidate.id == ir.model.shells[0].faces[0]);
+        .retain(|candidate| candidate.id == ir.model.shells[0].faces()[0]);
     ir.model
         .surfaces
         .retain(|candidate| candidate.id == surface);
@@ -1337,9 +1337,14 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     second_shell.id =
         cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
     second_shell.region = second_region.id.clone();
-    second_shell.faces = vec![
-        cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face").expect("identity grammar"),
-    ];
+    {
+        let members = vec![
+            cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
+                .expect("identity grammar"),
+        ];
+        second_shell.edit_topology(|faces, _, _| *faces = members)
+    }
+    .unwrap();
     let mut second_face = ir.model.faces[0].clone();
     second_face.id =
         cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face").expect("identity grammar");

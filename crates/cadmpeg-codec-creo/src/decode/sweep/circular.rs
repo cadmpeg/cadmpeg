@@ -285,13 +285,20 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             tolerance: None,
         });
         face_ids.push(side_face);
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: face_ids,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                face_ids,
+                Vec::new(),
+                Vec::new(),
+            ) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    continue;
+                }
+            },
+        );
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),

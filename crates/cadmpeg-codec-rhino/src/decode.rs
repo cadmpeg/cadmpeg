@@ -2609,13 +2609,11 @@ impl<'a> DecodeContext<'a> {
                     point: point_id.clone(),
                     tolerance: None,
                 });
-                self.ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region_id.clone(),
-                    faces: Vec::new(),
-                    wire_edges: Vec::new(),
-                    free_vertices: vec![vertex_id.clone()],
-                });
+                self.ir.model.shells.push(Shell::with_free_vertex(
+                    shell_id.clone(),
+                    region_id.clone(),
+                    vertex_id.clone(),
+                ));
                 self.ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id.clone(),
@@ -2685,13 +2683,20 @@ impl<'a> DecodeContext<'a> {
                     });
                     vertices.push(vertex_id);
                 }
-                self.ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region_id.clone(),
-                    faces: Vec::new(),
-                    wire_edges: Vec::new(),
-                    free_vertices: vertices,
-                });
+                self.ir.model.shells.push(
+                    match Shell::new(
+                        shell_id.clone(),
+                        region_id.clone(),
+                        Vec::new(),
+                        Vec::new(),
+                        vertices,
+                    ) {
+                        Ok(shell) => shell,
+                        Err(_) => {
+                            return false;
+                        }
+                    },
+                );
                 self.ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id.clone(),
@@ -3613,13 +3618,11 @@ fn stage_extrusion_caps(
         });
         annotate_derived(annotations, &surface_id.to_string());
         annotate_derived(annotations, &face_id.to_string());
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: vec![face_id],
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(Shell::with_face(
+            shell_id.clone(),
+            region_id.clone(),
+            face_id,
+        ));
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -4232,21 +4235,24 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             .entry(region_label)
             .or_default()
             .push(shell_id.clone());
-        staged.draft.model_mut().shells.push(Shell {
-            id: shell_id,
-            region: region_id.clone(),
-            faces: shell
-                .faces
-                .iter()
-                .map(|index| face_ids[*index].clone())
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: if component == 0 {
-                free_vertex_ids.clone()
-            } else {
-                Vec::new()
-            },
-        });
+        staged.draft.model_mut().shells.push(
+            Shell::new(
+                shell_id,
+                region_id.clone(),
+                shell
+                    .faces
+                    .iter()
+                    .map(|index| face_ids[*index].clone())
+                    .collect(),
+                Vec::new(),
+                if component == 0 {
+                    free_vertex_ids.clone()
+                } else {
+                    Vec::new()
+                },
+            )
+            .map_err(|message| crate::curves::GeometryError::malformed(0, message))?,
+        );
         if !regions.iter().any(|region: &Region| region.id == region_id) {
             regions.push(Region {
                 id: region_id,

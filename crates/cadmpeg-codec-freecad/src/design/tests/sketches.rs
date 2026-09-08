@@ -71,7 +71,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         .model
         .shells
         .iter()
-        .any(|shell| shell.wire_edges.len() == 3));
+        .any(|shell| shell.wire_edges().len() == 3));
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }

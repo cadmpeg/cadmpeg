@@ -636,7 +636,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert_eq!(region.body, body.id);
     assert_eq!(region.shells, vec![shell.id.clone()]);
     assert_eq!(shell.region, region.id);
-    assert_eq!(shell.faces, vec![face.id.clone()]);
+    assert_eq!(shell.faces(), vec![face.id.clone()]);
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);

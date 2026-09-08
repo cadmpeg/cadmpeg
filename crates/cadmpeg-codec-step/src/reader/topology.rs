@@ -961,13 +961,14 @@ fn build_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![Shell {
-            id: shell.clone(),
-            region: region.clone(),
-            faces: Vec::new(),
+        vec![Shell::new(
+            shell.clone(),
+            region.clone(),
+            Vec::new(),
             wire_edges,
-            free_vertices: Vec::new(),
-        }],
+            Vec::new(),
+        )
+        .ok()?],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1158,13 +1159,14 @@ fn build_shell_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![Shell {
-            id: shell.clone(),
-            region: region.clone(),
-            faces: Vec::new(),
+        vec![Shell::new(
+            shell.clone(),
+            region.clone(),
+            Vec::new(),
             wire_edges,
             free_vertices,
-        }],
+        )
+        .ok()?],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1292,13 +1294,14 @@ fn build_geometric_set(
         Vec::new(),
         faces,
         Vec::new(),
-        vec![Shell {
-            id: shell.clone(),
-            region: region.clone(),
-            faces: face_ids,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        }],
+        vec![Shell::new(
+            shell.clone(),
+            region.clone(),
+            face_ids,
+            Vec::new(),
+            Vec::new(),
+        )
+        .ok()?],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -2685,13 +2688,16 @@ fn build_one(
                     face_id
                 })
                 .collect();
-            shells.push(Shell {
-                id: component_shell.clone(),
-                region: rid.clone(),
-                faces: component_faces,
-                wire_edges: vec![],
-                free_vertices: vec![],
-            });
+            shells.push(
+                Shell::new(
+                    component_shell.clone(),
+                    rid.clone(),
+                    component_faces,
+                    vec![],
+                    vec![],
+                )
+                .ok()?,
+            );
             region.shells.push(component_shell);
         }
         typed.insert(shell_step);

@@ -152,13 +152,11 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
             ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar")
         ],
     });
-    ir.model.shells.push(Shell {
-        id: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
-        region: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
-        faces: vec![FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
+        RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
+        FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
+    ));
     ir.model.faces.push(Face {
         id: FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
         shell: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
@@ -198,13 +196,16 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     );
 
     let mut duplicate_shell = ir.clone();
-    duplicate_shell.model.shells.push(Shell {
-        id: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
-        region: RegionId::mint("creo:ambiguous:region#10".to_string()).expect("identity grammar"),
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    duplicate_shell.model.shells.push(
+        Shell::new(
+            ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
+            RegionId::mint("creo:ambiguous:region#10".to_string()).expect("identity grammar"),
+            ir.model.shells[0].faces().to_vec(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     assert_eq!(
         feature_output_bodies(&scan, &duplicate_shell, 10),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
@@ -261,13 +262,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         body: body_id.clone(),
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: vec![face_id.clone()],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        shell_id.clone(),
+        region_id.clone(),
+        face_id.clone(),
+    ));
     ir.model.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
@@ -329,14 +328,17 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     assert!(bodies_containing_edges(&duplicate_face, std::slice::from_ref(&edge_id)).is_empty());
 
     let mut duplicate_shell = ir.clone();
-    duplicate_shell.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: RegionId::mint("test:model:entity#creo:ambiguous:region".to_string())
-            .expect("identity grammar"),
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    duplicate_shell.model.shells.push(
+        Shell::new(
+            shell_id.clone(),
+            RegionId::mint("test:model:entity#creo:ambiguous:region".to_string())
+                .expect("identity grammar"),
+            ir.model.shells[0].faces().to_vec(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     assert!(bodies_containing_edges(&duplicate_shell, std::slice::from_ref(&edge_id)).is_empty());
 
     let mut duplicate_region = ir.clone();

@@ -203,13 +203,16 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         body: body.clone(),
         shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
     });
-    model.shells.push(Shell {
-        id: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
-        region: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
-        faces: vec![cylinder_face, cap_face],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    model.shells.push(
+        Shell::new(
+            ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+            RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
+            vec![cylinder_face, cap_face],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model = model;
     let operation_positions = BTreeMap::from([("blind", 0usize)]);
@@ -291,9 +294,13 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     ));
 
     let mut missing_cap = ir.clone();
-    missing_cap.model.shells[0].faces.retain(|face| {
-        face != &FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar")
-    });
+    missing_cap.model.shells[0]
+        .edit_topology(|faces, _, _| {
+            faces.retain(|face| {
+                face != &FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar")
+            })
+        })
+        .unwrap();
     assert!(super::blind_hole_body_projection(
         &missing_cap,
         std::slice::from_ref(&operation),
@@ -314,7 +321,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         color: None,
         tolerance: None,
     });
-    duplicate_cap.model.shells[0].faces.push(
+    duplicate_cap.model.shells[0].add_face(
         FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
     );
     assert!(super::blind_hole_body_projection(
@@ -536,17 +543,20 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         body: body.clone(),
         shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
     });
-    model.shells.push(Shell {
-        id: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        region: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-        faces: vec![
-            FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
-            FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
-            FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
-        ],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    model.shells.push(
+        Shell::new(
+            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            vec![
+                FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
+                FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
+                FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model = model;
     let operations = vec![operation.clone()];
@@ -636,9 +646,13 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     ));
 
     let mut missing_shoulder = ir.clone();
-    missing_shoulder.model.shells[0].faces.retain(|face| {
-        face != &FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar")
-    });
+    missing_shoulder.model.shells[0]
+        .edit_topology(|faces, _, _| {
+            faces.retain(|face| {
+                face != &FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar")
+            })
+        })
+        .unwrap();
     assert!(super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;

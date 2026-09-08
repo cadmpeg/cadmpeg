@@ -3894,7 +3894,7 @@ pub(crate) fn emit_containers(
     stream: &str,
     header_scale: f64,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         faces: kept_faces, ..
     } = reach;
@@ -3911,25 +3911,28 @@ pub(crate) fn emit_containers(
             "shell" => {
                 let Some(owner) = r.ref_at(7) else { continue };
                 let faces = shell_faces(r, by_index, kept_faces, format);
-                out.shells.push(Shell {
-                    id: ShellId::mint(id(format, i)).expect("identity grammar"),
-                    region: RegionId::mint(id(format, owner)).expect("identity grammar"),
-                    faces,
-                    wire_edges: wire_edges_by_shell
-                        .get(&i)
-                        .into_iter()
-                        .flatten()
-                        .map(|edge| EdgeId::mint(id(format, *edge)).expect("identity grammar"))
-                        .collect(),
-                    free_vertices: free_vertices_by_shell
-                        .get(&i)
-                        .into_iter()
-                        .flatten()
-                        .map(|vertex| {
-                            VertexId::mint(id(format, *vertex)).expect("identity grammar")
-                        })
-                        .collect(),
-                });
+                out.shells.push(
+                    Shell::new(
+                        ShellId::mint(id(format, i)).expect("identity grammar"),
+                        RegionId::mint(id(format, owner)).expect("identity grammar"),
+                        faces,
+                        wire_edges_by_shell
+                            .get(&i)
+                            .into_iter()
+                            .flatten()
+                            .map(|edge| EdgeId::mint(id(format, *edge)).expect("identity grammar"))
+                            .collect(),
+                        free_vertices_by_shell
+                            .get(&i)
+                            .into_iter()
+                            .flatten()
+                            .map(|vertex| {
+                                VertexId::mint(id(format, *vertex)).expect("identity grammar")
+                            })
+                            .collect(),
+                    )
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                );
             }
             // Save-format 231 names this record `region`; format-227 streams
             // carry the original ACIS head `lump`. Same layout in both.
@@ -4014,14 +4017,13 @@ pub(crate) fn emit_containers(
             body: body_id,
             shells: vec![shell_id.clone()],
         });
-        out.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: Vec::new(),
-            wire_edges: vec![EdgeId::mint(id(format, edge)).expect("identity grammar")],
-            free_vertices: Vec::new(),
-        });
+        out.shells.push(Shell::with_wire_edge(
+            shell_id,
+            region_id,
+            EdgeId::mint(id(format, edge)).expect("identity grammar"),
+        ));
     }
+    Ok(())
 }
 
 /// Project subshell-owned faces onto their nearest shell ancestor, since the

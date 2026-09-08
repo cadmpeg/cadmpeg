@@ -418,19 +418,26 @@ pub(super) fn emit_faces(
         annotations
             .derived(&shell_id, "region")
             .derived(&shell_id, "faces");
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: component_faces
-                .iter()
-                .map(|face| {
-                    FaceId::mint(format!("catia:b5:face#{}", graph.faces[*face].object_id))
-                        .expect("identity grammar")
-                })
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(
+                shell_id,
+                region_id,
+                component_faces
+                    .iter()
+                    .map(|face| {
+                        FaceId::mint(format!("catia:b5:face#{}", graph.faces[*face].object_id))
+                            .expect("identity grammar")
+                    })
+                    .collect(),
+                Vec::new(),
+                Vec::new(),
+            ) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    return false;
+                }
+            },
+        );
     }
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();

@@ -143,15 +143,15 @@ impl Brep {
                 .try_into()
                 .expect("qualified identity");
             shell
-                .faces
+                .faces_mut()
                 .iter_mut()
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
             shell
-                .wire_edges
+                .wire_edges_mut()
                 .iter_mut()
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
             shell
-                .free_vertices
+                .free_vertices_mut()
                 .iter_mut()
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
@@ -2000,13 +2000,20 @@ fn decode_graph(
                         face.shell = ShellId::mint(shell_id.clone()).expect("identity grammar");
                     }
                 }
-                out.shells.push(Shell {
-                    id: ShellId::mint(shell_id.clone()).expect("identity grammar"),
-                    region: RegionId::mint(region_id.clone()).expect("identity grammar"),
-                    faces,
-                    wire_edges: Vec::new(),
-                    free_vertices: Vec::new(),
-                });
+                out.shells.push(
+                    match Shell::new(
+                        ShellId::mint(shell_id.clone()).expect("identity grammar"),
+                        RegionId::mint(region_id.clone()).expect("identity grammar"),
+                        faces,
+                        Vec::new(),
+                        Vec::new(),
+                    ) {
+                        Ok(shell) => shell,
+                        Err(_) => {
+                            continue;
+                        }
+                    },
+                );
                 region_shells.push(ShellId::mint(shell_id).expect("identity grammar"));
             }
             out.regions.push(Region {
@@ -2045,13 +2052,20 @@ fn decode_graph(
                                     ShellId::mint(shell_id.clone()).expect("identity grammar");
                             }
                         }
-                        out.shells.push(Shell {
-                            id: ShellId::mint(shell_id.clone()).expect("identity grammar"),
-                            region: RegionId::mint(region_id.clone()).expect("identity grammar"),
-                            faces,
-                            wire_edges: Vec::new(),
-                            free_vertices: Vec::new(),
-                        });
+                        out.shells.push(
+                            match Shell::new(
+                                ShellId::mint(shell_id.clone()).expect("identity grammar"),
+                                RegionId::mint(region_id.clone()).expect("identity grammar"),
+                                faces,
+                                Vec::new(),
+                                Vec::new(),
+                            ) {
+                                Ok(shell) => shell,
+                                Err(_) => {
+                                    continue;
+                                }
+                            },
+                        );
                         region_shells.push(ShellId::mint(shell_id).expect("identity grammar"));
                     }
                 }

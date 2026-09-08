@@ -259,13 +259,11 @@ pub(super) fn sketch_brep(
         color: None,
         tolerance: None,
     });
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: vec![face_id],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        shell_id.clone(),
+        region_id.clone(),
+        face_id,
+    ));
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),

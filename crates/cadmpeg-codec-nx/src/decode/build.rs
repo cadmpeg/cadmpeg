@@ -950,7 +950,7 @@ pub(crate) fn try_decode_geometry(
             &transfer_budget,
             &adaptive_geometry_budget,
             &completion_geometry_budget,
-        );
+        )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
         // blend-geometry certificates for support validation and attachment.
@@ -1574,7 +1574,7 @@ pub(crate) fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId
             ir.model
                 .shells
                 .iter()
-                .flat_map(|shell| shell.wire_edges.iter().cloned()),
+                .flat_map(|shell| shell.wire_edges().iter().cloned()),
         )
         .collect();
     ir.model.edges.retain(|edge| edges.contains(&edge.id));
@@ -1587,7 +1587,7 @@ pub(crate) fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId
             ir.model
                 .shells
                 .iter()
-                .flat_map(|shell| shell.free_vertices.iter().cloned()),
+                .flat_map(|shell| shell.free_vertices().iter().cloned()),
         )
         .collect();
     ir.model
@@ -1751,13 +1751,20 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
         });
         free_vertices.push(vertex_id);
     }
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices,
-    });
+    ir.model.shells.push(
+        match Shell::new(
+            shell_id.clone(),
+            region_id.clone(),
+            Vec::new(),
+            Vec::new(),
+            free_vertices,
+        ) {
+            Ok(shell) => shell,
+            Err(_) => {
+                return;
+            }
+        },
+    );
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),

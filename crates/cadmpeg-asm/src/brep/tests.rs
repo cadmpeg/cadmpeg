@@ -431,14 +431,15 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         "BREP.saved-edge.smbh",
         FORMAT,
         DecodePurpose::Model,
-    );
+    )
+    .unwrap();
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(
-        brep.shells[0].wire_edges,
+        brep.shells[0].wire_edges(),
         vec![EdgeId::mint(id(FORMAT, 1)).expect("identity grammar")]
     );
     assert_eq!(brep.edges.len(), 1);
@@ -727,13 +728,14 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         record(4, "loop", vec![Token::Ref(2)]),
     ];
     let mut brep = AsmBrep {
-        shells: vec![Shell {
-            id: ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
-            region: RegionId::mint("test:model:region#0").expect("identity grammar"),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        }],
+        shells: vec![Shell::new(
+            ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
+            RegionId::mint("test:model:region#0").expect("identity grammar"),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()],
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
             face: FaceId::mint("test:model:face#0").expect("identity grammar"),

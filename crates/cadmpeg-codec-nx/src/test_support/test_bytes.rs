@@ -43,23 +43,23 @@ pub(crate) fn attach_test_body_surface(
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
         });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id,
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
     }
     let face_id =
         FaceId::mint(format!("{body_id}:face:{}", ir.model.faces.len())).expect("identity grammar");
-    ir.model
+    if let Some(shell) = ir
+        .model
         .shells
         .iter_mut()
         .find(|shell| shell.id == shell_id)
-        .unwrap()
-        .faces
-        .push(face_id.clone());
+    {
+        shell.add_face(face_id.clone());
+    } else {
+        ir.model.shells.push(Shell::with_face(
+            shell_id.clone(),
+            region_id,
+            face_id.clone(),
+        ));
+    }
     ir.model.faces.push(Face {
         id: face_id,
         shell: shell_id,

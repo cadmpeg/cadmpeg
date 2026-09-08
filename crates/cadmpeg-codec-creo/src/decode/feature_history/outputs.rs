@@ -183,7 +183,12 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
         ir.model
             .shells
             .iter()
-            .filter(|shell| shell.wire_edges.iter().any(|edge| selected.contains(edge)))
+            .filter(|shell| {
+                shell
+                    .wire_edges()
+                    .iter()
+                    .any(|edge| selected.contains(edge))
+            })
             .map(|shell| shell.id.clone()),
     );
     shell_ids

@@ -103,7 +103,7 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
             .iter()
             .find(|shell| &shell.id == shell_id)
             .expect("shell carrier");
-        let face_id = shell.faces.first().expect("shell face");
+        let face_id = shell.faces().first().expect("shell face");
         document
             .model
             .faces

@@ -606,7 +606,7 @@ fn unique_face_body<'a>(
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
-                    .is_some_and(|shell| shell.faces.iter().any(|face| face == face_id))
+                    .is_some_and(|shell| shell.faces().iter().any(|face| face == face_id))
             });
             owns_face.then_some(region.body.clone())
         })

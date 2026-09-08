@@ -1204,13 +1204,11 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         body: BodyId::mint(id(1)).expect("identity grammar"),
         shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
     });
-    brep.shells.push(Shell {
-        id: ShellId::mint(id(3)).expect("identity grammar"),
-        region: RegionId::mint(id(2)).expect("identity grammar"),
-        faces: vec![FaceId::mint(id(4)).expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    brep.shells.push(Shell::with_face(
+        ShellId::mint(id(3)).expect("identity grammar"),
+        RegionId::mint(id(2)).expect("identity grammar"),
+        FaceId::mint(id(4)).expect("identity grammar"),
+    ));
     brep.faces.push(Face {
         id: FaceId::mint(id(4)).expect("identity grammar"),
         shell: ShellId::mint(id(3)).expect("identity grammar"),

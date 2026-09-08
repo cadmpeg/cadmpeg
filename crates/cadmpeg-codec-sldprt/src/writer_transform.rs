@@ -73,7 +73,7 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
-                for face_id in &shell.faces {
+                for face_id in shell.faces() {
                     let face = faces.get(face_id.as_str()).ok_or_else(|| {
                         CodecError::Malformed("shell references missing face".into())
                     })?;

@@ -1748,13 +1748,11 @@ fn plane_face_draft(
         color: None,
         tolerance: (resolution > 0.0).then_some(resolution),
     });
-    candidate.model_mut().shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: vec![face_id],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    candidate.model_mut().shells.push(Shell::with_face(
+        shell_id.clone(),
+        region_id.clone(),
+        face_id,
+    ));
     candidate.model_mut().regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
