@@ -4,33 +4,48 @@ use super::*;
 
 #[test]
 fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
-    let valid = PositionalConeFrame {
-        apex: [0.0, 1.0, 2.0],
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
-    assert!(valid.is_valid());
+    let valid = PositionalConeFrame::new(
+        [0.0, 1.0, 2.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        std::f64::consts::FRAC_PI_4,
+    )
+    .expect("valid positional cone frame");
 
-    let mut nonfinite_apex = valid;
-    nonfinite_apex.apex[1] = f64::NAN;
-    assert!(!nonfinite_apex.is_valid());
+    assert!(PositionalConeFrame::new(
+        {
+            let mut value = valid.apex;
+            value[1] = f64::NAN;
+            value
+        },
+        valid.axis,
+        valid.ref_direction,
+        valid.half_angle
+    )
+    .is_none());
 
-    let mut zero_angle = valid;
-    zero_angle.half_angle = 0.0;
-    assert!(!zero_angle.is_valid());
+    assert!(PositionalConeFrame::new(valid.apex, valid.axis, valid.ref_direction, 0.0).is_none());
 
-    let mut non_unit_axis = valid;
-    non_unit_axis.axis = [0.0, 2.0, 0.0];
-    assert!(!non_unit_axis.is_valid());
+    assert!(PositionalConeFrame::new(
+        valid.apex,
+        [0.0, 2.0, 0.0],
+        valid.ref_direction,
+        valid.half_angle
+    )
+    .is_none());
 
-    let mut non_orthogonal_reference = valid;
-    non_orthogonal_reference.ref_direction = [0.0, 1.0, 0.0];
-    assert!(!non_orthogonal_reference.is_valid());
+    assert!(
+        PositionalConeFrame::new(valid.apex, valid.axis, [0.0, 1.0, 0.0], valid.half_angle)
+            .is_none()
+    );
 
-    let mut right_angle = valid;
-    right_angle.half_angle = std::f64::consts::FRAC_PI_2;
-    assert!(!right_angle.is_valid());
+    assert!(PositionalConeFrame::new(
+        valid.apex,
+        valid.axis,
+        valid.ref_direction,
+        std::f64::consts::FRAC_PI_2
+    )
+    .is_none());
 }
 
 #[test]
