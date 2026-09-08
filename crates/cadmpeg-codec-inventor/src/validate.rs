@@ -1323,18 +1323,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.active_carrier.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} active-carrier state records",
-                data.active_carrier.len()
-            ),
-            None,
-        ));
-        return;
-    }
-    let carrier = &data.active_carrier[0];
+    let carrier = &data.active_carrier;
     if let ActiveCarrierRecord::Selected {
         id,
         segment_token,
@@ -1408,7 +1397,7 @@ struct NativeData {
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     feature_record_issues: Vec<RecordIssue>,
-    active_carrier: Vec<ActiveCarrierRecord>,
+    active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
 }
 
@@ -1468,7 +1457,7 @@ impl NativeData {
             pm_dc_feature_labels: namespace.arena_as("pm_dc_feature_labels")?,
             pm_dc_entity_style_links: namespace.arena_as("pm_dc_entity_style_links")?,
             feature_record_issues: namespace.arena_as("feature_record_issues")?,
-            active_carrier: namespace.arena_as("active_carrier")?,
+            active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as("unknowns")?,
         })
     }

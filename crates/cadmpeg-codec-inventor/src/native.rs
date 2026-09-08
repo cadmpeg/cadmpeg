@@ -5,7 +5,8 @@ pub(crate) mod digest;
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
-use serde::{Deserialize, Serialize};
+use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
+use serde::{de::Error as _, Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
@@ -1398,6 +1399,18 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
 }
 
 impl ActiveCarrierRecord {
+    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
+        let [record] = <[_; 1]>::try_from(namespace.arena_as::<Self>("active_carrier")?).map_err(
+            |records: Vec<_>| {
+                serde_json::Error::custom(format!(
+                    "active_carrier must contain exactly one record; found {}",
+                    records.len()
+                ))
+            },
+        )?;
+        Ok(record)
+    }
+
     pub(crate) fn id(&self) -> &str {
         match self {
             Self::NotApplicable { id }
@@ -1419,6 +1432,38 @@ mod tests {
     use super::{
         ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
     };
+
+    #[test]
+    fn active_carrier_admission_requires_one_arena_record() {
+        let record = ActiveCarrierRecord::NotApplicable {
+            id: "carrier".into(),
+        };
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        assert!(ActiveCarrierRecord::read(&namespace).is_err());
+        namespace
+            .set_arena("active_carrier", std::slice::from_ref(&record))
+            .expect("valid carrier");
+        assert_eq!(
+            ActiveCarrierRecord::read(&namespace).expect("single carrier"),
+            record
+        );
+        let wire = namespace
+            .arena_as::<serde_json::Value>("active_carrier")
+            .expect("valid carrier");
+        assert_eq!(
+            wire,
+            vec![serde_json::to_value(&record).expect("valid carrier")]
+        );
+        for records in [vec![], vec![record.clone(), record]] {
+            namespace
+                .set_arena("active_carrier", &records)
+                .expect("valid wire records");
+            assert!(ActiveCarrierRecord::read(&namespace)
+                .expect_err("invalid cardinality")
+                .to_string()
+                .contains("active_carrier"));
+        }
+    }
 
     #[test]
     fn bulk_wire_requires_expansion_and_preserves_exclusive_frame_fields() {
