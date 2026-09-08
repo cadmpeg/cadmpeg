@@ -20,3 +20,35 @@ fn configuration_admission_checks_wire_and_variant_order() {
     invalid["kind"] = "rule".into();
     assert!(serde_json::from_value::<DesignConfiguration>(invalid).is_err());
 }
+
+#[test]
+fn configuration_parameter_overrides_require_scalar_values() {
+    use crate::records::{DesignConfiguration, DesignConfigurationKind};
+    let admit = |payload: serde_json::Value| {
+        DesignConfiguration::try_new(
+            "config".into(),
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["variant".into()],
+            payload.as_object().unwrap().clone(),
+        )
+    };
+    assert!(admit(
+        serde_json::json!({"configurations": {"variant": {"parameters": {
+            "string": "25 mm", "number": 2.5, "boolean": true, "null": null
+        }}}})
+    )
+    .is_ok());
+    for value in [
+        serde_json::json!(["25 mm"]),
+        serde_json::json!({"value": "25 mm"}),
+    ] {
+        let error = admit(serde_json::json!({
+            "configurations": {"variant": {"parameters": {"width": value}}}
+        }))
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("parameter overrides must be JSON scalars"));
+    }
+}
