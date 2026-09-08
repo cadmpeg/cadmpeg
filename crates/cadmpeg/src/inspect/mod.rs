@@ -238,6 +238,12 @@ fn parse_stride(text: &str) -> Result<NonZeroU64, String> {
     NonZeroU64::new(parse_offset(text)?).ok_or_else(|| "stride must be at least 1".to_owned())
 }
 
+type CountLimit = Option<NonZeroUsize>;
+
+fn parse_limit(text: &str) -> Result<CountLimit, std::num::ParseIntError> {
+    text.parse::<usize>().map(NonZeroUsize::new)
+}
+
 /// Arguments for `cadmpeg inspect read`.
 #[derive(Debug, Args)]
 pub struct ReadArgs {
@@ -270,8 +276,8 @@ pub struct FindArgs {
     #[arg(long, value_enum)]
     pub encoding: FindEncoding,
     /// Stop after this many hits; 0 reports every hit.
-    #[arg(long, default_value_t = 100)]
-    pub max: usize,
+    #[arg(long, default_value = "100", value_parser = parse_limit)]
+    pub max: CountLimit,
     /// Bytes of context dumped before and after each hit; 0 prints none.
     #[arg(long, default_value = "0", value_parser = parse_offset)]
     pub context: u64,
@@ -508,8 +514,8 @@ pub struct CmpArgs {
     #[arg(long, default_value_t = 8)]
     pub gap: u64,
     /// Stop listing after this many runs; 0 lists every run.
-    #[arg(long, default_value_t = 32)]
-    pub max_runs: usize,
+    #[arg(long, default_value = "32", value_parser = parse_limit)]
+    pub max_runs: CountLimit,
     /// Bytes of context dumped on each side of the first difference.
     #[arg(long, default_value = "32", value_parser = parse_offset)]
     pub context: u64,
@@ -642,9 +648,9 @@ fn find(args: &FindArgs) -> Result<()> {
     };
     let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
     let bytes = read_whole(file)?;
-    let limit = (args.max > 0).then_some(args.max);
+    let limit = args.max;
     let hits = search::find_all(&bytes, &pattern, limit);
-    let truncated = limit.is_some_and(|max| hits.len() >= max);
+    let truncated = limit.is_some_and(|max| hits.len() >= max.get());
     if args.json {
         let payload = serde_json::json!({
             "subcommand": "find",
@@ -683,7 +689,7 @@ fn find(args: &FindArgs) -> Result<()> {
     if truncated {
         println!(
             "note: output truncated at {} matches; pass --max 0 for all",
-            args.max
+            hits.len()
         );
     }
     Ok(())
@@ -820,11 +826,9 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
         args.gap,
         summary.runs().len()
     );
-    let shown = if args.max_runs == 0 {
-        summary.runs().len()
-    } else {
-        args.max_runs.min(summary.runs().len())
-    };
+    let shown = args.max_runs.map_or(summary.runs().len(), |max| {
+        max.get().min(summary.runs().len())
+    });
     for run in &summary.runs()[..shown] {
         println!(
             "  0x{:08x}..0x{:08x}  {} bytes",

@@ -92,7 +92,7 @@ pub fn utf16le_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
 ///
 /// `limit` caps the number of reported offsets; `None` reports all of them. The
 /// match is byte exact except at wildcard positions.
-pub fn find_all(haystack: &[u8], pattern: &[PatternByte], limit: Option<usize>) -> Vec<u64> {
+pub fn find_all(haystack: &[u8], pattern: &[PatternByte], limit: Option<NonZeroUsize>) -> Vec<u64> {
     let mut hits = Vec::new();
     if pattern.is_empty() || haystack.len() < pattern.len() {
         return hits;
@@ -118,7 +118,7 @@ pub fn find_all(haystack: &[u8], pattern: &[PatternByte], limit: Option<usize>) 
         }
         if matches_at(haystack, candidate, pattern) {
             hits.push(candidate as u64);
-            if limit.is_some_and(|max| hits.len() >= max) {
+            if limit.is_some_and(|max| hits.len() >= max.get()) {
                 break;
             }
         }
@@ -337,7 +337,10 @@ mod tests {
         let haystack = b"ax1ay1az1";
         let pattern = parse_pattern("61??31").unwrap();
         assert_eq!(find_all(haystack, &pattern, None), vec![0, 3, 6]);
-        assert_eq!(find_all(haystack, &pattern, Some(2)), vec![0, 3]);
+        assert_eq!(
+            find_all(haystack, &pattern, NonZeroUsize::new(2)),
+            vec![0, 3]
+        );
     }
 
     #[test]
