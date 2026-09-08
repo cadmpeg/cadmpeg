@@ -461,7 +461,7 @@ mod tests {
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: 9,
-            transform: super::super::identity_matrix().try_into().unwrap(),
+            transform: crate::records::SketchPlacementMatrix::IDENTITY,
             transform_offset: 20,
         };
 

@@ -13,9 +13,7 @@ use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
     parse_face_operand, ConstructionOperandGroupParse, RecordFrame,
 };
-use crate::design::decode::sketch::{
-    identity_matrix, next_indexed_record_offset, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;

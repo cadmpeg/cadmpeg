@@ -1133,7 +1133,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         bytes.resize(frame_start + frame_length, 0);
         bytes[frame_start + matrix_prefix..frame_start + transform_offset]
             .copy_from_slice(&[1, 1, 0, 0]);
-        let mut solved_transform = identity_matrix();
+        let mut solved_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
         solved_transform[0][3] = 9.0;
         solved_transform[1][3] = 8.0;
         solved_transform[2][3] = 7.0;
@@ -1903,7 +1903,7 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             neutron_role_offset: 0,
             placement: Some(crate::records::feature::DesignComponentInsertMatrix {
                 scope: crate::records::Located {
-                    value: identity_matrix().try_into().unwrap(),
+                    value: crate::records::SketchPlacementMatrix::IDENTITY,
                     offset: 0,
                 },
                 carrier_offset: Some(0),

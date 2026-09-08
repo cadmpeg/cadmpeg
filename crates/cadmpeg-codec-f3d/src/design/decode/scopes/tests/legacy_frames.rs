@@ -232,7 +232,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         frame[4..7].copy_from_slice(class_tag.as_bytes());
         frame[7..11].copy_from_slice(&record_index.to_le_bytes());
         frame[43..47].copy_from_slice(&form.to_le_bytes());
-        let mut transform = identity_matrix();
+        let mut transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
         transform[0][3] = f64::from(ordinal as u32);
         for (cell, value) in transform.into_iter().flatten().enumerate() {
             let at = 48 + cell * 8;

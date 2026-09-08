@@ -862,7 +862,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     move_frame[4..7].copy_from_slice(b"368");
     move_frame[7..11].copy_from_slice(&90u32.to_le_bytes());
     move_frame[43..47].copy_from_slice(&5u32.to_le_bytes());
-    let mut move_transform = identity_matrix();
+    let mut move_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     move_transform[1][3] = 15.0;
     for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
         let at = 48 + ordinal * 8;
