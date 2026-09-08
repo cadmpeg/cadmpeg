@@ -2561,7 +2561,6 @@ fn emit_carrier_curve(
     let Carriers {
         curve_geo,
         procedural_curve_defs,
-        cacheless_procedural_curve_defs,
         ..
     } = &mut *carriers;
     let Some(mut geometry) = curve_geo.remove(&i) else {
@@ -2591,182 +2590,133 @@ fn emit_carrier_curve(
         geometry,
         source_object: None,
     });
-    if let Some(procedural) = procedural_curve_defs.remove(&i) {
-        let definition = (|| {
-            Some(match procedural.construction {
-                ProceduralCurveConstruction::VectorOffset((
-                    source,
-                    parameter_range,
-                    offset,
-                    roles,
-                )) => {
-                    let source_id =
-                        CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
-                            .expect("identity grammar");
-                    out.curves.push(Curve {
-                        id: source_id.clone(),
-                        geometry: CurveGeometry::Nurbs(source),
-                        source_object: None,
-                    });
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                        source: source_id,
+    match procedural_curve_defs.remove(&i) {
+        Some(super::ProceduralCurveSource::Cached {
+            construction,
+            cache_fit_tolerance,
+        }) => {
+            let definition = (|| {
+                Some(match *construction {
+                    ProceduralCurveConstruction::VectorOffset((
+                        source,
                         parameter_range,
                         offset,
                         roles,
-                    }
-                }
-                ProceduralCurveConstruction::Subset((source, parameter_range)) => {
-                    let source_id =
-                        CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
-                            .expect("identity grammar");
-                    out.curves.push(Curve {
-                        id: source_id.clone(),
-                        geometry: CurveGeometry::Nurbs(source),
-                        source_object: None,
-                    });
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                        source: source_id,
-                        parameter_range,
-                        sense: true,
-                    }
-                }
-                ProceduralCurveConstruction::TwoSidedOffset(embedded) => {
-                    let mut next_side = 0;
-                    let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
-                        let side = next_side;
-                        next_side += 1;
-                        let geometry = geometry?;
-                        let id = SurfaceId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:support{side}"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry,
+                    )) => {
+                        let source_id =
+                            CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
+                                .expect("identity grammar");
+                        out.curves.push(Curve {
+                            id: source_id.clone(),
+                            geometry: CurveGeometry::Nurbs(source),
                             source_object: None,
                         });
-                        Some(id)
-                    });
-                    let pcurves = embedded.pcurves.map(|pcurve| {
-                        pcurve.map(|nurbs| {
-                            cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs {
-                                nurbs,
-                            })
-                        })
-                    });
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                            sides: std::array::from_fn(|side| {
-                                cadmpeg_ir::geometry::IntcurveSupportSide {
-                                    surface: surfaces[side].clone(),
-                                    pcurve: pcurves[side].clone(),
-                                }
-                            }),
-                            parameter_range: embedded.parameter_range,
-                            discontinuities: embedded.discontinuities,
-                        },
-                        discontinuity_flag: embedded.discontinuity_flag,
-                        offsets: embedded.offsets,
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
+                            source: source_id,
+                            parameter_range,
+                            offset,
+                            roles,
+                        }
                     }
-                }
-                ProceduralCurveConstruction::Intersection(embedded, discontinuity_flag) => {
-                    let mut next_side = 0;
-                    let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
-                        let side = next_side;
-                        next_side += 1;
-                        let geometry = geometry.into_surface()?;
-                        let id = SurfaceId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:support{side}"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry,
+                    ProceduralCurveConstruction::Subset((source, parameter_range)) => {
+                        let source_id =
+                            CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
+                                .expect("identity grammar");
+                        out.curves.push(Curve {
+                            id: source_id.clone(),
+                            geometry: CurveGeometry::Nurbs(source),
                             source_object: None,
                         });
-                        Some(id)
-                    });
-                    let pcurves = embedded.pcurves.map(|pcurve| {
-                        pcurve.map(|nurbs| {
-                            cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs {
-                                nurbs,
-                            })
-                        })
-                    });
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-                        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                            sides: std::array::from_fn(|side| {
-                                cadmpeg_ir::geometry::IntcurveSupportSide {
-                                    surface: surfaces[side].clone(),
-                                    pcurve: pcurves[side].clone(),
-                                }
-                            }),
-                            parameter_range: embedded.parameter_range,
-                            discontinuities: embedded.discontinuities,
-                        },
-                        discontinuity_flag,
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                            source: source_id,
+                            parameter_range,
+                            sense: true,
+                        }
                     }
-                }
-                ProceduralCurveConstruction::ThreeSurface(embedded) => {
-                    let mut next_side = 0;
-                    let surface_ids: [SurfaceId; 3] = embedded.surfaces.map(|geometry| {
-                        let side = next_side;
-                        next_side += 1;
-                        let id = SurfaceId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:support{side}"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry,
-                            source_object: None,
-                        });
-                        id
-                    });
-                    let pcurves = embedded.pcurves.map(|nurbs| {
-                        cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs })
-                    });
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                            sides: std::array::from_fn(|side| {
-                                cadmpeg_ir::geometry::IntcurveSupportSide {
-                                    surface: Some(surface_ids[side].clone()),
-                                    pcurve: Some(pcurves[side].clone()),
-                                }
-                            }),
-                            parameter_range: embedded.parameter_range,
-                            discontinuities: embedded.discontinuities,
-                        },
-                        selector: embedded.selector,
-                        third: cadmpeg_ir::geometry::IntcurveSupportSide {
-                            surface: Some(surface_ids[2].clone()),
-                            pcurve: Some(pcurves[2].clone()),
-                        },
-                    }
-                }
-                ProceduralCurveConstruction::SurfaceCurve(family) => {
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-                        family: emit_surface_curve_family(out, i, format, family, solved_domain)?,
-                    }
-                }
-                ProceduralCurveConstruction::Silhouette(embedded) => {
-                    emit_silhouette_curve(out, i, embedded, format)
-                }
-                ProceduralCurveConstruction::SurfaceOffset(embedded) => {
-                    emit_surface_offset_curve(out, i, embedded, format, solved_domain)?
-                }
-                ProceduralCurveConstruction::Spring(embedded) => {
-                    emit_spring_curve(out, i, embedded, format, solved_domain)?
-                }
-                ProceduralCurveConstruction::Deformable(embedded) => {
-                    let (context, form) = embedded.context.into_intersection(solved_domain?);
-                    let mut next_side = 0;
-                    let support_ids: [Option<SurfaceId>; 2] = context.surfaces.map(|geometry| {
-                        let side = next_side;
-                        next_side += 1;
-                        geometry.into_surface().map(|geometry| {
+                    ProceduralCurveConstruction::TwoSidedOffset(embedded) => {
+                        let mut next_side = 0;
+                        let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+                            let side = next_side;
+                            next_side += 1;
+                            let geometry = geometry?;
                             let id = SurfaceId::mint(format!(
-                                "{format}:brep:procedural_curve#{i}:deformable_support{side}"
+                                "{format}:brep:procedural_curve#{i}:support{side}"
+                            ))
+                            .expect("identity grammar");
+                            out.surfaces.push(Surface {
+                                id: id.clone(),
+                                geometry,
+                                source_object: None,
+                            });
+                            Some(id)
+                        });
+                        let pcurves = embedded.pcurves.map(|pcurve| {
+                            pcurve.map(|nurbs| {
+                                cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs {
+                                    nurbs,
+                                })
+                            })
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: surfaces[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: embedded.parameter_range,
+                                discontinuities: embedded.discontinuities,
+                            },
+                            discontinuity_flag: embedded.discontinuity_flag,
+                            offsets: embedded.offsets,
+                        }
+                    }
+                    ProceduralCurveConstruction::Intersection(embedded, discontinuity_flag) => {
+                        let mut next_side = 0;
+                        let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+                            let side = next_side;
+                            next_side += 1;
+                            let geometry = geometry.into_surface()?;
+                            let id = SurfaceId::mint(format!(
+                                "{format}:brep:procedural_curve#{i}:support{side}"
+                            ))
+                            .expect("identity grammar");
+                            out.surfaces.push(Surface {
+                                id: id.clone(),
+                                geometry,
+                                source_object: None,
+                            });
+                            Some(id)
+                        });
+                        let pcurves = embedded.pcurves.map(|pcurve| {
+                            pcurve.map(|nurbs| {
+                                cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs {
+                                    nurbs,
+                                })
+                            })
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: surfaces[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: embedded.parameter_range,
+                                discontinuities: embedded.discontinuities,
+                            },
+                            discontinuity_flag,
+                        }
+                    }
+                    ProceduralCurveConstruction::ThreeSurface(embedded) => {
+                        let mut next_side = 0;
+                        let surface_ids: [SurfaceId; 3] = embedded.surfaces.map(|geometry| {
+                            let side = next_side;
+                            next_side += 1;
+                            let id = SurfaceId::mint(format!(
+                                "{format}:brep:procedural_curve#{i}:support{side}"
                             ))
                             .expect("identity grammar");
                             out.surfaces.push(Surface {
@@ -2775,16 +2725,78 @@ fn emit_carrier_curve(
                                 source_object: None,
                             });
                             id
-                        })
-                    });
-                    let pcurves = context.pcurves.map(|pcurve| {
-                        pcurve.map(|nurbs| {
+                        });
+                        let pcurves = embedded.pcurves.map(|nurbs| {
                             cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs {
                                 nurbs,
                             })
-                        })
-                    });
-                    let source = match embedded.source {
+                        });
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: Some(surface_ids[side].clone()),
+                                        pcurve: Some(pcurves[side].clone()),
+                                    }
+                                }),
+                                parameter_range: embedded.parameter_range,
+                                discontinuities: embedded.discontinuities,
+                            },
+                            selector: embedded.selector,
+                            third: cadmpeg_ir::geometry::IntcurveSupportSide {
+                                surface: Some(surface_ids[2].clone()),
+                                pcurve: Some(pcurves[2].clone()),
+                            },
+                        }
+                    }
+                    ProceduralCurveConstruction::SurfaceCurve(family) => {
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                            family: emit_surface_curve_family(
+                                out,
+                                i,
+                                format,
+                                family,
+                                solved_domain,
+                            )?,
+                        }
+                    }
+                    ProceduralCurveConstruction::Silhouette(embedded) => {
+                        emit_silhouette_curve(out, i, embedded, format)
+                    }
+                    ProceduralCurveConstruction::SurfaceOffset(embedded) => {
+                        emit_surface_offset_curve(out, i, embedded, format, solved_domain)?
+                    }
+                    ProceduralCurveConstruction::Spring(embedded) => {
+                        emit_spring_curve(out, i, embedded, format, solved_domain)?
+                    }
+                    ProceduralCurveConstruction::Deformable(embedded) => {
+                        let (context, form) = embedded.context.into_intersection(solved_domain?);
+                        let mut next_side = 0;
+                        let support_ids: [Option<SurfaceId>; 2] =
+                            context.surfaces.map(|geometry| {
+                                let side = next_side;
+                                next_side += 1;
+                                geometry.into_surface().map(|geometry| {
+                                    let id = SurfaceId::mint(format!(
+                                "{format}:brep:procedural_curve#{i}:deformable_support{side}"
+                            ))
+                                    .expect("identity grammar");
+                                    out.surfaces.push(Surface {
+                                        id: id.clone(),
+                                        geometry,
+                                        source_object: None,
+                                    });
+                                    id
+                                })
+                            });
+                        let pcurves = context.pcurves.map(|pcurve| {
+                            pcurve.map(|nurbs| {
+                                cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs {
+                                    nurbs,
+                                })
+                            })
+                        });
+                        let source = match embedded.source {
                         crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
                             let curve = CurveId::mint(format!(
                                 "{format}:brep:procedural_curve#{i}:deformable_source"
@@ -2805,128 +2817,131 @@ fn emit_carrier_curve(
                             index,
                         },
                     };
-                    let data = match embedded.data {
-                        EmbeddedDeformableData::VectorField {
-                            vectors,
-                            parameter_pairs,
-                        } => cadmpeg_ir::geometry::DeformableCurveData::VectorField {
-                            vectors,
-                            parameter_pairs,
-                        },
-                        EmbeddedDeformableData::Mode3 {
-                            leading_vectors,
-                            leading_parameter,
-                            leading_flags,
-                            trailing_point,
-                            trailing_vectors,
-                            frame_parameter,
-                            frame_flags,
+                        let data = match embedded.data {
+                            EmbeddedDeformableData::VectorField {
+                                vectors,
+                                parameter_pairs,
+                            } => cadmpeg_ir::geometry::DeformableCurveData::VectorField {
+                                vectors,
+                                parameter_pairs,
+                            },
+                            EmbeddedDeformableData::Mode3 {
+                                leading_vectors,
+                                leading_parameter,
+                                leading_flags,
+                                trailing_point,
+                                trailing_vectors,
+                                frame_parameter,
+                                frame_flags,
+                                parameters,
+                                trailing_flags,
+                                trailing_parameter,
+                                trailing_value,
+                            } => cadmpeg_ir::geometry::DeformableCurveData::Mode3 {
+                                leading_vectors,
+                                leading_parameter,
+                                leading_flags,
+                                trailing_point,
+                                trailing_vectors,
+                                frame_parameter,
+                                frame_flags,
+                                parameters,
+                                trailing_flags,
+                                trailing_parameter,
+                                trailing_value,
+                            },
+                        };
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
+                            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                                sides: std::array::from_fn(|side| {
+                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        surface: support_ids[side].clone(),
+                                        pcurve: pcurves[side].clone(),
+                                    }
+                                }),
+                                parameter_range: context.parameter_range,
+                                discontinuities: context.discontinuities,
+                            },
+                            cache_first: form,
+                            source,
+                            source_parameter_range: embedded.source_parameter_range,
+                            data,
+                        }
+                    }
+                    ProceduralCurveConstruction::Projection(embedded) => {
+                        emit_projection_curve(out, i, embedded, format)
+                    }
+                    ProceduralCurveConstruction::Law(embedded) => {
+                        emit_law_curve(out, i, embedded, format, solved_domain)?
+                    }
+                    ProceduralCurveConstruction::Compound(
+                        crate::nurbs::proc_curve::CompoundDefinition {
                             parameters,
-                            trailing_flags,
-                            trailing_parameter,
-                            trailing_value,
-                        } => cadmpeg_ir::geometry::DeformableCurveData::Mode3 {
-                            leading_vectors,
-                            leading_parameter,
-                            leading_flags,
-                            trailing_point,
-                            trailing_vectors,
-                            frame_parameter,
-                            frame_flags,
-                            parameters,
-                            trailing_flags,
-                            trailing_parameter,
-                            trailing_value,
+                            components,
                         },
-                    };
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-                        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                            sides: std::array::from_fn(|side| {
-                                cadmpeg_ir::geometry::IntcurveSupportSide {
-                                    surface: support_ids[side].clone(),
-                                    pcurve: pcurves[side].clone(),
+                    ) => {
+                        let components = components
+                            .into_iter()
+                            .enumerate()
+                            .map(|(component, curve)| {
+                                let id = CurveId::mint(format!(
+                                    "{format}:brep:procedural_curve#{i}:component:{component}"
+                                ))
+                                .expect("identity grammar");
+                                out.curves.push(Curve {
+                                    id: id.clone(),
+                                    geometry: CurveGeometry::Nurbs(curve.component),
+                                    source_object: None,
+                                });
+                                cadmpeg_ir::geometry::CompoundComponent {
+                                    parameter: curve.parameter,
+                                    component: id,
                                 }
-                            }),
-                            parameter_range: context.parameter_range,
-                            discontinuities: context.discontinuities,
-                        },
-                        cache_first: form,
-                        source,
-                        source_parameter_range: embedded.source_parameter_range,
-                        data,
+                            })
+                            .collect();
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
+                            parameters,
+                            components,
+                        }
                     }
-                }
-                ProceduralCurveConstruction::Projection(embedded) => {
-                    emit_projection_curve(out, i, embedded, format)
-                }
-                ProceduralCurveConstruction::Law(embedded) => {
-                    emit_law_curve(out, i, embedded, format, solved_domain)?
-                }
-                ProceduralCurveConstruction::Compound(
-                    crate::nurbs::proc_curve::CompoundDefinition {
-                        parameters,
-                        components,
-                    },
-                ) => {
-                    let components = components
-                        .into_iter()
-                        .enumerate()
-                        .map(|(component, curve)| {
-                            let id = CurveId::mint(format!(
-                                "{format}:brep:procedural_curve#{i}:component:{component}"
-                            ))
-                            .expect("identity grammar");
-                            out.curves.push(Curve {
-                                id: id.clone(),
-                                geometry: CurveGeometry::Nurbs(curve.component),
-                                source_object: None,
-                            });
-                            cadmpeg_ir::geometry::CompoundComponent {
-                                parameter: curve.parameter,
-                                component: id,
-                            }
-                        })
-                        .collect();
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                        parameters,
-                        components,
+                    ProceduralCurveConstruction::Exact => {
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
                     }
-                }
-                ProceduralCurveConstruction::Exact => {
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
-                }
-                ProceduralCurveConstruction::Helix(helix) => helix.into_definition(),
-                ProceduralCurveConstruction::Unknown(native_kind) => {
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
-                        native_kind: Some(native_kind),
-                        record: None,
+                    ProceduralCurveConstruction::Helix(helix) => helix.into_definition(),
+                    ProceduralCurveConstruction::Unknown(native_kind) => {
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+                            native_kind: Some(native_kind),
+                            record: None,
+                        }
                     }
-                }
-            })
-        })();
-        let Some(definition) = definition else {
-            return;
-        };
-        if let Ok(procedural) = ProceduralCurve::try_new(
-            ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
-                .expect("valid owning format and numeric record index"),
-            definition,
-            procedural.cache_fit_tolerance,
-        ) {
-            out.procedural_curves.push((
-                CurveId::mint(id(format, i)).expect("identity grammar"),
-                procedural,
-            ));
-        }
-    } else if let Some(definition) = cacheless_procedural_curve_defs.remove(&i) {
-        out.procedural_curves.push((
-            CurveId::mint(id(format, i)).expect("identity grammar"),
-            ProceduralCurve::new(
+                })
+            })();
+            let Some(definition) = definition else {
+                return;
+            };
+            if let Ok(procedural) = ProceduralCurve::try_new(
                 ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                     .expect("valid owning format and numeric record index"),
                 definition,
-            ),
-        ));
+                cache_fit_tolerance,
+            ) {
+                out.procedural_curves.push((
+                    CurveId::mint(id(format, i)).expect("identity grammar"),
+                    procedural,
+                ));
+            }
+        }
+        Some(super::ProceduralCurveSource::Cacheless(definition)) => {
+            out.procedural_curves.push((
+                CurveId::mint(id(format, i)).expect("identity grammar"),
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
+                        .expect("valid owning format and numeric record index"),
+                    *definition,
+                ),
+            ));
+        }
+        None => {}
     }
 }
 

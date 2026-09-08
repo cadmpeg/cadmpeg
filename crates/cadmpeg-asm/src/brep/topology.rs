@@ -234,7 +234,6 @@ pub(crate) fn walk_reachable_topology(
     let Carriers {
         curve_geo,
         procedural_curve_defs,
-        cacheless_procedural_curve_defs,
         pcurve_geo,
         pcurve_parameter_ranges,
         ..
@@ -424,8 +423,8 @@ pub(crate) fn walk_reachable_topology(
                                                 curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
                                                     cv,
-                                                    super::ProceduralCurveTail {
-                                                        construction: decoded.construction,
+                                                    super::ProceduralCurveSource::Cached {
+                                                        construction: Box::new(decoded.construction),
                                                         cache_fit_tolerance: decoded.cache_fit_tolerance,
                                                     },
                                                 );
@@ -450,8 +449,7 @@ pub(crate) fn walk_reachable_topology(
                                                         cache: None,
                                                     },
                                                 );
-                                                cacheless_procedural_curve_defs
-                                                    .insert(cv, definition);
+                                                procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
@@ -647,7 +645,6 @@ fn keep_wire_edge(
     let Carriers {
         curve_geo,
         procedural_curve_defs,
-        cacheless_procedural_curve_defs,
         ..
     } = carriers;
     let Reachable {
@@ -708,8 +705,8 @@ fn keep_wire_edge(
                 entry.insert(CurveGeometry::Nurbs(curve));
                 procedural_curve_defs.insert(
                     curve_index,
-                    super::ProceduralCurveTail {
-                        construction: decoded.construction,
+                    super::ProceduralCurveSource::Cached {
+                        construction: Box::new(decoded.construction),
                         cache_fit_tolerance: decoded.cache_fit_tolerance,
                     },
                 );
@@ -732,7 +729,10 @@ fn keep_wire_edge(
                     .expect("valid owning format and numeric record index"),
                     cache: None,
                 });
-                cacheless_procedural_curve_defs.insert(curve_index, definition);
+                procedural_curve_defs.insert(
+                    curve_index,
+                    super::ProceduralCurveSource::Cacheless(Box::new(definition)),
+                );
                 kept_curves.insert(curve_index);
             } else {
                 undecoded_carriers.insert(curve_index);
