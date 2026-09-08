@@ -129,20 +129,19 @@ impl ResolvedAddress {
         let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
         let mut input = file.to_owned();
         let mut commands = Vec::new();
-        for step in &self.steps {
-            match step.kind {
-                AddressStepKind::Root => continue,
-                AddressStepKind::Member => {
-                    let extracted = format!("{input}.member");
-                    commands.push(format!(
-                        "cadmpeg inspect extract --output={} -- {} {}",
-                        quote(&extracted),
-                        quote(&input),
-                        quote(&step.label),
-                    ));
-                    input = extracted;
-                }
-            }
+        for step in self
+            .steps
+            .iter()
+            .filter(|step| step.kind == AddressStepKind::Member)
+        {
+            let extracted = format!("{input}.member");
+            commands.push(format!(
+                "cadmpeg inspect extract --output={} -- {} {}",
+                quote(&extracted),
+                quote(&input),
+                quote(&step.label),
+            ));
+            input = extracted;
         }
         commands.push(format!(
             "cadmpeg inspect hex --offset {} --len 64 -- {}",
