@@ -1360,14 +1360,23 @@ pub struct EmbeddedSweepSurface {
 pub struct EmbeddedDeformableSurface {
     /// The embedded support surface.
     pub support: SurfaceGeometry,
-    /// Revision-gated fields surrounding the support and shared surface tail.
-    pub revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+    /// The native tail layout.
+    pub layout: EmbeddedDeformableSurfaceLayout,
     /// The mode-discriminated payload.
     pub data: EmbeddedDeformableSurfaceData,
-    /// Six discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
-    /// The boolean serialized after the discontinuity arrays.
-    pub discontinuity_flag: bool,
+}
+
+/// The legacy and revision deformable surface tails.
+pub enum EmbeddedDeformableSurfaceLayout {
+    /// The legacy discontinuity data.
+    Legacy {
+        /// The six discontinuity arrays.
+        discontinuities: [Vec<f64>; 6],
+        /// The flag following the arrays.
+        discontinuity_flag: bool,
+    },
+    /// The revision form that owns the discontinuity data.
+    Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm>),
 }
 
 /// The mode-discriminated payload of an embedded deformable surface.
@@ -4010,60 +4019,58 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         }
         _ => return None,
     };
-    let (revision_form, cache_fit_tolerance, discontinuities, discontinuity_flag) =
-        if let Some((revision, support_bounds)) = revision_form_head {
-            let RevisionSurfaceTail {
-                cache,
-                discontinuities,
-                tail_flag,
-            } = revision_surface_tail(&mut cur)?;
-            (
-                Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+    let (layout, cache_fit_tolerance) = if let Some((revision, support_bounds)) = revision_form_head
+    {
+        let RevisionSurfaceTail {
+            cache,
+            discontinuities,
+            tail_flag,
+        } = revision_surface_tail(&mut cur)?;
+        cur.at_scope_end().then_some(())?;
+        (
+            EmbeddedDeformableSurfaceLayout::Revision(Box::new(
+                cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
                     support_bounds,
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
                     cache: cache.into_form(),
-                    discontinuities: discontinuities.clone(),
+                    discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
-                }),
-                None,
-                discontinuities,
-                tail_flag,
-            )
-        } else {
-            let (_, cache_end) = surface_block(span, cur.pos())?;
-            cur.set_pos(cache_end);
-            let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-            let discontinuities = [
-                cur.take_float_array()?,
-                cur.take_float_array()?,
-                cur.take_float_array()?,
-                cur.take_float_array()?,
-                cur.take_float_array()?,
-                cur.take_float_array()?,
-            ];
-            let discontinuity_flag = cur.take_bool()?;
-            (
-                None,
-                cache_fit_tolerance,
+                },
+            )),
+            None,
+        )
+    } else {
+        let (_, cache_end) = surface_block(span, cur.pos())?;
+        cur.set_pos(cache_end);
+        let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+        let discontinuities = [
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+        ];
+        let discontinuity_flag = cur.take_bool()?;
+        (
+            EmbeddedDeformableSurfaceLayout::Legacy {
                 discontinuities,
                 discontinuity_flag,
-            )
-        };
-    if revision_form.is_some() {
-        cur.at_scope_end().then_some(())?;
-    }
+            },
+            cache_fit_tolerance,
+        )
+    };
+
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Deformable(Box::new(
             EmbeddedDeformableSurface {
                 support,
-                revision_form,
+                layout,
                 data,
-                discontinuities,
-                discontinuity_flag,
             },
         )),
         cache_fit_tolerance,

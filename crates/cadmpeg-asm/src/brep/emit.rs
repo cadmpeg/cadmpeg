@@ -17,10 +17,10 @@ use crate::nurbs::proc_curve::{
 use crate::nurbs::proc_surface::{
     ClassicLoftProfileData, DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft,
     EmbeddedCompoundLoftDirection, EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail,
-    EmbeddedDeformableSurface, EmbeddedDeformableSurfaceData, EmbeddedG2Blend,
-    EmbeddedG2FirstShape, EmbeddedG2Side, EmbeddedLawExpression, EmbeddedLawFormula,
-    EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftLayout, EmbeddedLoftPath, EmbeddedLoftPathLayout,
-    EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedOffsetLayout,
+    EmbeddedDeformableSurface, EmbeddedDeformableSurfaceData, EmbeddedDeformableSurfaceLayout,
+    EmbeddedG2Blend, EmbeddedG2FirstShape, EmbeddedG2Side, EmbeddedLawExpression,
+    EmbeddedLawFormula, EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftLayout, EmbeddedLoftPath,
+    EmbeddedLoftPathLayout, EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedOffsetLayout,
     EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
     EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
     EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
@@ -436,7 +436,17 @@ fn emit_deformable_surface(
         "{format}:brep:procedural_surface#{i}:deformable:support"
     ))
     .expect("identity grammar");
-    let revision_form = embedded.revision_form;
+    let (revision_form, discontinuities, discontinuity_flag) = match embedded.layout {
+        EmbeddedDeformableSurfaceLayout::Legacy {
+            discontinuities,
+            discontinuity_flag,
+        } => (None, discontinuities, discontinuity_flag),
+        EmbeddedDeformableSurfaceLayout::Revision(form) => {
+            let discontinuities = form.discontinuities.clone();
+            let flag = form.tail_flag;
+            (Some(*form), discontinuities, flag)
+        }
+    };
     out.surfaces.push(Surface {
         id: support.clone(),
         geometry: embedded.support,
@@ -544,8 +554,8 @@ fn emit_deformable_surface(
             support,
             data,
             revision_form,
-            discontinuities: embedded.discontinuities,
-            discontinuity_flag: embedded.discontinuity_flag,
+            discontinuities,
+            discontinuity_flag,
         }),
     }
 }
