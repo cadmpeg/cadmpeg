@@ -260,6 +260,25 @@ pub struct ZeroEntityOrientedUse {
     pub record_ordinal: u32,
 }
 
+/// Position within an oriented-use pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZeroEntityUseSlot {
+    /// First use in source order.
+    First,
+    /// Second use in source order.
+    Second,
+}
+
+impl ZeroEntityUseSlot {
+    /// One-based positional side number.
+    pub const fn side(self) -> u32 {
+        match self {
+            Self::First => 1,
+            Self::Second => 2,
+        }
+    }
+}
+
 /// One `2569` header and its two immediately following positional uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityOrientedUsePair {
@@ -278,14 +297,9 @@ impl ZeroEntityOrientedUsePair {
         self.base_columns
     }
 
-    /// Positional side number for the zero-based use slot.
-    pub const fn side(index: usize) -> u32 {
-        [1, 2][index]
-    }
-
-    /// Allocation columns for the zero-based use slot.
-    pub const fn allocations(&self, index: usize) -> [u32; 2] {
-        let side = Self::side(index);
+    /// Allocation columns for the selected use slot.
+    pub const fn allocations(&self, slot: ZeroEntityUseSlot) -> [u32; 2] {
+        let side = slot.side();
         [self.base_columns[0] + side, self.base_columns[1] + side]
     }
 }
@@ -2802,10 +2816,12 @@ mod tests {
         };
         assert_eq!(pair.header_record_ordinal, 2);
         assert_eq!(pair.base_columns, [100, 200]);
+        assert_eq!(ZeroEntityUseSlot::First.side(), 1);
+        assert_eq!(ZeroEntityUseSlot::Second.side(), 2);
         assert_eq!(pair.uses[0].record_ordinal, 3);
-        assert_eq!(pair.allocations(0), [101, 201]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::First), [101, 201]);
         assert_eq!(pair.uses[1].record_ordinal, 4);
-        assert_eq!(pair.allocations(1), [102, 202]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::Second), [102, 202]);
 
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
@@ -2860,8 +2876,8 @@ mod tests {
         let [pair] = pairs.as_slice() else {
             panic!("one oriented-use pair")
         };
-        assert_eq!(pair.allocations(0), [101, 201]);
-        assert_eq!(pair.allocations(1), [102, 202]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::First), [101, 201]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::Second), [102, 202]);
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
             panic!("one vertex incidence")

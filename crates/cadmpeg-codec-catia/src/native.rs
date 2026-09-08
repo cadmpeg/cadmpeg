@@ -7960,6 +7960,8 @@ fn zero_entity_oriented_use_pairs(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    use crate::families::zero_entity::records::ZeroEntityUseSlot;
+
     crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
         .into_iter()
         .enumerate()
@@ -7968,10 +7970,14 @@ fn zero_entity_oriented_use_pairs(
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
             base_columns: pair.base_columns(),
-            uses: std::array::from_fn(|slot| CatiaZeroEntityOrientedUse {
-                byte_offset: pair.uses[slot].pos as u64,
-                record_ordinal: pair.uses[slot].record_ordinal,
-                side: crate::families::zero_entity::records::ZeroEntityOrientedUsePair::side(slot),
+            uses: [
+                (ZeroEntityUseSlot::First, &pair.uses[0]),
+                (ZeroEntityUseSlot::Second, &pair.uses[1]),
+            ]
+            .map(|(slot, use_)| CatiaZeroEntityOrientedUse {
+                byte_offset: use_.pos as u64,
+                record_ordinal: use_.record_ordinal,
+                side: slot.side(),
                 allocations: pair.allocations(slot),
             }),
         })
