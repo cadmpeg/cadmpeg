@@ -167,13 +167,18 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
     invalid_texture.id = "synthetic:test:tessellation#missing-texture".into();
 
     let mut ir = unit_cube();
-    ir.model.assets.push(Asset {
-        id: texture,
-        name: None,
-        media_type: None,
-        content: AssetContent::Embedded { data: vec![0] },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            texture,
+            None,
+            None,
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![0]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.tessellations.extend([valid, invalid_texture]);
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());

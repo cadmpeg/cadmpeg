@@ -25,7 +25,6 @@ pub mod admissibility_freeze;
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
 mod annotations_native;
-mod assets;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
@@ -42,7 +41,6 @@ mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
-use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
@@ -90,7 +88,6 @@ fn validate_model_with_index(
 ) -> ValidationReport {
     let mut findings = Vec::new();
 
-    check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);

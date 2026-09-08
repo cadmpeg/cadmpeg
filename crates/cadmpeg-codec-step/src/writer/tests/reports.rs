@@ -124,16 +124,20 @@ fn edgeless_doc() -> CadIr {
 #[test]
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube();
-    ir.model.assets.push(cadmpeg_ir::assets::Asset {
-        id: cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
-            .expect("identity grammar"),
-        name: Some("texture".into()),
-        media_type: Some("image/png".into()),
-        content: cadmpeg_ir::assets::AssetContent::External {
-            uri: "urn:test:texture".into(),
-        },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        cadmpeg_ir::assets::Asset::try_new(
+            cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
+                .expect("identity grammar"),
+            Some("texture".into()),
+            Some("image/png".into()),
+            cadmpeg_ir::assets::AssetContent::External {
+                uri: cadmpeg_ir::products::NonEmptyString::new("urn:test:texture")
+                    .expect("nonempty uri"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
@@ -345,13 +349,18 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
 
     let mut ir = unit_cube();
     let texture = AssetId::mint("synthetic:test:asset#0").expect("identity grammar");
-    ir.model.assets.push(Asset {
-        id: texture.clone(),
-        name: None,
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded { data: vec![0] },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            texture.clone(),
+            None,
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(vec![0]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.tessellations.push(
         cadmpeg_ir::tessellation::Tessellation::from_decoded(
             "synthetic:test:tessellation#triangle-metadata",

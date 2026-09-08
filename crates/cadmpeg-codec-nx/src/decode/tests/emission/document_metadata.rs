@@ -71,15 +71,27 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
     );
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
-    assert_eq!(asset.name.as_deref(), Some("preview.jpg"));
-    assert_eq!(asset.media_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(
+        asset
+            .name
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+        Some("preview.jpg")
+    );
+    assert_eq!(
+        asset
+            .media_type
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+        Some("image/jpeg")
+    );
     assert_eq!(
         asset.native_ref.as_deref(),
         Some("nx:container:jpeg-preview#0")
     );
     assert!(matches!(
         &asset.content,
-        cadmpeg_ir::assets::AssetContent::Embedded { data } if data == &preview
+        cadmpeg_ir::assets::AssetContent::Embedded { data } if data.as_slice() == preview.as_slice()
     ));
     let container_only_result = NxCodec
         .decode(
@@ -145,12 +157,24 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
 
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
-    assert_eq!(asset.name.as_deref(), Some("Steel"));
-    assert_eq!(asset.media_type.as_deref(), Some("image/tiff"));
+    assert_eq!(
+        asset
+            .name
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+        Some("Steel")
+    );
+    assert_eq!(
+        asset
+            .media_type
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+        Some("image/tiff")
+    );
     assert!(matches!(
         &asset.content,
         cadmpeg_ir::assets::AssetContent::Embedded { data }
-            if data == &[b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
+            if data.as_slice() == &[b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
     ));
     assert_eq!(
         asset.native_ref.as_deref(),
