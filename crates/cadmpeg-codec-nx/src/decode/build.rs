@@ -651,8 +651,8 @@ pub(crate) fn try_decode_geometry(
                 .and_then(|uncharted| {
                     let supports = uncharted
                         .supports
-                        .each_ref()
-                        .map(|xmt| surfaces_by_xmt.get(xmt).cloned());
+                        .references()
+                        .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
                     let [Some(first), Some(second)] = supports else {
                         return None;
                     };

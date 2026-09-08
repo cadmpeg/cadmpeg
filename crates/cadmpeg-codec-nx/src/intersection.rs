@@ -210,13 +210,27 @@ pub struct IntersectionCurve {
     pub ext_support_uv: SupportUv,
 }
 
+/// Two distinct non-null support-surface references.
+#[derive(Debug, Clone, Copy)]
+pub struct DistinctSupports([NonNullXmt; 2]);
+
+impl DistinctSupports {
+    fn new(first: NonNullXmt, second: NonNullXmt) -> Option<Self> {
+        (first != second).then_some(Self([first, second]))
+    }
+
+    pub(crate) fn references(self) -> [NonNullXmt; 2] {
+        self.0
+    }
+}
+
 /// A bounded intersection relation without a solved chart cache.
 #[derive(Debug, Clone, Copy)]
 pub struct UnchartedIntersection {
     /// Cross-reference index of the construction record.
     pub xmt: u32,
     /// Two exact, distinct support-surface references.
-    pub supports: [u32; 2],
+    pub supports: DistinctSupports,
     /// Ordered endpoints of the unique topology edge in millimetres.
     pub endpoints: [Point3; 2],
     /// Edge tolerance in Parasolid metres.
@@ -444,9 +458,7 @@ fn scan_with_auxiliaries(
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
-                            |(primary, secondary)| {
-                                Some([u32::from(primary), u32::from(secondary?)])
-                            },
+                            |(primary, secondary)| DistinctSupports::new(primary, secondary?),
                         ),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
