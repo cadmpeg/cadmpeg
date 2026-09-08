@@ -5406,10 +5406,10 @@ pub(crate) mod tests {
                 let record =
                     parse_binary_edge_representation(&mut cursor, 1, kind, 0, 2, 1, 0, 0, 0, 0)
                         .unwrap();
-                let continuity = match record {
-                    TextEdgeRepresentation::PcurvePair { continuity, .. }
-                    | TextEdgeRepresentation::Regularity { continuity, .. } => continuity,
-                    _ => panic!("expected continuity representation"),
+                let (TextEdgeRepresentation::PcurvePair { continuity, .. }
+                | TextEdgeRepresentation::Regularity { continuity, .. }) = record
+                else {
+                    panic!("expected continuity representation");
                 };
                 assert_eq!(continuity, spelling);
                 assert_eq!(cursor.remaining(), 0);
