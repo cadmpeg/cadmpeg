@@ -2170,11 +2170,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         alignment.offset[2],
                     ]
                 };
-                let operand_frame_variant = design::assembly::operand_frame_variant(
+                let generation = design::assembly::AssemblyScopeGeneration::new(
                     scope.frame_length,
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 );
+                let operand_frame_variant = generation.operand_frame_variant();
                 let variable_reference = design::assembly::variable_reference_assembly_generation(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
@@ -2219,12 +2220,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && owner.scope_record_index == scope.record_index
                     })
                     .count();
-                let alignment_lane_bounds = design::assembly::alignment_lane_bounds(
-                    scope.frame_length,
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                    assembly_owner_count,
-                );
+                let alignment_lane_bounds = generation.alignment_lane_bounds(assembly_owner_count);
                 let operand_frames_link =
                     if let Some(records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                         carriers,
@@ -2329,11 +2325,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     })
                             } else {
                                 let locator_offsets =
-                                    design::assembly::operand_path_locator_offsets(
-                                        scope.frame_length,
-                                        scope.class_tag.as_str(),
-                                        scope.paired_class_tag.as_str(),
-                                    );
+                                    generation.operand_path_locator_offsets();
                                 let first_start = paths[0].link.locator_byte_offset;
                                 let second_start = paths[1].link.locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {
