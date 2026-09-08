@@ -2068,10 +2068,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
-            note: |m, r, tag, a| note_container(&m.om.operation_state_groups, r, tag, a),
+            note: |m, r, tag, a| {
+                for table in &m.om.operation_state_groups {
+                    note_container(table.groups(), r, tag, a);
+                }
+            },
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_groups, r, ns),
-        len: |m| m.om.operation_state_groups.len(),
+        emit: |m, r, ns| {
+            let groups =
+                m.om.operation_state_groups
+                    .iter()
+                    .flat_map(|table| table.groups())
+                    .collect::<Vec<_>>();
+            emit_arena(&groups, r, ns)
+        },
+        len: |m| {
+            m.om.operation_state_groups
+                .iter()
+                .map(|table| table.groups().len())
+                .sum()
+        },
         counts_toward_emptiness: true,
     },
     CatalogueRow {
