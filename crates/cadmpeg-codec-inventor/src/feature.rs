@@ -1296,7 +1296,7 @@ fn project_hole(
         source.identity.segment_token.as_str(),
         transform_reference.index.checked_sub(1)?,
     ))?;
-    if transform.matrix[3]
+    if transform.matrix.rows()[3]
         .iter()
         .zip([0.0, 0.0, 0.0, 1.0])
         .any(|(actual, expected)| (actual - expected).abs() > EPS_FEATURE_PROJECT_HOLE_E10)
@@ -1345,9 +1345,9 @@ fn project_hole(
                 direction: None,
                 placements: Some(vec![HolePlacement::Directed {
                     position: Point3::new(
-                        transform.matrix[0][3] * 10.0,
-                        transform.matrix[1][3] * 10.0,
-                        transform.matrix[2][3] * 10.0,
+                        transform.matrix.rows()[0][3] * 10.0,
+                        transform.matrix.rows()[1][3] * 10.0,
+                        transform.matrix.rows()[2][3] * 10.0,
                     ),
                     direction,
                 }]),
@@ -2369,14 +2369,17 @@ mod tests {
                 save_version_major: 16,
                 header: test_header(),
                 prefix_present: false,
-                value_mask: 0,
-                zero_mask: 0,
-                matrix: [
-                    [1.0, 0.0, 0.0, 1.0],
-                    [0.0, 1.0, 0.0, 2.0],
-                    [0.0, 0.0, 1.0, 3.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
+                matrix: crate::compact_matrix::CompactMatrix::try_from_rows(
+                    0,
+                    0,
+                    [
+                        [1.0, 0.0, 0.0, 1.0],
+                        [0.0, 1.0, 0.0, 2.0],
+                        [0.0, 0.0, 1.0, 3.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ],
+                )
+                .unwrap(),
             },
             "184d8790d011f8d10008cabc0663dc09".into(),
             SEGMENT,
