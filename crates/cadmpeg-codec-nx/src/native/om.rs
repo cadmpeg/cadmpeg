@@ -1077,7 +1077,7 @@ pub struct ObjectRecord {
     /// Globally unique record identity.
     pub id: String,
     /// Persistent OM object identifier and the offset of its table word.
-    pub object_id: Option<(u32, u64)>,
+    pub object_id: (u32, u64),
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
@@ -1126,10 +1126,8 @@ struct ObjectRecordWire {
 
 impl From<ObjectRecord> for ObjectRecordWire {
     fn from(value: ObjectRecord) -> Self {
-        let (object_id, object_id_source_offset) = match value.object_id {
-            Some((id, offset)) => (Some(id), Some(offset)),
-            None => (None, None),
-        };
+        let (id, offset) = value.object_id;
+        let (object_id, object_id_source_offset) = (Some(id), Some(offset));
         Self {
             id: value.id,
             object_id,
@@ -1153,11 +1151,10 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
         let object_id = match (wire.object_id, wire.object_id_source_offset) {
-            (None, None) => None,
-            (Some(id), Some(offset)) => Some((id, offset)),
+            (Some(id), Some(offset)) => (id, offset),
             _ => {
                 return Err(
-                    "object record object_id and object_id_source_offset are present together"
+                    "object record object_id and object_id_source_offset are required together"
                         .to_owned(),
                 );
             }
@@ -1881,8 +1878,8 @@ pub struct StringValue {
     pub id: String,
     /// Owning entry in the native OM record directory.
     pub record: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
     /// Exact printable value.
@@ -1898,8 +1895,31 @@ mod printable_value_wire_tests {
     use super::StringValue;
 
     #[test]
+    fn object_record_requires_identity_and_its_offset() {
+        let wire = serde_json::json!({
+            "id": "record", "object_id": 1, "object_id_source_offset": 10,
+            "section_ordinal": 0, "record_ordinal": 0, "section_offset": 0,
+            "byte_len": 1, "sha256": "hash", "source_entry": "entry", "source_offset": 20
+        });
+        let record: super::ObjectRecord = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        for field in ["object_id", "object_id_source_offset"] {
+            let mut invalid = wire.clone();
+            invalid[field] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<super::ObjectRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+        let mut invalid = wire;
+        invalid["object_id"] = serde_json::Value::Null;
+        invalid["object_id_source_offset"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<super::ObjectRecord>(invalid).is_err());
+    }
+
+    #[test]
     fn retained_printable_value_preserves_spaces_and_rejects_invalid_text() {
-        let json = r#"{"id":"value","record":"record","object_id":null,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
+        let json = r#"{"id":"value","record":"record","object_id":1,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
         let value: StringValue = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
         for invalid in ["", "\n", "μ"] {
@@ -1920,8 +1940,8 @@ pub struct ObjectReference {
     pub id: String,
     /// Owning entry in the native OM record directory.
     pub record: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
     /// Typed reference and its same-section target when present.
@@ -1940,8 +1960,8 @@ pub struct ObjectRecordHandlePair {
     pub id: String,
     /// Owning entry in the native OM record directory.
     pub record: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
     /// First handle-reference occurrence.
     pub first_reference: String,
     /// Second handle-reference occurrence.
@@ -2928,7 +2948,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 });
                 ObjectRecord {
                     id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: Some((record.object_id.0, entry_offset + record.object_id.1)),
+                    object_id: (record.object_id.0, entry_offset + record.object_id.1),
                     section_ordinal: section_ordinal as u32,
                     record_ordinal: record_ordinal as u32,
                     section_offset,
@@ -3388,9 +3408,7 @@ pub fn data_block_references(
 ) -> Vec<DataBlockReference> {
     let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
-        let Some((object_id, _)) = record.object_id else {
-            continue;
-        };
+        let (object_id, _) = record.object_id;
         target_records
             .entry((record.source_entry.clone(), object_id))
             .or_default()
@@ -3660,10 +3678,11 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
             section
                 .string_values()
                 .into_iter()
-                .map(move |(record_ordinal, value_ordinal, object_id, value)| {
+                .filter_map(move |(record_ordinal, value_ordinal, object_id, value)| {
+                    let object_id = object_id?;
                     let record =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
-                    StringValue {
+                    Some(StringValue {
                         id: format!(
                             "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
                             value.offset
@@ -3674,7 +3693,7 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         value: value.value.into_owned(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
-                    }
+                    })
                 })
                 .collect()
         })
@@ -3695,12 +3714,13 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
             section
                 .references()
                 .into_iter()
-                .map(
+                .filter_map(
                     move |(record_ordinal, reference_ordinal, object_id, reference)| {
+                        let object_id = object_id?;
                         let record = format!(
                             "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
                         );
-                        ObjectReference {
+                        Some(ObjectReference {
                             id: format!(
                                 "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
                                 reference.offset
@@ -3717,7 +3737,7 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                             },
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + reference.offset as u64,
-                        }
+                        })
                     },
                 )
                 .collect()
@@ -5251,10 +5271,10 @@ mod tests {
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].version.as_str(), "NX 2027.3102");
         assert_eq!(headers[0].object_id, Some(0x101));
-        assert_eq!(object_records[1].object_id.map(|(id, _)| id), Some(0x102));
+        assert_eq!(object_records[1].object_id.0, 0x102);
         assert_eq!(
-            object_records[1].object_id.map(|(_, offset)| offset),
-            object_records[0].object_id.map(|(_, offset)| offset + 4)
+            object_records[1].object_id.1,
+            object_records[0].object_id.1 + 4
         );
         assert_eq!(
             expressions[0].owner.as_ref().map(|owner| &owner.record),
@@ -5284,7 +5304,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].record, object_records[1].id);
-        assert_eq!(strings[0].object_id, Some(0x102));
+        assert_eq!(strings[0].object_id, 0x102);
         assert_eq!(strings[0].value.as_str(), "SKETCH_001");
         let references = result
             .ir()
@@ -5295,7 +5315,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(references.len(), 3);
         assert_eq!(references[0].record, object_records[1].id);
-        assert_eq!(references[0].object_id, Some(0x102));
+        assert_eq!(references[0].object_id, 0x102);
         let wire = serde_json::to_value(&references).unwrap();
         assert_eq!(wire[0]["value"], 0x1234_5678);
         assert_eq!(wire[0]["target_record"], serde_json::Value::Null);
