@@ -329,8 +329,8 @@ pub(crate) fn neutral_assembly_axial_object_id(
 pub(crate) fn neutral_assembly_legacy_object_id(
     selection: &DesignAssemblyLegacySelection,
 ) -> String {
-    let asset = identity_key_component(&selection.asset_id.to_ascii_lowercase());
-    let context = identity_key_component(&selection.context_id.to_ascii_lowercase());
+    let asset = identity_key_component(&selection.asset_id.as_str().to_ascii_lowercase());
+    let context = identity_key_component(&selection.context_id.as_str().to_ascii_lowercase());
     let recipe = identity_key_component(&selection.recipe_id.to_ascii_lowercase());
     format!(
         "f3d:feature-input:connector#assembly-legacy:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -989,9 +989,15 @@ mod tests {
             record_index: 7,
             byte_offset: 100,
             class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            asset_id: "A B".into(),
+            asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             asset_id_offset: 110,
-            context_id: "CTX#".into(),
+            context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             context_id_offset: 120,
             recipe_record_index: 8,
             recipe_record_byte_offset: 130,
@@ -1002,7 +1008,7 @@ mod tests {
         };
         assert_eq!(
             neutral_assembly_legacy_object_id(&selection),
-            "f3d:feature-input:connector#assembly-legacy:5:a%20b:6:ctx%23:10:recipe%3A1:7:8"
+            "f3d:feature-input:connector#assembly-legacy:36:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:36:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:10:recipe%3A1:7:8"
         );
         let mut second = selection.clone();
         second.record_index += 1;

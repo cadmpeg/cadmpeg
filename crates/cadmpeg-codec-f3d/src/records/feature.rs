@@ -2065,11 +2065,11 @@ pub struct DesignAssemblyLegacySelection {
     /// Dynamic class of the selection record.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE payload.
     pub asset_id_offset: u64,
     /// Context UUID qualifying the selection.
-    pub context_id: String,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE payload.
     pub context_id_offset: u64,
     /// Indexed record containing the face recipe.
