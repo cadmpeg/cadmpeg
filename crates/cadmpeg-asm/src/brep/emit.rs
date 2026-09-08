@@ -19,12 +19,13 @@ use crate::nurbs::proc_surface::{
     EmbeddedCompoundLoftDirection, EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail,
     EmbeddedDeformableSurface, EmbeddedDeformableSurfaceData, EmbeddedG2Blend,
     EmbeddedG2FirstShape, EmbeddedG2Side, EmbeddedLawExpression, EmbeddedLawFormula,
-    EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftPath, EmbeddedLoftProfileMember,
-    EmbeddedNetSurface, EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
-    EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
-    EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
-    EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
-    EmbeddedVertexBlendBoundaryGeometry, LoftProfileData,
+    EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftLayout, EmbeddedLoftPath,
+    EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedRevisionCompoundLoft,
+    EmbeddedRevisionG2Blend, EmbeddedRollingBall, EmbeddedScaledCompoundLoft,
+    EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape, EmbeddedSkinSurface,
+    EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface, EmbeddedSweepSurfaceLayout,
+    EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundaryGeometry,
+    LoftProfileData,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -701,14 +702,31 @@ fn emit_loft_surface(
                                     cadmpeg_ir::geometry::LoftSection { entries }
                                 },
                             );
-    ProceduralSurfaceDefinition::Loft {
-        sections,
-        revision_form: embedded.revision_form,
-        parameters: embedded.parameters,
-        closures: embedded.closures,
-        singularities: embedded.singularities,
-        mode: embedded.mode,
-        bridge: embedded.bridge,
+    match embedded.layout {
+        EmbeddedLoftLayout::Legacy {
+            ranges,
+            closures,
+            singularities,
+            mode,
+            bridge,
+        } => ProceduralSurfaceDefinition::Loft {
+            sections,
+            revision_form: None,
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
+            closures,
+            singularities,
+            mode,
+            bridge,
+        },
+        EmbeddedLoftLayout::Revision(form, intervals) => ProceduralSurfaceDefinition::Loft {
+            sections,
+            revision_form: Some(form),
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals },
+            closures: [0; 2],
+            singularities: [0; 2],
+            mode: 0,
+            bridge: Vec::new(),
+        },
     }
 }
 
