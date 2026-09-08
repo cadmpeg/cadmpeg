@@ -170,7 +170,8 @@ pub(crate) fn project_extrude(
             offset: None,
         }),
         Some("ToVertex") => one_sided(LinearTermination::ToVertex {
-            vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
+            vertex: VertexSelection::native(feature.properties.get("Vertex")?.clone())
+                .unwrap_or(VertexSelection::Unresolved),
         }),
         Some("OffsetFromFace") => match length("Depth")
             .or_else(sole_length)

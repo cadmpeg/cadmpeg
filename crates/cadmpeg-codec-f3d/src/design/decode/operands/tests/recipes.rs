@@ -872,7 +872,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         face_rules,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
-            if edges == &[
+            if edges.as_slice() == &[
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:18").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:19").expect("identity grammar"),
@@ -1240,7 +1240,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         surface_selection,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
-            if edges == &[cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#13:surface-patch:8:17").expect("identity grammar")]
+            if edges.as_slice() == &[cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#13:surface-patch:8:17").expect("identity grammar")]
     ));
     surface_patch_operand.resolved_edge_slot = None;
     assert!(matches!(
@@ -1751,7 +1751,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&historical_face_scope), 49)
                 && faces.len() == 1
                 && faces[0].as_str().ends_with(":49:50")
-                && native == historical_face_scope.id
+                && native.as_str() == historical_face_scope.id
     ));
     operand.resolved_face_slots.clear();
     assert!(crate::design::face_resolve::retain_face_operand_resolution(
@@ -1857,7 +1857,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
                 && faces.len() == 1
                 && faces[0].as_str().ends_with(":49:50")
-                && native == split_group.id
+                && native.as_str() == split_group.id
     ));
     let mut candidate_context = split_context.clone();
     candidate_context.candidate_faces =

@@ -2150,19 +2150,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     Some(_) => {}
                 }
             }
-            for termination in definition_terminations(&state.definition) {
-                if matches!(
-                    termination.vertex(),
-                    Some(crate::features::VertexSelection::Generated { vertex, native })
-                        if native.trim().is_empty() || vertex.local_id.trim().is_empty()
-                ) {
-                    geometry_error(
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration generated termination vertex is invalid",
-                    );
-                }
-            }
             let mut outputs = HashSet::new();
             for output in state.evaluation.outputs() {
                 if ids.bodies(output.as_str()).is_none() {
@@ -3701,16 +3688,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         }
         for (selection, consumer) in vertex_selections {
             match selection {
-                crate::features::VertexSelection::Generated { vertex, native } => {
-                    if native.trim().is_empty()
-                        || vertex.local_id.trim().is_empty()
-                        || features
-                            .get(vertex.feature.as_str())
-                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                crate::features::VertexSelection::Generated { vertex, .. } => {
+                    if features
+                        .get(vertex.feature.as_str())
+                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                         || !feature.dependencies.contains(&vertex.feature)
                         || result_topologies_by_feature
                             .get(vertex.feature.as_str())
-                            .is_some_and(|state| !state.vertices().contains(&vertex.local_id))
+                            .is_some_and(|state| {
+                                !state
+                                    .vertices()
+                                    .iter()
+                                    .any(|id| id == vertex.local_id.as_str())
+                            })
                     {
                         feature_geometry_error(
                             findings,
@@ -3722,13 +3712,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 crate::features::VertexSelection::Historical {
                     state,
                     vertex,
-                    native,
-                } => check_historical_selection(
+                    native: _,
+                } => check_historical_members(
                     findings,
                     &feature.id,
-                    (state, std::iter::once(vertex.as_str()), native),
+                    (state, std::iter::once(vertex.as_str())),
                     "vertex",
-                    false,
                     &input_topologies,
                     |topology| {
                         topology
@@ -3738,19 +3727,37 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             .collect()
                     },
                 ),
-                crate::features::VertexSelection::Native(native) if native.trim().is_empty() => {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        &format!("native {consumer} vertex is invalid"),
-                    );
-                }
                 crate::features::VertexSelection::Unresolved
                 | crate::features::VertexSelection::Native(_) => {}
             }
         }
         for selection in edge_selections {
-            let allow_empty = matches!(selection, EdgeSelection::HistoricalPartial { .. });
+            let historical = match selection {
+                EdgeSelection::Historical { state, edges, .. } => Some((state, edges.as_slice())),
+                EdgeSelection::HistoricalPartial { state, edges, .. } => {
+                    Some((state, edges.as_slice()))
+                }
+                _ => None,
+            };
+            if let Some((state, selected)) = historical {
+                check_historical_members(
+                    findings,
+                    &feature.id,
+                    (
+                        state,
+                        selected.iter().map(crate::ids::HistoricalEdgeId::as_str),
+                    ),
+                    "edge",
+                    &input_topologies,
+                    |topology| {
+                        topology
+                            .edges
+                            .iter()
+                            .map(crate::ids::HistoricalEdgeId::as_str)
+                            .collect()
+                    },
+                );
+            }
             match selection {
                 EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
                     findings,
@@ -3759,80 +3766,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     edges.iter().map(super::super::ids::EdgeId::as_str),
                     |identity| ids.edges(identity).is_some(),
                 ),
-                EdgeSelection::Historical {
-                    state,
-                    edges,
-                    native,
-                }
-                | EdgeSelection::HistoricalPartial {
-                    state,
-                    edges,
-                    native,
-                    ..
-                } => {
-                    check_historical_selection(
-                        findings,
-                        &feature.id,
-                        (
-                            state,
-                            edges.iter().map(crate::ids::HistoricalEdgeId::as_str),
-                            native,
-                        ),
-                        "edge",
-                        allow_empty,
-                        &input_topologies,
-                        |topology| {
-                            topology
-                                .edges
-                                .iter()
-                                .map(crate::ids::HistoricalEdgeId::as_str)
-                                .collect()
-                        },
-                    );
-                    if let EdgeSelection::HistoricalPartial { unresolved, .. } = selection {
-                        let mut identities = HashSet::new();
-                        for identity in unresolved {
-                            if identity.trim().is_empty() {
-                                findings.push(Finding {
-                                    check: Check::ReferentialIntegrity,
-                                    severity: Severity::Error,
-                                    message: "partial historical edge selection has an empty unresolved operand identity".into(),
-                                    entity: Some(feature.id.as_str().to_owned()),
-                                });
-                            } else if !identities.insert(identity) {
-                                findings.push(Finding {
-                                    check: Check::ReferentialIntegrity,
-                                    severity: Severity::Error,
-                                    message: format!(
-                                        "partial historical edge selection repeats unresolved operand `{identity}`"
-                                    ),
-                                    entity: Some(feature.id.as_str().to_owned()),
-                                });
-                            }
-                        }
-                        if unresolved.is_empty() {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message:
-                                    "partial historical edge selection has no unresolved operands"
-                                        .into(),
-                                entity: Some(feature.id.as_str().to_owned()),
-                            });
-                        }
-                    }
-                }
-                EdgeSelection::Generated { edges, native } => {
-                    if edges.is_empty()
-                        || native.trim().is_empty()
-                        || edges.iter().any(|edge| {
-                            edge.local_id.trim().is_empty()
-                                || !feature.dependencies.contains(&edge.feature)
-                                || result_topologies_by_feature
-                                    .get(edge.feature.as_str())
-                                    .is_some_and(|state| !state.edges().contains(&edge.local_id))
-                        })
-                    {
+                EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. } => {}
+                EdgeSelection::Generated { edges, .. } => {
+                    if edges.iter().any(|edge| {
+                        !feature.dependencies.contains(&edge.feature)
+                            || result_topologies_by_feature
+                                .get(edge.feature.as_str())
+                                .is_some_and(|state| {
+                                    !state.edges().iter().any(|id| id == edge.local_id.as_str())
+                                })
+                    }) {
                         feature_geometry_error(
                             findings,
                             feature,
@@ -3844,6 +3787,32 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
         for selection in face_selections {
+            let historical = match selection {
+                FaceSelection::Historical { state, faces, .. } => Some((state, faces.as_slice())),
+                FaceSelection::HistoricalPartial { state, faces, .. } => {
+                    Some((state, faces.as_slice()))
+                }
+                _ => None,
+            };
+            if let Some((state, selected)) = historical {
+                check_historical_members(
+                    findings,
+                    &feature.id,
+                    (
+                        state,
+                        selected.iter().map(crate::ids::HistoricalFaceId::as_str),
+                    ),
+                    "face",
+                    &input_topologies,
+                    |topology| {
+                        topology
+                            .faces
+                            .iter()
+                            .map(crate::ids::HistoricalFaceId::as_str)
+                            .collect()
+                    },
+                );
+            }
             match selection {
                 FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(
                     findings,
@@ -3852,95 +3821,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 ),
-                FaceSelection::Historical {
-                    state,
-                    faces,
-                    native,
-                } => {
-                    check_historical_selection(
-                        findings,
-                        &feature.id,
-                        (
-                            state,
-                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
-                            native,
-                        ),
-                        "face",
-                        false,
-                        &input_topologies,
-                        |topology| {
-                            topology
-                                .faces
-                                .iter()
-                                .map(crate::ids::HistoricalFaceId::as_str)
-                                .collect()
-                        },
-                    );
-                }
-                FaceSelection::HistoricalPartial {
-                    state,
-                    faces,
-                    unresolved,
-                    native,
-                } => {
-                    check_historical_selection(
-                        findings,
-                        &feature.id,
-                        (
-                            state,
-                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
-                            native,
-                        ),
-                        "face",
-                        true,
-                        &input_topologies,
-                        |topology| {
-                            topology
-                                .faces
-                                .iter()
-                                .map(crate::ids::HistoricalFaceId::as_str)
-                                .collect()
-                        },
-                    );
-                    let mut identities = HashSet::new();
-                    for identity in unresolved {
-                        if identity.trim().is_empty() {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message: "partial historical face selection has an empty unresolved operand identity".into(),
-                                entity: Some(feature.id.as_str().to_owned()),
-                            });
-                        } else if !identities.insert(identity) {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message: format!("partial historical face selection repeats unresolved operand `{identity}`"),
-                                entity: Some(feature.id.as_str().to_owned()),
-                            });
-                        }
-                    }
-                    if unresolved.is_empty() {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: "partial historical face selection has no unresolved operands"
-                                .into(),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        });
-                    }
-                }
-                FaceSelection::Generated { faces, native } => {
-                    if faces.is_empty()
-                        || native.trim().is_empty()
-                        || faces.iter().any(|face| {
-                            face.local_id.trim().is_empty()
-                                || !feature.dependencies.contains(&face.feature)
-                                || result_topologies_by_feature
-                                    .get(face.feature.as_str())
-                                    .is_some_and(|state| !state.faces().contains(&face.local_id))
-                        })
-                    {
+                FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. } => {}
+                FaceSelection::Generated { faces, .. } => {
+                    if faces.iter().any(|face| {
+                        !feature.dependencies.contains(&face.feature)
+                            || result_topologies_by_feature
+                                .get(face.feature.as_str())
+                                .is_some_and(|state| {
+                                    !state.faces().iter().any(|id| id == face.local_id.as_str())
+                                })
+                    }) {
                         feature_geometry_error(
                             findings,
                             feature,
@@ -4435,8 +4325,8 @@ fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> boo
         &[crate::ids::HistoricalFaceId],
     )> {
         match selection {
-            FaceSelection::Historical { state, faces, .. }
-            | FaceSelection::HistoricalPartial { state, faces, .. } => {
+            FaceSelection::Historical { state, faces, .. } => Some((state, faces.as_slice())),
+            FaceSelection::HistoricalPartial { state, faces, .. } => {
                 Some((state, faces.as_slice()))
             }
             _ => None,

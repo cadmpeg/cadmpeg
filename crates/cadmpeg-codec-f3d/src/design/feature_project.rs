@@ -1890,11 +1890,14 @@ fn project_work_point_construction(
             .split_once('#')
             .map_or(feature_id.as_str(), |(_, key)| key);
         let prefix = ids::history_input_prefix(feature_key, state_id);
-        Some(EdgeSelection::Historical {
-            state: feature_input_topology_id(&feature_id, state_id),
-            edges: vec![ids::history_input_edge_id(&prefix, edge_slot)],
-            native: operand.id.clone(),
-        })
+        Some(
+            EdgeSelection::historical(
+                feature_input_topology_id(&feature_id, state_id),
+                vec![ids::history_input_edge_id(&prefix, edge_slot)],
+                operand.id.clone(),
+            )
+            .unwrap_or_else(|_| EdgeSelection::Native(operand.id.clone())),
+        )
     };
     let plane = |input: &DesignWorkPointInput| {
         let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier.as_deref()? else {
@@ -1926,7 +1929,10 @@ fn project_work_point_construction(
                 return None;
             };
             let vertex = recipe.resolution.map_or_else(
-                || VertexSelection::Native(recipe.recipe_id.clone()),
+                || {
+                    VertexSelection::native(recipe.recipe_id.clone())
+                        .unwrap_or(VertexSelection::Unresolved)
+                },
                 |resolution| {
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
@@ -1936,11 +1942,15 @@ fn project_work_point_construction(
                         .split_once('#')
                         .map_or(feature_id.as_str(), |(_, key)| key);
                     let prefix = ids::history_input_prefix(feature_key, state_id);
-                    VertexSelection::Historical {
-                        state: feature_input_topology_id(&feature_id, state_id),
-                        vertex: ids::history_input_vertex_id(&prefix, vertex_slot),
-                        native: recipe.recipe_id.clone(),
-                    }
+                    VertexSelection::historical(
+                        feature_input_topology_id(&feature_id, state_id),
+                        ids::history_input_vertex_id(&prefix, vertex_slot),
+                        recipe.recipe_id.clone(),
+                    )
+                    .unwrap_or_else(|_| {
+                        VertexSelection::native(recipe.recipe_id.clone())
+                            .unwrap_or(VertexSelection::Unresolved)
+                    })
                 },
             );
             DatumPointConstruction::Vertex { vertex }
@@ -2006,11 +2016,17 @@ fn project_work_plane(
     let points = inputs
         .iter()
         .map(|recipe| {
-            Some(VertexSelection::Historical {
-                state: feature_input_topology_id(&feature_id, state_id),
-                vertex: ids::history_input_vertex_id(&prefix, recipe.resolution?.vertex_slot()),
-                native: recipe.recipe_id.clone(),
-            })
+            Some(
+                VertexSelection::historical(
+                    feature_input_topology_id(&feature_id, state_id),
+                    ids::history_input_vertex_id(&prefix, recipe.resolution?.vertex_slot()),
+                    recipe.recipe_id.clone(),
+                )
+                .unwrap_or_else(|_| {
+                    VertexSelection::native(recipe.recipe_id.clone())
+                        .unwrap_or(VertexSelection::Unresolved)
+                }),
+            )
         })
         .collect::<Option<Vec<_>>>();
     let Some(points) = points.and_then(|points| points.try_into().ok()) else {
@@ -2344,7 +2360,7 @@ fn project_thread_face_selection(
             return FaceSelection::Native(native);
         }
         state.get_or_insert(group_state);
-        for face in group_faces {
+        for face in group_faces.iter().cloned() {
             if !faces.contains(&face) {
                 faces.push(face);
             }
@@ -2353,11 +2369,8 @@ fn project_thread_face_selection(
     let Some(state) = state else {
         return FaceSelection::Native(native);
     };
-    FaceSelection::Historical {
-        state,
-        faces,
-        native,
-    }
+    FaceSelection::historical(state, faces, native.clone())
+        .unwrap_or_else(|_| FaceSelection::Native(native))
 }
 
 /// Project Fusion's role-`0x4` full-round face construction.
@@ -2815,7 +2828,7 @@ fn project_surface_offset(
         else {
             return None;
         };
-        for face in group_faces {
+        for face in group_faces.iter().cloned() {
             if !faces.contains(&face) {
                 faces.push(face);
             }
@@ -3017,11 +3030,14 @@ fn selected_historical_face_selection(
         .split_once('#')
         .map_or(feature.as_str(), |(_, key)| key);
     let prefix = ids::history_input_prefix(feature_key, previous_state_id);
-    Some(cadmpeg_ir::features::FaceSelection::Historical {
-        state: feature_input_topology_id(&feature, previous_state_id),
-        faces: vec![ids::history_input_face_id(&prefix, face_slot)],
-        native: group.id.clone(),
-    })
+    Some(
+        cadmpeg_ir::features::FaceSelection::historical(
+            feature_input_topology_id(&feature, previous_state_id),
+            vec![ids::history_input_face_id(&prefix, face_slot)],
+            group.id.clone(),
+        )
+        .unwrap_or_else(|_| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
+    )
 }
 
 fn project_face_selection(
@@ -4034,18 +4050,14 @@ fn merge_edge_selections(
                 let EdgeSelection::Historical { edges, .. } = selection else {
                     unreachable!("filtered historical ruled-surface edge selection");
                 };
-                for edge in edges {
+                for edge in edges.iter().cloned() {
                     if resolved.contains(&edge) {
                         return EdgeSelection::Native(scope.id.clone());
                     }
                     resolved.push(edge);
                 }
             }
-            return EdgeSelection::Historical {
-                state,
-                edges: resolved,
-                native: scope.id.clone(),
-            };
+            return EdgeSelection::historical(state, resolved, scope.id.clone()).unwrap_or_else(|_| EdgeSelection::Native(scope.id.clone()));
         }
     }
     EdgeSelection::Native(scope.id.clone())
@@ -4130,11 +4142,12 @@ pub(crate) fn direct_face_selection(
                     resolved.push(face);
                 }
             }
-            FaceSelection::Historical {
-                state: feature_input_topology_id(&feature_id, previous_state_id),
-                faces: resolved,
-                native: scope.id.clone(),
-            }
+            FaceSelection::historical(
+                feature_input_topology_id(&feature_id, previous_state_id),
+                resolved,
+                scope.id.clone(),
+            )
+            .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()))
         }
         Some(previous_state_id) if members.iter().any(|(_, faces)| !faces.is_empty()) => {
             let mut faces = Vec::new();
@@ -4151,12 +4164,13 @@ pub(crate) fn direct_face_selection(
                     }
                 }
             }
-            FaceSelection::HistoricalPartial {
-                state: feature_input_topology_id(&feature_id, previous_state_id),
+            FaceSelection::historical_partial(
+                feature_input_topology_id(&feature_id, previous_state_id),
                 faces,
                 unresolved,
-                native: scope.id.clone(),
-            }
+                scope.id.clone(),
+            )
+            .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()))
         }
         _ => FaceSelection::Native(scope.id.clone()),
     };
@@ -6350,18 +6364,8 @@ pub(crate) fn loft_path_from_edge_selection(
             native,
         } => PathRef::HistoricalEdges {
             state,
-            edges,
-            native,
-        },
-        EdgeSelection::HistoricalPartial {
-            state,
-            edges,
-            unresolved,
-            native,
-        } if unresolved.is_empty() && !edges.is_empty() => PathRef::HistoricalEdges {
-            state,
-            edges,
-            native,
+            edges: edges.as_slice().to_vec(),
+            native: native.as_str().to_owned(),
         },
         EdgeSelection::All
         | EdgeSelection::Unresolved
@@ -7603,10 +7607,13 @@ pub(crate) fn project_split(
                 .or_else(|| direct_face_selection(scope, face_operands))
                 .unwrap_or_else(|| FaceSelection::Native(tool.id.clone()));
             match &mut tools {
-                FaceSelection::Resolved { native, .. }
-                | FaceSelection::Historical { native, .. }
-                | FaceSelection::HistoricalPartial { native, .. } => native.clone_from(&tool.id),
-                FaceSelection::Native(native) => native.clone_from(&tool.id),
+                FaceSelection::Resolved { native, .. } | FaceSelection::Native(native) => {
+                    native.clone_from(&tool.id)
+                }
+                FaceSelection::Historical { native, .. }
+                | FaceSelection::HistoricalPartial { native, .. } => {
+                    *native = cadmpeg_ir::products::NonEmptyString::new(tool.id.clone())?
+                }
                 _ => {}
             }
             tools

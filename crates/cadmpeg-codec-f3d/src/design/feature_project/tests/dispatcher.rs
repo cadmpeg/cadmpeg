@@ -429,7 +429,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
     );
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
-    assert_eq!(native, &recipe_id);
+    assert_eq!(native.as_str(), &recipe_id);
     assert_eq!(point.dependencies, [predecessor.id.clone()]);
 }
 
@@ -793,11 +793,8 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
             "group",
-            EdgeSelection::Historical {
-                state: state.clone(),
-                edges: vec![edge.clone()],
-                native: "selection".into(),
-            },
+            EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
+                .unwrap(),
         ),
         PathRef::HistoricalEdges {
             state: state.clone(),
@@ -808,12 +805,13 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
             "group",
-            EdgeSelection::HistoricalPartial {
+            EdgeSelection::historical_partial(
                 state,
-                edges: vec![edge],
-                unresolved: vec!["operand".into()],
-                native: "selection".into(),
-            },
+                vec![edge],
+                vec!["operand".into()],
+                "selection".into()
+            )
+            .unwrap(),
         ),
         PathRef::Native("group".into())
     );

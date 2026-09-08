@@ -375,10 +375,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId::mint("producer").expect("identity grammar"),
-                local_id: "7".into(),
-            }]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "7".into()).unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
@@ -552,10 +549,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
-        } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-            feature: FeatureId::mint("producer").expect("identity grammar"),
-            local_id: "7".into(),
-        }] && native == "sldprt:feature-input:surface-component-ids:7,8"
+        } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
 }
 
@@ -710,10 +704,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         &group.center_faces,
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId::mint("producer").expect("identity grammar"),
-                local_id: "2".into(),
-            }]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "2".into()).unwrap()]
     ));
     assert!(matches!(
         &group.side_one_faces,
@@ -848,10 +839,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     assert!(matches!(
         tools,
         FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId::mint("tool").expect("identity grammar"),
-                local_id: "7".into(),
-            }] && native == "sldprt:feature-input:surface-component-ids:0,7"
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
     ));
     assert!(reverse.is_none());
     assert_eq!(
@@ -1079,10 +1067,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId::mint("producer").expect("identity grammar"),
-                local_id: "7".into(),
-            }]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "7".into()).unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
@@ -1241,15 +1226,9 @@ fn split_face_collects_distinct_generated_target_faces() {
     assert!(matches!(
         targets,
         FaceSelection::Generated { faces, native }
-            if faces == &vec![
-                cadmpeg_ir::features::GeneratedFaceRef {
-                    feature: FeatureId::mint("producer-a").expect("identity grammar"),
-                    local_id: "7".into(),
-                },
-                cadmpeg_ir::features::GeneratedFaceRef {
-                    feature: FeatureId::mint("producer-b").expect("identity grammar"),
-                    local_id: "9".into(),
-                },
+            if faces.as_slice() == &vec![
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer-a").expect("identity grammar"), "7".into()).unwrap(),
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer-b").expect("identity grammar"), "9".into()).unwrap(),
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
     ));
     assert_eq!(

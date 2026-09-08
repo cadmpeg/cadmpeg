@@ -5180,6 +5180,25 @@ pub enum SheetMetalThicknessSide {
     Symmetric,
 }
 
+macro_rules! selection_field_deserializer {
+    ($name:ident, $field:literal) => {
+        fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: Deserialize<'de>,
+        {
+            T::deserialize(deserializer)
+                .map_err(|error| serde::de::Error::custom(format!("{}: {error}", $field)))
+        }
+    };
+}
+
+selection_field_deserializer!(deserialize_selection_native, "native");
+selection_field_deserializer!(deserialize_selection_local_id, "local_id");
+selection_field_deserializer!(deserialize_selection_edges, "edges");
+selection_field_deserializer!(deserialize_selection_faces, "faces");
+selection_field_deserializer!(deserialize_selection_unresolved, "unresolved");
+
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5203,9 +5222,11 @@ pub enum EdgeSelection {
         /// Input topology containing every selected edge.
         state: FeatureInputTopologyId,
         /// State-local edge identities in operand order.
-        edges: Vec<HistoricalEdgeId>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: SelectionMembers<HistoricalEdgeId>,
         /// Format-native selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonEmptyString,
     },
     /// Proven historical edges plus source operands whose edge identity is unresolved.
     /// `edges` is empty when the input state is known but no member identity resolves.
@@ -5213,19 +5234,24 @@ pub enum EdgeSelection {
         /// Input topology containing every resolved edge.
         state: FeatureInputTopologyId,
         /// Proven state-local edge identities in source operand order.
-        edges: Vec<HistoricalEdgeId>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: DistinctMembers<HistoricalEdgeId>,
         /// Stable native identities of unresolved source operands.
-        unresolved: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_unresolved")]
+        unresolved: NativeSelections,
         /// Format-native group selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonEmptyString,
     },
     /// Edges in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
     Generated {
         /// Feature-local edge identities.
-        edges: Vec<GeneratedEdgeRef>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: NonEmptyMembers<GeneratedEdgeRef>,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Format-native selection reference.
     Native(String),
@@ -5238,7 +5264,8 @@ pub struct GeneratedEdgeRef {
     /// Feature whose regenerated result owns the edge.
     pub feature: FeatureId,
     /// Feature-local persistent edge identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Persistent identity of a face in one regenerated feature result.
@@ -5248,7 +5275,8 @@ pub struct GeneratedFaceRef {
     /// Feature whose regenerated result owns the face.
     pub feature: FeatureId,
     /// Feature-local persistent face identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Persistent identity of a vertex in one regenerated feature result.
@@ -5258,7 +5286,8 @@ pub struct GeneratedVertexRef {
     /// Feature whose regenerated result owns the vertex.
     pub feature: FeatureId,
     /// Feature-local persistent vertex identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Vertex operand resolved by the decoder or retained in native form.
@@ -5274,7 +5303,8 @@ pub enum VertexSelection {
         /// Feature-local vertex identity.
         vertex: GeneratedVertexRef,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Vertex resolved in the containing feature's input topology.
     Historical {
@@ -5283,10 +5313,11 @@ pub enum VertexSelection {
         /// State-local vertex identity.
         vertex: HistoricalVertexId,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonEmptyString,
     },
     /// Format-native selection reference.
-    Native(String),
+    Native(#[serde(deserialize_with = "deserialize_selection_native")] SelectionReference),
 }
 
 /// Face operands resolved by the decoder or retained in native form.
@@ -5310,31 +5341,229 @@ pub enum FaceSelection {
         /// Input topology containing every selected face.
         state: FeatureInputTopologyId,
         /// State-local face identities in operand order.
-        faces: Vec<HistoricalFaceId>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: SelectionMembers<HistoricalFaceId>,
         /// Format-native selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonEmptyString,
     },
     /// Historical faces proven for part of a native selection.
     HistoricalPartial {
         /// Input topology containing every resolved face.
         state: FeatureInputTopologyId,
         /// Proven state-local face identities in source operand order.
-        faces: Vec<HistoricalFaceId>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: DistinctMembers<HistoricalFaceId>,
         /// Stable native identities of unresolved source operands.
-        unresolved: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_unresolved")]
+        unresolved: NativeSelections,
         /// Format-native selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonEmptyString,
     },
     /// Faces in an intermediate regenerated feature result, paired with the
     /// format-native selection required for rewrite.
     Generated {
         /// Feature-local face identities.
-        faces: Vec<GeneratedFaceRef>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: NonEmptyMembers<GeneratedFaceRef>,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Format-native selection reference.
     Native(String),
+}
+
+/// A nonempty sequence of members in source order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct NonEmptyMembers<T>(Vec<T>);
+
+impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {
+    type Error = BodySelectionError;
+    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl<T> NonEmptyMembers<T> {
+    /// The members in source order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> std::ops::Deref for NonEmptyMembers<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a NonEmptyMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for NonEmptyMembers<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl VertexSelection {
+    /// Admits a generated vertex and its native reference.
+    pub fn generated(
+        vertex: GeneratedVertexRef,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Generated {
+            vertex,
+            native: native.try_into()?,
+        })
+    }
+
+    /// Admits a historical vertex and its native reference.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        vertex: HistoricalVertexId,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Historical {
+            state,
+            vertex,
+            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+        })
+    }
+
+    /// Admits a native vertex reference.
+    pub fn native(native: String) -> Result<Self, BodySelectionError> {
+        Ok(Self::Native(native.try_into()?))
+    }
+}
+
+impl EdgeSelection {
+    /// Admits historical members and their native reference.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        edges: Vec<HistoricalEdgeId>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Historical {
+            state,
+            edges: edges.try_into()?,
+            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+        })
+    }
+
+    /// Admits partial historical members and unresolved native operands.
+    pub fn historical_partial(
+        state: FeatureInputTopologyId,
+        edges: Vec<HistoricalEdgeId>,
+        unresolved: Vec<String>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::HistoricalPartial {
+            state,
+            edges: edges
+                .try_into()
+                .map_err(|_| BodySelectionError::RepeatedBody)?,
+            unresolved: unresolved.try_into()?,
+            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+        })
+    }
+
+    /// Admits generated members and their native reference.
+    pub fn generated(
+        edges: Vec<GeneratedEdgeRef>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Generated {
+            edges: edges.try_into()?,
+            native: native.try_into()?,
+        })
+    }
+}
+
+impl FaceSelection {
+    /// Admits historical members and their native reference.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        faces: Vec<HistoricalFaceId>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Historical {
+            state,
+            faces: faces.try_into()?,
+            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+        })
+    }
+
+    /// Admits partial historical members and unresolved native operands.
+    pub fn historical_partial(
+        state: FeatureInputTopologyId,
+        faces: Vec<HistoricalFaceId>,
+        unresolved: Vec<String>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::HistoricalPartial {
+            state,
+            faces: faces
+                .try_into()
+                .map_err(|_| BodySelectionError::RepeatedBody)?,
+            unresolved: unresolved.try_into()?,
+            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+        })
+    }
+
+    /// Admits generated members and their native reference.
+    pub fn generated(
+        faces: Vec<GeneratedFaceRef>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Generated {
+            faces: faces.try_into()?,
+            native: native.try_into()?,
+        })
+    }
+}
+
+impl GeneratedEdgeRef {
+    /// Admits a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        Ok(Self {
+            feature,
+            local_id: local_id.try_into()?,
+        })
+    }
+}
+
+impl GeneratedFaceRef {
+    /// Admits a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        Ok(Self {
+            feature,
+            local_id: local_id.try_into()?,
+        })
+    }
+}
+
+impl GeneratedVertexRef {
+    /// Admits a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        Ok(Self {
+            feature,
+            local_id: local_id.try_into()?,
+        })
+    }
 }
 
 /// A nonblank persistent selection reference.

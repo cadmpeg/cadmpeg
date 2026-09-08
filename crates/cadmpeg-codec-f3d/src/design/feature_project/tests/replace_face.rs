@@ -165,8 +165,8 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             },
         } if faces.len() == 1
             && replacement_faces.len() == 1
-            && native == &target_group.id
-            && replacement_native == &replacement_group.id
+            && native.as_str() == &target_group.id
+            && replacement_native.as_str() == &replacement_group.id
     ));
 
     let mut invalid_scope = scope;
@@ -244,7 +244,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             tool: cadmpeg_ir::features::PathRef::Native(ref tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
         } if faces.len() == 1
-            && native == &target_group.id
+            && native.as_str() == &target_group.id
             && tool == &tool_group.id
     ));
 }

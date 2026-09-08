@@ -278,8 +278,8 @@ pub(crate) fn resolved_profile_face_group(
     };
     Some(ProfileRef::HistoricalFaces {
         state,
-        faces,
-        native: vec![native],
+        faces: faces.as_slice().to_vec(),
+        native: vec![native.as_str().to_owned()],
     })
 }
 
@@ -557,8 +557,8 @@ pub(crate) fn resolved_extrude_profile_face_group(
     };
     Some(ProfileRef::HistoricalFaces {
         state,
-        faces,
-        native: vec![native],
+        faces: faces.as_slice().to_vec(),
+        native: vec![native.as_str().to_owned()],
     })
 }
 
@@ -682,8 +682,8 @@ pub(crate) fn resolved_loft_edge_profile_group(
     };
     Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
         state,
-        faces,
-        native: vec![native],
+        faces: faces.as_slice().to_vec(),
+        native: vec![native.as_str().to_owned()],
     })
 }
 
@@ -872,19 +872,22 @@ fn historical_face_selection_with_native(
         .as_str()
         .split_once('#')
         .map_or(feature.as_str(), |(_, key)| key);
-    Some(FaceSelection::Historical {
-        state: feature_input_topology_id(&feature, previous_state_id),
-        faces: faces
-            .into_iter()
-            .map(|face| {
-                ids::history_input_face_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
-                    face,
-                )
-            })
-            .collect(),
-        native,
-    })
+    Some(
+        FaceSelection::historical(
+            feature_input_topology_id(&feature, previous_state_id),
+            faces
+                .into_iter()
+                .map(|face| {
+                    ids::history_input_face_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        face,
+                    )
+                })
+                .collect(),
+            native.clone(),
+        )
+        .unwrap_or_else(|_| FaceSelection::Native(native)),
+    )
 }
 
 /// Resolve `SplitFace` target groups whose bounded-face member run can include
@@ -2471,7 +2474,7 @@ mod tests {
             state,
             feature_input_topology_id(&neutral_feature_id(&scope), 49)
         );
-        assert_eq!(native, group.id);
+        assert_eq!(native.as_str(), group.id);
         assert_eq!(
             faces
                 .iter()

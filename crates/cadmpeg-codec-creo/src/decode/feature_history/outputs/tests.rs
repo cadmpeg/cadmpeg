@@ -85,14 +85,16 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10").expect("identity grammar"),
         0,
         FeatureDefinition::Thicken {
-            faces: FaceSelection::Generated {
-                faces: vec![GeneratedFaceRef {
-                    feature: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+            faces: FaceSelection::generated(
+                vec![GeneratedFaceRef::new(
+                    cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                         .expect("identity grammar"),
-                    local_id: "surface#7".to_string(),
-                }],
-                native: "creo:generated-face#7".to_string(),
-            },
+                    "surface#7".to_string(),
+                )
+                .unwrap()],
+                "creo:generated-face#7".to_string(),
+            )
+            .unwrap(),
             thickness: None,
             side: None,
         },
@@ -172,14 +174,16 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10").expect("identity grammar"),
         0,
         FeatureDefinition::Thicken {
-            faces: FaceSelection::Generated {
-                faces: vec![GeneratedFaceRef {
-                    feature: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+            faces: FaceSelection::generated(
+                vec![GeneratedFaceRef::new(
+                    cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                         .expect("identity grammar"),
-                    local_id: "surface#7".to_string(),
-                }],
-                native: "creo:generated-face#7".to_string(),
-            },
+                    "surface#7".to_string(),
+                )
+                .unwrap()],
+                "creo:generated-face#7".to_string(),
+            )
+            .unwrap(),
             thickness: None,
             side: None,
         },

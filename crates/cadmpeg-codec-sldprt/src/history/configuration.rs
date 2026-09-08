@@ -752,13 +752,9 @@ pub(crate) fn inherit_configuration_shared_semantics(
             let incomplete = match face {
                 cadmpeg_ir::features::FaceSelection::Faces(faces)
                 | cadmpeg_ir::features::FaceSelection::Resolved { faces, .. } => faces.is_empty(),
-                cadmpeg_ir::features::FaceSelection::Historical { faces, .. } => faces.is_empty(),
-                cadmpeg_ir::features::FaceSelection::Generated { faces, .. } => faces.is_empty(),
-                cadmpeg_ir::features::FaceSelection::HistoricalPartial {
-                    faces,
-                    unresolved,
-                    ..
-                } => faces.is_empty() || !unresolved.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Historical { .. } => false,
+                cadmpeg_ir::features::FaceSelection::Generated { .. } => false,
+                cadmpeg_ir::features::FaceSelection::HistoricalPartial { .. } => true,
                 cadmpeg_ir::features::FaceSelection::Unresolved
                 | cadmpeg_ir::features::FaceSelection::Native(_) => true,
             };
@@ -886,11 +882,9 @@ const CONFIGURATION_PLANE_FRAME_TOLERANCE: f64 = 1.0e-8;
 fn complete_configuration_face_selection(selection: &FaceSelection) -> bool {
     match selection {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
-        FaceSelection::Historical { faces, .. } => !faces.is_empty(),
-        FaceSelection::Generated { faces, .. } => !faces.is_empty(),
-        FaceSelection::HistoricalPartial {
-            faces, unresolved, ..
-        } => !faces.is_empty() && unresolved.is_empty(),
+        FaceSelection::Historical { .. } => true,
+        FaceSelection::Generated { .. } => true,
+        FaceSelection::HistoricalPartial { .. } => false,
         FaceSelection::Unresolved | FaceSelection::Native(_) => false,
     }
 }

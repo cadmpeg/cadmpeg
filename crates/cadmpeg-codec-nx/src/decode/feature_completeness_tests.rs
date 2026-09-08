@@ -295,17 +295,15 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         }
     ));
     assert!(termination_is_incomplete(&LinearTermination::ToVertex {
-        vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
+        vertex: VertexSelection::native("nx:vertex-selection#0".to_string()).unwrap(),
     }));
     let vertex_feature = FeatureId::mint("test:feature#0").expect("identity grammar");
     let generated_vertex = LinearTermination::ToVertex {
-        vertex: VertexSelection::Generated {
-            vertex: GeneratedVertexRef {
-                feature: vertex_feature.clone(),
-                local_id: "vertex-0".into(),
-            },
-            native: "nx:vertex-selection#1".into(),
-        },
+        vertex: VertexSelection::generated(
+            GeneratedVertexRef::new(vertex_feature.clone(), "vertex-0".into()).unwrap(),
+            "nx:vertex-selection#1".into(),
+        )
+        .unwrap(),
     };
     assert!(!termination_is_incomplete(&generated_vertex));
     assert!(termination_dependency_is_incomplete(&generated_vertex, &[],));
@@ -943,13 +941,11 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     incomplete = complete.clone();
     incomplete.set_extent(Some(RevolveExtent::OneSided {
         termination: AngularTermination::ToVertex {
-            vertex: VertexSelection::Generated {
-                vertex: GeneratedVertexRef {
-                    feature: source.clone(),
-                    local_id: "vertex-0".into(),
-                },
-                native: "test:vertex-selection".into(),
-            },
+            vertex: VertexSelection::generated(
+                GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
+                "test:vertex-selection".into(),
+            )
+            .unwrap(),
         },
     }));
     assert!(revolve_feature_is_incomplete(

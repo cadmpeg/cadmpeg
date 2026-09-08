@@ -2381,11 +2381,8 @@ fn bind_entity_face_groups(
     for face in &faces {
         topology.faces.insert(face.clone());
     }
-    *selection = FaceSelection::Historical {
-        state: state_id,
-        faces,
-        native: native_id.to_owned(),
-    };
+    *selection = FaceSelection::historical(state_id, faces, native_id.to_owned())
+        .unwrap_or_else(|_| FaceSelection::Native(native_id.to_owned()));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2435,11 +2432,8 @@ fn bind_hole_face_selection(
     };
     let face = crate::ids::history_input_face_id(&prefix, discriminator);
     topology.faces.insert(face.clone());
-    *selection = FaceSelection::Historical {
-        state: state_id,
-        faces: vec![face],
-        native: native_id.clone(),
-    };
+    *selection = FaceSelection::historical(state_id, vec![face], native_id.clone())
+        .unwrap_or_else(|_| FaceSelection::Native(native_id.clone()));
 }
 
 pub(crate) fn bind_feature_path_selections(
@@ -6574,17 +6568,15 @@ fn bind_body_recipe_face_selection(
         }
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *selection = FaceSelection::Historical {
-        state: crate::design::edge_resolve::feature_input_topology_id(
-            feature_id,
-            previous_state_id,
-        ),
-        faces: slots
+    *selection = FaceSelection::historical(
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        slots
             .into_iter()
             .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
             .collect(),
-        native: native.clone(),
-    };
+        native.clone(),
+    )
+    .unwrap_or_else(|_| FaceSelection::Native(native.clone()));
 }
 
 fn faces_in_topology(

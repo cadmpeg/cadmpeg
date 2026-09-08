@@ -175,9 +175,7 @@ pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool
                 || offset.is_some_and(|offset| !offset.get().is_finite())
         }
         LinearTermination::ToVertex { vertex } => match vertex {
-            VertexSelection::Generated { vertex, native } => {
-                native.trim().is_empty() || vertex.local_id.trim().is_empty()
-            }
+            VertexSelection::Generated { .. } => false,
             VertexSelection::Historical {
                 state,
                 vertex,
@@ -185,7 +183,7 @@ pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool
             } => {
                 state.as_str().trim().is_empty()
                     || vertex.as_str().trim().is_empty()
-                    || native.trim().is_empty()
+                    || native.as_str().trim().is_empty()
             }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },
@@ -219,9 +217,7 @@ fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
                 || offset.is_some_and(|offset| !offset.get().is_finite())
         }
         AngularTermination::ToVertex { vertex } => match vertex {
-            VertexSelection::Generated { vertex, native } => {
-                native.trim().is_empty() || vertex.local_id.trim().is_empty()
-            }
+            VertexSelection::Generated { .. } => false,
             VertexSelection::Historical {
                 state,
                 vertex,
@@ -229,7 +225,7 @@ fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
             } => {
                 state.as_str().trim().is_empty()
                     || vertex.as_str().trim().is_empty()
-                    || native.trim().is_empty()
+                    || native.as_str().trim().is_empty()
             }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },

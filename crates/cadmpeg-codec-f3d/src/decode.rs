@@ -271,11 +271,9 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
 
     match selection {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
-        FaceSelection::Historical { faces, .. } => !faces.is_empty(),
-        FaceSelection::Generated { faces, .. } => !faces.is_empty(),
-        FaceSelection::HistoricalPartial {
-            faces, unresolved, ..
-        } => !faces.is_empty() && unresolved.is_empty(),
+        FaceSelection::Historical { .. } => true,
+        FaceSelection::Generated { .. } => true,
+        FaceSelection::HistoricalPartial { .. } => false,
         FaceSelection::Unresolved | FaceSelection::Native(_) => false,
     }
 }
@@ -301,11 +299,9 @@ fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -
     match selection {
         EdgeSelection::All => true,
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => !edges.is_empty(),
-        EdgeSelection::Historical { edges, .. } => !edges.is_empty(),
-        EdgeSelection::Generated { edges, .. } => !edges.is_empty(),
-        EdgeSelection::HistoricalPartial {
-            edges, unresolved, ..
-        } => !edges.is_empty() && unresolved.is_empty(),
+        EdgeSelection::Historical { .. } => true,
+        EdgeSelection::Generated { .. } => true,
+        EdgeSelection::HistoricalPartial { .. } => false,
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => false,
     }
 }
@@ -1389,10 +1385,14 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
                 .count();
         }
-        EdgeSelection::Resolved { native, .. }
-        | EdgeSelection::Generated { native, .. }
-        | EdgeSelection::Historical { native, .. } => {
+        EdgeSelection::Resolved { native, .. } => {
             complete_edge_selection_native_ids.insert(native.clone());
+        }
+        EdgeSelection::Generated { native, .. } => {
+            complete_edge_selection_native_ids.insert(native.as_str().to_owned());
+        }
+        EdgeSelection::Historical { native, .. } => {
+            complete_edge_selection_native_ids.insert(native.as_str().to_owned());
         }
         EdgeSelection::All | EdgeSelection::Edges(_) => {}
     };

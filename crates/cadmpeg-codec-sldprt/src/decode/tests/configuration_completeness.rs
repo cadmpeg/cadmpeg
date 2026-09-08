@@ -16,13 +16,15 @@ use std::collections::BTreeMap;
 
 #[test]
 fn complete_parting_line_draft_does_not_require_an_outward_flag() {
-    let faces = FaceSelection::Generated {
-        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-            feature: FeatureId::mint("producer").expect("identity grammar"),
-            local_id: "1".into(),
-        }],
-        native: "native".into(),
-    };
+    let faces = FaceSelection::generated(
+        vec![cadmpeg_ir::features::GeneratedFaceRef::new(
+            FeatureId::mint("producer").expect("identity grammar"),
+            "1".into(),
+        )
+        .unwrap()],
+        "native".into(),
+    )
+    .unwrap();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::mint("draft").expect("identity grammar"),
@@ -65,13 +67,15 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         unreachable!();
     };
     *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-        plane: FaceSelection::Generated {
-            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId::mint("producer").expect("identity grammar"),
-                local_id: "2".into(),
-            }],
-            native: "native".into(),
-        },
+        plane: FaceSelection::generated(
+            vec![cadmpeg_ir::features::GeneratedFaceRef::new(
+                FeatureId::mint("producer").expect("identity grammar"),
+                "2".into(),
+            )
+            .unwrap()],
+            "native".into(),
+        )
+        .unwrap(),
         pull: Some(cadmpeg_ir::features::DraftPull {
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                 .unwrap(),

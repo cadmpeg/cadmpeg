@@ -957,30 +957,24 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
 
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
-        EdgeSelection::Historical { edges, .. } => edges.is_empty(),
-        EdgeSelection::HistoricalPartial {
-            edges, unresolved, ..
-        } => edges.is_empty() || !unresolved.is_empty(),
-        EdgeSelection::Generated { edges, .. } => edges.is_empty(),
+        EdgeSelection::Historical { .. } => false,
+        EdgeSelection::HistoricalPartial { .. } => true,
+        EdgeSelection::Generated { .. } => false,
         EdgeSelection::All => false,
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
     };
     let incomplete_face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
-        FaceSelection::Historical { faces, .. } => faces.is_empty(),
-        FaceSelection::HistoricalPartial {
-            faces, unresolved, ..
-        } => faces.is_empty() || !unresolved.is_empty(),
-        FaceSelection::Generated { faces, .. } => faces.is_empty(),
+        FaceSelection::Historical { .. } => false,
+        FaceSelection::HistoricalPartial { .. } => true,
+        FaceSelection::Generated { .. } => false,
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_optional_face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Faces(_) | FaceSelection::Resolved { .. } => false,
-        FaceSelection::Historical { faces, .. } => faces.is_empty(),
-        FaceSelection::HistoricalPartial {
-            faces, unresolved, ..
-        } => faces.is_empty() || !unresolved.is_empty(),
-        FaceSelection::Generated { faces, .. } => faces.is_empty(),
+        FaceSelection::Historical { .. } => false,
+        FaceSelection::HistoricalPartial { .. } => true,
+        FaceSelection::Generated { .. } => false,
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {

@@ -103,7 +103,8 @@ pub(in super::super) fn thicken_feature_definition(
                 &result_surface_ids,
                 &available_features,
             ) {
-                FaceSelection::Generated { faces, native }
+                FaceSelection::generated(faces, native.clone())
+                    .unwrap_or_else(|_| FaceSelection::Native(native))
             } else {
                 FaceSelection::Native(native)
             }
@@ -278,7 +279,8 @@ pub(in super::super) fn schema_feature_definition(
                 &result_surface_ids,
                 &available_features,
             ) {
-                FaceSelection::Generated { faces, native }
+                FaceSelection::generated(faces, native.clone())
+                    .unwrap_or_else(|_| FaceSelection::Native(native))
             } else {
                 FaceSelection::Native(native)
             }

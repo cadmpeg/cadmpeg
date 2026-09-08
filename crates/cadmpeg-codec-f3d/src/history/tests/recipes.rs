@@ -1963,7 +1963,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(faces.len(), 1);
-    assert_eq!(input_topologies[0].faces.as_slice(), faces);
+    assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 }
 
 mod hem_carriers;

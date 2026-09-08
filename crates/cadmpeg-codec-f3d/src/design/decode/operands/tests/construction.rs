@@ -709,7 +709,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         Some(FeatureDefinition::SplitBody {
             tools: FaceSelection::Historical { faces, native, .. },
             ..
-        }) if faces.len() == 1 && native == historical_split_tool.id
+        }) if faces.len() == 1 && native.as_str() == historical_split_tool.id
     ));
 
     let mut multiple_targets_scope = split_body_scope.clone();

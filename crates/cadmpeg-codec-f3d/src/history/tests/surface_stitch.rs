@@ -213,14 +213,14 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(
-        faces,
+        faces.as_slice(),
         &vec![
             crate::ids::history_input_face_id(&prefix, 30),
             crate::ids::history_input_face_id(&prefix, 31),
         ]
     );
-    assert_eq!(native, &scope_id);
-    assert_eq!(input_topologies[0].faces.as_slice(), faces);
+    assert_eq!(native.as_str(), &scope_id);
+    assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
         std::slice::from_mut(&mut ambiguous_feature),
