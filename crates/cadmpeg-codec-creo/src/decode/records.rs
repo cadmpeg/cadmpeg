@@ -204,11 +204,33 @@ pub(super) struct CreoFeatureLoopHistoryEntryRecord {
     pub(super) ordinal: u32,
     pub(super) loop_id: u32,
     pub(super) field_bytes: Vec<Vec<u8>>,
-    pub(super) boundary: &'static str,
-    pub(super) boundary_reference: Option<u32>,
+    #[serde(flatten, serialize_with = "serialize_loop_history_boundary")]
+    pub(super) boundary: crate::feature::FeatureLoopHistoryBoundary,
     pub(super) offset: usize,
     pub(super) end_offset: usize,
     pub(super) source_section: String,
+}
+
+fn serialize_loop_history_boundary<S: serde::Serializer>(
+    boundary: &crate::feature::FeatureLoopHistoryBoundary,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::feature::FeatureLoopHistoryBoundary;
+    use serde::ser::SerializeMap;
+    let (boundary, reference) = match boundary {
+        FeatureLoopHistoryBoundary::CompoundClose => ("compound_close", None),
+        FeatureLoopHistoryBoundary::ReferenceContinue(reference) => {
+            ("reference_continue", Some(*reference))
+        }
+        FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
+            ("reference_final", Some(*reference))
+        }
+        FeatureLoopHistoryBoundary::NamedRecord { .. } => ("named_record", None),
+    };
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("boundary", &boundary)?;
+    map.serialize_entry("boundary_reference", &reference)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -826,22 +848,7 @@ pub(super) fn feature_loop_history_entry_records(
             ordinal: entry.ordinal,
             loop_id: entry.loop_id,
             field_bytes: entry.fields().map(<[u8]>::to_vec).collect(),
-            boundary: match &entry.boundary {
-                crate::feature::FeatureLoopHistoryBoundary::CompoundClose => "compound_close",
-                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(_) => {
-                    "reference_continue"
-                }
-                crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(_) => "reference_final",
-                crate::feature::FeatureLoopHistoryBoundary::NamedRecord { .. } => "named_record",
-            },
-            boundary_reference: match &entry.boundary {
-                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(reference)
-                | crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
-                    Some(*reference)
-                }
-                crate::feature::FeatureLoopHistoryBoundary::CompoundClose
-                | crate::feature::FeatureLoopHistoryBoundary::NamedRecord { .. } => None,
-            },
+            boundary: entry.boundary.clone(),
             offset: entry.offset,
             end_offset: entry.end_offset,
             source_section: source_section(scan, entry.offset),
