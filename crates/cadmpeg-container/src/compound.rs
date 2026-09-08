@@ -6,7 +6,7 @@ use cadmpeg_core::container::{ContainerRole, EntryCompression};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read};
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
@@ -858,7 +858,10 @@ impl CompoundState {
         if range_lock_sector.is_some_and(|id| fat.get(id as usize) != Some(&END_OF_CHAIN)) {
             return malformed("CFB range lock sector is not allocated as an end-of-chain sector");
         }
-        let directory_expected = (version == CompoundVersion::V4).then_some(directory_sector_count);
+        let directory_expected = match version {
+            CompoundVersion::V3 => None,
+            CompoundVersion::V4 => NonZeroUsize::new(directory_sector_count),
+        };
         let directory_chain = chain(
             Some(ctx),
             &fat,
@@ -890,7 +893,7 @@ impl CompoundState {
                 &fat,
                 sector_count,
                 mini_fat_start,
-                Some(mini_fat_count),
+                NonZeroUsize::new(mini_fat_count),
                 "mini FAT",
             )?
         };
@@ -925,7 +928,7 @@ impl CompoundState {
                 &fat,
                 sector_count,
                 root.start_sector,
-                Some(root_sectors),
+                NonZeroUsize::new(root_sectors),
                 "root mini stream",
             )?
         };
@@ -1066,7 +1069,7 @@ impl CompoundState {
                                 &self.fat,
                                 self.sector_count,
                                 entry.start_sector,
-                                Some(expected),
+                                NonZeroUsize::new(expected),
                                 "stream",
                             )?,
                             CompoundAllocation::Mini => chain(
@@ -1074,7 +1077,7 @@ impl CompoundState {
                                 &self.mini_fat,
                                 self.mini_fat.len(),
                                 entry.start_sector,
-                                Some(expected),
+                                NonZeroUsize::new(expected),
                                 "mini stream",
                             )?,
                         };
@@ -1681,21 +1684,15 @@ fn chain(
     fat: &[u32],
     sector_count: usize,
     start: u32,
-    expected: Option<usize>,
+    expected: Option<NonZeroUsize>,
     role: &str,
 ) -> Result<Vec<u32>, CodecError> {
-    if expected == Some(0) {
-        return if matches!(start, END_OF_CHAIN | FREE_SECTOR) {
-            Ok(Vec::new())
-        } else {
-            malformed(format!("empty CFB {role} has an invalid start sector"))
-        };
-    }
-    let limit = expected.unwrap_or(sector_count);
+    let limit = expected.map_or(sector_count, NonZeroUsize::get);
     if let (Some(ctx), Some(count)) = (ctx, expected) {
-        ctx.charge_collection_items(count as u64, "retain CFB sector chain")?;
+        ctx.charge_collection_items(count.get() as u64, "retain CFB sector chain")?;
         ctx.charge_retained(
             count
+                .get()
                 .checked_mul(std::mem::size_of::<u32>())
                 .ok_or_else(|| CodecError::Malformed("CFB sector chain size overflow".into()))?
                 as u64,
@@ -1705,7 +1702,7 @@ fn chain(
     let mut traversal_scratch = ctx
         .map(|ctx| ctx.reserve_scoped(0, "walk CFB sector chain"))
         .transpose()?;
-    let mut output = Vec::with_capacity(expected.unwrap_or(0));
+    let mut output = Vec::with_capacity(expected.map_or(0, NonZeroUsize::get));
     let mut seen = BTreeSet::new();
     let mut current = start;
     while current != END_OF_CHAIN {
@@ -1731,7 +1728,7 @@ fn chain(
             return malformed(format!("CFB {role} chain enters a reserved sector role"));
         }
     }
-    if expected.is_some_and(|count| output.len() != count) {
+    if expected.is_some_and(|count| output.len() != count.get()) {
         return malformed(format!(
             "CFB {role} chain length does not match its declaration"
         ));
