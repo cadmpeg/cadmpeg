@@ -732,7 +732,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for (name, mut spans) in logical_by_entry {
-        spans.sort_by_key(|span| span.start);
+        spans.sort_by_key(|span| span.span.start());
         let expected = entry_lengths.get(name).copied();
         validate_logical_chain(name, &spans, expected, &mut findings);
     }
@@ -768,11 +768,12 @@ fn validate_span_chain(
     findings: &mut Vec<Finding>,
 ) {
     let mut ordered = spans.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|span| span.start);
-    let valid = ordered.first().is_some_and(|span| span.start == 0)
-        && ordered.iter().all(|span| span.start < span.end)
-        && ordered.windows(2).all(|pair| pair[0].end == pair[1].start)
-        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.end == end));
+    ordered.sort_by_key(|span| span.span.start());
+    let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
+        && ordered
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
+        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.span.end() == end));
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -789,10 +790,11 @@ fn validate_logical_chain(
     findings: &mut Vec<Finding>,
 ) {
     let valid = expected_end.is_some()
-        && spans.first().is_some_and(|span| span.start == 0)
-        && spans.iter().all(|span| span.start < span.end)
-        && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
-        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.end == end));
+        && spans.first().is_some_and(|span| span.span.start() == 0)
+        && spans
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
+        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.span.end() == end));
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -858,7 +860,7 @@ impl CodecBackend for FcstdCodec {
             scan.ledger.len().to_string(),
         );
         if let Some(last) = scan.ledger.last() {
-            attributes.insert("physical_archive_bytes".into(), last.end.to_string());
+            attributes.insert("physical_archive_bytes".into(), last.span.end().to_string());
         }
         if let Some(value) = &scan.document.program_version {
             attributes.insert("program_version".into(), value.clone());
@@ -1111,7 +1113,7 @@ impl CodecBackend for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("logical_ledger", &logical_ledger)?;
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
                 &scan.ledger,
                 &entry_records,
@@ -1125,7 +1127,7 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;
         } else {
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
             ir.native
                 .namespace_mut("fcstd")

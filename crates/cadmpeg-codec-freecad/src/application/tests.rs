@@ -175,8 +175,8 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .iter()
         .find(|span| span.entry == entry.name)
         .expect("payload span");
-    assert_eq!(span.start, 0);
-    assert_eq!(span.end, payload.len() as u64);
+    assert_eq!(span.span.start(), 0);
+    assert_eq!(span.span.end(), payload.len() as u64);
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     assert_eq!(entry.data, payload);
@@ -304,8 +304,8 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
             .iter()
             .find(|span| span.entry == name)
             .expect("side-entry span");
-        assert_eq!(span.start, 0);
-        assert_eq!(span.end, payload.len() as u64);
+        assert_eq!(span.span.start(), 0);
+        assert_eq!(span.span.end(), payload.len() as u64);
         assert_eq!(span.classification.as_str(), "named_opaque");
         assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     }
