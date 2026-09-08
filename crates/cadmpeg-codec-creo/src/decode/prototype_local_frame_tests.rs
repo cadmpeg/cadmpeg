@@ -11,7 +11,9 @@ fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                     .expect("valid scalar array");
-                array.fill_values(values.into_iter().map(Some));
+                array
+                    .fill_values(values.into_iter().map(Some).collect())
+                    .expect("matching scalar extent");
                 array
             }),
             body: Vec::new(),
@@ -32,7 +34,7 @@ fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                     .expect("valid scalar array");
-                array.fill_values(values);
+                array.fill_values(values).expect("matching scalar extent");
                 array
             }),
             body: Vec::new(),

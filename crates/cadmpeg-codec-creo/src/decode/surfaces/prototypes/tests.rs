@@ -183,24 +183,27 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
             value: crate::surface::SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                     .expect("valid scalar array");
-                array.fill_values(
-                    [
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        f64::NAN,
-                        0.0,
-                        0.0,
-                    ]
-                    .into_iter()
-                    .map(Some),
-                );
+                array
+                    .fill_values(
+                        [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            f64::NAN,
+                            0.0,
+                            0.0,
+                        ]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                    )
+                    .expect("matching scalar extent");
                 array
             }),
             body: Vec::new(),
@@ -222,24 +225,27 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
             value: crate::surface::SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                     .expect("valid scalar array");
-                array.fill_values(
-                    [
-                        1.0,
-                        0.0,
-                        0.0,
-                        f64::NAN,
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                    ]
-                    .into_iter()
-                    .map(Some),
-                );
+                array
+                    .fill_values(
+                        [
+                            1.0,
+                            0.0,
+                            0.0,
+                            f64::NAN,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                        ]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                    )
+                    .expect("matching scalar extent");
                 array
             }),
             body: Vec::new(),

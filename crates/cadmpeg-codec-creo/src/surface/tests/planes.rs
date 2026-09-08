@@ -1050,20 +1050,22 @@ fn named_local_system_expands_row_lane_zero_forms() {
         SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                 .expect("valid scalar array");
-            array.fill_values(vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(1.0),
-                Some(-0.5),
-                Some(0.0),
-                Some(1.0),
-            ]);
+            array
+                .fill_values(vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(-0.5),
+                    Some(0.0),
+                    Some(1.0),
+                ])
+                .expect("matching scalar extent");
             array
         })
     );
@@ -1096,20 +1098,22 @@ fn named_local_system_decodes_terminal_zero_slot() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                 .expect("valid scalar array");
-            array.fill_values(vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(1.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(15.0),
-                Some(0.0),
-            ]);
+            array
+                .fill_values(vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(15.0),
+                    Some(0.0),
+                ])
+                .expect("matching scalar extent");
             array
         }))
     );
@@ -1247,17 +1251,18 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 3)
                 .expect("valid scalar array");
-            array.fill_tokens(
-                (vec![
-                    Some(f64::from_be_bytes([
-                        0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
-                    ])),
-                    Some(1.0),
-                    Some(0.0),
+            array
+                .fill_tokens(vec![
+                    (
+                        Some(f64::from_be_bytes([
+                            0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                        ])),
+                        negative.to_vec(),
+                    ),
+                    (Some(1.0), vec![0xe4]),
+                    (Some(0.0), vec![0x0f]),
                 ])
-                .into_iter()
-                .zip(vec![negative.to_vec(), vec![0xe4], vec![0x0f]]),
-            );
+                .expect("matching scalar extent");
             array
         }))
     );

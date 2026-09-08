@@ -610,7 +610,9 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         Some(&crate::surface::SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                 .expect("valid scalar array");
-            array.fill_values(vec![Some(1.0); 12]);
+            array
+                .fill_values(vec![Some(1.0); 12])
+                .expect("matching scalar extent");
             array
         }))
     );
