@@ -387,6 +387,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     .is_none());
     table.table_class_id = 29;
     table.entries[3].class_id = 201;
+    table.entries[3].payload = crate::feature::EntryPayload::Plain;
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
@@ -394,6 +395,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.entries[3].class_id = 200;
+    table.entries[3].payload = crate::feature::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(
         107,
