@@ -985,10 +985,7 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes(
-            [0, subordinate, use_flag, hierarchy],
-            crate::global::GlobalTable::V5Later,
-        ),
+        status: SourceStatus::from_codes([0, subordinate, use_flag, hierarchy]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,

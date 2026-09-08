@@ -130,7 +130,7 @@ fn subfigure_definition_directory_fields_valid(
     entry: &DirectoryEntry,
     global_table: GlobalTable,
 ) -> bool {
-    entry.status.use_flag() == Some(UseFlag::Definition)
+    entry.status.use_flag(global_table) == Some(UseFlag::Definition)
         && (!matches!(global_table, GlobalTable::V4_0)
             || (entry.status.subordinate() == Some(Subordinate::Independent)
                 && (entry.status.hierarchy() == Some(Hierarchy::GlobalDefer)
@@ -247,9 +247,9 @@ pub(crate) fn signal_string_geometry_target(entity_type: i64, form: i64) -> bool
     )
 }
 
-pub(crate) fn flow_join_target_valid(target: &DirectoryEntry) -> bool {
+pub(crate) fn flow_join_target_valid(target: &DirectoryEntry, global_table: GlobalTable) -> bool {
     target.entity_type == 408
-        || (target.status.use_flag() == Some(UseFlag::Geometry)
+        || (target.status.use_flag(global_table) == Some(UseFlag::Geometry)
             && !matches!(
                 target.entity_type,
                 0 | 132
@@ -309,7 +309,9 @@ fn flow_associativity_directory_valid(entry: &DirectoryEntry, global_table: Glob
         return false;
     }
     match global_table {
-        GlobalTable::V4_0 => entry.form == 18 && entry.status.use_flag() == Some(UseFlag::Other),
+        GlobalTable::V4_0 => {
+            entry.form == 18 && entry.status.use_flag(global_table) == Some(UseFlag::Other)
+        }
         _ => matches!(entry.form, 18 | 20),
     }
 }
@@ -397,7 +399,7 @@ fn has_association_back_pointer(
     trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
             _ => None,
         })
         .is_some_and(|groups| {
@@ -415,7 +417,7 @@ fn has_property_pointer(
     trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
             _ => None,
         })
         .is_some_and(|groups| {
@@ -434,7 +436,7 @@ fn legacy_primary_end_valid(
         || trailing_pointer_analysis
             .get(&record.directory_sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                 _ => None,
             })
             .is_some_and(|groups| groups.token_start == primary_end)
@@ -509,6 +511,7 @@ fn legacy_associativity_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    global_table: GlobalTable,
 ) -> bool {
     let context = LegacyAssociativityContext {
         entry,
@@ -573,7 +576,7 @@ fn legacy_associativity_valid(
                 .is_some_and(|value| matches!(value, 0..=1));
             let points_valid =
                 context.pointer_list_valid(record, layout.geometry(), point_target, true);
-            entry.status.use_flag() == Some(UseFlag::LogicalPositional)
+            entry.status.use_flag(global_table) == Some(UseFlag::LogicalPositional)
                 && !layout.geometry().is_empty()
                 && points_valid
                 && numeric_fields_valid
@@ -587,7 +590,7 @@ fn legacy_associativity_valid(
                 return false;
             };
             let data_valid = layout.data().all(|index| record.value(index).is_some());
-            entry.status.use_flag() == Some(UseFlag::LogicalPositional)
+            entry.status.use_flag(global_table) == Some(UseFlag::LogicalPositional)
                 && !layout.points().is_empty()
                 && context.pointer_list_valid(record, layout.points(), point_target, true)
                 && data_valid
@@ -1945,7 +1948,7 @@ fn flow_associativity(
             }))
             && entries
                 .get(sequence)
-                .is_some_and(|target| flow_join_target_valid(target))
+                .is_some_and(|target| flow_join_target_valid(target, global_table))
     });
     let displays_valid = displays.iter().all(|sequence| {
         entries
@@ -2093,7 +2096,9 @@ pub(super) fn project(
                         let groups = trailing_pointer_analysis
                             .get(&owner_record.directory_sequence)
                             .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                                TrailingPointerAnalysis::Unambiguous(groups) => {
+                                    Some(groups.as_groups())
+                                }
                                 _ => None,
                             });
                         let has_basic = groups.as_ref().is_some_and(|groups| {
@@ -2168,7 +2173,9 @@ pub(super) fn project(
                         trailing_pointer_analysis
                             .get(&owner_record.directory_sequence)
                             .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                                TrailingPointerAnalysis::Unambiguous(groups) => {
+                                    Some(groups.as_groups())
+                                }
                                 _ => None,
                             })
                             .is_some_and(|groups| {
@@ -2381,7 +2388,7 @@ pub(super) fn project(
                 })
         });
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
-            && entry.status.use_flag() == Some(UseFlag::Definition);
+            && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {
@@ -2419,7 +2426,7 @@ pub(super) fn project(
         }
         let directory_valid = matches!(entry.form, 5001..=9999)
             && entry.status.subordinate() == Some(Subordinate::Independent)
-            && entry.status.use_flag() == Some(UseFlag::Definition);
+            && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
@@ -2487,6 +2494,7 @@ pub(super) fn project(
                     &entries,
                     &records,
                     trailing_pointer_analysis,
+                    global.global_table(),
                 )
             } else {
                 predefined_associativity_valid(
@@ -2798,7 +2806,7 @@ pub(super) fn project(
             && swap_valid
             && owner_valid
             && transform_valid
-            && entry.status.use_flag() == Some(UseFlag::LogicalPositional)
+            && entry.status.use_flag(global.global_table()) == Some(UseFlag::LogicalPositional)
         {
             decoded.insert(entry.sequence);
         } else {
@@ -2955,7 +2963,7 @@ pub(super) fn project(
             ctx,
         )
         .is_ok();
-        if entry.status.use_flag() != Some(UseFlag::Definition)
+        if entry.status.use_flag(global.global_table()) != Some(UseFlag::Definition)
             || (assembly.form == 1) != has_brep
             || !items_valid
             || cyclic

@@ -104,7 +104,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 section: "directory-entry",
                 sequence: record.sequence,
                 source_offset: record.source_offset,
-                cards: record.cards,
+                cards: record.cards(),
                 bytes: &record.bytes,
                 defect: record.defect,
             }
@@ -2016,7 +2016,7 @@ pub(crate) fn store(
         trailing_pointer_analysis
             .get(&sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                 _ => None,
             })
             .map_or(record.parameter_end(), |groups| groups.token_start)
@@ -2080,7 +2080,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                     _ => None,
                 });
             let invalid_trailing = (trailing.is_none()
@@ -3906,7 +3906,7 @@ pub(crate) fn store(
                                             ReferenceExpectation::Named(
                                                 ExpectationLabel::NonAssociativityOrType402Form7,
                                             ),
-                                            flow_join_target_valid,
+                                            |target| flow_join_target_valid(target, global.global_table()),
                                         )
                                     })
                                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
@@ -4290,8 +4290,8 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous { groups, .. } => {
-                                        Some(groups)
+                                    TrailingPointerAnalysis::Unambiguous(groups) => {
+                                        Some(groups.as_groups())
                                     }
                                     _ => None,
                                 })
@@ -4641,8 +4641,8 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous { groups, .. } => {
-                                        Some(groups)
+                                    TrailingPointerAnalysis::Unambiguous(groups) => {
+                                        Some(groups.as_groups())
                                     }
                                     _ => None,
                                 })
@@ -4671,7 +4671,9 @@ pub(crate) fn store(
                     trailing_pointer_analysis
                         .get(sequence)
                         .and_then(|analysis| match analysis {
-                            TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                            TrailingPointerAnalysis::Unambiguous(groups) => {
+                                Some(groups.as_groups())
+                            }
                             _ => None,
                         })
                         .is_some_and(|groups| {
@@ -4982,7 +4984,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                     _ => None,
                 });
             let candidates = |form| drawing_property_candidates(trailing, form, &entries);
@@ -5045,7 +5047,8 @@ pub(crate) fn store(
                                         ExpectationLabel::DrawingSpaceAnnotation,
                                     ),
                                     |target| {
-                                        target.status.use_flag() == Some(UseFlag::Annotation)
+                                        target.status.use_flag(global.global_table())
+                                            == Some(UseFlag::Annotation)
                                             && target.status.is_physically_dependent()
                                     },
                                 )
