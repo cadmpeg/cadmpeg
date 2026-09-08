@@ -637,7 +637,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
     let annotations = annotations.build();
     let mut coverage = cadmpeg_ir::Coverage::default();
     coverage.record(
@@ -2291,7 +2291,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     if matches!(surface.geometry, SurfaceGeometry::Unknown { .. }) {
                         surface.geometry =
                             SurfaceGeometry::Nurbs(freeform_surfaces[carrier].geometry.clone());
-                        annotations.derived(&surface.id, "geometry");
+                        annotations
+                            .derived(&surface.id, "geometry")
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
                     }
@@ -2364,7 +2366,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             isoparametric: None,
                             parameter_range: None,
                         });
-                    annotations.derived(&ir.model.coedges[coedge_index].id, "pcurves");
+                    annotations
+                        .derived(&ir.model.coedges[coedge_index].id, "pcurves")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
             ir.model.edges[edge_index].param_range = Some(resolved.block.parameters.range);
@@ -2382,7 +2386,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             );
             annotations
                 .derived(&procedural.id, "curve")
-                .derived(&procedural.id, "definition");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&procedural.id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         } else {
             let curve_id = CurveId::mint(format!(
                 "catia:consolidated:curve#{}",
@@ -2417,7 +2423,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             );
             annotations
                 .derived(&procedural_id, "curve")
-                .derived(&procedural_id, "definition");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let _attached = ir
                 .model
                 .add_procedural_curve(curve_id, ProceduralCurve::new(procedural_id, definition));

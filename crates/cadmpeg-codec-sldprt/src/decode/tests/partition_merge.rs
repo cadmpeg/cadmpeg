@@ -231,7 +231,8 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
             (&partition_payload, &partition_header),
         ],
         "precedence",
-    );
+    )
+    .expect("valid exactness fields");
 
     assert_eq!(decoded.faces.len(), 1);
     assert_eq!(decoded.faces[0].id.as_str(), "sldprt:brep:face#10");

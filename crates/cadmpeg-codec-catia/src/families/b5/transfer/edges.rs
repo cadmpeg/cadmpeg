@@ -319,7 +319,9 @@ pub(super) fn emit_edges(
             },
         );
         if !matches!(geometry, CurveGeometry::Unknown { .. }) {
-            annotations.derived(&curve_id, "geometry");
+            annotations
+                .derived(&curve_id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
@@ -361,9 +363,13 @@ pub(super) fn emit_edges(
             );
             annotations
                 .derived(&procedural_id, "curve")
-                .derived(&procedural_id, "definition");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if cache_fit_tolerance.is_some() {
-                annotations.derived(&procedural_id, "cache_fit_tolerance");
+                annotations
+                    .derived(&procedural_id, "cache_fit_tolerance")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             if let Ok(procedural) =
                 ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance)
@@ -378,12 +384,20 @@ pub(super) fn emit_edges(
             "5e_edge",
             Exactness::ByteExact,
         );
-        annotations.derived(&id, "start").derived(&id, "end");
+        annotations
+            .derived(&id, "start")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "end")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if edge_range.is_some() {
-            annotations.derived(&id, "param_range");
+            annotations
+                .derived(&id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if edge_tolerance.is_some() {
-            annotations.derived(&id, "tolerance");
+            annotations
+                .derived(&id, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         edge_id_map.insert(edge_id, id.clone());
         ir.model.edges.push(Edge {

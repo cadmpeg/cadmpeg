@@ -240,9 +240,15 @@ pub(crate) fn attach(
         annotations
             .note(id.as_str(), annotation_stream, attribute.source_offset)
             .tag("Attribute");
-        annotations.derived(id.as_str(), "target");
-        annotations.derived(id.as_str(), "name");
-        annotations.derived(id.as_str(), "values");
+        annotations
+            .derived(id.as_str(), "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "values")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document,
@@ -266,7 +272,7 @@ pub(crate) fn attach(
         },
         &topology_attribute_index,
         annotations,
-    );
+    )?;
     attach_parasolid_topology_numeric_attributes(
         ir,
         &ParasolidNumericAttributeSources {
@@ -276,7 +282,7 @@ pub(crate) fn attach(
         },
         &topology_attribute_index,
         annotations,
-    );
+    )?;
     attach_parasolid_topology_structured_attributes(
         ir,
         &ParasolidStructuredAttributeSources {
@@ -288,7 +294,7 @@ pub(crate) fn attach(
         },
         &topology_attribute_index,
         annotations,
-    );
+    )?;
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
@@ -310,15 +316,27 @@ pub(crate) fn attach(
             annotations
                 .note(id.as_str(), annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
-            annotations.derived(id.as_str(), "ordinal");
+            annotations
+                .derived(id.as_str(), "ordinal")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if active_attribute_use.is_some() {
-                annotations.derived(id.as_str(), "active");
+                annotations
+                    .derived(id.as_str(), "active")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            annotations.derived(id.as_str(), "source_index");
-            annotations.derived(id.as_str(), "name");
-            annotations.derived(id.as_str(), "native_ref");
+            annotations
+                .derived(id.as_str(), "source_index")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "native_ref")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if bodies.resolved().is_some_and(|bodies| !bodies.is_empty()) {
-                annotations.derived(id.as_str(), "bodies");
+                annotations
+                    .derived(id.as_str(), "bodies")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.configurations.push(DesignConfiguration {
                 id,
@@ -346,8 +364,8 @@ pub(crate) fn attach(
         &model.om.expression_declarations,
         &model.features.feature_parameter_uses,
         annotations,
-    );
-    attach_active_configuration_parameter_values(ir, annotations);
+    )?;
+    attach_active_configuration_parameter_values(ir, annotations)?;
     attach_feature_operations(
         ir,
         &model.features,
@@ -356,14 +374,14 @@ pub(crate) fn attach(
         &model.om.expressions,
         &model.segments.segment_body_bindings,
         annotations,
-    );
+    )?;
     attach_block_dimension_parameter_consumers(
         ir,
         &model.features.feature_block_dimensions,
         annotations,
-    );
-    attach_current_feature_states(ir, annotations);
-    attach_active_configuration_feature_states(ir, annotations);
+    )?;
+    attach_current_feature_states(ir, annotations)?;
+    attach_active_configuration_feature_states(ir, annotations)?;
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -402,7 +420,9 @@ fn attach_rm_face_colors(
         let face = &mut ir.model.faces[index];
         if face.color.is_none() || face.color == Some(color) {
             face.color = Some(color);
-            annotations.derived(&face.id, "color");
+            annotations
+                .derived(&face.id, "color")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     Ok(())
@@ -471,8 +491,12 @@ fn attach_rm_appearances(
         annotations
             .note(&binding_id, annotation_stream, binding.source_offset)
             .tag("RMFASTLOAD_COLOR_ASSIGNMENT");
-        annotations.derived(&binding_id, "target");
-        annotations.derived(&binding_id, "appearance");
+        annotations
+            .derived(&binding_id, "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(&binding_id, "appearance")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id.try_into().expect("valid identity"),
             target: AppearanceTarget::Source {
@@ -522,8 +546,12 @@ fn attach_rm_appearances(
         annotations
             .note(&binding_id, annotation_stream, binding.source_offset)
             .tag("RMFASTLOAD_FACE_COLOR_ASSIGNMENT");
-        annotations.derived(&binding_id, "target");
-        annotations.derived(&binding_id, "appearance");
+        annotations
+            .derived(&binding_id, "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(&binding_id, "appearance")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id.try_into().expect("valid identity"),
             target: AppearanceTarget::Face(
@@ -553,36 +581,41 @@ fn ensure_rm_color_appearance(
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-    Ok(appearances
-        .entry(definition.id.clone())
-        .or_insert_with(|| {
-            let id = AppearanceId::mint(format!(
-                "nx:appearance:rmfastload-color#{}",
-                native_entity_key(&definition.id)
-            ))
-            .expect("identity grammar");
-            annotations
-                .note(id.as_str(), annotation_stream, definition.source_offset)
-                .tag("RMFASTLOAD_COLOR_APPEARANCE");
-            annotations.derived(id.as_str(), "name");
-            annotations.derived(id.as_str(), "schema");
-            annotations.derived(id.as_str(), "base_color");
-            ir.model.appearances.push(Appearance {
-                id: id.clone(),
-                name: Some(definition.name.clone()),
-                asset_guid: None,
-                library_id: None,
-                visual_guid: None,
-                physical_token: None,
-                schema: Some("UGS::COLOR_table".into()),
-                category: None,
-                base_color: Some(color),
-                properties: BTreeMap::new(),
-                textures: Vec::new(),
-            });
-            id
-        })
-        .clone())
+    if let Some(id) = appearances.get(&definition.id) {
+        return Ok(id.clone());
+    }
+    let id = AppearanceId::mint(format!(
+        "nx:appearance:rmfastload-color#{}",
+        native_entity_key(&definition.id)
+    ))
+    .expect("identity grammar");
+    annotations
+        .note(id.as_str(), annotation_stream, definition.source_offset)
+        .tag("RMFASTLOAD_COLOR_APPEARANCE");
+    annotations
+        .derived(id.as_str(), "name")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    annotations
+        .derived(id.as_str(), "schema")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    annotations
+        .derived(id.as_str(), "base_color")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        name: Some(definition.name.clone()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("UGS::COLOR_table".into()),
+        category: None,
+        base_color: Some(color),
+        properties: BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    appearances.insert(definition.id.clone(), id.clone());
+    Ok(id)
 }
 
 fn native_entity_key(id: &str) -> String {
@@ -819,10 +852,18 @@ fn attach_jpeg_preview_assets(
             .note(id.as_str(), stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
         annotations.exactness(id.as_str(), Exactness::ByteExact);
-        annotations.derived(id.as_str(), "id");
-        annotations.derived(id.as_str(), "name");
-        annotations.derived(id.as_str(), "media_type");
-        annotations.derived(id.as_str(), "native_ref");
+        annotations
+            .derived(id.as_str(), "id")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "media_type")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "native_ref")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.assets.push(
             Asset::try_new(
                 id,
@@ -902,9 +943,15 @@ fn attach_material_texture_assets(
             .note(asset.id.as_str(), stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
         annotations.exactness(asset.id.as_str(), Exactness::ByteExact);
-        annotations.derived(asset.id.as_str(), "id");
-        annotations.derived(asset.id.as_str(), "media_type");
-        annotations.derived(asset.id.as_str(), "native_ref");
+        annotations
+            .derived(asset.id.as_str(), "id")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(asset.id.as_str(), "media_type")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(asset.id.as_str(), "native_ref")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     ir.model.assets.extend(assets);
     Ok(())
@@ -913,17 +960,17 @@ fn attach_material_texture_assets(
 fn attach_active_configuration_parameter_values(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
     else {
-        return;
+        return Ok(());
     };
     let configuration = &ir.model.configurations[configuration_index];
     if configuration.bodies.is_unresolved()
         || !configuration.parameter_values.is_empty()
         || ir.model.parameters.is_empty()
     {
-        return;
+        return Ok(());
     }
     let parameters_by_id = ir
         .model
@@ -942,7 +989,7 @@ fn attach_active_configuration_parameter_values(
                 })
         })
     {
-        return;
+        return Ok(());
     }
     let values = ir
         .model
@@ -960,10 +1007,16 @@ fn attach_active_configuration_parameter_values(
         .collect();
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = values;
-    annotations.derived(configuration.id.as_str(), "parameter_values");
+    annotations
+        .derived(configuration.id.as_str(), "parameter_values")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok(())
 }
 
-fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn attach_current_feature_states(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
     let current_bodies = ir
         .model
         .bodies
@@ -971,7 +1024,7 @@ fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBui
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
-        return;
+        return Ok(());
     };
     let feature_indices = ir
         .model
@@ -986,30 +1039,36 @@ fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBui
             .and_then(|index| ir.model.features.get_mut(*index))
             .expect("active feature closure has validated every feature identity");
         feature.suppressed = Some(false);
-        annotations.derived(&feature.id, "suppressed");
+        annotations
+            .derived(&feature.id, "suppressed")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+    Ok(())
 }
 
-fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn attach_active_configuration_feature_states(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
     else {
-        return;
+        return Ok(());
     };
     let Some(configuration_bodies) = ir.model.configurations[configuration_index]
         .bodies
         .resolved()
         .map(<[BodyId]>::to_vec)
     else {
-        return;
+        return Ok(());
     };
     if !ir.model.configurations[configuration_index]
         .feature_states
         .is_empty()
     {
-        return;
+        return Ok(());
     }
     let Ok(active_features) = active_feature_closure(ir, &configuration_bodies) else {
-        return;
+        return Ok(());
     };
     let feature_indices = ir
         .model
@@ -1044,12 +1103,17 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
             .expect("active feature closure has validated every feature identity");
         if feature.suppressed != Some(false) {
             feature.suppressed = Some(false);
-            annotations.derived(&feature.id, "suppressed");
+            annotations
+                .derived(&feature.id, "suppressed")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.feature_states = states;
-    annotations.derived(configuration.id.as_str(), "feature_states");
+    annotations
+        .derived(configuration.id.as_str(), "feature_states")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok(())
 }
 
 fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
@@ -1104,7 +1168,7 @@ fn attach_initial_segment_bodies(
     annotations
         .note(&id, stream, 0)
         .tag("FEATURE_HISTORY_INPUT");
-    annotations.derived(&id, "definition");
+    annotations.derived(&id, "definition").ok()?;
     ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: ir.model.features.len() as u64,
@@ -1135,7 +1199,7 @@ fn attach_feature_operations(
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
@@ -3641,7 +3705,9 @@ fn attach_feature_operations(
             }
         }
         if !source_content.is_empty() {
-            annotations.derived(&id, "source_content");
+            annotations
+                .derived(&id, "source_content")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         let native_output = (!deletes_body).then_some(native_primary_body).flatten();
         let offset_store_output = (!deletes_body)
@@ -3757,7 +3823,9 @@ fn attach_feature_operations(
                     NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.to_string(),
                     "primary-body-relations".to_string(),
                 );
-                annotations.derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
+                annotations
+                    .derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
         }
     }
@@ -3769,9 +3837,12 @@ fn attach_feature_operations(
             .find(|feature| feature.id == initial_body_id)
             .is_some_and(|feature| !feature.outputs.is_empty());
         if has_outputs {
-            annotations.derived(&initial_body_id, "outputs");
+            annotations
+                .derived(&initial_body_id, "outputs")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -4325,7 +4396,7 @@ fn attach_parasolid_topology_string_attributes(
     sources: &ParasolidStringAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let strings_by_id = sources
         .strings
         .iter()
@@ -4359,8 +4430,12 @@ fn attach_parasolid_topology_string_attributes(
             annotations
                 .note(id.as_str(), source_stream, string.inflated_offset)
                 .tag("ENTITY_54_STRING_ATTRIBUTE");
-            annotations.derived(id.as_str(), "target");
-            annotations.derived(id.as_str(), "name");
+            annotations
+                .derived(id.as_str(), "target")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let generic_name = format!(
                 "parasolid_type_84_reference_{}",
                 string_use.position.reference_ordinal()
@@ -4386,6 +4461,7 @@ fn attach_parasolid_topology_string_attributes(
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    Ok(())
 }
 
 struct ParasolidNumericAttributeSources<'a> {
@@ -4706,7 +4782,7 @@ fn attach_parasolid_topology_numeric_attributes(
     sources: &ParasolidNumericAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let integers_by_id = sources
         .integers
         .iter()
@@ -4777,8 +4853,12 @@ fn attach_parasolid_topology_numeric_attributes(
             annotations
                 .note(id.as_str(), source_stream, source_offset)
                 .tag(tag);
-            annotations.derived(id.as_str(), "target");
-            annotations.derived(id.as_str(), "name");
+            annotations
+                .derived(id.as_str(), "target")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let generic_name = format!(
                 "parasolid_type_{lane}_reference_{}",
                 numeric_use.position.reference_ordinal()
@@ -4804,6 +4884,7 @@ fn attach_parasolid_topology_numeric_attributes(
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    Ok(())
 }
 
 struct ParasolidStructuredAttributeSources<'a> {
@@ -4819,7 +4900,7 @@ fn attach_parasolid_topology_structured_attributes(
     sources: &ParasolidStructuredAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let vectors_by_id = sources
         .vectors
         .iter()
@@ -4942,8 +5023,12 @@ fn attach_parasolid_topology_structured_attributes(
             annotations
                 .note(id.as_str(), source_stream, source_offset)
                 .tag(tag);
-            annotations.derived(id.as_str(), "target");
-            annotations.derived(id.as_str(), "name");
+            annotations
+                .derived(id.as_str(), "target")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let generic_name = format!(
                 "parasolid_type_{family}_reference_{}",
                 structured_use.position.reference_ordinal()
@@ -4969,6 +5054,7 @@ fn attach_parasolid_topology_structured_attributes(
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    Ok(())
 }
 
 fn preceding_operation_dependency(
@@ -8748,7 +8834,7 @@ pub(crate) fn attach_expression_parameters(
     declarations: &[crate::native::om::ExpressionDeclaration],
     parameter_uses: &[crate::native::features::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let declarations = declarations
         .iter()
         .map(|declaration| (declaration.id.as_str(), declaration))
@@ -8835,7 +8921,9 @@ pub(crate) fn attach_expression_parameters(
             })
             .collect::<Vec<_>>();
         if !source_content.is_empty() {
-            annotations.derived(&feature_id, "source_content");
+            annotations
+                .derived(&feature_id, "source_content")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.features.push(Feature {
             id: feature_id.clone(),
@@ -8872,10 +8960,18 @@ pub(crate) fn attach_expression_parameters(
             annotations
                 .note(id.as_str(), stream, expression.source_offset)
                 .tag("Number");
-            annotations.derived(id.as_str(), "owner");
-            annotations.derived(id.as_str(), "ordinal");
-            annotations.derived(id.as_str(), "value");
-            annotations.derived(id.as_str(), "native_ref");
+            annotations
+                .derived(id.as_str(), "owner")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "ordinal")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "value")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "native_ref")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let dependencies = if dependency_ordered_expressions.contains(&expression.id) {
                 let mut seen_dependencies = BTreeSet::new();
                 crate::native::om::expression_parameter_names(&expression.expression)
@@ -8890,7 +8986,9 @@ pub(crate) fn attach_expression_parameters(
                 Vec::new()
             };
             if !dependencies.is_empty() {
-                annotations.derived(id.as_str(), "dependencies");
+                annotations
+                    .derived(id.as_str(), "dependencies")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter
@@ -8905,7 +9003,9 @@ pub(crate) fn attach_expression_parameters(
             });
             let mut properties = BTreeMap::new();
             properties.insert("unit".to_string(), expression.unit.property_name());
-            annotations.derived(id.as_str(), "properties");
+            annotations
+                .derived(id.as_str(), "properties")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if let Some(declaration) = expression
                 .declaration
                 .as_deref()
@@ -8916,7 +9016,9 @@ pub(crate) fn attach_expression_parameters(
                     "declaration_object_id".to_string(),
                     declaration.object_id.to_string(),
                 );
-                annotations.derived(id.as_str(), "properties");
+                annotations
+                    .derived(id.as_str(), "properties")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             for (consumer_ordinal, parameter_use) in uses_by_expression
                 .get(expression.id.as_str())
@@ -8934,7 +9036,9 @@ pub(crate) fn attach_expression_parameters(
                     format!("parameter_use.{consumer_ordinal}"),
                     parameter_use.id.clone(),
                 );
-                annotations.derived(id.as_str(), "properties");
+                annotations
+                    .derived(id.as_str(), "properties")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.parameters.push(DesignParameter {
                 id,
@@ -8951,6 +9055,7 @@ pub(crate) fn attach_expression_parameters(
             });
         }
     }
+    Ok(())
 }
 
 fn order_expression_dependencies(
@@ -9011,7 +9116,7 @@ fn attach_block_dimension_parameter_consumers(
     ir: &mut CadIr,
     dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut parameters = ir
         .model
         .parameters
@@ -9049,9 +9154,12 @@ fn attach_block_dimension_parameter_consumers(
                     .properties
                     .insert(format!("consumer.{consumer_ordinal}"), consumer.clone());
             }
-            annotations.derived(parameter.id.as_str(), "properties");
+            annotations
+                .derived(parameter.id.as_str(), "properties")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {

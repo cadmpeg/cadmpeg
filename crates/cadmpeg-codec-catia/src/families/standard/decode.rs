@@ -76,7 +76,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     revolutions: &[ConsolidatedRevolutionBinding],
-) -> (usize, usize) {
+) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     const TOLERANCE: f64 = 2e-3;
 
     fn point_on_torus(point: Point3, geometry: &SurfaceGeometry, tolerance: f64) -> bool {
@@ -314,7 +314,9 @@ fn bind_consolidated_revolution_faces_and_seams(
             .find(|surface| &surface.id == surface_id)
         {
             surface.geometry = revolutions[*binding].geometry.clone();
-            annotations.derived(&surface.id, "geometry");
+            annotations
+                .derived(&surface.id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
 
@@ -397,10 +399,12 @@ fn bind_consolidated_revolution_faces_and_seams(
         edge.param_range = Some(parameter_range);
         annotations
             .derived(&ir.model.curves[curve_index].id, "geometry")
-            .derived(&edge.id, "param_range");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&edge.id, "param_range")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         seam_count += 1;
     }
-    (surface_bindings.len(), seam_count)
+    Ok((surface_bindings.len(), seam_count))
 }
 
 #[cfg(test)]
@@ -553,7 +557,8 @@ mod consolidated_revolution_binding_tests {
                     geometry: geometry.clone(),
                     profile_sweep: 0.5,
                 }],
-            ),
+            )
+            .expect("valid exactness fields"),
             (2, 1)
         );
         assert!(ir
@@ -1932,7 +1937,7 @@ fn try_decode_standard_population(
                     "profile_curve",
                     Exactness::Derived,
                 );
-                annotations.derived(&directrix_id, "geometry");
+                annotations.derived(&directrix_id, "geometry").ok()?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(revolution.directrix.clone()),
@@ -2046,7 +2051,7 @@ fn try_decode_standard_population(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations.derived(&vertex_id, "point").ok()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -2063,7 +2068,8 @@ fn try_decode_standard_population(
         &mut topology_annotations,
         &face_bindings,
         standard_spine,
-    );
+    )
+    .ok()?;
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
@@ -2113,7 +2119,8 @@ fn try_decode_standard_population(
             &mut ir,
             &mut annotations,
             &consolidated_revolutions,
-        );
+        )
+        .ok()?;
     let mut consolidated_curve_bindings = append_freeform_surface_pools(
         &mut ir,
         &mut annotations,
@@ -2131,8 +2138,9 @@ fn try_decode_standard_population(
         &consolidated_records,
         &face_bounds,
         &owner_binding_budget,
-    );
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    )
+    .ok()?;
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
     let annotations = annotations.build();
 
     let mut report = build_geometry_report(
@@ -3074,10 +3082,10 @@ pub(crate) fn attach_standard_faces(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let face_count = fbb::standard_face_count(brep).unwrap_or_default();
     if face_count == 0 || face_count != bindings.len() {
-        return;
+        return Ok(());
     }
     let body_id = BodyId::mint("catia:standard:body#0".to_string()).expect("identity grammar");
     let region_id =
@@ -3096,7 +3104,9 @@ pub(crate) fn attach_standard_faces(
             Exactness::ByteExact,
         );
         for field in ["shell", "surface", "sense"] {
-            annotations.derived(&face_id, field);
+            annotations
+                .derived(&face_id, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         face_ids.push(face_id.clone());
         ir.model.faces.push(Face {
@@ -3124,7 +3134,9 @@ pub(crate) fn attach_standard_faces(
     );
     annotations
         .derived(&body_id, "kind")
-        .derived(&body_id, "regions");
+        .map_err(cadmpeg_core::CodecError::malformed)?
+        .derived(&body_id, "regions")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Sheet,
@@ -3144,7 +3156,9 @@ pub(crate) fn attach_standard_faces(
     );
     annotations
         .derived(&region_id, "body")
-        .derived(&region_id, "shells");
+        .map_err(cadmpeg_core::CodecError::malformed)?
+        .derived(&region_id, "shells")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
@@ -3160,7 +3174,9 @@ pub(crate) fn attach_standard_faces(
     );
     annotations
         .derived(&shell_id, "region")
-        .derived(&shell_id, "faces");
+        .map_err(cadmpeg_core::CodecError::malformed)?
+        .derived(&shell_id, "faces")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.shells.push(Shell {
         id: shell_id,
         region: region_id,
@@ -3168,6 +3184,7 @@ pub(crate) fn attach_standard_faces(
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
+    Ok(())
 }
 
 pub(crate) fn partition_standard_face_components(
@@ -3192,7 +3209,9 @@ pub(crate) fn partition_standard_face_components(
         })
         .collect();
     body.regions.clone_from(&region_ids);
-    annotations.derived(&body_id, "regions");
+    if annotations.derived(&body_id, "regions").is_err() {
+        return false;
+    }
 
     for (component, faces) in components.iter().enumerate() {
         let region_id = region_ids[component].clone();
@@ -3209,7 +3228,9 @@ pub(crate) fn partition_standard_face_components(
                 return false;
             };
             face.shell = shell_id.clone();
-            annotations.derived(&face.id, "shell");
+            if annotations.derived(&face.id, "shell").is_err() {
+                return false;
+            }
         }
         if component == 0 {
             let Some(region) = ir
@@ -3245,17 +3266,25 @@ pub(crate) fn partition_standard_face_components(
                 Exactness::Inferred,
             );
         }
-        annotations
+        if annotations
             .derived(&region_id, "body")
-            .derived(&region_id, "shells");
+            .and_then(|builder| builder.derived(&region_id, "shells"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
         });
-        annotations
+        if annotations
             .derived(&shell_id, "region")
-            .derived(&shell_id, "faces");
+            .and_then(|builder| builder.derived(&shell_id, "faces"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.shells.push(Shell {
             id: shell_id,
             region: region_id,
@@ -5046,11 +5075,19 @@ fn emit_standard_topology(
             Exactness::ByteExact,
         );
         if curve.is_some() {
-            annotations.derived(&id, "curve");
+            annotations
+                .derived(&id, "curve")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        annotations.derived(&id, "start").derived(&id, "end");
+        annotations
+            .derived(&id, "start")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "end")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if param_range.is_some() {
-            annotations.derived(&id, "param_range");
+            annotations
+                .derived(&id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.edges.push(Edge {
             id,
@@ -5140,7 +5177,9 @@ fn emit_standard_topology(
                         "derived_surface_parameter_curve",
                         Exactness::Derived,
                     );
-                    annotations.derived(&id, "geometry");
+                    annotations
+                        .derived(&id, "geometry")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                     ir.model.pcurves.push(Pcurve {
                         id: id.clone(),
                         geometry,
@@ -5150,8 +5189,9 @@ fn emit_standard_topology(
                             None,
                         ),
                     });
-                    (id, range)
-                });
+                    Ok::<_, cadmpeg_core::CodecError>((id, range))
+                })
+                .transpose()?;
                 let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
                 let id = coedge_ids[coedge_index].clone();
@@ -5171,10 +5211,14 @@ fn emit_standard_topology(
                     "radial_next",
                     "sense",
                 ] {
-                    annotations.derived(&id, field);
+                    annotations
+                        .derived(&id, field)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 if pcurve_id.is_some() {
-                    annotations.derived(&id, "pcurves");
+                    annotations
+                        .derived(&id, "pcurves")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 ir.model.coedges.push(Coedge {
                     id,
@@ -5208,10 +5252,15 @@ fn emit_standard_topology(
             );
             annotations
                 .derived(&loop_id, "face")
+                .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&loop_id, "coedges")
-                .derived(&loop_id, "vertex_uses");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&loop_id, "vertex_uses")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if boundary_role != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role");
+                annotations
+                    .derived(&loop_id, "boundary_role")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
@@ -6853,11 +6902,11 @@ fn bind_standard_a5_owner_surfaces(
     records: &[ConsolidatedRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget<'_>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records);
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
-        return 0;
+        return Ok(0);
     }
     let owner_carriers = owners
         .iter()
@@ -6951,7 +7000,7 @@ fn bind_standard_a5_owner_surfaces(
     }
     let Some(bindings) = invariant_face_carrier_bindings(&face_edges, owners.len(), Some(budget))
     else {
-        return 0;
+        return Ok(0);
     };
     let mut bound = 0;
     for ((_, _, surface), carrier) in unknown_faces.into_iter().zip(bindings) {
@@ -6960,10 +7009,12 @@ fn bind_standard_a5_owner_surfaces(
         };
         ir.model.surfaces[surface].geometry =
             SurfaceGeometry::Nurbs(carriers[carrier].geometry.clone());
-        annotations.derived(&ir.model.surfaces[surface].id, "geometry");
+        annotations
+            .derived(&ir.model.surfaces[surface].id, "geometry")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         bound += 1;
     }
-    bound
+    Ok(bound)
 }
 
 /// Keep a topological endpoint pair when p-curve derivation cannot prove it.
@@ -8118,7 +8169,9 @@ pub(crate) fn build_standard_edge_curve(
     if matches!(&geometry, CurveGeometry::Line { .. }) {
         annotations
             .derived(&id, "geometry.origin")
-            .derived(&id, "geometry.direction");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.direction")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -8128,9 +8181,13 @@ pub(crate) fn build_standard_edge_curve(
     ) {
         annotations
             .derived(&id, "geometry.center")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.ref_direction")
-            .derived(&id, "geometry.radius");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.radius")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -8140,10 +8197,15 @@ pub(crate) fn build_standard_edge_curve(
     ) {
         annotations
             .derived(&id, "geometry.center")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.major_direction")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.major_radius")
-            .derived(&id, "geometry.minor_radius");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.minor_radius")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -8151,7 +8213,9 @@ pub(crate) fn build_standard_edge_curve(
             CurveGeometry::Circle { .. }
         )
     ) {
-        annotations.derived(&id, "geometry.axis");
+        annotations
+            .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let geometry_is_unknown = matches!(&geometry, CurveGeometry::Unknown { .. });
     ir.model.curves.push(Curve {
@@ -8215,7 +8279,9 @@ pub(crate) fn build_standard_edge_curve(
                 );
                 annotations
                     .derived(&procedural_id, "curve")
-                    .derived(&procedural_id, "definition");
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .derived(&procedural_id, "definition")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 let _attached = ir.model.add_procedural_curve(
                     id.clone(),
                     ProceduralCurve::new(
@@ -8972,7 +9038,9 @@ pub(crate) fn attach_standard_circles(
             "curve_support_60_circle",
             Exactness::ByteExact,
         );
-        annotations.derived(&id, "geometry.axis");
+        annotations
+            .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Circle {
@@ -9189,7 +9257,9 @@ pub(crate) fn attach_standard_lines(
         );
         annotations
             .derived(&id, "geometry.origin")
-            .derived(&id, "geometry.direction");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.direction")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Line { origin, direction },

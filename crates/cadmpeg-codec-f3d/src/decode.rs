@@ -2903,7 +2903,7 @@ impl<'a> F3dDecodeSession<'a> {
                 )?;
                 self.native.store(self.ir.native.namespace_mut("f3d"))?;
                 let annotations =
-                    populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
+                    populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
@@ -2963,7 +2963,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &geometry.annotation_records,
             )),
             &self.unknowns,
-        );
+        )?;
         let source_image = preserve_source_image(scan);
         let mut admitted_entities = self.admitted_entities;
         decode_result(
@@ -3026,7 +3026,7 @@ fn decode_scanned_document<'a>(
     if ctx.container_only() {
         let (ir, mut source_attributes, unknowns) = build_metadata_ir(scan)?;
         annotate_docstruct(&mut source_attributes, scan);
-        let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
+        let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(scan);
         let mut report =
             crate::report::build_decode_report(scan, true, false, container_losses(scan));
@@ -3852,7 +3852,7 @@ fn populate_annotations(
     native: &F3dNative,
     brep: Option<(&str, &[cadmpeg_asm::brep::annotations::AnnotationRecord])>,
     unknowns: &[UnknownRecord],
-) -> cadmpeg_ir::Annotations {
+) -> Result<cadmpeg_ir::Annotations, cadmpeg_core::CodecError> {
     use std::collections::{HashMap, HashSet};
 
     let mut annotations = AnnotationBuilder::new();
@@ -3863,7 +3863,9 @@ fn populate_annotations(
                 .note(&record.id, stream, record.offset)
                 .tag(record.tag.as_str());
             for field in &record.derived_fields {
-                annotations.derived(&record.id, *field);
+                annotations
+                    .derived(&record.id, *field)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
         }
     }
@@ -4091,7 +4093,7 @@ fn populate_annotations(
             }
         }
     }
-    annotations.build()
+    Ok(annotations.build())
 }
 
 fn trailing_offset(id: &str) -> u64 {

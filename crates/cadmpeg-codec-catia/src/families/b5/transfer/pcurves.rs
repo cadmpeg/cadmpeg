@@ -676,7 +676,7 @@ pub(super) fn emit_pcurves(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> HashMap<(u32, usize), (PcurveId, [f64; 2])> {
+) -> Result<HashMap<(u32, usize), (PcurveId, [f64; 2])>, cadmpeg_core::CodecError> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
@@ -722,7 +722,9 @@ pub(super) fn emit_pcurves(
                 Exactness::ByteExact,
             );
             if *cylinder_reparameterized {
-                annotations.derived(&id, "geometry.control_points");
+                annotations
+                    .derived(&id, "geometry.control_points")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let parameter_range = range_bits.map(f64::from_bits);
             if graph
@@ -731,7 +733,9 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations.derived(&id, "parameter_range");
+                annotations
+                    .derived(&id, "parameter_range")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             for occurrence in occurrences {
                 pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
@@ -747,5 +751,5 @@ pub(super) fn emit_pcurves(
             });
         }
     }
-    pcurve_uses
+    Ok(pcurve_uses)
 }
