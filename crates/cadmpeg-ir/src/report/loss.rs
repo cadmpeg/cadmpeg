@@ -347,6 +347,31 @@ pub enum LossKind {
     Namespaced(NamespacedLossKind),
 }
 
+/// A loss namespace other than the reserved shared namespace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LossNamespace<'a>(&'a str);
+
+/// The reserved shared namespace cannot identify a codec-local loss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("LossKind.namespace cannot be shared for a namespaced loss")]
+pub struct LossNamespaceError;
+
+impl<'a> LossNamespace<'a> {
+    /// Checks a codec-local namespace.
+    pub const fn new(namespace: &'a str) -> Result<Self, LossNamespaceError> {
+        if matches!(namespace.as_bytes(), b"shared") {
+            Err(LossNamespaceError)
+        } else {
+            Ok(Self(namespace))
+        }
+    }
+
+    /// Returns the namespace text.
+    pub fn as_str(&self) -> &str {
+        self.0
+    }
+}
+
 /// Codec-local loss identity and classification.
 ///
 /// Fields are private so the reserved `shared` namespace can be constructed
@@ -451,7 +476,10 @@ impl<'de> Deserialize<'de> for LossKind {
             return Ok(Self::Shared(wire.kind));
         }
         Ok(Self::Namespaced(NamespacedLossKind {
-            namespace: wire.namespace,
+            namespace: LossNamespace::new(&wire.namespace)
+                .map_err(serde::de::Error::custom)?
+                .as_str()
+                .to_owned(),
             code: wire.code,
             taxonomy: wire.kind,
             strict_floor,
@@ -476,46 +504,13 @@ impl LossKind {
         Self::Shared(taxonomy)
     }
 
-    /// Codec-local code under `namespace`, classified by `taxonomy` for category.
-    ///
-    /// Strict floor defaults to the taxonomy floor; override with
-    /// [`LossKind::with_strict_floor`] so a local→taxonomy remap cannot change
-    /// rejection without an explicit local-floor change.
+    /// Constructs a codec-local loss with its taxonomy floor.
     pub fn namespaced(
-        namespace: impl Into<String>,
+        namespace: LossNamespace<'_>,
         code: impl Into<String>,
         taxonomy: LossTaxonomy,
     ) -> Self {
-        let namespace = namespace.into();
-        let code = code.into();
-        if namespace == SHARED_LOSS_NAMESPACE {
-            assert_eq!(
-                code,
-                taxonomy.as_str(),
-                "shared LossKind code must equal its taxonomy"
-            );
-            return Self::Shared(taxonomy);
-        }
-        Self::Namespaced(NamespacedLossKind {
-            namespace,
-            code,
-            taxonomy,
-            strict_floor: taxonomy.strict_floor(),
-        })
-    }
-
-    /// Pins the strict-mode severity floor independently of taxonomy.
-    #[must_use]
-    pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
-        match &mut self {
-            Self::Shared(taxonomy) => assert_eq!(
-                floor,
-                taxonomy.strict_floor(),
-                "shared LossKind strict floor is determined by its taxonomy"
-            ),
-            Self::Namespaced(kind) => kind.strict_floor = floor,
-        }
-        self
+        NamespacedLossKind::new(namespace, code, taxonomy).into()
     }
 
     /// Codec or `shared` namespace.
@@ -558,6 +553,35 @@ impl LossKind {
             Self::Shared(taxonomy) => taxonomy.strict_floor(),
             Self::Namespaced(kind) => kind.strict_floor,
         }
+    }
+}
+
+impl NamespacedLossKind {
+    /// Constructs a codec-local loss with its taxonomy floor.
+    pub fn new(
+        namespace: LossNamespace<'_>,
+        code: impl Into<String>,
+        taxonomy: LossTaxonomy,
+    ) -> Self {
+        Self {
+            namespace: namespace.as_str().to_owned(),
+            code: code.into(),
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        }
+    }
+
+    /// Pins the strict-mode severity floor independently of taxonomy.
+    #[must_use]
+    pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
+        self.strict_floor = floor;
+        self
+    }
+}
+
+impl From<NamespacedLossKind> for LossKind {
+    fn from(kind: NamespacedLossKind) -> Self {
+        Self::Namespaced(kind)
     }
 }
 

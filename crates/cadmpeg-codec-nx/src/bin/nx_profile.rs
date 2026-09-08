@@ -922,17 +922,17 @@ mod tests {
         use cadmpeg_ir::report::{LossKind, LossTaxonomy};
 
         let external = LossKind::namespaced(
-            NX_LOSS_NAMESPACE,
+            cadmpeg_ir::report::LossNamespace::new(NX_LOSS_NAMESPACE).unwrap(),
             EXTERNAL_ASSEMBLY_LOSS_CODE,
             LossTaxonomy::AssemblyComponentsExternal,
         );
         let wrong_namespace = LossKind::namespaced(
-            "other",
+            cadmpeg_ir::report::LossNamespace::new("other").unwrap(),
             EXTERNAL_ASSEMBLY_LOSS_CODE,
             LossTaxonomy::AssemblyComponentsExternal,
         );
         let wrong_code = LossKind::namespaced(
-            NX_LOSS_NAMESPACE,
+            cadmpeg_ir::report::LossNamespace::new(NX_LOSS_NAMESPACE).unwrap(),
             "assembly.other",
             LossTaxonomy::AssemblyComponentsExternal,
         );

@@ -13,8 +13,8 @@ pub use decode::{
 };
 pub use export::{CensusBasis, EntityCensus, ExportReport, FidelityResolution, WritePath};
 pub use loss::{
-    LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence,
-    SHARED_LOSS_NAMESPACE,
+    LossCategory, LossKind, LossNamespace, LossNamespaceError, LossNote, LossTaxonomy,
+    NamespacedLossKind, Severity, StrictConsequence, SHARED_LOSS_NAMESPACE,
 };
 
 #[cfg(test)]
