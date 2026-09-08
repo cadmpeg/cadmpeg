@@ -13,7 +13,8 @@ use clap::Args;
 use serde_json::{json, Value};
 
 use super::document::{CadirDocument, RecordRef};
-use super::item::{emit_values, ArenaTarget, Output};
+use super::item::{emit_values, ArenaTarget};
+use super::output::OutputArgs;
 
 /// Default cap on emitted walks. Truncation notes on stderr and exits 0.
 const DEFAULT_MAX_PATHS: usize = 10_000;
@@ -54,27 +55,9 @@ pub struct GraphArgs {
     /// a note on standard error and still exits 0.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PATHS)]
     pub max_paths: usize,
-    /// Comma-separated dotted field paths; project as TSV (no expressions).
-    /// Paths are relative to each result object (`start`, `path`, `record.id`).
-    /// Conflicts with `--json`.
-    #[arg(long, value_delimiter = ',', conflicts_with = "json")]
-    pub fields: Option<Vec<String>>,
-    /// Wrap matched walks in the JSON envelope.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl GraphArgs {
-    /// Resolves the flat clap output fields into one output mode.
-    pub(crate) fn mode(&self) -> Output<'_> {
-        if self.json {
-            Output::Json
-        } else if let Some(paths) = self.fields.as_deref() {
-            Output::Tsv(paths)
-        } else {
-            Output::Pretty
-        }
-    }
+    /// Record output selection.
+    #[command(flatten)]
+    pub(crate) output: OutputArgs,
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +72,8 @@ struct WalkOutcome {
 }
 
 /// Runs `query graph` against one CADIR document.
-pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
+pub fn run(args: &GraphArgs) -> Result<()> {
+    let output = args.output.mode();
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
     let (start_nodes, errors) = doc.select_records(&target, &args.ids, args.head)?;
