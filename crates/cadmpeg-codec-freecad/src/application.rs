@@ -126,8 +126,14 @@ fn wire_records<'a>(
                     .collect(),
                 inert_payload: owned.iter().any(|property| is_inert(property)),
                 order: object.order,
-                byte_start: object.data.as_ref().map_or(0, |data| data.start()),
-                byte_end: object.data.as_ref().map_or(0, |data| data.end()),
+                byte_start: object
+                    .data
+                    .as_ref()
+                    .map_or(0, crate::native::RetainedXml::start),
+                byte_end: object
+                    .data
+                    .as_ref()
+                    .map_or(0, crate::native::RetainedXml::end),
                 byte_len: data.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(data),
                 data,
