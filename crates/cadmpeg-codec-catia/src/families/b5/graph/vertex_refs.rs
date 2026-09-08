@@ -145,7 +145,7 @@ mod tests {
             logical,
             BTreeMap::from([(1, [B5VertexRef::Raw(0), B5VertexRef::Logical(0)])]),
         )
-        .unwrap();
+        .expect("vertex references select existing rows");
         let original = vertices.clone();
         assert!(vertices
             .insert_edge(1, [B5VertexRef::Logical(1); 2])

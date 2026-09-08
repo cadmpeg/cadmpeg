@@ -1122,7 +1122,7 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
                         B5VertexRef::Raw(component.vertices[(position + 1) % 3]),
                     ],
                 )
-                .unwrap();
+                .expect("edge references select existing rows");
         }
     }
     graph
