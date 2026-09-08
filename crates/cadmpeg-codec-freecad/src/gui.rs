@@ -48,7 +48,7 @@ struct AppearancePlan {
 struct BodyUpdate {
     id: cadmpeg_ir::ids::BodyId,
     visible: Assignment<Option<bool>>,
-    color: Assignment<Option<Color>>,
+    color: Option<Color>,
 }
 
 enum Assignment<T> {
@@ -63,9 +63,7 @@ impl AppearancePlan {
                 if let Assignment::Set(visible) = update.visible {
                     body.visible = visible;
                 }
-                if let Assignment::Set(color) = update.color {
-                    body.color = color;
-                }
+                body.color = update.color;
             }
         }
         ir.model
@@ -355,9 +353,7 @@ fn transfer_schema_one(
             plan.body_updates.push(BodyUpdate {
                 id: body_id.clone(),
                 visible: Assignment::Set(visibility),
-                color: Assignment::Set(
-                    packed_color.map(|packed| decode_color(packed, transparency)),
-                ),
+                color: packed_color.map(|packed| decode_color(packed, transparency)),
             });
         }
         if let Some(file) = values
@@ -3623,10 +3619,7 @@ fn transfer_shape_appearances(
                     plan.body_updates.push(BodyUpdate {
                         id: body.clone(),
                         visible: Assignment::Keep,
-                        color: Assignment::Set(Some(decode_color(
-                            material.diffuse,
-                            Some(material.transparency),
-                        ))),
+                        color: Some(decode_color(material.diffuse, Some(material.transparency))),
                     });
                     plan.bindings.push(AppearanceBinding {
                         id: format!(
