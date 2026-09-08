@@ -11,7 +11,9 @@ use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
 use crate::om::state_table::StateTableEntry;
 use crate::printable_string::PrintableString;
+pub(crate) mod finite_value;
 pub(crate) mod journal_group;
+use finite_value::FiniteValue;
 pub(crate) mod material_texture;
 pub(crate) mod object_uuid;
 mod reference_wire;
@@ -650,7 +652,7 @@ pub struct Expression {
     pub expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<f64>,
+    pub value: Option<FiniteValue>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Self-contained expression table selected by the nearest preceding table marker.
@@ -713,7 +715,7 @@ impl From<Expression> for ExpressionWire {
             name: value.name.into_spelling(),
             unit: value.unit,
             expression: value.expression,
-            value: value.value,
+            value: value.value.map(FiniteValue::get),
             source_entry: value.source_entry,
             source_table: value.source_table.as_str().to_owned(),
             source_offset: value.source_offset,
@@ -740,7 +742,7 @@ impl TryFrom<ExpressionWire> for Expression {
             name,
             unit: wire.unit,
             expression: wire.expression,
-            value: wire.value,
+            value: wire.value.map(FiniteValue::try_from).transpose()?,
             source_entry: wire.source_entry,
             source_table: cadmpeg_ir::NonEmptyString::new(wire.source_table)
                 .ok_or("source_table must not be empty")?,
@@ -3967,7 +3969,9 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     };
                     Some(declaration.id.clone())
                 });
-            let value = expression.constant_value();
+            let value = expression
+                .constant_value()
+                .and_then(|value| FiniteValue::try_from(value).ok());
             let Some(source_table) = cadmpeg_ir::NonEmptyString::new(format!(
                 "nx:om-entry-{entry_index}:expression-table#{table_offset}"
             )) else {
@@ -4020,7 +4024,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             continue;
         }
         if let Some(value) = expression.value {
-            values.insert(key, value);
+            values.insert(key, value.get());
         }
     }
 
@@ -4049,9 +4053,9 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                 }
                 values.get(&key).copied()
             });
-            if let Some(value) = evaluated {
+            if let Some(value) = evaluated.and_then(|value| FiniteValue::try_from(value).ok()) {
                 expression.value = Some(value);
-                values.insert(expression_key.clone(), value);
+                values.insert(expression_key.clone(), value.get());
                 changed = true;
             }
         }
@@ -4117,14 +4121,16 @@ mod tests {
 
     #[test]
     fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
-        let expression = |name: &str, formula: &str, value| super::Expression {
+        let expression = |name: &str, formula: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "part".into(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
@@ -4137,20 +4143,32 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[1].value, None);
-        assert_eq!(expressions[2].value, None);
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
     }
 
     #[test]
     fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
-        let expression = |name: &str, formula: &str, value| super::Expression {
+        let expression = |name: &str, formula: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "part".into(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
@@ -4164,20 +4182,32 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[2].value, Some(10.0));
-        assert_eq!(expressions[3].value, Some(13.0));
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(10.0)
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(13.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
-        let expression = |name: &str, formula: &str, value| super::Expression {
+        let expression = |name: &str, formula: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "part".into(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
@@ -4190,25 +4220,38 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[1].value, Some(4.0));
-        assert_eq!(expressions[2].value, Some(-4.0));
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(4.0)
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(-4.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_scopes_names_to_their_expression_table() {
-        let expression =
-            |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
+        let expression = |id: &str, table: &str, name: &str, formula: &str, value: Option<f64>| {
+            super::Expression {
                 id: id.into(),
                 owner: None,
                 declaration: None,
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
-                value,
+                value: value.map(|value| {
+                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                }),
                 source_entry: "part".into(),
                 source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset: 0,
-            };
+            }
+        };
         let mut expressions = vec![
             expression("a-p2", "table-a", "p2", "5", Some(5.0)),
             expression("a-p3", "table-a", "p3", "p2 * 2", None),
@@ -4218,25 +4261,38 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[1].value, Some(10.0));
-        assert_eq!(expressions[3].value, Some(14.0));
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(10.0)
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(14.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
-        let expression =
-            |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
+        let expression = |id: &str, table: &str, name: &str, formula: &str, value: Option<f64>| {
+            super::Expression {
                 id: id.into(),
                 owner: None,
                 declaration: None,
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
-                value,
+                value: value.map(|value| {
+                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                }),
                 source_entry: "part".into(),
                 source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset: 0,
-            };
+            }
+        };
         let mut expressions = vec![
             expression("a-p1-first", "table-a", "p1", "3", Some(3.0)),
             expression("a-p1-second", "table-a", "p1", "5", Some(5.0)),
@@ -4247,30 +4303,60 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[0].value, None);
-        assert_eq!(expressions[1].value, None);
-        assert_eq!(expressions[2].value, None);
-        assert_eq!(expressions[3].value, Some(7.0));
-        assert_eq!(expressions[4].value, Some(14.0));
+        assert_eq!(
+            expressions[0]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(7.0)
+        );
+        assert_eq!(
+            expressions[4]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(14.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
-        let expression =
-            |id: &str, name: &str, unit: super::ExpressionUnit, formula: &str, value| {
-                super::Expression {
-                    id: id.into(),
-                    owner: None,
-                    declaration: None,
-                    name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-                    unit,
-                    expression: formula.into(),
-                    value,
-                    source_entry: "part".into(),
-                    source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
-                    source_offset: 0,
-                }
-            };
+        let expression = |id: &str,
+                          name: &str,
+                          unit: super::ExpressionUnit,
+                          formula: &str,
+                          value: Option<f64>| {
+            super::Expression {
+                id: id.into(),
+                owner: None,
+                declaration: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+                unit,
+                expression: formula.into(),
+                value: value.map(|value| {
+                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                }),
+                source_entry: "part".into(),
+                source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+                source_offset: 0,
+            }
+        };
         let mut expressions = vec![
             expression(
                 "length-p1",
@@ -4304,10 +4390,30 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[0].value, Some(5.0));
-        assert_eq!(expressions[1].value, Some(45.0));
-        assert_eq!(expressions[2].value, Some(10.0));
-        assert_eq!(expressions[3].value, Some(15.0));
+        assert_eq!(
+            expressions[0]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(5.0)
+        );
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(45.0)
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(10.0)
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(15.0)
+        );
     }
 
     #[test]
@@ -4319,7 +4425,9 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "/Root/UG_PART/UG_PART".into(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: u64::from(key),
@@ -4380,20 +4488,23 @@ mod tests {
 
     #[test]
     fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
-        let expression = |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value| {
-            super::Expression {
-                id: format!("nx:test:expression#{key}"),
-                owner: None,
-                declaration: None,
-                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-                unit,
-                expression: text.into(),
-                value,
-                source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
-                source_offset: u64::from(key),
-            }
-        };
+        let expression =
+            |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value: Option<f64>| {
+                super::Expression {
+                    id: format!("nx:test:expression#{key}"),
+                    owner: None,
+                    declaration: None,
+                    name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+                    unit,
+                    expression: text.into(),
+                    value: value.map(|value| {
+                        crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                    }),
+                    source_entry: "/Root/UG_PART/UG_PART".into(),
+                    source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+                    source_offset: u64::from(key),
+                }
+            };
         let expressions = [
             expression(10, "p1", super::ExpressionUnit::Millimeter, "5", Some(5.0)),
             expression(11, "p1", super::ExpressionUnit::Degree, "45", Some(45.0)),
@@ -4720,7 +4831,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(5.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 20,
@@ -4753,7 +4864,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(5.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 10,
@@ -4802,7 +4913,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(5.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 20,
@@ -4887,7 +4998,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p3".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "12".to_string(),
-            value: Some(12.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(12.0).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".to_string(),
             source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 900,
@@ -5194,7 +5305,12 @@ mod tests {
         );
         assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
         assert_eq!(expressions[0].expression, "120");
-        assert_eq!(expressions[0].value, Some(120.0));
+        assert_eq!(
+            expressions[0]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(120.0)
+        );
         assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
         assert!(expressions[0]
             .source_table
