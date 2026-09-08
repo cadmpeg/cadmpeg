@@ -328,12 +328,28 @@ pub(super) struct CreoLoopArrayFrameRecord {
     pub(super) variant: Option<crate::loop_array::LayoutMarker>,
     pub(super) declared_count: u32,
     pub(super) class_id: u32,
-    pub(super) materialized_count: usize,
-    pub(super) overfull: bool,
+    #[serde(flatten, serialize_with = "serialize_loop_array_rows")]
+    pub(super) rows: crate::loop_array::LoopArrayFrameRows,
     pub(super) offset: usize,
     pub(super) prototype_end: usize,
     pub(super) end: usize,
     pub(super) source_section: String,
+}
+
+fn serialize_loop_array_rows<S: serde::Serializer>(
+    rows: &crate::loop_array::LoopArrayFrameRows,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::loop_array::LoopArrayFrameRows;
+    use serde::ser::SerializeMap;
+    let (count, overfull) = match rows {
+        LoopArrayFrameRows::Materialized(count) => (*count, false),
+        LoopArrayFrameRows::Overfull => (0, true),
+    };
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("materialized_count", &count)?;
+    map.serialize_entry("overfull", &overfull)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -1074,23 +1090,16 @@ pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArra
     scan.loop_arrays
         .frames
         .iter()
-        .map(|frame| {
-            let (materialized_count, overfull) = match frame.rows {
-                crate::loop_array::LoopArrayFrameRows::Materialized(count) => (count, false),
-                crate::loop_array::LoopArrayFrameRows::Overfull => (0, true),
-            };
-            CreoLoopArrayFrameRecord {
-                id: format!("creo:loop_array:frame#{}", frame.offset),
-                variant: frame.variant,
-                declared_count: frame.declared_count,
-                class_id: frame.class_id,
-                materialized_count,
-                overfull,
-                offset: frame.offset,
-                prototype_end: frame.prototype_end,
-                end: frame.end,
-                source_section: source_section(scan, frame.offset),
-            }
+        .map(|frame| CreoLoopArrayFrameRecord {
+            id: format!("creo:loop_array:frame#{}", frame.offset),
+            variant: frame.variant,
+            declared_count: frame.declared_count,
+            class_id: frame.class_id,
+            rows: frame.rows,
+            offset: frame.offset,
+            prototype_end: frame.prototype_end,
+            end: frame.end,
+            source_section: source_section(scan, frame.offset),
         })
         .collect()
 }
