@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole placement, cap outlines, and cylinder construction from envelopes.
 
+use crate::vecmath::normalize;
 use cadmpeg_ir::features::{Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-
-use super::super::sketch::normalized;
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
@@ -27,8 +26,8 @@ pub fn hole_extent_and_direction(
     let [(first_origin, first_normal), (second_origin, second_normal)] = planes.as_slice() else {
         return None;
     };
-    let first_normal = normalized(*first_normal)?;
-    let second_normal = normalized(*second_normal)?;
+    let first_normal = normalize(*first_normal)?;
+    let second_normal = normalize(*second_normal)?;
     let alignment = first_normal
         .iter()
         .zip(second_normal)
@@ -124,7 +123,7 @@ pub fn cap_square_center_radius(
 }
 
 pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
-    let axis = normalized(cap.normal)?;
+    let axis = normalize(cap.normal)?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
@@ -188,7 +187,7 @@ pub fn cylinder_from_complementary_outline_bounds(
     let SurfaceGeometry::Plane { origin, normal, .. } = plane else {
         return None;
     };
-    let axis = normalized([normal.x, normal.y, normal.z])?;
+    let axis = normalize([normal.x, normal.y, normal.z])?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)

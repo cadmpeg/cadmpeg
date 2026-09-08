@@ -9,8 +9,6 @@ use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchGeometry;
 
-pub(crate) use crate::vecmath::normalized;
-
 use super::geometry::{
     resolved_section_segment_geometry_with_missing_line, saved_section_arc_carrier,
     saved_section_arc_record, saved_section_missing_line_geometry,

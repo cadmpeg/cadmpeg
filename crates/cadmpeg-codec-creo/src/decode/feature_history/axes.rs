@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolution axes, section profile refs, and geometry-generator features.
 
-use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
+use super::super::sketch::{resolved_section_points, section_point_in_model};
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
+use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -40,7 +41,7 @@ pub(in super::super) fn resolved_revolution_axis(
             }
             let start = section_point_in_model(transform, *start);
             let end = section_point_in_model(transform, *end);
-            let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(RevolutionAxis {
                 origin: Point3::new(start[0], start[1], start[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
@@ -112,7 +113,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let [(first_origin, first_direction), rest @ ..] = axes.as_slice() else {
         return None;
     };
-    let mut direction = normalized([first_direction.x, first_direction.y, first_direction.z])?;
+    let mut direction = normalize([first_direction.x, first_direction.y, first_direction.z])?;
     if direction
         .iter()
         .find(|component| component.abs() > EPS_DIRECTION_COMPONENT)
@@ -137,7 +138,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         .map(f64::abs)
         .fold(1.0, f64::max);
     for (candidate_origin, candidate_direction) in rest {
-        let candidate_direction = normalized([
+        let candidate_direction = normalize([
             candidate_direction.x,
             candidate_direction.y,
             candidate_direction.z,
@@ -153,7 +154,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
     }
     for normal in plane_normals {
-        let normal = normalized([normal.x, normal.y, normal.z])?;
+        let normal = normalize([normal.x, normal.y, normal.z])?;
         ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
     }
     for center in sphere_centers {

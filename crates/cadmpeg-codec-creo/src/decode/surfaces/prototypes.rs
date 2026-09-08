@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface prototype parameters and first-instance prototype surfaces.
 
+use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
@@ -14,7 +15,6 @@ use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::sweep::interpolation_spline_surface;
 use crate::vecmath::{cross, dot};
 
@@ -86,7 +86,7 @@ pub(in super::super) fn prototype_local_frame(
     let middle: [f64; 3] = slots[3..6].try_into().ok()?;
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
     let first_norm = dot(first, first).sqrt();
-    let reference = normalized(first)?;
+    let reference = normalize(first)?;
     let torus = matches!(
         record.family,
         crate::surface::SurfacePrototypeFamily::Torus(_)
@@ -105,11 +105,11 @@ pub(in super::super) fn prototype_local_frame(
                             && dot(reference, candidate).abs()
                                 <= EPS_PROTOTYPE_AGREEMENT * candidate_norm
                     })
-                    .and_then(|()| normalized(candidate))
+                    .and_then(|()| normalize(candidate))
             });
     let second = second_candidates.next()?;
     second_candidates.next().is_none().then_some(())?;
-    let axis = normalized(cross(reference, second))?;
+    let axis = normalize(cross(reference, second))?;
     let origin: [f64; 3] = slots[9..12].try_into().ok()?;
     origin.into_iter().all(f64::is_finite).then_some(())?;
     Some((origin, axis, reference))

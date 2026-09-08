@@ -2,6 +2,7 @@
 //! Tests: numbered intersect.
 
 use crate::decode::sketch::axis::SectionAxis;
+use crate::vecmath::normalize;
 
 use super::parameter_slot;
 use crate::decode::build::report::has_transferred_geometry;
@@ -18,7 +19,7 @@ use crate::decode::holes::{
     cylinder_from_complementary_outline_bounds, extrusion_extent_and_direction, hole_placement,
 };
 use crate::decode::sketch::{
-    normalized, section_linear_distance_coordinate, solve_section_coordinate_equations,
+    section_linear_distance_coordinate, solve_section_coordinate_equations,
     solve_unsigned_dimension_coordinates, SectionCoordinateEquation,
 };
 use crate::decode::surfaces::fc05_model_frame;
@@ -425,8 +426,8 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
 
 #[test]
 fn normalization_rejects_overflowed_finite_vectors() {
-    assert_eq!(normalized([f64::MAX, f64::MAX, 0.0]), None);
-    assert_eq!(normalized([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
+    assert_eq!(normalize([f64::MAX, f64::MAX, 0.0]), None);
+    assert_eq!(normalize([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
 }
 
 #[test]

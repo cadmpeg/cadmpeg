@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Line/conic intersections and solved topological vertices.
 
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -10,7 +11,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::sketch::normalized;
 use super::super::surfaces::curve_contains_points;
 
 use super::super::uniqueness::exactly_one;
@@ -139,7 +139,7 @@ pub fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> 
         return Vec::new();
     };
     let origin = [origin.x, origin.y, origin.z];
-    let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
+    let Some(direction) = normalize([direction.x, direction.y, direction.z]) else {
         return Vec::new();
     };
     let relative = std::array::from_fn(|coordinate| origin[coordinate] - conic_origin[coordinate]);

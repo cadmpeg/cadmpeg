@@ -2,10 +2,11 @@
 //! B-spline basis, interpolation, extruded NURBS helpers, and tabulated-cylinder directrices.
 
 use super::super::holes::ExtrusionSpan;
-use super::super::sketch::{normalized, section_point_in_model, section_xyz_in_model};
+use super::super::sketch::{section_point_in_model, section_xyz_in_model};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::analytic::planes::valid_positive_nurbs_curve;
 use crate::vecmath::cross;
+use crate::vecmath::normalize;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -23,8 +24,8 @@ pub(in super::super) fn extruded_geometry_surface(
         SketchGeometry::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
-            let line = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            let normal = normalized(cross(line, transform.normal()))?;
+            let line = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            let normal = normalize(cross(line, transform.normal()))?;
             Some(SurfaceGeometry::Plane {
                 origin: Point3::new(start[0], start[1], start[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),

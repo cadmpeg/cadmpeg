@@ -3,7 +3,7 @@
 
 use super::super::feature_history::feature_allows_additive_linear_extrusion;
 use super::super::holes::circular_sweep_geometry;
-use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
@@ -14,6 +14,7 @@ use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -352,7 +353,7 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
     let origin = geometry.origin;
     let axis = geometry.axis;
     let radius = geometry.radius;
-    let axis = normalized([axis.x, axis.y, axis.z])?;
+    let axis = normalize([axis.x, axis.y, axis.z])?;
     (dot(axis, transform.normal()).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
         && radius.is_finite()
         && radius > 0.0)

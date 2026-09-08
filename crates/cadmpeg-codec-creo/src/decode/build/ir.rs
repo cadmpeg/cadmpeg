@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
+use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -23,7 +24,6 @@ use crate::container::ContainerScan;
 
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::surfaces::BrepTransferDiagnostics;
 use super::arenas::{emit_geometry_arenas, emit_reference_arenas};
 use super::coverage::collect_feature_coverage;
@@ -197,7 +197,7 @@ fn transfer_reference_lines(
             });
     for line in &scan.references.lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
-        let Some(direction) = normalized(direction) else {
+        let Some(direction) = normalize(direction) else {
             continue;
         };
         let (family, native_identity) = match &line.kind {
@@ -255,7 +255,7 @@ fn transfer_reference_circles(
             });
     for circle in &scan.references.circles {
         let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
-        let Some(reference) = normalized(radial) else {
+        let Some(reference) = normalize(radial) else {
             continue;
         };
         let native_identity = if circle_id_counts.get(&circle.entity_id) == Some(&1) {

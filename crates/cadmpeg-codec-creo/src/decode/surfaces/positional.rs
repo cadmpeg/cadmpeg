@@ -2,6 +2,7 @@
 //! Positional spheres, tori, extrusion planes, and tabulated cylinders.
 
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -18,7 +19,6 @@ use super::super::feature_history::{
     paired_five_coordinate_sphere_center, round_constant_radius, unique_surface_parameter_record,
 };
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
 use crate::decode::sketch_transfer::recipe::feature_schema_class;
@@ -274,9 +274,9 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         let directrix =
             std::array::from_fn(|axis| frame.directrix[1][axis] - frame.directrix[0][axis]);
         let (Some(_direction), Some(u_axis), Some(normal)) = (
-            normalized(frame.direction),
-            normalized(directrix),
-            normalized(cross(directrix, frame.direction)),
+            normalize(frame.direction),
+            normalize(directrix),
+            normalize(cross(directrix, frame.direction)),
         ) else {
             continue;
         };

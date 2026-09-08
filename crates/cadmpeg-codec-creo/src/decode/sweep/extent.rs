@@ -2,7 +2,6 @@
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
 use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
-use super::super::sketch::normalized;
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
 };
@@ -10,6 +9,7 @@ use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
@@ -37,7 +37,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let first = carriers.first()?;
     let first_start = *first.starts.first()?;
-    let direction = normalized(first.vector)?;
+    let direction = normalize(first.vector)?;
     let length = first.vector.into_iter().fold(0.0_f64, f64::hypot);
     (length.is_finite() && length > 0.0).then_some(())?;
     let coordinate_scale = carriers
@@ -88,7 +88,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
     let cap_stations = planes
         .iter()
         .map(|(origin, normal)| {
-            let normal = normalized(*normal)?;
+            let normal = normalize(*normal)?;
             let alignment = dot(normal, direction).abs();
             if alignment >= 1.0 - EPS_AXIS_ALIGNMENT {
                 Some(Some(dot(*origin, direction)))
@@ -260,8 +260,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                         )?;
                         let frame = parameters.positional_cylinder_frame()?;
                         let transferred_origin = [origin.x, origin.y, origin.z];
-                        let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
-                        let frame_axis = normalized(frame.axis())?;
+                        let transferred_axis = normalize([axis.x, axis.y, axis.z])?;
+                        let frame_axis = normalize(frame.axis())?;
                         let scale = transferred_origin
                             .into_iter()
                             .chain(frame.origin())
@@ -296,7 +296,7 @@ pub(in super::super) fn bounded_cylinder_span(
     frame: crate::surface::PositionalCylinderFrame,
     planes: &[([f64; 3], [f64; 3])],
 ) -> Option<ExtrusionCarrierSpan> {
-    let axis = normalized(frame.axis())?;
+    let axis = normalize(frame.axis())?;
     let vector = match frame.length() {
         Some(length) => axis.map(|component| component * length),
         None => {
@@ -310,7 +310,7 @@ pub(in super::super) fn bounded_cylinder_span(
             let start_station = dot(frame.origin(), axis);
             let mut terminal_offsets = Vec::new();
             for (origin, normal) in planes {
-                let normal = normalized(*normal)?;
+                let normal = normalize(*normal)?;
                 let alignment = dot(normal, axis).abs();
                 if alignment >= 1.0 - EPS_AXIS_ALIGNMENT {
                     let offset = dot(*origin, axis) - start_station;
@@ -643,7 +643,7 @@ pub(in super::super) fn rectilinear_extent_from_section_plane(
     station_tolerance: f64,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let (cap_direction, _) = rectilinear_family_extent(family, start_reversed, station_tolerance)?;
-    let section_normal = normalized(section_normal)?;
+    let section_normal = normalize(section_normal)?;
     (dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL).then_some(())?;
     let planes = family.stations.iter().map(|station| {
         (
@@ -819,7 +819,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     let [(vector, length)] = candidates.as_slice() else {
         return None;
     };
-    let direction = normalized(*vector)?;
+    let direction = normalize(*vector)?;
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
@@ -839,8 +839,8 @@ pub(in super::super) fn directed_blind_extrusion_span(
     length: f64,
 ) -> Option<ExtrusionSpan> {
     (length.is_finite() && length > 0.0).then_some(())?;
-    let profile_direction = normalized(profile_direction)?;
-    let extrusion_direction = normalized(extrusion_direction)?;
+    let profile_direction = normalize(profile_direction)?;
+    let extrusion_direction = normalize(extrusion_direction)?;
     let alignment = dot(profile_direction, extrusion_direction);
     (alignment.abs() >= 1.0 - EPS_COORDINATE_AGREEMENT).then_some(())?;
     Some(if alignment.is_sign_positive() {

@@ -3,6 +3,7 @@
 
 use super::placement::HoleCylinder;
 use crate::decode::axis::Axis;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -16,7 +17,7 @@ use crate::container::ContainerScan;
 use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
-use super::super::sketch::{approximately_equal, normalized};
+use super::super::sketch::approximately_equal;
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
 use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
@@ -500,7 +501,7 @@ pub fn counterbore_support_axis_placement(
     let origin = frame
         .origin
         .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
-    let axis = normalized(frame.normal?)?;
+    let axis = normalize(frame.normal?)?;
     Some(cadmpeg_ir::features::HolePlacement::Axis {
         origin: Point3::new(origin[0], origin[1], origin[2]),
         axis: Vector3::new(axis[0], axis[1], axis[2]),
@@ -853,9 +854,9 @@ pub fn counterbore_source_boundary_circle(
                     return None;
                 };
                 ((*candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
-                let axis = normalized([axis.x, axis.y, axis.z])?;
+                let axis = normalize([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
-                let normal = normalized(plane.normal)?;
+                let normal = normalize(plane.normal)?;
                 let alignment = axis
                     .iter()
                     .zip(normal)
