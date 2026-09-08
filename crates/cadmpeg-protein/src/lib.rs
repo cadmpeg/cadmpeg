@@ -83,13 +83,10 @@ fn read_entry_bounded(
 enum ValueCarrier {
     Boolean,
     Integer,
-    Choice,
     Float,
     UnitFloat,
     Distance,
     String,
-    Uuid,
-    Url,
     Color,
 }
 
@@ -359,14 +356,11 @@ fn schema_property(node: roxmltree::Node<'_, '_>) -> Option<Property> {
             });
         }
         "Boolean" => ValueCarrier::Boolean,
-        "Integer" => ValueCarrier::Integer,
-        "Choice" => ValueCarrier::Choice,
+        "Integer" | "Choice" => ValueCarrier::Integer,
         "Float" if node.attribute("unit").is_some() => ValueCarrier::UnitFloat,
         "Float" => ValueCarrier::Float,
         "Distance" => ValueCarrier::Distance,
-        "String" => ValueCarrier::String,
-        "Uuid" => ValueCarrier::Uuid,
-        "URL" => ValueCarrier::Url,
+        "String" | "Uuid" | "URL" => ValueCarrier::String,
         "Color" => ValueCarrier::Color,
         _ => return None,
     };
@@ -620,7 +614,7 @@ fn read_value(
         ValueCarrier::Boolean => {
             PropertyValue::Boolean(take::<1>(bytes, at).ok_or_else(malformed)?[0] != 0)
         }
-        ValueCarrier::Integer | ValueCarrier::Choice => {
+        ValueCarrier::Integer => {
             PropertyValue::Integer(read_u32_le(bytes, at).ok_or_else(malformed)?)
         }
         ValueCarrier::Float => PropertyValue::Float(finite_value(
@@ -638,7 +632,7 @@ fn read_value(
             unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
             value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
-        ValueCarrier::String | ValueCarrier::Uuid | ValueCarrier::Url => {
+        ValueCarrier::String => {
             PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
         }
         ValueCarrier::Color => {
