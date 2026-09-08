@@ -1243,7 +1243,8 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
         SketchEntityId, SketchLocus,
     };
 
-    let entity = |name: &str| SketchEntityId::mint(format!("generated:test:entity#{name}")).unwrap();
+    let entity =
+        |name: &str| SketchEntityId::mint(format!("generated:test:entity#{name}")).unwrap();
     let parameter =
         ParameterId::mint("synthetic:test:id#generated:distance").expect("identity grammar");
     let horizontal = |first: &str, second: &str| Definition::HorizontalDistance {

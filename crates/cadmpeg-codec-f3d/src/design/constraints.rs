@@ -1320,7 +1320,10 @@ mod tests {
             [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
         );
 
-        let full_middle = circle("generated:test:circle#full-middle", std::f64::consts::TAU / 3.0);
+        let full_middle = circle(
+            "generated:test:circle#full-middle",
+            std::f64::consts::TAU / 3.0,
+        );
         let full_last = circle(
             "generated:test:circle#full-last",
             2.0 * std::f64::consts::TAU / 3.0,
@@ -1368,7 +1371,10 @@ mod tests {
         };
         let seed = circle("generated:test:circle#seed", 0.0);
         let middle = circle("generated:test:circle#middle", std::f64::consts::TAU / 3.0);
-        let last = circle("generated:test:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
+        let last = circle(
+            "generated:test:circle#last",
+            2.0 * std::f64::consts::TAU / 3.0,
+        );
         // Ordinals are all zero; geometry must still partition the members.
         let relation = SketchRelation {
             id: "f3d:native:sketch-relation#circular".into(),
