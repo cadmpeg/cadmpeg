@@ -273,7 +273,20 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         selection_byte_offset: 0,
         selection_next_record_index: 2,
         selection_next_byte_offset: 0,
-        chain_records: Vec::new(),
+        chain_records: [
+            crate::records::feature::DesignSurfaceTrimChainRecord {
+                record_index: 2,
+                byte_offset: 0,
+                class_tag: "288".to_owned().try_into().unwrap(),
+                frame_length: 11,
+            },
+            crate::records::feature::DesignSurfaceTrimChainRecord {
+                record_index: 6,
+                byte_offset: 11,
+                class_tag: "271".to_owned().try_into().unwrap(),
+                frame_length: 11,
+            },
+        ],
         cell_table_record_index: 3,
         cell_table_byte_offset: 0,
         cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned()).unwrap(),
