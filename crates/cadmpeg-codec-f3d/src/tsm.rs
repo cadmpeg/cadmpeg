@@ -224,7 +224,7 @@ struct ParsedCage {
 struct DerivedGripConnectivity {
     vertex: usize,
     spoke_lengths: Vec<usize>,
-    grip_indices: Vec<i64>,
+    grip_indices: Vec<Option<usize>>,
 }
 
 #[derive(Clone, Copy)]
@@ -533,76 +533,38 @@ fn build_fan(
     Ok(fan)
 }
 
-struct GripDecodeContext<'a> {
-    name: &'a str,
-    vertex: usize,
-    grip_vertices: &'a [GripVertexMarker],
-    grip_points: &'a [Option<GripPoint>],
-    grip_owners: &'a mut [Option<usize>],
-}
-
-impl GripDecodeContext<'_> {
-    fn block(
-        &mut self,
-        indices: &[i64],
-        cursor: &mut usize,
-        count: usize,
-    ) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
-        let end = cursor
-            .checked_add(count)
-            .ok_or_else(|| malformed(self.name, "derived-grip block arity overflows"))?;
-        let values = indices.get(*cursor..end).ok_or_else(|| {
-            malformed(
-                self.name,
-                "derived-grip run is shorter than its declared arity",
-            )
-        })?;
-        *cursor = end;
-        values
-            .iter()
-            .map(|index| match *index {
-                -1 => Ok(None),
-                index if index >= 0 => {
-                    let index = usize::try_from(index)
-                        .map_err(|_| malformed(self.name, "derived-grip index overflows"))?;
-                    if !matches!(
-                        self.grip_vertices.get(index),
-                        Some(GripVertexMarker::Secondary(Some(owner))) if *owner == self.vertex
-                    ) {
-                        return Err(malformed(
-                            self.name,
-                            "derived-grip entry is not a secondary grip of its vertex",
-                        ));
-                    }
-                    let point =
-                        self.grip_points
-                            .get(index)
-                            .copied()
-                            .flatten()
-                            .ok_or_else(|| {
-                                malformed(self.name, "derived-grip entry names a deleted grip")
-                            })?;
-                    let owner_slot = self.grip_owners.get_mut(index).ok_or_else(|| {
-                        malformed(self.name, "derived-grip entry is out of range")
+fn grip_block(
+    name: &str,
+    grip_points: &[Option<GripPoint>],
+    indices: &[Option<usize>],
+    cursor: &mut usize,
+    count: usize,
+) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
+    let end = cursor
+        .checked_add(count)
+        .ok_or_else(|| malformed(name, "derived-grip block arity overflows"))?;
+    let values = indices
+        .get(*cursor..end)
+        .ok_or_else(|| malformed(name, "derived-grip run is shorter than its declared arity"))?;
+    *cursor = end;
+    values
+        .iter()
+        .map(|index| {
+            index
+                .map(|index| {
+                    let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
+                        malformed(name, "derived-grip entry names a deleted grip")
                     })?;
-                    if owner_slot.replace(self.vertex).is_some() {
-                        return Err(malformed(
-                            self.name,
-                            "secondary grip is named more than once",
-                        ));
-                    }
-                    Ok(Some(SubdSecondaryGrip {
-                        source_index: u32::try_from(index).map_err(|_| {
-                            malformed(self.name, "secondary grip index overflows IR")
-                        })?,
+                    Ok(SubdSecondaryGrip {
+                        source_index: u32::try_from(index)
+                            .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
                         point: point.point,
                         weight: point.weight,
-                    }))
-                }
-                _ => Err(malformed(self.name, "derived-grip index is below -1")),
-            })
-            .collect()
-    }
+                    })
+                })
+                .transpose()
+        })
+        .collect()
 }
 
 struct SecondaryLayoutContext<'a> {
@@ -644,8 +606,6 @@ fn build_secondary_layouts(
     )?;
     let mut secondary_counts =
         ctx.alloc_filled(vertex_live.len(), 0usize, "f3d subd secondary-grip counts")?;
-    let mut grip_owners =
-        ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for marker in grip_vertices {
         if let GripVertexMarker::Secondary(Some(vertex)) = marker {
             *secondary_counts
@@ -717,17 +677,20 @@ fn build_secondary_layouts(
                 ),
                 None => None,
             };
-            let mut grip_context = GripDecodeContext {
+            let spokes = grip_block(
                 name,
-                vertex,
-                grip_vertices,
                 grip_points,
-                grip_owners: &mut grip_owners,
-            };
-            let spokes =
-                grip_context.block(&connectivity.grip_indices, &mut cursor, spoke_count)?;
-            let sectors =
-                grip_context.block(&connectivity.grip_indices, &mut cursor, sector_count)?;
+                &connectivity.grip_indices,
+                &mut cursor,
+                spoke_count,
+            )?;
+            let sectors = grip_block(
+                name,
+                grip_points,
+                &connectivity.grip_indices,
+                &mut cursor,
+                sector_count,
+            )?;
             wedges.push(SubdGripWedge::Slot {
                 edge,
                 sector_face,
@@ -749,16 +712,6 @@ fn build_secondary_layouts(
                 name,
                 "secondary-grip ownership does not have exactly one derived-grip record",
             ));
-        }
-    }
-    for (index, marker) in grip_vertices.iter().enumerate() {
-        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
-            if grip_owners[index] != Some(*vertex) {
-                return Err(malformed(
-                    name,
-                    "secondary grip is not named exactly once by derived connectivity",
-                ));
-            }
         }
     }
     Ok(layouts)
@@ -938,7 +891,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         },
                     )?;
                     let grip_indices = (0..grip_count)
-                        .map(|_| parse_i64(name, fields.next(), "derived-grip index"))
+                        .map(
+                            |_| match parse_i64(name, fields.next(), "derived-grip index")? {
+                                -1 => Ok(None),
+                                index => usize::try_from(index).map(Some).map_err(|_| {
+                                    malformed(name, "derived-grip index is negative or overflows")
+                                }),
+                            },
+                        )
                         .collect::<Result<Vec<_>, _>>()?;
                     require_end(name, fields, "derived-grip connectivity")?;
                     derived_grips.push(DerivedGripConnectivity {
@@ -1249,22 +1209,40 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Ok(SymmetryBlock { plane, kind })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut grip_owners =
+        ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for connectivity in &derived_grips {
         if !vertex_live
             .get(connectivity.vertex)
             .copied()
             .unwrap_or(false)
-            || connectivity.grip_indices.iter().any(|index| match *index {
-                -1 => false,
-                index if index >= 0 => !matches!(
-                    grip_vertices.get(index as usize),
-                    Some(GripVertexMarker::Secondary(Some(vertex)))
-                        if *vertex == connectivity.vertex
-                ),
-                _ => true,
-            })
         {
             return Err(malformed(name, "derived-grip connectivity is out of range"));
+        }
+        for &index in connectivity.grip_indices.iter().flatten() {
+            if !matches!(grip_vertices.get(index), Some(GripVertexMarker::Secondary(Some(vertex))) if *vertex == connectivity.vertex)
+            {
+                return Err(malformed(
+                    name,
+                    "derived-grip entry is not a secondary grip of its vertex",
+                ));
+            }
+            let owner_slot = grip_owners
+                .get_mut(index)
+                .ok_or_else(|| malformed(name, "derived-grip entry is out of range"))?;
+            if owner_slot.replace(connectivity.vertex).is_some() {
+                return Err(malformed(name, "secondary grip is named more than once"));
+            }
+        }
+    }
+    for (index, marker) in grip_vertices.iter().enumerate() {
+        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
+            if grip_owners[index] != Some(*vertex) {
+                return Err(malformed(
+                    name,
+                    "secondary grip is not named exactly once by derived connectivity",
+                ));
+            }
         }
     }
     for (marker, point) in grip_vertices.iter().zip(&grip_points) {
