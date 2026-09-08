@@ -1964,6 +1964,7 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
     let meshes = ir
         .model
         .tessellations
@@ -2046,7 +2047,6 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
         let append: [AuxiliaryWriter; 3] = [
             |out, _| descriptor(out, 4, 8, 2, 0, &[]),
             |out, list_c| {
