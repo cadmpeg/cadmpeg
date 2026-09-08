@@ -253,7 +253,7 @@ pub(super) fn push_brep_transfer_note(
             diagnostics.vertex_solve.pcurve_ambiguous_endpoint_vertices;
         if pcurve.carrier_validated_paths > 0
             || pcurve.carrier_rejected_paths > 0
-            || pcurve.carrier_unknown_paths > 0
+            || pcurve.carrier_unknown_paths() > 0
             || pcurve.carrier_rejected_records > 0
             || fixed_endpoint_conflicts > 0
             || ambiguous_endpoint_vertices > 0
@@ -265,7 +265,7 @@ pub(super) fn push_brep_transfer_note(
                  endpoint vertices={}.",
                 pcurve.carrier_validated_paths,
                 pcurve.carrier_rejected_paths,
-                pcurve.carrier_unknown_paths,
+                pcurve.carrier_unknown_paths(),
                 pcurve.carrier_unknown_missing_surface_paths,
                 pcurve.carrier_unknown_missing_carrier_paths,
                 pcurve.carrier_unknown_unsupported_pair_paths,
@@ -285,7 +285,7 @@ pub(super) fn push_brep_transfer_note(
             format!(
                 " Two-chart mapping: {} record(s), {} mapped ({} complete, {} partial), {} unmapped; {} missing surface path(s), {} unevaluable path(s), {} surface disagreement(s), {} empty sample record(s).",
                 pcurve.two_chart_records,
-                pcurve.two_chart_mapped_records,
+                pcurve.two_chart_mapped_records(),
                 pcurve.two_chart_complete_records,
                 pcurve.two_chart_partial_records,
                 pcurve.two_chart_unmapped_records,
@@ -370,7 +370,7 @@ pub(super) fn push_brep_transfer_note(
             .vertex_solve
             .carrier_ambiguous_candidate_vertices,
         diagnostics.vertex_solve.pcurve.records,
-        diagnostics.vertex_solve.pcurve.paths,
+        diagnostics.vertex_solve.pcurve.paths(),
         diagnostics.vertex_solve.pcurve.missing_surfaces,
         diagnostics.vertex_solve.pcurve.unevaluable_paths,
         diagnostics.vertex_solve.pcurve.mapped_paths,

@@ -239,7 +239,6 @@ pub struct PcurveMismatchDetail {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct PcurveEndpointDiagnostics {
     pub records: usize,
-    pub paths: usize,
     pub inactive_paths: usize,
     pub inactive_records: usize,
     pub partial_records: usize,
@@ -255,7 +254,6 @@ pub struct PcurveEndpointDiagnostics {
     pub evidence: usize,
     pub complete_evidence: usize,
     pub two_chart_records: usize,
-    pub two_chart_mapped_records: usize,
     pub two_chart_complete_records: usize,
     pub two_chart_partial_records: usize,
     pub two_chart_missing_surface_paths: usize,
@@ -265,7 +263,6 @@ pub struct PcurveEndpointDiagnostics {
     pub two_chart_unmapped_records: usize,
     pub carrier_validated_paths: usize,
     pub carrier_rejected_paths: usize,
-    pub carrier_unknown_paths: usize,
     pub carrier_unknown_missing_surface_paths: usize,
     pub carrier_unknown_missing_carrier_paths: usize,
     pub carrier_unknown_unsupported_pair_paths: usize,
@@ -273,6 +270,27 @@ pub struct PcurveEndpointDiagnostics {
     pub carrier_unknown_unsupported_path_paths: usize,
     pub carrier_rejected_records: usize,
     pub mismatch_samples: Vec<PcurveMismatchDetail>,
+}
+
+impl PcurveEndpointDiagnostics {
+    /// Returns the total number of path outcomes.
+    pub fn paths(&self) -> usize {
+        self.mapped_paths + self.missing_surfaces + self.unevaluable_paths
+    }
+
+    /// Returns the number of records with at least one mapped chart.
+    pub fn two_chart_mapped_records(&self) -> usize {
+        self.two_chart_complete_records + self.two_chart_partial_records
+    }
+
+    /// Returns the number of paths without a carrier decision.
+    pub fn carrier_unknown_paths(&self) -> usize {
+        self.carrier_unknown_missing_surface_paths
+            + self.carrier_unknown_missing_carrier_paths
+            + self.carrier_unknown_unsupported_pair_paths
+            + self.carrier_unknown_parallel_plane_paths
+            + self.carrier_unknown_unsupported_path_paths
+    }
 }
 
 #[derive(Debug, Default)]
@@ -791,8 +809,6 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mut carrier_proof_available = false;
         for (face_index, (face_id, endpoints)) in paths {
             let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
-            diagnostics.paths +=
-                mapped.mapped.len() + mapped.missing_surfaces + mapped.unevaluable_paths;
             diagnostics.missing_surfaces += mapped.missing_surfaces;
             diagnostics.unevaluable_paths += mapped.unevaluable_paths;
             diagnostics.mapped_paths += mapped.mapped.len();
@@ -812,26 +828,23 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                     carrier_proof_available = true;
                     diagnostics.carrier_rejected_paths += 1;
                 }
-                PcurveCarrierStatus::Unknown(reason) => {
-                    diagnostics.carrier_unknown_paths += 1;
-                    match reason {
-                        PcurveCarrierUnknownReason::MissingSurface => {
-                            diagnostics.carrier_unknown_missing_surface_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::MissingCarrier => {
-                            diagnostics.carrier_unknown_missing_carrier_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::UnsupportedPair => {
-                            diagnostics.carrier_unknown_unsupported_pair_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::ParallelPlanePair => {
-                            diagnostics.carrier_unknown_parallel_plane_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::UnsupportedPath => {
-                            diagnostics.carrier_unknown_unsupported_path_paths += 1;
-                        }
+                PcurveCarrierStatus::Unknown(reason) => match reason {
+                    PcurveCarrierUnknownReason::MissingSurface => {
+                        diagnostics.carrier_unknown_missing_surface_paths += 1;
                     }
-                }
+                    PcurveCarrierUnknownReason::MissingCarrier => {
+                        diagnostics.carrier_unknown_missing_carrier_paths += 1;
+                    }
+                    PcurveCarrierUnknownReason::UnsupportedPair => {
+                        diagnostics.carrier_unknown_unsupported_pair_paths += 1;
+                    }
+                    PcurveCarrierUnknownReason::ParallelPlanePair => {
+                        diagnostics.carrier_unknown_parallel_plane_paths += 1;
+                    }
+                    PcurveCarrierUnknownReason::UnsupportedPath => {
+                        diagnostics.carrier_unknown_unsupported_path_paths += 1;
+                    }
+                },
             }
         }
         let selected_paths = if carrier_proof_available {
@@ -933,7 +946,6 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             process_paths(pcurve.curve_id, faces, Vec::new(), true, false);
             continue;
         };
-        diagnostics.two_chart_mapped_records += 1;
         if endpoint_sets.complete() {
             diagnostics.two_chart_complete_records += 1;
         } else {
@@ -2127,7 +2139,7 @@ mod tests {
             Some(([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]], true))
         );
         assert_eq!(diagnostics.records, 1);
-        assert_eq!(diagnostics.paths, 2);
+        assert_eq!(diagnostics.paths(), 2);
         assert_eq!(diagnostics.inactive_paths, 1);
         assert_eq!(diagnostics.inactive_records, 0);
         assert_eq!(diagnostics.partial_records, 1);
@@ -2221,7 +2233,7 @@ mod tests {
             Some(([[-14.5, 0.0, -0.75], [-12.5, 0.0, -0.75]], false,))
         );
         assert_eq!(diagnostics.records, 1);
-        assert_eq!(diagnostics.paths, 1);
+        assert_eq!(diagnostics.paths(), 1);
         assert_eq!(diagnostics.mapped_paths, 1);
         assert_eq!(diagnostics.accepted_records, 1);
         assert_eq!(diagnostics.evidence, 1);

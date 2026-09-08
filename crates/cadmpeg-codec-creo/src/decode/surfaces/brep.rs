@@ -349,7 +349,7 @@ impl BrepTransferDiagnostics {
         );
         coverage.record(
             crate::coverage::BREP_PCURVE_PATH_COUNT,
-            self.vertex_solve.pcurve.paths,
+            self.vertex_solve.pcurve.paths(),
         );
         let pcurve = &self.vertex_solve.pcurve;
         if pcurve.inactive_paths > 0
@@ -388,7 +388,7 @@ impl BrepTransferDiagnostics {
         );
         if pcurve.carrier_validated_paths > 0
             || pcurve.carrier_rejected_paths > 0
-            || pcurve.carrier_unknown_paths > 0
+            || pcurve.carrier_unknown_paths() > 0
             || pcurve.carrier_rejected_records > 0
         {
             coverage.record(
@@ -401,7 +401,7 @@ impl BrepTransferDiagnostics {
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PATH_COUNT,
-                pcurve.carrier_unknown_paths,
+                pcurve.carrier_unknown_paths(),
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_SURFACE_PATH_COUNT,
@@ -451,7 +451,7 @@ impl BrepTransferDiagnostics {
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_TWO_CHART_MAPPED_RECORD_COUNT,
-                self.vertex_solve.pcurve.two_chart_mapped_records,
+                self.vertex_solve.pcurve.two_chart_mapped_records(),
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_TWO_CHART_COMPLETE_RECORD_COUNT,
