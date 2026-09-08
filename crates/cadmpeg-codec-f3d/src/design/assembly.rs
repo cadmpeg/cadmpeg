@@ -639,20 +639,20 @@ mod tests {
     fn affine_projection_rejects_nonfinite_cadir_coefficients() {
         let mut transform = cadmpeg_ir::transform::Transform::identity().rows();
         transform[0][0] = f64::NAN;
-        assert!(
-            std::panic::catch_unwind(|| crate::design::components::neutral_transform(transform))
-                .is_ok()
-        );
+        assert!(matches!(
+            crate::design::components::neutral_transform(transform),
+            Err(cadmpeg_core::CodecError::NotImplemented(_))
+        ));
     }
 
     #[test]
     fn affine_projection_rejects_translation_overflow() {
         let mut transform = cadmpeg_ir::transform::Transform::identity().rows();
         transform[0][3] = f64::MAX;
-        assert!(
-            std::panic::catch_unwind(|| crate::design::components::neutral_transform(transform))
-                .is_ok()
-        );
+        assert!(matches!(
+            crate::design::components::neutral_transform(transform),
+            Err(cadmpeg_core::CodecError::NotImplemented(_))
+        ));
     }
 
     #[test]
