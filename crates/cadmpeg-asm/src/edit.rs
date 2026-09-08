@@ -9,9 +9,15 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
 
 use crate::asm_header;
+use crate::nurbs::proc_curve::HelixDefinition;
 use crate::nurbs::reader::KnotLayout;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{self, Record};
+use cadmpeg_ir::geometry::{
+    CompoundComponent, IntcurveSupportContext, ProjectionTail, SilhouetteKind, SpringLayout,
+    SurfaceCurveFamily,
+};
+use cadmpeg_ir::ids::CurveId;
 
 /// Framing and fixed-width write context for one ASM record stream.
 ///
@@ -541,47 +547,136 @@ impl AsmEditSet {
         definition: &ProceduralCurveDefinition,
     ) -> Result<(), CodecError> {
         match definition {
-            ProceduralCurveDefinition::Helix { .. } => {
-                patch_helix_definition(bytes, self.ref_width, record, definition)
+            ProceduralCurveDefinition::Helix {
+                angle_range,
+                center,
+                major,
+                minor,
+                pitch,
+                apex_factor,
+                axis,
+                ..
+            } => patch_helix_definition(
+                bytes,
+                self.ref_width,
+                record,
+                &HelixDefinition {
+                    angle_range: *angle_range,
+                    center: *center,
+                    major: *major,
+                    minor: *minor,
+                    pitch: *pitch,
+                    apex_factor: *apex_factor,
+                    axis: *axis,
+                },
+            ),
+            ProceduralCurveDefinition::VectorOffset {
+                parameter_range,
+                offset,
+                ..
+            } => patch_vector_offset_definition(
+                bytes,
+                self.ref_width,
+                record,
+                *parameter_range,
+                *offset,
+            ),
+            ProceduralCurveDefinition::Subset {
+                parameter_range, ..
+            } => patch_subset_definition(bytes, self.ref_width, record, *parameter_range),
+            ProceduralCurveDefinition::Compound {
+                parameters,
+                components,
+                ..
+            } => patch_compound_definition(bytes, self.ref_width, record, parameters, components),
+            ProceduralCurveDefinition::TwoSidedOffset {
+                context,
+                discontinuity_flag,
+                offsets,
+                ..
+            } => patch_two_sided_offset_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *discontinuity_flag,
+                *offsets,
+            ),
+            ProceduralCurveDefinition::SurfaceOffset {
+                context,
+                discontinuity_flag,
+                base_u_range,
+                base_v_range,
+                base_range,
+                distance,
+                shift,
+                scale,
+                ..
+            } => patch_surface_offset_definition(
+                bytes,
+                self.ref_width,
+                record,
+                SurfaceOffsetFields {
+                    context,
+                    discontinuity_flag,
+                    base_u_range,
+                    base_v_range,
+                    base_range,
+                    distance,
+                    shift,
+                    scale,
+                },
+            ),
+            ProceduralCurveDefinition::Spring {
+                layout, direction, ..
+            } => patch_spring_definition(bytes, self.ref_width, record, layout, *direction),
+            ProceduralCurveDefinition::Projection {
+                context,
+                discontinuity_flag,
+                tail,
+                ..
+            } => patch_projection_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *discontinuity_flag,
+                tail,
+            ),
+            ProceduralCurveDefinition::Intersection {
+                context,
+                discontinuity_flag,
+                ..
+            } => patch_intersection_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *discontinuity_flag,
+            ),
+            ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                context, selector, ..
+            } => patch_three_surface_intersection_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *selector,
+            ),
+            ProceduralCurveDefinition::SurfaceCurve { family, .. } => {
+                patch_surface_curve_definition(bytes, self.ref_width, record, family)
             }
-            ProceduralCurveDefinition::VectorOffset { .. } => {
-                patch_vector_offset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Subset { .. } => {
-                patch_subset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Compound { .. } => {
-                patch_compound_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::TwoSidedOffset { .. } => {
-                patch_two_sided_offset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::SurfaceOffset { .. } => {
-                patch_surface_offset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Spring { .. } => {
-                patch_spring_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Projection { .. } => {
-                patch_projection_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Intersection { .. } => {
-                patch_intersection_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::ThreeSurfaceIntersection { .. } => {
-                patch_three_surface_intersection_definition(
-                    bytes,
-                    self.ref_width,
-                    record,
-                    definition,
-                )
-            }
-            ProceduralCurveDefinition::SurfaceCurve { .. } => {
-                patch_surface_curve_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Silhouette { .. } => {
-                patch_silhouette_definition(bytes, self.ref_width, record, definition)
-            }
+            ProceduralCurveDefinition::Silhouette {
+                silhouette,
+                light_direction,
+                ..
+            } => patch_silhouette_definition(
+                bytes,
+                self.ref_width,
+                record,
+                silhouette,
+                *light_direction,
+            ),
             _ => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
             )),
@@ -851,9 +946,9 @@ fn patch_helix_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    definition: &HelixDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+    let HelixDefinition {
         angle_range,
         center,
         major,
@@ -861,12 +956,8 @@ fn patch_helix_definition(
         pitch,
         apex_factor,
         axis,
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "helix patch received a non-helix definition".into(),
-        ));
-    };
+    } = definition;
+
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -914,18 +1005,9 @@ fn patch_vector_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    parameter_range: [f64; 2],
+    offset: Vector3,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-        parameter_range,
-        offset,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "vector-offset patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "vector-offset")?;
     let layout = crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -937,7 +1019,7 @@ fn patch_vector_offset_definition(
     apply_f64_patches(
         bytes,
         record.offset,
-        layout.parameter_range.into_iter().zip(*parameter_range),
+        layout.parameter_range.into_iter().zip(parameter_range),
     );
     apply_vector_payload(
         bytes,
@@ -955,16 +1037,8 @@ fn patch_subset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    parameter_range: [f64; 2],
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-        parameter_range, ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "subset patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "subset")?;
     let layout = crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -976,7 +1050,7 @@ fn patch_subset_definition(
     apply_f64_patches(
         bytes,
         record.offset,
-        layout.parameter_range.into_iter().zip(*parameter_range),
+        layout.parameter_range.into_iter().zip(parameter_range),
     );
     Ok(())
 }
@@ -985,18 +1059,9 @@ fn patch_compound_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    parameters: &[f64],
+    components: &[CompoundComponent<CurveId>],
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "compound patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "compound")?;
     let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -1033,18 +1098,10 @@ fn patch_two_sided_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    discontinuity_flag: bool,
+    offsets: [f64; 2],
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-        context,
-        discontinuity_flag,
-        offsets,
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "two-sided offset patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "two-sided offset")?;
     let layout =
         crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, stream_width)
@@ -1068,20 +1125,31 @@ fn patch_two_sided_offset_definition(
             AsmEditSet::patch_f64_payload(bytes, record.offset + *at, *value)?;
         }
     }
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     for (at, value) in layout.offsets.into_iter().zip(offsets) {
-        AsmEditSet::patch_f64_payload(bytes, record.offset + at, *value / LEN_TO_MM)?;
+        AsmEditSet::patch_f64_payload(bytes, record.offset + at, value / LEN_TO_MM)?;
     }
     Ok(())
+}
+
+struct SurfaceOffsetFields<'a> {
+    context: &'a IntcurveSupportContext,
+    discontinuity_flag: &'a bool,
+    base_u_range: &'a [f64; 2],
+    base_v_range: &'a [f64; 2],
+    base_range: &'a [f64; 2],
+    distance: &'a f64,
+    shift: &'a f64,
+    scale: &'a f64,
 }
 
 fn patch_surface_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    fields: SurfaceOffsetFields<'_>,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+    let SurfaceOffsetFields {
         context,
         discontinuity_flag,
         base_u_range,
@@ -1090,13 +1158,8 @@ fn patch_surface_offset_definition(
         distance,
         shift,
         scale,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "surface-offset patch received another definition".into(),
-        ));
-    };
+    } = fields;
+
     if !distance.is_finite() || !shift.is_finite() || !scale.is_finite() {
         return Err(CodecError::Malformed(
             "surface-offset scalars must be finite".into(),
@@ -1167,16 +1230,9 @@ fn patch_spring_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    layout: &SpringLayout,
+    direction: i64,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-        layout, direction, ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "spring patch received another definition".into(),
-        ));
-    };
     let context = layout.support_context();
     let discontinuity_flag = match layout {
         cadmpeg_ir::geometry::SpringLayout::ContextFirst {
@@ -1225,7 +1281,7 @@ fn patch_spring_definition(
         bytes,
         record.offset + layout.direction,
         int_width,
-        *direction,
+        direction,
     )?;
     Ok(())
 }
@@ -1234,19 +1290,10 @@ fn patch_projection_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    discontinuity_flag: bool,
+    tail: &ProjectionTail,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-        context,
-        discontinuity_flag,
-        tail,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "projection patch received another definition".into(),
-        ));
-    };
     if context
         .parameter_range
         .into_iter()
@@ -1325,7 +1372,7 @@ fn patch_projection_definition(
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
     );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     Ok(())
 }
 
@@ -1333,17 +1380,9 @@ fn patch_intersection_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    discontinuity_flag: bool,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-        context,
-        discontinuity_flag,
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "intersection patch received another definition".into(),
-        ));
-    };
     if context
         .parameter_range
         .into_iter()
@@ -1381,7 +1420,7 @@ fn patch_intersection_definition(
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
     );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     Ok(())
 }
 
@@ -1389,18 +1428,9 @@ fn patch_three_surface_intersection_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    selector: i64,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-        context,
-        selector,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "three-surface intersection patch received another definition".into(),
-        ));
-    };
     if context
         .parameter_range
         .into_iter()
@@ -1443,7 +1473,7 @@ fn patch_three_surface_intersection_definition(
         bytes,
         record.offset + layout.selector,
         int_width,
-        *selector,
+        selector,
     )?;
     Ok(())
 }
@@ -1452,14 +1482,8 @@ fn patch_surface_curve_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    family: &SurfaceCurveFamily,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "surface-curve patch received another definition".into(),
-        ));
-    };
     let context = family.context();
     if context
         .parameter_range
@@ -1509,19 +1533,10 @@ fn patch_silhouette_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    silhouette: &SilhouetteKind,
+    light_direction: Vector3,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-        silhouette,
-        light_direction,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "silhouette patch received another definition".into(),
-        ));
-    };
-    if !finite_vector(*light_direction) {
+    if !finite_vector(light_direction) {
         return Err(CodecError::Malformed(
             "silhouette light direction must be finite".into(),
         ));
