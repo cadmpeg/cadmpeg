@@ -302,7 +302,7 @@ pub(crate) fn exact_rectangular_pattern(
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index() == Some(direction.distance_parameter)
             });
-            let count = direction.evaluated_count;
+            let count = direction.evaluated_count.get();
             if count_parameter
                 .is_some_and(|parameter| !scalar_close(parameter.evaluated_value, f64::from(count)))
             {
@@ -598,9 +598,8 @@ pub(crate) fn exact_circular_pattern(
             design_angle(parameter).is_none_or(|value| !scalar_close(value.0, angle.0))
         })
         || count_parameter.is_some_and(|parameter| {
-            !scalar_close(parameter.evaluated_value, f64::from(*evaluated_count))
+            !scalar_close(parameter.evaluated_value, f64::from(evaluated_count.get()))
         })
-        || *evaluated_count == 0
     {
         return None;
     }
@@ -633,7 +632,7 @@ pub(crate) fn exact_circular_pattern(
             .copied()
             .filter(|entity| entity.id() != center.id())
             .collect::<Vec<_>>();
-        let count = usize::try_from(*evaluated_count).ok()?;
+        let count = usize::try_from(evaluated_count.get()).ok()?;
         if patterned.is_empty() || !patterned.len().is_multiple_of(count) {
             continue;
         }
@@ -642,9 +641,9 @@ pub(crate) fn exact_circular_pattern(
         if seed.is_empty() {
             continue;
         }
-        let mut divisors = vec![f64::from(*evaluated_count)];
-        if *evaluated_count > 1 {
-            divisors.push(f64::from(*evaluated_count - 1));
+        let mut divisors = vec![f64::from(evaluated_count.get())];
+        if evaluated_count.get() > 1 {
+            divisors.push(f64::from(evaluated_count.get() - 1));
         }
         divisors.dedup_by(|left, right| scalar_close(*left, *right));
         for divisor in divisors {
@@ -1013,14 +1012,18 @@ mod tests {
                         crate::records::SketchPatternDirection {
                             count_parameter: 20,
                             distance_parameter: 21,
-                            evaluated_count,
+                            evaluated_count: crate::records::SketchPatternCount::try_from(
+                                evaluated_count,
+                            )
+                            .unwrap(),
                             direction: [1.0, 0.0, 0.0],
                             evaluated_distance,
                         },
                         crate::records::SketchPatternDirection {
                             count_parameter: 22,
                             distance_parameter: 23,
-                            evaluated_count: 1,
+                            evaluated_count: crate::records::SketchPatternCount::try_from(1)
+                                .unwrap(),
                             direction: [0.0, 1.0, 0.0],
                             evaluated_distance: 0.0,
                         },
@@ -1250,7 +1253,7 @@ mod tests {
                     angle_parameter: 20,
                     count_parameter: 21,
                     evaluated_angle: angle,
-                    evaluated_count: 3,
+                    evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
                 }),
             )
             .expect("valid relation definition"),
@@ -1361,7 +1364,7 @@ mod tests {
                     angle_parameter: 20,
                     count_parameter: 21,
                     evaluated_angle: std::f64::consts::TAU,
-                    evaluated_count: 3,
+                    evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
                 }),
             )
             .expect("valid relation definition"),
