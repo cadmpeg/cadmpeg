@@ -2666,7 +2666,7 @@ fn legacy_edge_flange_operation_at(
     let edges = crate::records::feature::DesignEdgeFlangeEdge::from_columns(
         edge_wrapper_record_indices,
         edge_group_record_indices,
-        edge_operand_record_indices,
+        &edge_operand_record_indices,
         aggregate_operand_record_indices,
     )
     .ok()?;
