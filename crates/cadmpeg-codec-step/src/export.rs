@@ -495,10 +495,10 @@ impl<'a> Builder<'a> {
             .filter(|binding| binding.visible == Some(false))
             .map(|binding| binding.id.as_str())
             .collect::<BTreeSet<_>>();
-        let mut body_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
-        let mut face_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
-        let mut body_binding_ids: HashMap<&str, Vec<&AppearanceBindingId>> = HashMap::new();
-        let mut face_binding_ids: HashMap<&str, Vec<&AppearanceBindingId>> = HashMap::new();
+        let mut body_candidates: HashMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
+            HashMap::new();
+        let mut face_candidates: HashMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
+            HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -519,18 +519,16 @@ impl<'a> Builder<'a> {
             };
             match &binding.target {
                 AppearanceTarget::Body(id) => {
-                    body_candidates.entry(id.as_str()).or_default().push(spec);
-                    body_binding_ids
+                    body_candidates
                         .entry(id.as_str())
                         .or_default()
-                        .push(&binding.id);
+                        .push((spec, &binding.id));
                 }
                 AppearanceTarget::Face(id) => {
-                    face_candidates.entry(id.as_str()).or_default().push(spec);
-                    face_binding_ids
+                    face_candidates
                         .entry(id.as_str())
                         .or_default()
-                        .push(&binding.id);
+                        .push((spec, &binding.id));
                 }
                 AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -552,22 +550,19 @@ impl<'a> Builder<'a> {
         let mut conflicting_face_targets = BTreeSet::new();
         let mut conflicted_binding_ids = BTreeSet::new();
         let mut target_conflicts = BTreeMap::new();
-        for (target, candidates) in body_candidates {
-            let Some(first) = candidates.first().copied() else {
+        for (&target, candidates) in &body_candidates {
+            let Some((first, _)) = candidates.first().copied() else {
                 continue;
             };
             if candidates
                 .iter()
                 .copied()
-                .any(|candidate| !equivalent_style_spec(first, candidate))
+                .any(|(candidate, _)| !equivalent_style_spec(first, candidate))
             {
                 conflicting_body_targets.insert(target.to_string());
-                let ids = body_binding_ids
-                    .get(target)
-                    .expect("body appearance candidate has binding ids")
+                let ids = candidates
                     .iter()
-                    .copied()
-                    .cloned()
+                    .map(|(_, id)| (*id).clone())
                     .collect::<BTreeSet<_>>();
                 conflicted_binding_ids.extend(ids.iter().cloned());
                 target_conflicts.insert(("body".into(), target.into()), ids);
@@ -575,22 +570,19 @@ impl<'a> Builder<'a> {
                 body_colors.insert(target, first);
             }
         }
-        for (target, candidates) in face_candidates {
-            let Some(first) = candidates.first().copied() else {
+        for (&target, candidates) in &face_candidates {
+            let Some((first, _)) = candidates.first().copied() else {
                 continue;
             };
             if candidates
                 .iter()
                 .copied()
-                .any(|candidate| !equivalent_style_spec(first, candidate))
+                .any(|(candidate, _)| !equivalent_style_spec(first, candidate))
             {
                 conflicting_face_targets.insert(target.to_string());
-                let ids = face_binding_ids
-                    .get(target)
-                    .expect("face appearance candidate has binding ids")
+                let ids = candidates
                     .iter()
-                    .copied()
-                    .cloned()
+                    .map(|(_, id)| (*id).clone())
                     .collect::<BTreeSet<_>>();
                 conflicted_binding_ids.extend(ids.iter().cloned());
                 target_conflicts.insert(("face".into(), target.into()), ids);
@@ -668,14 +660,14 @@ impl<'a> Builder<'a> {
                 }
             }
             if own.is_some() {
-                if let Some(binding_ids) = face_binding_ids.get(face_id.as_str()) {
+                if let Some(binding_ids) = face_candidates.get(face_id.as_str()) {
                     self.written_appearance_bindings
-                        .extend(binding_ids.iter().copied().cloned());
+                        .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
                 }
             } else if let Some(body_id) = body {
-                if let Some(binding_ids) = body_binding_ids.get(body_id) {
+                if let Some(binding_ids) = body_candidates.get(body_id) {
                     self.written_appearance_bindings
-                        .extend(binding_ids.iter().copied().cloned());
+                        .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
                 }
             }
             let name = spec
@@ -772,9 +764,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_ids) = body_binding_ids.get(*body_id) {
+            if let Some(binding_ids) = body_candidates.get(*body_id) {
                 self.written_appearance_bindings
-                    .extend(binding_ids.iter().copied().cloned());
+                    .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
             }
             let name = spec
                 .appearance
