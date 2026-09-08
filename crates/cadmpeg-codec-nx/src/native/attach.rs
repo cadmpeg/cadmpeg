@@ -823,19 +823,27 @@ fn attach_jpeg_preview_assets(
         annotations.derived(id.as_str(), "name");
         annotations.derived(id.as_str(), "media_type");
         annotations.derived(id.as_str(), "native_ref");
-        ir.model.assets.push(Asset {
-            id,
-            name: Some(if ordinal == 0 {
-                "preview.jpg".to_string()
-            } else {
-                format!("preview-{ordinal}.jpg")
-            }),
-            media_type: Some("image/jpeg".to_string()),
-            content: AssetContent::Embedded {
-                data: ctx.copy_retained(bytes, "retain NX JPEG preview asset", None)?,
-            },
-            native_ref: Some(native_ref),
-        });
+        ir.model.assets.push(
+            Asset::try_new(
+                id,
+                Some(if ordinal == 0 {
+                    "preview.jpg".to_string()
+                } else {
+                    format!("preview-{ordinal}.jpg")
+                }),
+                Some("image/jpeg".to_string()),
+                AssetContent::Embedded {
+                    data: cadmpeg_ir::assets::AssetData::new(ctx.copy_retained(
+                        bytes,
+                        "retain NX JPEG preview asset",
+                        None,
+                    )?)
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+                },
+                Some(native_ref),
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(())
 }
@@ -870,15 +878,23 @@ fn attach_material_texture_assets(
 
     let mut assets = Vec::with_capacity(sources.len());
     for (texture, bytes) in sources {
-        assets.push(Asset {
-            id: AssetId::mint(format!("{}:asset", texture.id)).expect("identity grammar"),
-            name: Some(texture.name().to_owned()),
-            media_type: Some("image/tiff".to_string()),
-            content: AssetContent::Embedded {
-                data: ctx.copy_retained(bytes, "retain NX TIFF material asset", None)?,
-            },
-            native_ref: Some(texture.id.clone()),
-        });
+        assets.push(
+            Asset::try_new(
+                AssetId::mint(format!("{}:asset", texture.id)).expect("identity grammar"),
+                Some(texture.name().to_owned()),
+                Some("image/tiff".to_string()),
+                AssetContent::Embedded {
+                    data: cadmpeg_ir::assets::AssetData::new(ctx.copy_retained(
+                        bytes,
+                        "retain NX TIFF material asset",
+                        None,
+                    )?)
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+                },
+                Some(texture.id.clone()),
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
     let stream = annotations.stream("nx:container");
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {

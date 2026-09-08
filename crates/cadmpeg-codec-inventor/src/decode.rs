@@ -195,17 +195,27 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                                     "retain Inventor preview asset",
                                     Some(property.raw.location()),
                                 )?;
-                                ir.model.assets.push(Asset {
-                                    id: AssetId::mint(format!(
-                                        "inventor:document:asset#preview-{}",
-                                        ir.model.assets.len()
-                                    ))
-                                    .expect("identity grammar"),
-                                    name: Some("document preview".into()),
-                                    media_type: Some(media_type.into()),
-                                    content: AssetContent::Embedded { data },
-                                    native_ref: Some(native_id.clone()),
-                                });
+                                ir.model.assets.push(
+                                    Asset::try_new(
+                                        AssetId::mint(format!(
+                                            "inventor:document:asset#preview-{}",
+                                            ir.model.assets.len()
+                                        ))
+                                        .expect("identity grammar"),
+                                        Some("document preview".into()),
+                                        Some(media_type.into()),
+                                        AssetContent::Embedded {
+                                            data: cadmpeg_ir::assets::AssetData::new(data)
+                                                .ok_or_else(|| {
+                                                    CodecError::Malformed(
+                                                        "asset data must not be empty".into(),
+                                                    )
+                                                })?,
+                                        },
+                                        Some(native_id.clone()),
+                                    )
+                                    .map_err(CodecError::Malformed)?,
+                                );
                             }
                         }
                         properties.push(PropertyRecord {

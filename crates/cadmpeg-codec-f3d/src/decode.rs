@@ -3243,17 +3243,22 @@ fn project_mesh_bodies(
                 _ => None,
             })
             .map(str::to_owned);
-        texture_assets.push(cadmpeg_ir::assets::Asset {
-            id: texture.asset.clone(),
-            name: Some(texture.file.filename().to_owned()),
-            media_type,
-            content: cadmpeg_ir::assets::AssetContent::Embedded {
-                data: scan
-                    .entry_bytes(texture.file.archive_entry_name())?
-                    .to_vec(),
-            },
-            native_ref: Some(crate::ids::native_scope(texture.file.archive_entry_name())),
-        });
+        texture_assets.push(
+            cadmpeg_ir::assets::Asset::try_new(
+                texture.asset.clone(),
+                Some(texture.file.filename().to_owned()),
+                media_type,
+                cadmpeg_ir::assets::AssetContent::Embedded {
+                    data: cadmpeg_ir::assets::AssetData::new(
+                        scan.entry_bytes(texture.file.archive_entry_name())?
+                            .to_vec(),
+                    )
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+                },
+                Some(crate::ids::native_scope(texture.file.archive_entry_name())),
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
