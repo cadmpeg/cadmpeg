@@ -601,7 +601,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker
     });
-    lane.sketch_entities.sort_by_key(|marker| marker.ordinal());
+    lane.sketch_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
     let sketch = Sketch {
         id: SketchId("position-geometry".into()),
         name: Some("Position".into()),
