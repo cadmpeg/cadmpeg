@@ -180,7 +180,7 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
                 vec![ReferenceEdge {
                     origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
                     raw_pointer: i64::from(target),
-                    target: Some(format!("iges:entity:directory#{target}")),
+                    target: Some(target),
                     resolution: Resolution::Resolved,
                     expected: ReferenceExpectation::Type {
                         entity_type: 124,

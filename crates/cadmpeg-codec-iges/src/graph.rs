@@ -75,7 +75,7 @@ impl Serialize for ReferenceOrigin {
 pub(crate) struct ReferenceEdge {
     origin: ReferenceOrigin,
     raw_pointer: i64,
-    target: Option<String>,
+    target: Option<u32>,
     resolution: Resolution,
     expected: ReferenceExpectation,
 }
@@ -85,7 +85,7 @@ impl Serialize for ReferenceEdge {
         struct Wire<'a> {
             kind: ReferenceOrigin,
             raw_pointer: i64,
-            target: &'a Option<String>,
+            target: Option<String>,
             resolution: Resolution,
             expected: &'a ReferenceExpectation,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,7 +94,7 @@ impl Serialize for ReferenceEdge {
         Wire {
             kind: self.origin,
             raw_pointer: self.raw_pointer,
-            target: &self.target,
+            target: self.target(),
             resolution: self.resolution,
             expected: &self.expected,
             parameter_index: self.origin.parameter_index(),
@@ -104,15 +104,15 @@ impl Serialize for ReferenceEdge {
 }
 
 impl ReferenceEdge {
-    pub(crate) fn target(&self) -> Option<&str> {
-        self.target.as_deref()
+    pub(crate) fn target(&self) -> Option<String> {
+        self.target
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
     }
 
     pub(crate) fn resolved_target_sequence_for(&self, kind: ReferenceKind) -> Option<u32> {
         (self.origin == ReferenceOrigin::Directory(kind) && self.resolution == Resolution::Resolved)
-            .then(|| self.raw_pointer.checked_abs())
+            .then_some(self.target)
             .flatten()
-            .and_then(|value| u32::try_from(value).ok())
     }
 }
 
@@ -217,7 +217,7 @@ impl<'a> ParameterResolver<'a> {
                     index: parameter_index,
                 },
                 raw_pointer,
-                target: target.map(|entry| format!("iges:entity:directory#{}", entry.sequence)),
+                target: target.map(|entry| entry.sequence),
                 resolution,
                 expected,
             });
@@ -409,9 +409,7 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
                     edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)
                         && edge.resolution == Resolution::Resolved
                 })
-                .and_then(|edge| edge.target.as_deref())
-                .and_then(|id| id.rsplit_once('#'))
-                .and_then(|(_, value)| value.parse::<u32>().ok())
+                .and_then(|edge| edge.target)
                 .map(|target| (*source, target))
         })
         .collect::<BTreeMap<_, _>>();
@@ -477,8 +475,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                     ReferenceEdge {
                         origin: ReferenceOrigin::Directory(candidate.kind),
                         raw_pointer: candidate.raw_pointer,
-                        target: target
-                            .map(|value| format!("iges:entity:directory#{}", value.sequence)),
+                        target: target.map(|value| value.sequence),
                         resolution,
                         expected: expected(candidate.kind, entry),
                     }
@@ -504,13 +501,10 @@ pub(crate) fn resolved_structure_sequence(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source: u32,
 ) -> Option<u32> {
-    graph.get(&source)?.iter().find_map(|edge| {
-        (edge.origin == ReferenceOrigin::Directory(ReferenceKind::Structure)
-            && edge.resolution == Resolution::Resolved)
-            .then(|| edge.raw_pointer.checked_abs())
-            .flatten()
-            .and_then(|value| u32::try_from(value).ok())
-    })
+    graph
+        .get(&source)?
+        .iter()
+        .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Structure))
 }
 
 pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<String> {

@@ -2175,7 +2175,6 @@ pub(crate) fn store(
                     .into_iter()
                     .flatten()
                     .filter_map(ReferenceEdge::target)
-                    .map(str::to_owned)
                     .collect(),
                 references: references.get(&entry.sequence).cloned().unwrap_or_default(),
             }
@@ -5340,7 +5339,6 @@ pub(crate) fn store(
             .into_iter()
             .flatten()
             .filter_map(ReferenceEdge::target)
-            .map(str::to_owned)
             .collect();
         entity.references = references
             .get(&entity.directory_sequence)
