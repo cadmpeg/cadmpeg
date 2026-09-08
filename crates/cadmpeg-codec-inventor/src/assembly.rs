@@ -654,7 +654,7 @@ mod tests {
         occurrence_id: u32,
         ordinal: u32,
     ) -> UfrxOccurrenceRecord {
-        UfrxOccurrenceRecord {
+        UfrxOccurrenceRecord::try_from(crate::native::ufrx::UfrxOccurrenceRecordWire {
             id: format!("inventor:ufrx:occurrence#{ordinal}"),
             ordinal,
             end_string_flag: 0,
@@ -665,7 +665,8 @@ mod tests {
             header_padding_words: 0,
             record_len: 1,
             record_sha256: "0".repeat(64),
-        }
+        })
+        .unwrap()
     }
 
     fn external_reference(

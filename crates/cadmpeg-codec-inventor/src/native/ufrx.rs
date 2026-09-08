@@ -6,6 +6,7 @@ use cadmpeg_ir::products::NonEmptyString;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};
+use std::num::NonZeroU64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 // One document state owns all child arenas; no extra box is needed for the singleton header.
@@ -447,7 +448,30 @@ pub(crate) struct ExternalReferenceRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "EmbeddedReferenceRecordWire",
+    into = "EmbeddedReferenceRecordWire"
+)]
 pub(crate) struct EmbeddedReferenceRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) value_0: u32,
+    pub(crate) filetime: u64,
+    pub(crate) value_1: u32,
+    pub(crate) extended_value: Option<u32>,
+    pub(crate) value_2: u32,
+    pub(crate) path: String,
+    pub(crate) library_id: i32,
+    pub(crate) library_name: String,
+    pub(crate) state: u16,
+    pub(crate) display_name: String,
+    pub(crate) state_values: [u8; 8],
+    record_len: NonZeroU64,
+    record_sha256: Sha256Hex,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct EmbeddedReferenceRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) value_0: u32,
@@ -465,8 +489,72 @@ pub(crate) struct EmbeddedReferenceRecord {
     pub(crate) record_sha256: String,
 }
 
+impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
+    type Error = String;
+    fn try_from(wire: EmbeddedReferenceRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            value_0: wire.value_0,
+            filetime: wire.filetime,
+            value_1: wire.value_1,
+            extended_value: wire.extended_value,
+            value_2: wire.value_2,
+            path: wire.path,
+            library_id: wire.library_id,
+            library_name: wire.library_name,
+            state: wire.state,
+            display_name: wire.display_name,
+            state_values: wire.state_values,
+            record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
+            record_sha256: Sha256Hex::try_from(wire.record_sha256)
+                .map_err(|error| format!("record_sha256: {error}"))?,
+        })
+    }
+}
+
+impl From<EmbeddedReferenceRecord> for EmbeddedReferenceRecordWire {
+    fn from(value: EmbeddedReferenceRecord) -> Self {
+        Self {
+            id: value.id,
+            ordinal: value.ordinal,
+            value_0: value.value_0,
+            filetime: value.filetime,
+            value_1: value.value_1,
+            extended_value: value.extended_value,
+            value_2: value.value_2,
+            path: value.path,
+            library_id: value.library_id,
+            library_name: value.library_name,
+            state: value.state,
+            display_name: value.display_name,
+            state_values: value.state_values,
+            record_len: value.record_len.get(),
+            record_sha256: value.record_sha256.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "UfrxOccurrenceRecordWire",
+    into = "UfrxOccurrenceRecordWire"
+)]
 pub(crate) struct UfrxOccurrenceRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) end_string_flag: u32,
+    pub(crate) file_reference_id: u32,
+    pub(crate) occurrence_id: u32,
+    pub(crate) header_value: u32,
+    pub(crate) title: Option<String>,
+    header_padding_words: u8,
+    record_len: NonZeroU64,
+    record_sha256: Sha256Hex,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct UfrxOccurrenceRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) end_string_flag: u32,
@@ -477,6 +565,45 @@ pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) header_padding_words: u8,
     pub(crate) record_len: u64,
     pub(crate) record_sha256: String,
+}
+
+impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
+    type Error = String;
+    fn try_from(wire: UfrxOccurrenceRecordWire) -> Result<Self, Self::Error> {
+        if wire.header_padding_words > 8 {
+            return Err("header_padding_words must not exceed 8".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            end_string_flag: wire.end_string_flag,
+            file_reference_id: wire.file_reference_id,
+            occurrence_id: wire.occurrence_id,
+            header_value: wire.header_value,
+            title: wire.title,
+            header_padding_words: wire.header_padding_words,
+            record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
+            record_sha256: Sha256Hex::try_from(wire.record_sha256)
+                .map_err(|error| format!("record_sha256: {error}"))?,
+        })
+    }
+}
+
+impl From<UfrxOccurrenceRecord> for UfrxOccurrenceRecordWire {
+    fn from(value: UfrxOccurrenceRecord) -> Self {
+        Self {
+            id: value.id,
+            ordinal: value.ordinal,
+            end_string_flag: value.end_string_flag,
+            file_reference_id: value.file_reference_id,
+            occurrence_id: value.occurrence_id,
+            header_value: value.header_value,
+            title: value.title,
+            header_padding_words: value.header_padding_words,
+            record_len: value.record_len.get(),
+            record_sha256: value.record_sha256.into(),
+        }
+    }
 }
 
 impl Serialize for UfrxRecord {
@@ -548,6 +675,51 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_framing_admission_rejects_invalid_wire_values() {
+        let occurrence = serde_json::json!({
+            "id": "occurrence", "ordinal": 0, "end_string_flag": 0,
+            "file_reference_id": 1, "occurrence_id": 1, "header_value": 0,
+            "title": null, "header_padding_words": 8, "record_len": 1,
+            "record_sha256": "A".repeat(64)
+        });
+        let embedded = serde_json::json!({
+            "id": "embedded", "ordinal": 0, "value_0": 0, "filetime": 0,
+            "value_1": 0, "extended_value": null, "value_2": 0, "path": "",
+            "library_id": 0, "library_name": "", "state": 0, "display_name": "",
+            "state_values": [0,0,0,0,0,0,0,0], "record_len": 1,
+            "record_sha256": "a".repeat(64)
+        });
+        let admitted: UfrxOccurrenceRecord = serde_json::from_value(occurrence.clone()).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), occurrence);
+        let admitted: EmbeddedReferenceRecord = serde_json::from_value(embedded.clone()).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), embedded);
+        for (field, value) in [
+            ("record_len", serde_json::json!(0)),
+            ("record_sha256", serde_json::json!("a".repeat(63))),
+            ("record_sha256", serde_json::json!("g".repeat(64))),
+        ] {
+            let mut wire = occurrence.clone();
+            wire[field] = value.clone();
+            assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+            let mut wire = embedded.clone();
+            wire[field] = value;
+            assert!(serde_json::from_value::<EmbeddedReferenceRecord>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+        let mut wire = occurrence;
+        wire["header_padding_words"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("header_padding_words"));
+    }
 
     #[test]
     fn representation_admission_rejects_empty_names_and_half_pairs() {

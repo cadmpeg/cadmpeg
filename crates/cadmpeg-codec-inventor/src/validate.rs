@@ -2001,15 +2001,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|record| record.ordinal),
         "embedded reference ordinal",
     );
-    for reference in data.ufrx.embedded_references() {
-        if reference.record_len == 0 || reference.record_sha256.len() != 64 {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor embedded-reference framing is inconsistent".into(),
-                Some(reference.id.clone()),
-            ));
-        }
-    }
     unique(
         findings,
         data.ufrx
@@ -2035,10 +2026,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         *actual_counts
             .entry(occurrence.file_reference_id)
             .or_default() += 1;
-        if occurrence.record_len == 0
-            || occurrence.record_sha256.len() != 64
-            || occurrence.header_padding_words > 8
-            || !reference_ids.contains(&occurrence.file_reference_id)
+        if !reference_ids.contains(&occurrence.file_reference_id)
             || (assembly_document && !assembly_ids.contains(&occurrence.occurrence_id))
         {
             findings.push(finding(
