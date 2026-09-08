@@ -3,7 +3,18 @@
 use std::num::NonZeroUsize;
 
 /// One byte of a search pattern: a fixed value or a `??` wildcard.
-pub type PatternByte = Option<u8>;
+type PatternByte = Option<u8>;
+
+/// A nonempty byte pattern with optional wildcard positions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pattern(Vec<PatternByte>);
+
+impl Pattern {
+    /// Number of byte positions in the pattern.
+    pub(super) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 /// Parses a hexadecimal search pattern.
 ///
@@ -15,7 +26,7 @@ pub type PatternByte = Option<u8>;
 /// Returns a message when the pattern is empty, holds a character that is
 /// neither a hexadecimal digit nor `?`, mixes a digit with `?` inside one pair,
 /// or ends on a half byte.
-pub fn parse_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
+pub fn parse_pattern(text: &str) -> Result<Pattern, String> {
     let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
     if chars.is_empty() {
         return Err(
@@ -46,7 +57,7 @@ pub fn parse_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
             }
         }
     }
-    Ok(pattern)
+    Ok(Pattern(pattern))
 }
 
 fn hex_digit(c: char, text: &str) -> Result<u8, String> {
@@ -60,7 +71,7 @@ fn hex_digit(c: char, text: &str) -> Result<u8, String> {
 /// # Errors
 ///
 /// Returns a message when the term is empty or holds a non-ASCII character.
-pub fn ascii_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
+pub fn ascii_pattern(text: &str) -> Result<Pattern, String> {
     if text.is_empty() {
         return Err("empty ASCII search term".to_string());
     }
@@ -69,7 +80,7 @@ pub fn ascii_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
             "`{text}` is not ASCII; use --encoding utf16le or --encoding hex for other encodings"
         ));
     }
-    Ok(text.bytes().map(Some).collect())
+    Ok(Pattern(text.bytes().map(Some).collect()))
 }
 
 /// Encodes a search term as UTF-16LE code units.
@@ -77,46 +88,48 @@ pub fn ascii_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
 /// # Errors
 ///
 /// Returns a message when the term is empty.
-pub fn utf16le_pattern(text: &str) -> Result<Vec<PatternByte>, String> {
+pub fn utf16le_pattern(text: &str) -> Result<Pattern, String> {
     if text.is_empty() {
         return Err("empty UTF-16LE search term".to_string());
     }
-    Ok(text
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .map(Some)
-        .collect())
+    Ok(Pattern(
+        text.encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .map(Some)
+            .collect(),
+    ))
 }
 
 /// Returns every offset in `haystack` where `pattern` matches, in order.
 ///
 /// `limit` caps the number of reported offsets; `None` reports all of them. The
 /// match is byte exact except at wildcard positions.
-pub fn find_all(haystack: &[u8], pattern: &[PatternByte], limit: Option<NonZeroUsize>) -> Vec<u64> {
+pub fn find_all(haystack: &[u8], pattern: &Pattern, limit: Option<NonZeroUsize>) -> Vec<u64> {
     let mut hits = Vec::new();
-    if pattern.is_empty() || haystack.len() < pattern.len() {
+    if haystack.len() < pattern.len() {
         return hits;
     }
     // Anchoring on a fixed byte lets `memchr` skip most of the file when the
     // pattern does not start with a wildcard.
-    let anchor = pattern.iter().position(Option::is_some);
+    let anchor = pattern
+        .0
+        .iter()
+        .enumerate()
+        .find_map(|(index, byte)| byte.map(|byte| (index, byte)));
     let last_start = haystack.len() - pattern.len();
     let mut start = 0usize;
     while start <= last_start {
         let candidate = match anchor {
-            Some(index) => {
-                let byte = pattern[index].expect("anchor position holds a fixed byte");
-                match memchr::memchr(byte, &haystack[start + index..]) {
-                    Some(found) => start + found,
-                    None => break,
-                }
-            }
+            Some((index, byte)) => match memchr::memchr(byte, &haystack[start + index..]) {
+                Some(found) => start + found,
+                None => break,
+            },
             None => start,
         };
         if candidate > last_start {
             break;
         }
-        if matches_at(haystack, candidate, pattern) {
+        if matches_at(haystack, candidate, &pattern.0) {
             hits.push(candidate as u64);
             if limit.is_some_and(|max| hits.len() >= max.get()) {
                 break;
@@ -295,14 +308,20 @@ mod tests {
 
     #[test]
     fn parses_patterns_with_and_without_wildcards() {
-        assert_eq!(parse_pattern("4d5a"), Ok(vec![Some(0x4d), Some(0x5a)]));
-        assert_eq!(parse_pattern("4d 5a"), Ok(vec![Some(0x4d), Some(0x5a)]));
+        assert_eq!(
+            parse_pattern("4d5a"),
+            Ok(Pattern(vec![Some(0x4d), Some(0x5a)]))
+        );
+        assert_eq!(
+            parse_pattern("4d 5a"),
+            Ok(Pattern(vec![Some(0x4d), Some(0x5a)]))
+        );
         assert_eq!(
             parse_pattern("4d??00"),
-            Ok(vec![Some(0x4d), None, Some(0x00)])
+            Ok(Pattern(vec![Some(0x4d), None, Some(0x00)]))
         );
-        assert_eq!(parse_pattern("AB"), Ok(vec![Some(0xab)]));
-        assert_eq!(parse_pattern("????"), Ok(vec![None, None]));
+        assert_eq!(parse_pattern("AB"), Ok(Pattern(vec![Some(0xab)])));
+        assert_eq!(parse_pattern("????"), Ok(Pattern(vec![None, None])));
     }
 
     #[test]
@@ -314,10 +333,13 @@ mod tests {
 
     #[test]
     fn encodes_text_search_terms() {
-        assert_eq!(ascii_pattern("Hi"), Ok(vec![Some(b'H'), Some(b'i')]));
+        assert_eq!(
+            ascii_pattern("Hi"),
+            Ok(Pattern(vec![Some(b'H'), Some(b'i')]))
+        );
         assert_eq!(
             utf16le_pattern("Hi"),
-            Ok(vec![Some(b'H'), Some(0), Some(b'i'), Some(0)])
+            Ok(Pattern(vec![Some(b'H'), Some(0), Some(b'i'), Some(0)]))
         );
         assert!(ascii_pattern("").is_err());
         assert!(ascii_pattern("é").is_err());
