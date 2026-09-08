@@ -116,6 +116,7 @@ jobs:
       - name: Repository policy gate
         run: |
           set -euo pipefail
+          python3 -m unittest -q scripts/test_pre_commit.py
           python3 scripts/check-doc-anchors.py
           python3 -m unittest -v scripts/test_check_source_policy.py
           python3 scripts/check-source-policy.py
