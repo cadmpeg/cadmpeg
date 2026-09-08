@@ -641,9 +641,9 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
         for name in map
             .maps
-            .last()
-            .into_iter()
-            .flat_map(|node| &node.groups)
+            .root()
+            .groups
+            .iter()
             .flat_map(|group| &group.names)
             .flatten()
         {
