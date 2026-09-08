@@ -62,8 +62,8 @@ pub(super) fn sphere_great_circle_geometry(
         cadmpeg_ir::geometry::CircleCurve::try_new(
             point3(*center),
             vector(plane_axis),
-            vector(ref_direction),
-            *radius,
+            vector(scale(ref_direction, radius.signum())),
+            radius.abs(),
         )
         .ok()?,
     ))
@@ -180,17 +180,9 @@ pub(super) fn oriented_circle_plan(
         return None;
     };
     let (center, axis, ref_direction, radius) = circle_curve.parts();
-    if !radius.is_finite() || *radius == 0.0 {
-        return None;
-    }
     let mut axis = *axis;
-    let mut ref_direction = *ref_direction;
-    let radius = if *radius < 0.0 {
-        ref_direction = Vector3::new(-ref_direction.x, -ref_direction.y, -ref_direction.z);
-        -*radius
-    } else {
-        *radius
-    };
+    let ref_direction = *ref_direction;
+    let radius = *radius;
     let oriented_angles = if delta < 0.0 {
         axis = Vector3::new(-axis.x, -axis.y, -axis.z);
         [-angles[0], -angles[1]]
@@ -473,8 +465,8 @@ pub(super) fn lifted_curve_geometry(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*center, scale(radial, *major_radius))),
                     vector(cross(radial, *axis)),
-                    vector(radial),
-                    *minor_radius,
+                    vector(scale(radial, minor_radius.signum())),
+                    minor_radius.abs(),
                 )
                 .ok()?,
             ))
@@ -491,7 +483,6 @@ pub(super) fn lifted_curve_geometry(
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale;
             let signed_radius = major_radius + minor_radius * angle.cos();
-            (signed_radius.is_finite() && signed_radius != 0.0).then_some(())?;
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
@@ -511,13 +502,12 @@ pub(super) fn lifted_curve_geometry(
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
             let radius = slant * half_angle.sin();
-            (radius.is_finite() && radius != 0.0).then_some(())?;
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                     vector(*axis),
-                    vector(*direction_x),
-                    radius,
+                    vector(scale(*direction_x, radius.signum())),
+                    radius.abs(),
                 )
                 .ok()?,
             ))
@@ -534,8 +524,8 @@ pub(super) fn lifted_curve_geometry(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     point3(add(*origin, scale(*axis, v))),
                     vector(*axis),
-                    vector(*reference_x),
-                    *radius,
+                    vector(scale(*reference_x, radius.signum())),
+                    radius.abs(),
                 )
                 .ok()?,
             ))
