@@ -1641,22 +1641,20 @@ fn placement_affine(
     } else {
         [x_scale; 3]
     };
-    let translation = Affine {
-        rows: [
-            [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
-            [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
-            [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
-        ],
-    };
-    let scale = Affine {
-        rows: [
-            [scales[0], 0.0, 0.0, 0.0],
-            [0.0, scales[1], 0.0, 0.0],
-            [0.0, 0.0, scales[2], 0.0],
-        ],
-    };
+    let translation = Affine::new([
+        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
+        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
+        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
+    ])
+    .ok_or(())?;
+    let scale = Affine::new([
+        [scales[0], 0.0, 0.0, 0.0],
+        [0.0, scales[1], 0.0, 0.0],
+        [0.0, 0.0, scales[2], 0.0],
+    ])
+    .ok_or(())?;
     let directory = if instance.transform == 0 {
-        Affine::IDENTITY
+        Affine::identity()
     } else {
         resolve_transform(
             instance.transform,
@@ -1669,7 +1667,12 @@ fn placement_affine(
         )
         .map_err(|_| ())?
     };
-    Ok((definition, directory.compose(translation.compose(scale))))
+    Ok((
+        definition,
+        directory
+            .compose(translation.compose(scale).ok_or(())?)
+            .ok_or(())?,
+    ))
 }
 
 fn member_affine(
@@ -1681,7 +1684,7 @@ fn member_affine(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Affine, ()> {
     if entry.transform == 0 {
-        return Ok(Affine::IDENTITY);
+        return Ok(Affine::identity());
     }
     resolve_transform(
         entry.transform,
@@ -1754,8 +1757,13 @@ impl OccurrenceExpansion<'_, '_> {
         let Some(definition) = self.definitions.get(&definition_sequence) else {
             return Ok(None);
         };
-        let world = parent.compose(local);
-        let definition_world = world.compose(definition.transform);
+        let Some(definition_world) = parent
+            .compose(local)
+            .and_then(|world| world.compose(definition.transform))
+        else {
+            malformed_placement_sequences.insert(instance_sequence);
+            return Ok(None);
+        };
         let root = path.is_empty();
         path.push(instance_sequence);
         let path_ids = path
@@ -1778,8 +1786,8 @@ impl OccurrenceExpansion<'_, '_> {
             member: None,
             neutral_links: Vec::new(),
             instance_path: path_ids.clone(),
-            local_transform: local.rows,
-            world_transform: definition_world.rows,
+            local_transform: local.rows(),
+            world_transform: definition_world.rows(),
         });
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
@@ -1821,6 +1829,10 @@ impl OccurrenceExpansion<'_, '_> {
             if let Some(ctx) = self.ctx {
                 ctx.charge_collection_items(1, "iges_product_occurrences")?;
             }
+            let Some(member_world) = definition_world.compose(member_local) else {
+                malformed_placement_sequences.insert(*member);
+                continue;
+            };
             occurrences.push(NativeProductOccurrence {
                 id: format!("iges:product:occurrence#{path_key}/D{member}"),
                 root: false,
@@ -1829,8 +1841,8 @@ impl OccurrenceExpansion<'_, '_> {
                 member: Some(format!("iges:entity:directory#{member}")),
                 neutral_links: self.neutral_links.get(member).cloned().unwrap_or_default(),
                 instance_path: path_ids.clone(),
-                local_transform: member_local.rows,
-                world_transform: definition_world.compose(member_local).rows,
+                local_transform: member_local.rows(),
+                world_transform: member_world.rows(),
             });
         }
         path.pop();
@@ -5062,7 +5074,7 @@ pub(crate) fn store(
                     entry.sequence,
                     OccurrenceDefinition {
                         members: Vec::new(),
-                        transform: Affine::IDENTITY,
+                        transform: Affine::identity(),
                     },
                 ));
             };
@@ -5077,7 +5089,7 @@ pub(crate) fn store(
                     member
                 })
                 .collect();
-            let transform = occurrence_length_factor.map_or(Affine::IDENTITY, |length_factor| {
+            let transform = occurrence_length_factor.map_or(Affine::identity(), |length_factor| {
                 match resolve_transform(
                     entry.transform,
                     &entries,
@@ -5090,7 +5102,7 @@ pub(crate) fn store(
                     Ok(transform) => transform,
                     Err(_) => {
                         malformed = true;
-                        Affine::IDENTITY
+                        Affine::identity()
                     }
                 }
             });
@@ -5215,7 +5227,7 @@ pub(crate) fn store(
             }) {
                 if let Some(source_sequence) = expansion.expand(
                     root.sequence,
-                    Affine::IDENTITY,
+                    Affine::identity(),
                     &mut Vec::new(),
                     &mut product_occurrences,
                     &mut depth_truncated_at,

@@ -94,9 +94,9 @@ fn unit_vector(vector: Vector3) -> Option<Vector3> {
 fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
     let column = |index| {
         Vector3::new(
-            transform.rows[0][index],
-            transform.rows[1][index],
-            transform.rows[2][index],
+            transform.rows()[0][index],
+            transform.rows()[1][index],
+            transform.rows()[2][index],
         )
     };
     let [x, y, z] = [column(0), column(1), column(2)];
