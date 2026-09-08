@@ -4172,36 +4172,11 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                     == Some(&group.record_index)
         }) && header.is_some_and(|header| {
-            header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
-        }) && group.member_count_offset == group.byte_offset.saturating_add(32)
-            && !group.members.is_empty()
-            && group
-                .members
-                .iter()
-                .map(|member| member.value)
-                .collect::<HashSet<_>>()
-                .len()
-                == group.members.len()
-            && group.members.first().map(|member| member.offset)
-                == Some(group.member_count_offset.saturating_add(5))
-            && group
-                .members
-                .windows(2)
-                .all(|members| members[1].offset == members[0].offset.saturating_add(11))
-            && group.opaque_index != 0
-            && group.opaque_index_offset
-                == group.member_count_offset.saturating_add(4).saturating_add(
-                    u64::try_from(group.members.len())
-                        .unwrap_or(u64::MAX)
-                        .saturating_mul(11),
-                )
-            && group.opaque_scalar.is_finite()
-            && group.opaque_scalar_offset == group.opaque_index_offset.saturating_add(4)
-            && group.paired_byte_offset == group.opaque_index_offset.saturating_add(53)
-            && group
-                .members
-                .iter()
-                .all(|member| records_by_index.contains_key(&(native_stream, member.value)))
+            header.byte_offset == group.byte_offset() && header.class_tag == group.class_tag
+        }) && group
+            .members()
+            .iter()
+            .all(|member| records_by_index.contains_key(&(native_stream, member.value)))
             && group_slots.insert((
                 native_stream,
                 group.scope_record_index,
@@ -6397,7 +6372,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = group.is_some_and(|group| {
             usize::try_from(member.group_member_ordinal)
                 .ok()
-                .and_then(|ordinal| group.members.get(ordinal))
+                .and_then(|ordinal| group.members().get(ordinal))
                 .map(|reference| reference.value)
                 == Some(member.record_index)
         }) && header.is_some_and(|header| {
@@ -6524,7 +6499,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
     let members_by_slot = &ctx.members_by_slot;
     for group in &native.design_extrude_selection_groups {
         let native_stream = design_stream(&group.id);
-        let complete = (0..group.members.len()).all(|ordinal| {
+        let complete = (0..group.members().len()).all(|ordinal| {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return false;
             };
@@ -6534,7 +6509,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
             };
             let next = usize::try_from(ordinal)
                 .ok()
-                .and_then(|ordinal| group.members.get(ordinal + 1));
+                .and_then(|ordinal| group.members().get(ordinal + 1));
             next.is_none_or(|next_record_index| {
                 let next_member = members_by_slot.get(&(
                     native_stream,
@@ -6551,7 +6526,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
             .get(&(native_stream, group.record_index, 0))
             .map(|member| member.context_id.as_str());
         let context_consistent = context_id.is_some_and(|context_id| {
-            (0..group.members.len()).all(|ordinal| {
+            (0..group.members().len()).all(|ordinal| {
                 u32::try_from(ordinal)
                     .ok()
                     .and_then(|ordinal| {

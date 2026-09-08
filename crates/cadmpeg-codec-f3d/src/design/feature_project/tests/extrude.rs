@@ -378,26 +378,27 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
-    let selection = DesignExtrudeSelectionGroup {
-        id: "f3d:Design/BulkStream.dat:selection#300".into(),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal: 0,
-        record_index: 300,
-        byte_offset: 700,
-        class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-        member_count_offset: 720,
-        members: vec![crate::records::Located {
-            value: 301,
-            offset: 724,
-        }],
-        opaque_index: 1,
-        opaque_index_offset: 735,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 739,
-        variant: false,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 760,
-    };
+    let selection = DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::DesignExtrudeSelectionGroupWire {
+            id: "f3d:Design/BulkStream.dat:selection#300".into(),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal: 0,
+            record_index: 300,
+            byte_offset: 700,
+            class_tag: "308".to_owned(),
+            member_count_offset: 732,
+            members: vec![301],
+            member_offsets: vec![737],
+            opaque_index: 1,
+            opaque_index_offset: 747,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 751,
+            variant: false,
+            paired_class_tag: "259".to_owned(),
+            paired_byte_offset: 800,
+        },
+    )
+    .unwrap();
     let mut feature = Feature {
         id: FeatureId::mint("f3d:model:feature#extrude").expect("identity grammar"),
         ordinal: 0,

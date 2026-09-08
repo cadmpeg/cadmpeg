@@ -653,10 +653,10 @@ fn historical_face_profile_selection(
             })
             .collect::<Vec<_>>();
         group_members.sort_by_key(|member| member.group_member_ordinal);
-        if group_members.len() != group.members.len()
+        if group_members.len() != group.members().len()
             || group_members
                 .iter()
-                .zip(&group.members)
+                .zip(group.members())
                 .any(|(member, record_index)| member.record_index != record_index.value)
         {
             return None;
@@ -881,10 +881,10 @@ pub(crate) fn resolved_extrude_profile_selection(
         })
         .collect::<Vec<_>>();
     selection_members.sort_by_key(|member| member.group_member_ordinal);
-    let exact_member_run = selection_members.len() == group.members.len()
+    let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
-            .zip(&group.members)
+            .zip(group.members())
             .all(|(member, record_index)| member.record_index == record_index.value);
     let resolved_profiles = exact_member_run.then(|| {
         let mut selected = Vec::new();
@@ -1131,10 +1131,10 @@ fn resolved_spatial_extrude_profile_selection(
         })
         .collect::<Vec<_>>();
     group_members.sort_by_key(|member| member.group_member_ordinal);
-    let exact_member_run = group_members.len() == group.members.len()
+    let exact_member_run = group_members.len() == group.members().len()
         && group_members
             .iter()
-            .zip(&group.members)
+            .zip(group.members())
             .all(|(member, record_index)| member.record_index == record_index.value);
     let exact_selection = (|| {
         if !exact_member_run {

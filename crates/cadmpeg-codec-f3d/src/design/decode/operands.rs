@@ -2917,9 +2917,7 @@ pub(crate) fn parse_extrude_selection_group(
     }
     let opaque_index = View::u32_le_at(bytes, position)?;
     let opaque_scalar = View::f64_le_at(bytes, position + 4)?;
-    if opaque_index == 0
-        || !opaque_scalar.is_finite()
-        || View::u32_le_at(bytes, position + 12)? != opaque_index
+    if View::u32_le_at(bytes, position + 12)? != opaque_index
         || bytes.get(position + 16) != Some(&1)
         || View::u32_le_at(bytes, position + 17)? != header.record_index.checked_add(2)?
         || bytes.get(position + 21..position + 27)? != [0; 6]
@@ -2941,23 +2939,27 @@ pub(crate) fn parse_extrude_selection_group(
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
         return None;
     }
-    Some(DesignExtrudeSelectionGroup {
-        id: String::new(),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        member_count_offset: u64::try_from(start + 32).ok()?,
-        members,
-        opaque_index,
-        opaque_index_offset: u64::try_from(position).ok()?,
-        opaque_scalar,
-        opaque_scalar_offset: u64::try_from(position + 4).ok()?,
-        variant: bytes[position + 28] != 0,
-        paired_class_tag: paired_class_tag.try_into().ok()?,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+    DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::DesignExtrudeSelectionGroupWire {
+            id: String::new(),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone().into(),
+            member_count_offset: u64::try_from(start + 32).ok()?,
+            members: members.iter().map(|member| member.value).collect(),
+            member_offsets: members.iter().map(|member| member.offset).collect(),
+            opaque_index,
+            opaque_index_offset: u64::try_from(position).ok()?,
+            opaque_scalar,
+            opaque_scalar_offset: u64::try_from(position + 4).ok()?,
+            variant: bytes[position + 28] != 0,
+            paired_class_tag,
+            paired_byte_offset: u64::try_from(paired_at).ok()?,
+        },
+    )
+    .ok()
 }
 
 /// Decode the fixed-width records named by Extrude selection groups.
@@ -2980,7 +2982,12 @@ pub fn decode_extrude_selection_members(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
