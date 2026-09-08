@@ -48,11 +48,6 @@ impl CompoundStreamId {
     pub const fn directory_id(self) -> u32 {
         self.0
     }
-
-    /// Reconstruct a stream identity from a CFB directory-entry index.
-    pub const fn from_directory_id(id: u32) -> Self {
-        Self(id)
-    }
 }
 
 /// CFB allocation mechanism for a stream.
