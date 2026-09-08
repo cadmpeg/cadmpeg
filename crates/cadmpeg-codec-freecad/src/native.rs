@@ -47,6 +47,22 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn file_version_preserves_spelling_and_rejects_invalid_wire() {
+        let wire = serde_json::json!({"id":"document", "schema_version":"4", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
+        let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(record.file_version.value(), 1);
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        for spelling in ["-1", "", "abc", "184467440737095516160"] {
+            let mut invalid = wire.clone();
+            invalid["file_version"] = serde_json::json!(spelling);
+            assert!(serde_json::from_value::<super::DocumentFacts>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("file_version"));
+        }
+    }
+
+    #[test]
     fn gui_provider_object_rejects_empty_wire_identity() {
         let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
         assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
@@ -1323,6 +1339,30 @@ impl DocumentKind {
     }
 }
 
+/// Parsed file version with its exact source spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileVersion {
+    spelling: String,
+    value: usize,
+}
+impl TryFrom<String> for FileVersion {
+    type Error = String;
+    fn try_from(spelling: String) -> Result<Self, Self::Error> {
+        let value = spelling
+            .parse()
+            .map_err(|_| "file_version must parse as usize".to_owned())?;
+        Ok(Self { spelling, value })
+    }
+}
+impl FileVersion {
+    pub(crate) fn value(&self) -> usize {
+        self.value
+    }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.spelling
+    }
+}
+
 /// Metadata read from the persistence document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DocumentFactsWire", into = "DocumentFactsWire")]
@@ -1332,7 +1372,7 @@ pub struct DocumentFacts {
     /// Persistence schema version.
     pub schema_version: String,
     /// Persistence file version.
-    pub file_version: String,
+    pub file_version: FileVersion,
     /// Producing application version, when carried.
     pub program_version: Option<String>,
     /// XML document element name.
@@ -1379,7 +1419,7 @@ impl From<DocumentFacts> for DocumentFactsWire {
             document_kind: value.document_kind(),
             id: value.id,
             schema_version: value.schema_version,
-            file_version: value.file_version,
+            file_version: value.file_version.spelling,
             program_version: value.program_version,
             root_name: value.root_name,
             object_count: value.object_count,
@@ -1393,7 +1433,7 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
         let value = Self {
             id: wire.id,
             schema_version: wire.schema_version,
-            file_version: wire.file_version,
+            file_version: wire.file_version.try_into()?,
             program_version: wire.program_version,
             root_name: wire.root_name,
             object_count: wire.object_count,

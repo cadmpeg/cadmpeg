@@ -131,7 +131,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
 pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
     let mut notes = vec![
         format!("SchemaVersion={}", scan.document.schema_version),
-        format!("FileVersion={}", scan.document.file_version),
+        format!("FileVersion={}", scan.document.file_version.as_str()),
         format!("document root={}", scan.document.root_name),
         format!("document kind={}", scan.document.document_kind().as_str()),
         format!("object count={}", scan.document.object_count),
@@ -231,9 +231,8 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
     schema_version
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
-    file_version
-        .parse::<usize>()
-        .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
+    let file_version =
+        crate::native::FileVersion::try_from(file_version).map_err(CodecError::Malformed)?;
     let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
     let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
     let _ = unique_section(root, data_tag)?;
