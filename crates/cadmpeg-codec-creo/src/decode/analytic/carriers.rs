@@ -490,13 +490,17 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
     scan.framing
         .sections
         .iter()
-        .filter(|section| section.role == SectionRole::PsbGeometry)
+        .filter(|section| section.role() == SectionRole::PsbGeometry)
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
         .map(|section| {
-            UnknownId::mint(format!("creo:{}:section#{}", section.name, section.offset))
-                .expect("identity grammar")
+            UnknownId::mint(format!(
+                "creo:{}:section#{}",
+                section.name(),
+                section.offset
+            ))
+            .expect("identity grammar")
         })
 }
 

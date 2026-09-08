@@ -190,11 +190,11 @@ fn scan_enumerates_and_classifies_sections() {
 
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
-    assert_eq!(scan.framing.sections[0].name, "VisibGeom");
-    assert_eq!(scan.framing.sections[0].role, SectionRole::PsbGeometry);
-    assert_eq!(scan.framing.sections[1].name, "AllFeatur");
-    assert_eq!(scan.framing.sections[1].role, SectionRole::ModelData);
-    assert_eq!(scan.framing.sections[2].role, SectionRole::Thumbnail);
+    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
+    assert_eq!(scan.framing.sections[0].role(), SectionRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[1].name(), "AllFeatur");
+    assert_eq!(scan.framing.sections[1].role(), SectionRole::ModelData);
+    assert_eq!(scan.framing.sections[2].role(), SectionRole::Thumbnail);
     assert!(container::has_thumbnail(&scan));
 }
 
@@ -225,12 +225,12 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
         scan.framing
             .sections
             .iter()
-            .map(|section| section.name.as_str())
+            .map(|section| section.name())
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(scan.framing.sections[1].role, SectionRole::PsbGeometry);
-    assert_eq!(scan.framing.sections[2].role, SectionRole::ModelData);
+    assert_eq!(scan.framing.sections[1].role(), SectionRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[2].role(), SectionRole::ModelData);
 }
 
 #[test]
@@ -263,9 +263,9 @@ fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
     let scan = container::scan_bytes(data);
 
     assert_eq!(scan.framing.sections.len(), 2);
-    assert_eq!(scan.framing.sections[0].name, "SolidPrimdata");
+    assert_eq!(scan.framing.sections[0].name(), "SolidPrimdata");
     assert_eq!(scan.framing.sections[0].length, first.len());
-    assert_eq!(scan.framing.sections[1].name, "VisibGeom");
+    assert_eq!(scan.framing.sections[1].name(), "VisibGeom");
     assert_eq!(scan.framing.sections[1].offset, header_base + second_offset);
 }
 
@@ -413,7 +413,7 @@ fn nd_decoration_selects_nd_layout() {
     let scan = container::scan_bytes(data);
     assert_eq!(scan.framing.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
-    assert_eq!(scan.framing.sections[0].name, "VisibGeom");
+    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
     assert_eq!(scan.framing.sections[0].raw_name, "ND:0:VisibGeom:1");
     assert_eq!(scan.framing.census.srf_array_count, Some(3));
 }
@@ -587,7 +587,7 @@ fn framing_names_are_not_mistaken_for_sections() {
     let scan = container::scan_bytes(data);
     // Only VisibGeom — the header/TOC framing markers are excluded.
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(scan.framing.sections[0].name, "VisibGeom");
+    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
 }
 
 #[test]

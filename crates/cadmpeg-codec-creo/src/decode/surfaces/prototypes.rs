@@ -370,7 +370,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         annotate(
             annotations,
             &id,
-            &section.name,
+            &section.name(),
             record.offset as u64,
             "first_instance_surface_prototype",
             Exactness::Derived,
@@ -380,7 +380,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name, row.id),
+                object_id: format!("{}:{}", section.name(), row.id),
                 name: None,
                 color: None,
                 visible: None,
@@ -486,7 +486,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         annotate(
             annotations,
             &id,
-            &section.name,
+            &section.name(),
             parameter.body_offset as u64,
             "positional_spline_prototype_replay",
             Exactness::Derived,
@@ -496,7 +496,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name, row.id),
+                object_id: format!("{}:{}", section.name(), row.id),
                 name: None,
                 color: None,
                 visible: None,

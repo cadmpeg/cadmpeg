@@ -1041,7 +1041,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(scan.framing.sections[0].name, "BasicData");
+    assert_eq!(scan.framing.sections[0].name(), "BasicData");
     assert_eq!(scan.framing.sections[0].offset, section_offset);
     assert_eq!(scan.framing.sections[0].length, section.len());
     let persistence = &scan

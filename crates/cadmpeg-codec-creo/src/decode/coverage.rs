@@ -29,7 +29,7 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
                     "unknown"
                 }
             },
-            |section| section.name.as_str(),
+            |section| section.name(),
         )
         .to_string()
 }
