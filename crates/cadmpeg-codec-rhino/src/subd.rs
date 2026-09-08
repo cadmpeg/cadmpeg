@@ -1141,7 +1141,7 @@ fn materialize(
                 tag,
                 None,
             )
-            .map_err(|error| malformed(0, &error.to_string()))
+            .map_err(|error| malformed(0, error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let edges = level
@@ -1165,7 +1165,7 @@ fn materialize(
                 None,
                 edge.sector_coefficients,
             )
-            .map_err(|error| malformed(0, &error.to_string()))
+            .map_err(|error| malformed(0, error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let faces = level
@@ -1185,7 +1185,7 @@ fn materialize(
                     })
                     .collect::<Result<Vec<_>, SubdError>>()?,
             )
-            .map_err(|error| malformed(0, &error.to_string()))
+            .map_err(|error| malformed(0, error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     Ok(SubdSurface {
@@ -1193,7 +1193,7 @@ fn materialize(
         scheme: SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
-            .map_err(|error| malformed(0, &error.to_string()))?,
+            .map_err(|error| malformed(0, error.to_string()))?,
     })
 }
 
