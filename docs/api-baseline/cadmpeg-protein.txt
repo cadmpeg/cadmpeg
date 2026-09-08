@@ -1,13 +1,13 @@
-# generated at 5526cd5f7
+# generated at f444fcb0b
 pub mod cadmpeg_protein
 pub mod cadmpeg_protein::property
 pub enum cadmpeg_protein::property::PropertyContent
 pub cadmpeg_protein::property::PropertyContent::MultipleReferences
-pub cadmpeg_protein::property::PropertyContent::MultipleReferences::count: usize
+pub cadmpeg_protein::property::PropertyContent::MultipleReferences::count: core::num::nonzero::NonZeroUsize
 pub cadmpeg_protein::property::PropertyContent::MultipleReferences::targets: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_protein::property::PropertyContent::Reference(alloc::vec::Vec<alloc::string::String>)
 pub cadmpeg_protein::property::PropertyContent::Value
-pub cadmpeg_protein::property::PropertyContent::Value::connections: core::option::Option<alloc::vec::Vec<alloc::string::String>>
+pub cadmpeg_protein::property::PropertyContent::Value::connections: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_protein::property::PropertyContent::Value::value: cadmpeg_protein::property::PropertyValue
 pub enum cadmpeg_protein::property::PropertyValue
 pub cadmpeg_protein::property::PropertyValue::Boolean(bool)

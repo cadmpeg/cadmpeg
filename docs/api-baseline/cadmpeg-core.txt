@@ -1,4 +1,4 @@
-# generated at 52daa3cec
+# generated at f444fcb0b
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -113,9 +113,8 @@ pub cadmpeg_core::container::ContainerEntry::role: cadmpeg_core::container::Cont
 pub cadmpeg_core::container::ContainerEntry::uncompressed_size: u64
 pub mod cadmpeg_core::decode
 pub enum cadmpeg_core::decode::AddressStepKind
-pub cadmpeg_core::decode::AddressStepKind::ExpandedMember
+pub cadmpeg_core::decode::AddressStepKind::Member
 pub cadmpeg_core::decode::AddressStepKind::Root
-pub cadmpeg_core::decode::AddressStepKind::StoredMember
 pub enum cadmpeg_core::decode::DecodeMode
 pub cadmpeg_core::decode::DecodeMode::Salvage
 pub cadmpeg_core::decode::DecodeMode::Strict
@@ -130,7 +129,6 @@ pub cadmpeg_core::decode::ParseErrorKind::InvalidFraming
 pub cadmpeg_core::decode::ParseErrorKind::InvalidValue
 pub cadmpeg_core::decode::ParseErrorKind::UnexpectedEof
 pub cadmpeg_core::decode::ParseErrorKind::UnexpectedEof::needed: u64
-pub cadmpeg_core::decode::ParseErrorKind::UnexpectedEof::remaining: u64
 pub enum cadmpeg_core::decode::ResourceDimension
 pub cadmpeg_core::decode::ResourceDimension::Codec(&'static str)
 pub cadmpeg_core::decode::ResourceDimension::CollectionItems

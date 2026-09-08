@@ -1,4 +1,4 @@
-# generated at 52daa3cec
+# generated at f444fcb0b
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -11,6 +11,7 @@ pub fn cadmpeg_asm::acis_header::solved_record_limit_with_header(&[u8], &cadmpeg
 pub mod cadmpeg_asm::asm_header
 pub fn cadmpeg_asm::asm_header::has_asm_magic(&[u8]) -> bool
 pub fn cadmpeg_asm::asm_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>
+pub fn cadmpeg_asm::asm_header::record_count(&[u8]) -> core::option::Option<u32>
 pub fn cadmpeg_asm::asm_header::record_stream_start(&[u8]) -> core::option::Option<usize>
 pub fn cadmpeg_asm::asm_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::asm_header::solved_record_limit(&[u8]) -> core::option::Option<usize>
@@ -416,7 +417,6 @@ pub cadmpeg_asm::kernel_header::KernelHeader::flags: core::option::Option<u64>
 pub cadmpeg_asm::kernel_header::KernelHeader::linear: core::option::Option<f64>
 pub cadmpeg_asm::kernel_header::KernelHeader::product_family: core::option::Option<alloc::string::String>
 pub cadmpeg_asm::kernel_header::KernelHeader::product_version: core::option::Option<alloc::string::String>
-pub cadmpeg_asm::kernel_header::KernelHeader::record_count: core::option::Option<u32>
 pub cadmpeg_asm::kernel_header::KernelHeader::save_date: core::option::Option<alloc::string::String>
 pub cadmpeg_asm::kernel_header::KernelHeader::save_format_version: core::option::Option<u32>
 pub cadmpeg_asm::kernel_header::KernelHeader::scale: core::option::Option<f64>
@@ -1287,7 +1287,6 @@ pub cadmpeg_asm::sat::TextHeader::entity_count: u64
 pub cadmpeg_asm::sat::TextHeader::flags: u64
 pub cadmpeg_asm::sat::TextHeader::product_family: alloc::string::String
 pub cadmpeg_asm::sat::TextHeader::product_version: alloc::string::String
-pub cadmpeg_asm::sat::TextHeader::record_count: u32
 pub cadmpeg_asm::sat::TextHeader::resabs: f64
 pub cadmpeg_asm::sat::TextHeader::resnor: f64
 pub cadmpeg_asm::sat::TextHeader::save_date: alloc::string::String
