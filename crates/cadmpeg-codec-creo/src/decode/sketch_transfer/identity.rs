@@ -157,7 +157,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
     saved: &crate::feature::FeatureSavedEntity,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
-) -> (SketchEntity, usize) {
+) -> Result<(SketchEntity, usize), cadmpeg_core::CodecError> {
     let (internal_id, offset, kind) = saved_section_entity_identity(saved);
     let unique_internal_id = internal_id.filter(|id| unique_saved_ids.contains(id));
     let external_id = if let Some(internal_id) = unique_internal_id {
@@ -194,18 +194,24 @@ pub(in super::super) fn unresolved_saved_section_entity(
         },
         |external_id| sketch_entity_id(sketch, external_id),
     );
-    (
+    Ok((
         SketchEntity::new(
             id,
             sketch.clone(),
             SketchGeometry::Native {
-                native_kind: format!("saved_{}", kind.name()),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "saved_{}",
+                    kind.name()
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                })?,
             },
         )
         .with_construction(true)
         .with_native_ref(Some(sketch_native_ref(sketch))),
         offset,
-    )
+    ))
 }
 
 pub(in super::super) fn unique_saved_section_internal_ids(

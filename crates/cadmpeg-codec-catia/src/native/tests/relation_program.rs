@@ -364,7 +364,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None)
+        .expect("valid exactness fields");
     let [parameter] = ir.model.parameters.as_slice() else {
         panic!("one relation-program input parameter")
     };
@@ -398,7 +399,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         &empty_binding_native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
         panic!("one empty-binding input parameter")
     };
@@ -432,7 +434,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         &conflicting_native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
     assert!(conflicting_ir.model.parameters.is_empty());
 }
@@ -476,7 +479,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None)
+        .expect("valid exactness fields");
     let [input, output] = ir.model.parameters.as_slice() else {
         panic!("typed relation-program input and output")
     };
@@ -508,7 +512,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         &ambiguous_native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     let [ambiguous_input] = ambiguous_ir.model.parameters.as_slice() else {
         panic!("ambiguous compound output keeps its typed input")
     };

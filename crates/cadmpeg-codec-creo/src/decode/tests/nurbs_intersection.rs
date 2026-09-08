@@ -195,7 +195,8 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
         &mut with_witness,
         &mut AnnotationBuilder::new(),
         &witness,
-    );
+    )
+    .expect("valid source object identity");
     assert_eq!(
         transferred,
         BTreeSet::from([
@@ -222,5 +223,6 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
         &mut AnnotationBuilder::new(),
         &BTreeSet::new(),
     )
+    .expect("valid source object identity")
     .is_empty());
 }

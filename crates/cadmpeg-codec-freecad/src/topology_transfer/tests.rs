@@ -39,6 +39,8 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     }
 }
 
+const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+
 #[test]
 fn indexed_polygon_admits_only_aligned_parameters() {
     let node = Point3::new(0.0, 0.0, 0.0);
@@ -896,13 +898,21 @@ Co 1001000 +2 0 *
     assert_eq!(view.order, 0);
     assert_eq!(view.expanded, Some(true));
     assert_eq!(view.visible, Some(false));
-    assert_eq!(view.line_width, Some(2.5));
-    assert_eq!(view.point_size, Some(4.0));
+    assert_eq!(
+        view.line_width
+            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+        Some(2.5)
+    );
+    assert_eq!(
+        view.point_size
+            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+        Some(4.0)
+    );
     let color = result.ir().model.bodies[0].color.expect("shape color");
-    assert!((color.r - 0x33 as f32 / 255.0).abs() < 1.0e-6);
-    assert!((color.g - 0x66 as f32 / 255.0).abs() < 1.0e-6);
-    assert!((color.b - 0x99 as f32 / 255.0).abs() < 1.0e-6);
-    assert!((color.a - 0.75).abs() < 1.0e-6);
+    assert!((color.r() - 0x33 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - 0x66 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - 0x99 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.a() - 0.75).abs() < EPS_COLOR_COMPONENT);
     let shape_material = result
         .ir()
         .model
@@ -944,12 +954,6 @@ Co 1001000 +2 0 *
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir().clone();
-    corrupted.model.view_presentations[0].line_width = Some(f64::NAN);
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "invalid view presentation reference, order, or size"));
     assert!(result
         .ir()
         .model

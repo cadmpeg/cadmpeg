@@ -14,7 +14,7 @@ pub(crate) fn transfer_parameters(
     native: &CatiaNative,
     annotations: &mut Annotations,
     graph_scope: Option<&HashSet<String>>,
-) -> FormulaTransfer {
+) -> Result<FormulaTransfer, cadmpeg_core::CodecError> {
     let entities = native
         .entity_records
         .iter()
@@ -473,7 +473,7 @@ pub(crate) fn transfer_parameters(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return FormulaTransfer::default();
+        return Ok(FormulaTransfer::default());
     };
     let definition_chain_parameter_count = parameters
         .iter()
@@ -488,9 +488,13 @@ pub(crate) fn transfer_parameters(
         .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
-        annotation_builder.derived(candidate.parameter.id.as_str(), "properties");
+        annotation_builder
+            .derived(candidate.parameter.id.as_str(), "properties")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
-            annotation_builder.derived(candidate.parameter.id.as_str(), "expression");
+            annotation_builder
+                .derived(candidate.parameter.id.as_str(), "expression")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     *annotations = annotation_builder.build();
@@ -498,7 +502,7 @@ pub(crate) fn transfer_parameters(
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
-    FormulaTransfer {
+    Ok(FormulaTransfer {
         typed_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
         definition_chain_parameter_count,
         relation_program_parameter_count,
@@ -506,7 +510,7 @@ pub(crate) fn transfer_parameters(
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
         consumed_object_records,
-    }
+    })
 }
 
 /// Add only typed scalar values from the exact two-definition chain grammar.

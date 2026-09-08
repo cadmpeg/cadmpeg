@@ -364,17 +364,22 @@ pub(super) fn decode(
                 .iter_mut()
                 .find(|surface| surface.id.as_str() == surface_id)
             {
-                surface
-                    .source_object
-                    .get_or_insert_with(|| SourceObjectAssociation {
+                if surface.source_object.is_none() {
+                    surface.source_object = Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: format!("#{id}"),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
                         name: None,
                         color: None,
                         visible: None,
                         layer: None,
                         instance_path: Vec::new(),
                     });
+                }
             }
         }
         let mesh = match Tessellation::from_decoded(
@@ -413,15 +418,23 @@ pub(super) fn decode(
                 (!declared_items.contains(&id)
                     || unresolved_items.contains(&id)
                     || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
-                .then(|| SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{id}"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
+                .then(|| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    })
+                })
+                .transpose()?,
             ),
         );
         typed.extend([id, coordinate_id]);

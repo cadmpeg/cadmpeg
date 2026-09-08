@@ -62,7 +62,7 @@ pub(super) fn emit_topology(
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
-) -> EndpointWitnesses {
+) -> Result<EndpointWitnesses, cadmpeg_core::CodecError> {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
     let valid_face_xmts: BTreeSet<u32> = body_shape_shells
@@ -173,7 +173,9 @@ pub(super) fn emit_topology(
                     .tag("UNRESOLVED_REGION_REFERENCE");
                 annotations.exactness(&region, Exactness::Unknown);
             }
-            annotations.derived(&region, "body");
+            annotations
+                .derived(&region, "body")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.regions.push(Region {
                 id: region.clone(),
                 body: body.clone(),
@@ -242,7 +244,9 @@ pub(super) fn emit_topology(
             VertexId::mint(format!("{prefix}:vertex#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
-            annotations.derived(&vertex, "tolerance");
+            annotations
+                .derived(&vertex, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.vertices.push(Vertex {
             id: vertex.clone(),
@@ -250,7 +254,13 @@ pub(super) fn emit_topology(
             tolerance,
         });
         vertices.insert(node.xmt, vertex.clone());
-        vertex_positions.insert(vertex, (point_position, tolerance));
+        vertex_positions.insert(
+            vertex,
+            (
+                point_position,
+                tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+            ),
+        );
     }
     let pcurve_indices: BTreeMap<_, _> = ir
         .model
@@ -326,7 +336,9 @@ pub(super) fn emit_topology(
                 annotations
                     .note(&carrier, source_stream, node.pos as u64)
                     .tag("PARAMETRIC_SURFACE_CURVE");
-                annotations.derived(&carrier, "geometry");
+                annotations
+                    .derived(&carrier, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.curves.push(Curve {
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
@@ -426,7 +438,9 @@ pub(super) fn emit_topology(
         let id = EdgeId::mint(format!("{prefix}:edge#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
-            annotations.derived(&id, "tolerance");
+            annotations
+                .derived(&id, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
             let oriented = curve_indices.get(carrier).copied().and_then(|curve_index| {
@@ -440,7 +454,7 @@ pub(super) fn emit_topology(
                     start_tolerance,
                     end_position,
                     end_tolerance,
-                    decoded_tolerance(fields.tolerance),
+                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::units::PositiveScalar::get),
                     procedural_curve_ids.contains(carrier),
                     &mut curve_point_cache,
                     adaptive_geometry_budget,
@@ -499,7 +513,9 @@ pub(super) fn emit_topology(
         let id = FaceId::mint(format!("{prefix}:face#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance).is_some() {
-            annotations.derived(&id, "tolerance");
+            annotations
+                .derived(&id, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.faces.push(Face {
             id: id.clone(),
@@ -792,10 +808,16 @@ pub(super) fn emit_topology(
                 annotations
                     .note(&pcurve_id, source_stream, node.pos as u64)
                     .tag("INTERSECTION_PCURVE");
-                annotations.derived(&pcurve_id, "geometry");
-                annotations.derived(&pcurve_id, "parameter_range");
+                annotations
+                    .derived(&pcurve_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                annotations
+                    .derived(&pcurve_id, "parameter_range")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(&pcurve_id, "fit_tolerance");
+                    annotations
+                        .derived(&pcurve_id, "fit_tolerance")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
@@ -861,7 +883,7 @@ pub(super) fn emit_topology(
         source_stream,
         annotations,
         adaptive_geometry_budget,
-    );
+    )?;
     intersection_index.complete_from_stream(ir, intersection_starts);
     complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
         ir,
@@ -870,14 +892,14 @@ pub(super) fn emit_topology(
         intersection_starts.procedural_curves,
         annotations,
         completion_geometry_budget,
-    );
+    )?;
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
         annotations,
         procedural_start,
         exact_transfer_budget,
         completion_geometry_budget,
-    );
+    )?;
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ir,
         procedural_start,
@@ -905,7 +927,7 @@ pub(super) fn emit_topology(
     ir.model.vertices.retain(|vertex| {
         !vertex.id.as_str().starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
-    endpoint_witnesses
+    Ok(endpoint_witnesses)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1016,11 +1038,11 @@ pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
     }
 }
 
-pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
+pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
     match value {
         MISSING_TOLERANCE => None,
         value if value.is_finite() && value > 0.0 && (value * 1000.0).is_finite() => {
-            Some(value * 1000.0)
+            cadmpeg_ir::units::PositiveScalar::new(value * 1000.0)
         }
         _ => None,
     }
@@ -1036,7 +1058,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     curve_index: usize,
     range: Option<[f64; 2]>,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
-    tolerance: Option<f64>,
+    tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<VertexId> {
@@ -1153,7 +1175,10 @@ pub(crate) fn orient_edge_range_with_budget(
             .points
             .iter()
             .find(|candidate| candidate.id == vertex.point)?;
-        Some((point.position, vertex.tolerance))
+        Some((
+            point.position,
+            vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        ))
     };
     let (start_position, start_tolerance) = vertex_position(start)?;
     let (end_position, end_tolerance) = vertex_position(end)?;

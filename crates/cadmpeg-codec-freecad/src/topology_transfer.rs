@@ -91,6 +91,8 @@ pub(crate) fn transfer(
                 || payload.property.clone(),
                 |property| property.owner.clone(),
             );
+        let source_object = cadmpeg_ir::products::NonEmptyString::new(source_object)
+            .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
         let mut builder = Builder::new(payload, tables, source_object)?;
         builder.emit_pcurves(ir);
         for root in builder.body_roots()? {
@@ -187,7 +189,7 @@ struct Builder<'a> {
     body_scope: Transform,
     root_discriminator: Option<usize>,
     current_body: Option<BodyId>,
-    source_object: String,
+    source_object: cadmpeg_ir::products::NonEmptyString,
     source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
     occurrences: Vec<TopologyOccurrence>,
 }
@@ -196,7 +198,7 @@ impl<'a> Builder<'a> {
     fn new(
         payload: &'a ShapePayloadRecord,
         tables: Tables<'a>,
-        source_object: String,
+        source_object: cadmpeg_ir::products::NonEmptyString,
     ) -> Result<Self, CodecError> {
         let source_indices = source_topology_indices(tables)?;
         Ok(Self {
@@ -1567,8 +1569,8 @@ fn transformed_pcurve_geometry(
     }
 }
 
-fn positive_tolerance(value: f64) -> Option<f64> {
-    (value.is_finite() && value > 0.0).then_some(value)
+fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
+    cadmpeg_ir::units::PositiveScalar::new(value)
 }
 
 pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {

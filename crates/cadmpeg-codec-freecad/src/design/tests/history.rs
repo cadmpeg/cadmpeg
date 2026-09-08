@@ -567,11 +567,11 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         sheet.column_widths,
         [
             cadmpeg_ir::SpreadsheetDimension {
-                index: 1,
+                index: std::num::NonZeroU32::new(1).expect("nonzero index"),
                 pixels: 120,
             },
             cadmpeg_ir::SpreadsheetDimension {
-                index: 2,
+                index: std::num::NonZeroU32::new(2).expect("nonzero index"),
                 pixels: 80,
             },
         ]
@@ -579,7 +579,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert_eq!(
         sheet.row_heights,
         [cadmpeg_ir::SpreadsheetDimension {
-            index: 2,
+            index: std::num::NonZeroU32::new(2).expect("nonzero index"),
             pixels: 45,
         }]
     );

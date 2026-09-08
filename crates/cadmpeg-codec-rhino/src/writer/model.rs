@@ -226,7 +226,7 @@ impl<'a> WritableModel<'a> {
                 "Brep body placement is not writable".into(),
             ));
         }
-        check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
+        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
         let region = &model.regions[0];
         let shell = &model.shells[0];
         if region.id != body.regions[0]
@@ -425,7 +425,10 @@ impl<'a> WritableModel<'a> {
             let end = resolve(&vertex_positions, edge.end.as_str())?;
             let tolerance = edge
                 .tolerance
-                .unwrap_or(ir.tolerances.linear)
+                .map_or(
+                    ir.tolerances.linear.get(),
+                    cadmpeg_ir::units::PositiveScalar::get,
+                )
                 .max(EPS_WRITE_DEGENERATE);
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
@@ -613,7 +616,7 @@ impl<'a> WritableModel<'a> {
                             ))
                         })?;
                         validate_nurbs_trim(
-                            surface, face.source.tolerance.unwrap_or(ir.tolerances.linear),
+                            surface, face.source.tolerance.map_or(ir.tolerances.linear.get(), cadmpeg_ir::units::PositiveScalar::get),
                             &edges[edge], coedge.sense, &pcurve,
                         )?;
                         pcurve.payload
@@ -739,7 +742,10 @@ impl<'a> WritableModel<'a> {
                     let tolerance = face
                         .source
                         .tolerance
-                        .unwrap_or(ir.tolerances.linear)
+                        .map_or(
+                            ir.tolerances.linear.get(),
+                            cadmpeg_ir::units::PositiveScalar::get,
+                        )
                         .max(EPS_WRITE_DEGENERATE);
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {

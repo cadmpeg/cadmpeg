@@ -1034,6 +1034,12 @@ fn spreadsheet_dimensions(
                         ))
                     })?
             };
+            let index = std::num::NonZeroU32::new(index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} dimension index must be nonzero",
+                    property.id
+                ))
+            })?;
             Ok(SpreadsheetDimension { index, pixels })
         })
         .collect()
@@ -1390,7 +1396,7 @@ fn parse_sketch(
             });
             let geometry_value = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
-                .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
+                .map_or_else(|| sketch_geometry(&native_kind, &attributes), Ok)?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId(format!(
@@ -1472,7 +1478,7 @@ fn parse_sketch(
             });
             let geometry = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
-                .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
+                .map_or_else(|| sketch_geometry(&native_kind, &attributes), Ok)?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId(format!(
@@ -1522,7 +1528,10 @@ fn parse_sketch(
                     id.clone(),
                     SketchGeometry::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
-                        object: target_object,
+                        object: cadmpeg_ir::products::NonEmptyString::new(target_object)
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed("object must not be empty")
+                            })?,
                         subelements: reference.subelements.clone(),
                     },
                 )
@@ -2796,12 +2805,17 @@ fn constraint_kind(kind: i64) -> &'static str {
     }
 }
 
-fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchGeometry {
+fn sketch_geometry(
+    kind: &str,
+    attributes: &BTreeMap<String, String>,
+) -> Result<SketchGeometry, CodecError> {
+    let native_kind = cadmpeg_ir::products::NonEmptyString::new(kind)
+        .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || SketchGeometry::Native {
-        native_kind: kind.to_owned(),
+        native_kind: native_kind.clone(),
     };
-    if matches!(
+    let geometry = if matches!(
         kind,
         "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
     ) {
@@ -2964,7 +2978,8 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
         }
     } else {
         native()
-    }
+    };
+    Ok(geometry)
 }
 
 fn build_profiles(

@@ -1877,18 +1877,8 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     let body = ir.model.bodies[0].id.clone();
     let first_face = ir.model.faces[0].id.clone();
     let second_face = ir.model.faces[1].id.clone();
-    let direct = Color {
-        r: 0.9,
-        g: 0.8,
-        b: 0.7,
-        a: 1.0,
-    };
-    let material = Color {
-        r: 0.1,
-        g: 0.2,
-        b: 0.3,
-        a: 1.0,
-    };
+    let direct = Color::new(0.9, 0.8, 0.7, 1.0).expect("valid color");
+    let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
     ir.model.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),

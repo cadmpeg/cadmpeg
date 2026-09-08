@@ -211,23 +211,7 @@ pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &
 }
 
 pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if nonpositive(ir.tolerances.linear) {
-        findings.push(Finding {
-            check: Check::Tolerances,
-            severity: Severity::Warning,
-            message: "document linear tolerance is not positive and finite".into(),
-            entity: None,
-        });
-    }
-    if nonpositive(ir.tolerances.angular) {
-        findings.push(Finding {
-            check: Check::Tolerances,
-            severity: Severity::Warning,
-            message: "document angular tolerance is not positive and finite".into(),
-            entity: None,
-        });
-    }
-    if ir.tolerances.linear > 1.0e6 || ir.tolerances.angular > std::f64::consts::TAU {
+    if ir.tolerances.linear.get() > 1.0e6 || ir.tolerances.angular.get() > std::f64::consts::TAU {
         findings.push(Finding {
             check: Check::Tolerances,
             severity: Severity::Warning,

@@ -150,7 +150,12 @@ pub(crate) fn transfer_neutral(
                 }
                 _ => None,
             },
-            position: annotation_position(&owned, schema.position)?,
+            position: annotation_position(&owned, schema.position)?
+                .map(|value| {
+                    cadmpeg_ir::units::FiniteVector::new(value)
+                        .ok_or_else(|| CodecError::malformed("annotation position must be finite"))
+                })
+                .transpose()?,
             parameters: record.parameters.clone(),
             assets: record
                 .side_entries
@@ -725,13 +730,19 @@ pub(crate) mod tests {
             .find(|annotation| annotation.runtime_type == "App::Annotation")
             .expect("note annotation");
         assert_eq!(note.text, ["NOTE"]);
-        assert_eq!(note.position, Some([1.0, 2.0, 3.0]));
+        assert_eq!(
+            note.position.map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.0, 2.0, 3.0])
+        );
         let label = annotations
             .iter()
             .find(|annotation| annotation.runtime_type == "App::AnnotationLabel")
             .expect("label annotation");
         assert_eq!(label.text, ["LABEL"]);
-        assert_eq!(label.position, Some([4.0, 5.0, 6.0]));
+        assert_eq!(
+            label.position.map(cadmpeg_ir::units::FiniteVector::get),
+            Some([4.0, 5.0, 6.0])
+        );
     }
 
     #[test]
@@ -922,7 +933,9 @@ pub(crate) mod tests {
                 .model
                 .semantic_annotations
                 .iter()
-                .map(|annotation| annotation.position)
+                .map(|annotation| annotation
+                    .position
+                    .map(cadmpeg_ir::units::FiniteVector::get))
                 .collect::<Vec<_>>(),
             [Some([10.0, 20.0, 0.0]), Some([30.0, 40.0, 0.0])]
         );
@@ -1089,7 +1102,12 @@ pub(crate) mod tests {
         assert_eq!(semantic_dimension.text, ["12.5 mm"]);
         assert_eq!(semantic_dimension.format.as_deref(), Some("12.5 mm"));
         assert_eq!(semantic_dimension.value, None);
-        assert_eq!(semantic_dimension.position, Some([10.0, 20.0, 0.0]));
+        assert_eq!(
+            semantic_dimension
+                .position
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([10.0, 20.0, 0.0])
+        );
         assert_eq!(
             semantic_dimension.references["References2D"][0].subelements,
             ["Edge1"]
@@ -1119,14 +1137,6 @@ pub(crate) mod tests {
         );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
-
-        let mut corrupted = result.ir().clone();
-        corrupted.model.semantic_annotations[0].value = Some(f64::INFINITY);
-        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message
-                == "invalid semantic annotation reference, order, or numeric state"));
     }
 
     #[test]

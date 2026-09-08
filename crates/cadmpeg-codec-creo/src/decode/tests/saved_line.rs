@@ -200,7 +200,8 @@ fn saved_line_joins_through_order_table() {
             .entities[0],
         &unique_saved_section_internal_ids(&incomplete),
         &BTreeSet::new(),
-    );
+    )
+    .expect("valid source identity");
     assert_eq!(offset, 20);
     assert_eq!(native_entity.id().0, "creo:featdefs:sketch_entity#5:42");
     assert!(matches!(
@@ -612,7 +613,10 @@ fn saved_line_joins_through_order_table() {
     let solver_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
         SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".to_string(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                "solver_only_section_entity".to_string(),
+            )
+            .expect("nonempty source identity"),
         },
     )]);
     assert!(matches!(
@@ -684,13 +688,15 @@ fn saved_line_joins_through_order_table() {
         (
             SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("line".to_string())
+                    .expect("nonempty source identity"),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("point".to_string())
+                    .expect("nonempty source identity"),
             },
         ),
     ]);

@@ -674,7 +674,7 @@ fn ensure_surface_support(
                 let mut geometry = carrier.geometry.clone();
                 if let Some((u_reference, v_reference)) = carrier.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(annotations, id.as_str(), &geometry);
+                    annotate_surface_frame(annotations, id.as_str(), &geometry).ok()?;
                 }
                 annotations
                     .note(&id, source_stream, carrier.offset as u64)
@@ -882,7 +882,11 @@ fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
 /// Decode one parsed Parasolid stream into B-rep arenas.
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
-pub(crate) fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
+pub(crate) fn decode(
+    payload: &[u8],
+    header: &StreamHeader,
+    stream: &str,
+) -> Result<Brep, cadmpeg_core::CodecError> {
     decode_body(&payload[header.body_offset.min(payload.len())..], stream)
 }
 
@@ -891,7 +895,10 @@ pub(crate) fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Bre
 /// Partition records are the base set. Deltas records fill missing subordinate
 /// records and point updates, but do not replace a same-identity partition
 /// topology or carrier record. `stream` names the combined provenance source.
-pub(crate) fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
+pub(crate) fn decode_bodies(
+    bodies: &[(&[u8], &StreamHeader)],
+    stream: &str,
+) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
@@ -990,7 +997,7 @@ pub(crate) fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> 
     decode_graph(&carriers, &tables, facts, &typed_facts, stream)
 }
 
-fn decode_body(body: &[u8], stream: &str) -> Brep {
+fn decode_body(body: &[u8], stream: &str) -> Result<Brep, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
@@ -1152,7 +1159,7 @@ fn decode_graph(
     entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
     stream: &str,
-) -> Brep {
+) -> Result<Brep, cadmpeg_core::CodecError> {
     let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
@@ -1196,7 +1203,7 @@ fn decode_graph(
     let mut annotations = AnnotationBuilder::new();
     let source_stream = annotations.stream(stream);
     if t.bridges().is_empty() {
-        return out;
+        return Ok(out);
     }
 
     // Walk every face-use bridge to collect its ordered loop/coedge structure.
@@ -1704,7 +1711,7 @@ fn decode_graph(
                 let mut geometry = c.geometry.clone();
                 if let Some((u_reference, v_reference)) = c.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry);
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry)?;
                 }
                 out.surfaces.push(Surface {
                     id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
@@ -1951,10 +1958,10 @@ fn decode_graph(
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
-        return Brep {
+        return Ok(Brep {
             stats: out.stats,
             ..Brep::default()
-        };
+        });
     }
     out.stats.synthetic_body_grouping = body_records.is_empty();
 
@@ -2159,7 +2166,7 @@ fn decode_graph(
     let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
     annotations.retain_exactness(|id| retained_ids.contains(id));
     out.annotations = annotations.build();
-    out
+    Ok(out)
 }
 
 fn prune_rejected_topology(out: &mut Brep) {
@@ -2283,23 +2290,29 @@ fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
     id: &str,
     mut geometry: &SurfaceGeometry,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     loop {
         match geometry {
             SurfaceGeometry::Plane { .. } => {
-                annotations.derived(id.to_owned(), "geometry.u_axis");
+                annotations
+                    .derived(id.to_owned(), "geometry.u_axis")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
             SurfaceGeometry::Cylinder { .. }
             | SurfaceGeometry::Cone { .. }
             | SurfaceGeometry::Torus { .. } => {
-                annotations.derived(id.to_owned(), "geometry.ref_direction");
+                annotations
+                    .derived(id.to_owned(), "geometry.ref_direction")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
             SurfaceGeometry::Sphere { .. } => {
                 annotations
                     .derived(id, "geometry.axis")
-                    .derived(id.to_owned(), "geometry.ref_direction");
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .derived(id.to_owned(), "geometry.ref_direction")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
             SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
@@ -2309,6 +2322,7 @@ fn annotate_surface_frame(
             | SurfaceGeometry::Unknown { .. } => break,
         }
     }
+    Ok(())
 }
 
 fn derive_planar_pcurves(
@@ -5456,12 +5470,7 @@ mod tests {
             color_attr,
             face_seq,
             stream_order: 0,
-            color: Color {
-                r: rgb[0],
-                g: rgb[1],
-                b: rgb[2],
-                a: 1.0,
-            },
+            color: Color::new(rgb[0], rgb[1], rgb[2], 1.0).expect("valid color"),
             offset: usize::from(face_attr),
             target: None,
         }
@@ -5937,7 +5946,7 @@ mod tests {
 
     #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
-        let decoded = super::decode_body(&[], "empty");
+        let decoded = super::decode_body(&[], "empty").expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
@@ -6039,7 +6048,8 @@ mod tests {
             },
             &super::typed::Facts::default(),
             "empty",
-        );
+        )
+        .expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
         assert_eq!(decoded.stats.ambiguous_face_owners, 1);

@@ -156,12 +156,10 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
     let color = color.ok_or_else(|| {
         CodecError::Malformed("visual source-less Protein appearance lacks base_color".into())
     })?;
-    for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
-        if !value.is_finite() {
-            return Err(CodecError::Malformed(
-                "Protein base color must contain finite channels".into(),
-            ));
-        }
+    for (ordinal, value) in [color.r(), color.g(), color.b(), color.a()]
+        .into_iter()
+        .enumerate()
+    {
         let at = offset + ordinal * 8;
         out[at..at + 8].copy_from_slice(&f64::from(value).to_le_bytes());
     }
@@ -343,7 +341,10 @@ fn patch_instance_colors(
                     }
                 }
             };
-            for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
+            for (ordinal, value) in [color.r(), color.g(), color.b(), color.a()]
+                .into_iter()
+                .enumerate()
+            {
                 patch_logical_f64(
                     bytes,
                     frame.logical_offset() + relative + ordinal * 8,
@@ -803,12 +804,15 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
     values
         .iter()
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        .then_some(Color {
-            r: values[0] as f32,
-            g: values[1] as f32,
-            b: values[2] as f32,
-            a: values[3] as f32,
+        .then(|| {
+            Color::new(
+                values[0] as f32,
+                values[1] as f32,
+                values[2] as f32,
+                values[3] as f32,
+            )
         })
+        .flatten()
 }
 
 #[derive(Clone, PartialEq)]
@@ -1281,17 +1285,8 @@ fn legacy_face_appearance_assignments(
 fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
     let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
     let component = |at: usize| View::f32_le_at(raw, at);
-    let color = Color {
-        r: component(0)?,
-        g: component(4)?,
-        b: component(8)?,
-        a: component(12)?,
-    };
-    [color.r, color.g, color.b, color.a]
-        .into_iter()
-        .all(|value| value.is_finite() && (0.0..=1.0).contains(&value))
-        .then_some(color)
-        .filter(|color| color.a == 1.0)
+    let color = Color::new(component(0)?, component(4)?, component(8)?, component(12)?)?;
+    (color.a() == 1.0).then_some(color)
 }
 
 /// Decode the selector-name form flag in the legacy twelve-byte carrier.

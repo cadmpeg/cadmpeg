@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_container::compound::CompoundStreamId;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 
@@ -203,7 +202,11 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     let mut container = InventorContainer::open(&ctx, root).expect("container fixture");
     let source = root.child(0, 77).expect("source bytes");
     let mut document = UfrxDocument {
-        stream: CompoundStreamId::from_directory_id(3),
+        stream: container
+            .snapshot
+            .stream("RSeStorage/RSeSegInfo")
+            .expect("fixture registry stream")
+            .id(),
         schema: 15,
         section_versions: vec![1],
         original_file_name: "part.ipt".into(),

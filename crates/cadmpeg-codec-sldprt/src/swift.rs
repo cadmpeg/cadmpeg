@@ -668,7 +668,7 @@ fn project_with_topology(
         .map(|(reference, _)| (reference.id.as_str(), pmi_id(&reference.id)))
         .collect::<BTreeMap<_, _>>();
     let mut projected = Vec::new();
-    let mut datum_systems = Vec::<(Vec<DatumReference>, PmiId)>::new();
+    let mut datum_systems = Vec::<(cadmpeg_ir::pmi::DatumReferences, PmiId)>::new();
     for (reference, entity) in &rows {
         if suppressed(entity) {
             continue;
@@ -682,7 +682,10 @@ fn project_with_topology(
             continue;
         }
         if let Some(tolerance) = project_tolerance(entity, &datum_ids) {
-            let datum_system = if tolerance.references.is_empty() {
+            let Some(targets) = targets(entity, &feature_index, topology) else {
+                continue;
+            };
+            let datum_system = if tolerance.references.as_slice().is_empty() {
                 None
             } else if let Some((_, id)) = datum_systems
                 .iter()
@@ -712,7 +715,7 @@ fn project_with_topology(
                 id: pmi_id(&reference.id),
                 name: object_name(entity),
                 visible: None,
-                targets: targets(entity, &feature_index, topology),
+                targets,
                 definition: PmiDefinition::GeometricTolerance {
                     tolerance: tolerance.kind,
                     magnitude: tolerance.magnitude,
@@ -756,19 +759,20 @@ fn project_datum(
         .get("DatumIdentifier")
         .filter(|value| !value.is_empty())?
         .clone();
+    let targets = targets(entity, feature_index, topology)?;
     (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
         visible: None,
-        targets: targets(entity, feature_index, topology),
+        targets,
         definition: PmiDefinition::Datum { identification },
     })
 }
 
 struct ProjectedTolerance {
     kind: GeometricToleranceKind,
-    magnitude: PmiValue,
-    references: Vec<DatumReference>,
+    magnitude: cadmpeg_ir::pmi::PmiMagnitude,
+    references: cadmpeg_ir::pmi::DatumReferences,
 }
 
 fn project_tolerance(
@@ -779,8 +783,8 @@ fn project_tolerance(
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
     Some(ProjectedTolerance {
         kind,
-        magnitude: length(magnitude),
-        references: datum_references(entity, datum_ids),
+        magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
+        references: datum_references(entity, datum_ids).try_into().ok()?,
     })
 }
 
@@ -799,10 +803,10 @@ fn project_lower_profile_tier(
         .expect("identity grammar"),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
         visible: None,
-        targets: targets(entity, feature_index, topology),
+        targets: targets(entity, feature_index, topology)?,
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
-            magnitude: length(magnitude),
+            magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
             defined_unit: None,
             defined_area_unit: None,
             defined_area_second_unit: None,
@@ -839,8 +843,8 @@ fn project_dimension(
         deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
     ) {
         (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
-            lower: pmi_value(lower, quantity),
-            upper: pmi_value(upper, quantity),
+            lower: pmi_value(lower, quantity)?,
+            upper: pmi_value(upper, quantity)?,
         }),
         _ => None,
     };
@@ -848,10 +852,13 @@ fn project_dimension(
         id: pmi_id(&reference.id),
         name: object_name(entity),
         visible: None,
-        targets: targets(entity, feature_index, topology),
+        targets: targets(entity, feature_index, topology)?,
         definition: PmiDefinition::Dimension {
             dimension,
-            nominal: nominal.map(|value| pmi_value(value, quantity)),
+            nominal: match nominal {
+                Some(value) => Some(pmi_value(value, quantity)?),
+                None => None,
+            },
             tolerance,
         },
     })
@@ -2012,7 +2019,7 @@ fn targets(
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
-) -> Vec<PmiTarget> {
+) -> Option<Vec<PmiTarget>> {
     let mut ids = Vec::new();
     for reference in &entity.features.references {
         ids.extend(expanded_feature_ids(&reference.id, feature_index, 0));
@@ -2020,6 +2027,7 @@ fn targets(
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for source_id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
+        let source_id = cadmpeg_ir::products::NonEmptyString::new(source_id)?;
         let Some(feature) = feature_index.get(source_id.as_str()) else {
             targets.push(PmiTarget::ShapeAspect { source_id });
             continue;
@@ -2047,7 +2055,7 @@ fn targets(
             targets.push(PmiTarget::ShapeAspect { source_id });
         }
     }
-    targets
+    Some(targets)
 }
 
 fn cad_identifiers(feature: &Entity) -> Vec<&str> {
@@ -2185,14 +2193,14 @@ fn defined_area(entity: &Entity) -> (Option<PmiValue>, Option<String>, Option<Pm
                 .get("PerUnitAreaLength")
                 .copied()
                 .and_then(finite_positive)
-                .map(length),
+                .and_then(length),
             Some("rectangular".into()),
             entity
                 .doubles
                 .get("PerUnitAreaWidth")
                 .copied()
                 .and_then(finite_positive)
-                .map(length),
+                .and_then(length),
         ),
         Some(1) => (
             entity
@@ -2200,7 +2208,7 @@ fn defined_area(entity: &Entity) -> (Option<PmiValue>, Option<String>, Option<Pm
                 .get("PerUnitAreaDiameter")
                 .copied()
                 .and_then(finite_positive)
-                .map(length),
+                .and_then(length),
             Some("circular".into()),
             None,
         ),
@@ -2280,12 +2288,12 @@ fn finite_positive(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
-fn length(value: f64) -> PmiValue {
+fn length(value: f64) -> Option<PmiValue> {
     pmi_value(value, PmiQuantity::Length)
 }
 
-fn pmi_value(value: f64, quantity: PmiQuantity) -> PmiValue {
-    PmiValue { value, quantity }
+fn pmi_value(value: f64, quantity: PmiQuantity) -> Option<PmiValue> {
+    PmiValue::new(value, quantity)
 }
 
 #[cfg(test)]

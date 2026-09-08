@@ -500,7 +500,7 @@ pub(super) fn emit_surfaces(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &mut TransferPlan,
-) -> HashMap<u32, SurfaceId> {
+) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let surface_ids = surface_plan
         .keys()
@@ -551,16 +551,18 @@ pub(super) fn emit_surfaces(
             },
         );
         if revolution_cache {
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: plan.geometry,
-            source_object: Some(cgm_source("surface", object_id)),
+            source_object: Some(cgm_source("surface", object_id)?),
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
-                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
+                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion)?;
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = CurveId::mint(format!("catia:b5:profile#{object_id}"))
@@ -572,7 +574,9 @@ pub(super) fn emit_surfaces(
                     "2d_profile_curve",
                     Exactness::Derived,
                 );
-                annotations.derived(&directrix_id, "geometry");
+                annotations
+                    .derived(&directrix_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(revolution.directrix),
@@ -672,7 +676,7 @@ pub(super) fn emit_surfaces(
             ),
         );
     }
-    surface_ids
+    Ok(surface_ids)
 }
 
 fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
@@ -691,7 +695,7 @@ fn emit_extrusion_procedure(
     surface_id: SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let directrix_id = CurveId::mint(format!(
         "catia:b5:extrusion-directrix#{}",
         extrusion.directrix_object_id
@@ -721,7 +725,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
@@ -763,7 +767,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: curve,
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
         }
         super::ResolvedExtrusionDirectrix::Offset {
@@ -788,7 +792,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: source_curve,
-                source_object: Some(cgm_source("curve", source_object_id)),
+                source_object: Some(cgm_source("curve", source_object_id)?),
             });
             annotate(
                 annotations,
@@ -800,7 +804,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
@@ -856,6 +860,7 @@ fn emit_extrusion_procedure(
             Some(parameter_record_bounds(extrusion.parameter_bounds)),
         ),
     );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -957,7 +962,8 @@ mod tests {
             surface_id,
             30,
             extrusion,
-        );
+        )
+        .expect("valid source object identity");
 
         assert!(matches!(
             &ir.model.curves[0].geometry,

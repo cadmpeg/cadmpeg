@@ -873,7 +873,8 @@ fn linked_semicircle_records_close_a_two_center_profile() {
             SketchEntityId(format!("entity-{id}")),
             sketch.clone(),
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:1".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:1")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some(id.into()))
@@ -1028,7 +1029,8 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
         entity(
             "fillet",
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             },
             &["start", "end"],
         ),
@@ -1088,7 +1090,8 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
         entity(
             "fillet",
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             },
             &["start", "end"],
         ),
@@ -1143,7 +1146,8 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
         entity(
             "arc",
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             },
             "curve:300",
             &["point:100", "point:200"],
@@ -1182,7 +1186,8 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
             SketchEntityId("arc".into()),
             sketch,
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some("curve:500".into()))
@@ -1258,7 +1263,8 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
             SketchEntityId("right-arc".into()),
             sketch,
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some("right-arc".into()))

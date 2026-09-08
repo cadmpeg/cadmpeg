@@ -444,7 +444,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
             )));
         }
         let tolerance = match target_vertices[after.vertex.as_str()].tolerance {
-            Some(tolerance) => tolerance,
+            Some(tolerance) => tolerance.get(),
             None if after.evaluated_unset => -1.0,
             None => {
                 return Err(CodecError::malformed(format_args!(
@@ -452,24 +452,24 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 )))
             }
         };
-        if !tolerance.is_finite()
-            || after
-                .leading_tolerances
-                .iter()
-                .any(|value| !value.is_finite())
+        if after
+            .leading_tolerances
+            .iter()
+            .any(|value| !value.is_finite())
         {
             return Err(CodecError::malformed(format_args!(
                 "F3D tolerant vertex {id} has non-finite fields"
             )));
         }
         if tolerance
-            != baseline_vertices[after.vertex.as_str()]
-                .tolerance
-                .unwrap_or(if before.evaluated_unset {
+            != baseline_vertices[after.vertex.as_str()].tolerance.map_or(
+                if before.evaluated_unset {
                     -1.0
                 } else {
                     tolerance
-                })
+                },
+                cadmpeg_ir::units::PositiveScalar::get,
+            )
             || after.leading_tolerances != before.leading_tolerances
         {
             // A negative tolerance is the unevaluated sentinel, stored
@@ -551,13 +551,8 @@ pub(crate) fn validate_tolerant_edge_edits(
         let tolerance = target_edges[after.edge.as_str()].tolerance.ok_or_else(|| {
             CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
         })?;
-        if !tolerance.is_finite() || tolerance < 0.0 {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant edge {id} has invalid fields"
-            )));
-        }
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(after.record_index as usize, tolerance / LEN_TO_MM);
+            edits.insert(after.record_index as usize, tolerance.get() / LEN_TO_MM);
         }
     }
     Ok(edits)
@@ -768,12 +763,7 @@ pub(crate) fn validate_material_assignment_appearances(
             let color = after.base_color.ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
             })?;
-            if before.base_color.is_none()
-                || ![color.r, color.g, color.b, color.a]
-                    .into_iter()
-                    .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-                || color.a != 1.0
-            {
+            if before.base_color.is_none() || color.a() != 1.0 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
@@ -2801,12 +2791,7 @@ pub(crate) fn validate_body_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D body color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D body color {id} must replace an existing opaque finite RGB color"
             )));
@@ -2957,12 +2942,7 @@ pub(crate) fn validate_face_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D face color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D face color {id} must replace an existing opaque finite RGB color"
             )));

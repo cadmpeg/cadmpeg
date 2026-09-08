@@ -62,15 +62,11 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
             std::slice::from_ref(&definition),
             std::slice::from_ref(&record),
             &pairs,
-        ),
+        )
+        .expect("valid colors"),
         vec![(
             "nx:s0:face#99".into(),
-            Color {
-                r: 0.25,
-                g: 0.5,
-                b: 0.75,
-                a: 1.0,
-            },
+            Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"),
         )]
     );
 
@@ -110,15 +106,11 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
             std::slice::from_ref(&definition),
             std::slice::from_ref(&record),
             &pairs,
-        ),
+        )
+        .expect("valid colors"),
         vec![(
             "nx:s0:face#99".into(),
-            Color {
-                r: 0.25,
-                g: 0.5,
-                b: 0.75,
-                a: 1.0,
-            },
+            Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"),
         )]
     );
 
@@ -126,6 +118,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     conflicting.color_definition = "nx:test:color#other".into();
     assert!(
         resolve_rm_face_colors(&face_ids, &[conflicting], &[definition], &[record], &pairs,)
+            .expect("valid colors")
             .is_empty()
     );
 }

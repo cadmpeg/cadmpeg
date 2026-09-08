@@ -332,7 +332,8 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 #[test]
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
-    ir.tolerances.linear = 2.5;
+    ir.tolerances.linear =
+        cadmpeg_ir::units::PositiveScalar::new(2.5).expect("positive finite tolerance");
     ir.model.points.push(Point {
         id: PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         source_object: None,
@@ -371,7 +372,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
             &DecodeOptions::default(),
         )
         .expect("source resolution witness decodes");
-    assert_eq!(decoded.ir().tolerances.linear, 0.001);
+    assert_eq!(decoded.ir().tolerances.linear.get(), 0.001);
 
     let plan = crate::IgesCodec
         .plan(

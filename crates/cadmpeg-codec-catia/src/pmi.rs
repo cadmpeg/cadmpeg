@@ -158,10 +158,7 @@ fn slot_value(slot: &RangeIntervalSlot) -> DeviationSlot {
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
     let value = f64::from_bits(bits);
-    value.is_finite().then_some(PmiValue {
-        value,
-        quantity: PmiQuantity::Length,
-    })
+    PmiValue::new(value, PmiQuantity::Length)
 }
 
 #[cfg(test)]
@@ -331,9 +328,9 @@ mod tests {
                     ..
                 } => (
                     dimension,
-                    nominal.value,
-                    lower_deviation.value,
-                    upper_deviation.value,
+                    nominal.value.get(),
+                    lower_deviation.value.get(),
+                    upper_deviation.value.get(),
                 ),
                 _ => panic!("dimension annotation"),
             })

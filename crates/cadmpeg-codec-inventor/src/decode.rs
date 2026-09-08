@@ -203,17 +203,27 @@ fn decode_container<'a>(
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
                                 let data =
                                     ctx.copy_retained(bytes, "retain Inventor preview asset")?;
-                                ir.model.assets.push(Asset {
-                                    id: AssetId::mint(format!(
-                                        "inventor:document:asset#preview-{}",
-                                        ir.model.assets.len()
-                                    ))
-                                    .expect("identity grammar"),
-                                    name: Some("document preview".into()),
-                                    media_type: Some(media_type.into()),
-                                    content: AssetContent::Embedded { data },
-                                    native_ref: Some(native_id.clone()),
-                                });
+                                ir.model.assets.push(
+                                    Asset::try_new(
+                                        AssetId::mint(format!(
+                                            "inventor:document:asset#preview-{}",
+                                            ir.model.assets.len()
+                                        ))
+                                        .expect("identity grammar"),
+                                        Some("document preview".into()),
+                                        Some(media_type.into()),
+                                        AssetContent::Embedded {
+                                            data: cadmpeg_ir::assets::AssetData::new(data)
+                                                .ok_or_else(|| {
+                                                    CodecError::Malformed(
+                                                        "asset data must not be empty".into(),
+                                                    )
+                                                })?,
+                                        },
+                                        Some(native_id.clone()),
+                                    )
+                                    .map_err(CodecError::Malformed)?,
+                                );
                             }
                         }
                         properties.push(PropertyRecord {
@@ -1157,7 +1167,7 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
-                    apply_kernel_header(&mut ir, carrier.family, &decoded.header);
+                    apply_kernel_header(&mut ir, carrier.family, &decoded.header)?;
                     Some(decoded.brep)
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1459,7 +1469,9 @@ fn decode_container<'a>(
             .note(&record.id, &stream, record.offset)
             .tag(record.tag.as_str());
         for field in record.derived_fields {
-            annotations.derived(&record.id, field);
+            annotations
+                .derived(&record.id, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     source_fidelity.annotations = annotations.build();
@@ -1732,9 +1744,9 @@ fn apply_kernel_header(
     ir: &mut CadIr,
     family: crate::kernel::KernelFamily,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
-) {
+) -> Result<(), CodecError> {
     let Some(source) = ir.source.as_mut() else {
-        return;
+        return Ok(());
     };
     if let Some(version) = header.save_format_version {
         source
@@ -1762,11 +1774,12 @@ fn apply_kernel_header(
             .insert("kernel_product_version".into(), version.clone());
     }
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
-        ir.tolerances = Tolerances { linear, angular };
+        ir.tolerances = Tolerances::new(linear, angular).map_err(CodecError::Malformed)?;
     }
     source
         .attributes
         .insert("kernel_family".into(), family.label().into());
+    Ok(())
 }
 
 fn admit_ufrx_record<T>(

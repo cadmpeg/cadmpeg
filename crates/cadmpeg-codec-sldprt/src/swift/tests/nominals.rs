@@ -262,9 +262,9 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 3.962_4));
-    assert!(approximately_equal(lower_deviation.value, -0.162_4));
-    assert!(approximately_equal(upper_deviation.value, 0.137_6));
+    assert!(approximately_equal(nominal.value.get(), 3.962_4));
+    assert!(approximately_equal(lower_deviation.value.get(), -0.162_4));
+    assert!(approximately_equal(upper_deviation.value.get(), 0.137_6));
 
     root.annotations
         .entities
@@ -285,7 +285,7 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 3.962_4));
+    assert!(approximately_equal(nominal.value.get(), 3.962_4));
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(5.0));
+    assert_eq!(*nominal, length(5.0).expect("finite length"));
 }
 
 #[test]
@@ -416,7 +416,7 @@ fn counterbore_pattern_supplies_distinct_hole_diameter() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(6.0));
+    assert_eq!(*nominal, length(6.0).expect("finite length"));
 }
 
 #[test]
@@ -468,7 +468,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(35.0));
+    assert_eq!(*nominal, length(35.0).expect("finite length"));
 
     *root.features.entities.get_mut(1).expect("direct sphere") =
         feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 15.875);
@@ -496,7 +496,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(31.75));
+    assert_eq!(*nominal, length(31.75).expect("finite length"));
 }
 
 #[test]
@@ -561,9 +561,9 @@ fn directional_plane_distance_supplies_location_nominal() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(20.0));
-    assert_eq!(*lower_deviation, length(-0.5));
-    assert_eq!(*upper_deviation, length(0.5));
+    assert_eq!(*nominal, length(20.0).expect("finite length"));
+    assert_eq!(*lower_deviation, length(-0.5).expect("finite length"));
+    assert_eq!(*upper_deviation, length(0.5).expect("finite length"));
 
     *root.features.entities.last_mut().expect("second plane") =
         plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
@@ -613,7 +613,7 @@ fn directional_compound_hole_axes_supply_location_nominal() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(75.0));
+    assert_eq!(*nominal, length(75.0).expect("finite length"));
 }
 
 #[test]
@@ -690,7 +690,7 @@ fn closed_slot_end_feature_supplies_length_location_nominal() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(25.4));
+    assert_eq!(*nominal, length(25.4).expect("finite length"));
 
     root.features
         .entities
@@ -750,7 +750,7 @@ fn rendered_depth_resolves_axial_nominal_planes() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 7.62));
+    assert!(approximately_equal(nominal.value.get(), 7.62));
 }
 
 #[test]
@@ -782,7 +782,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 14.2875));
+    assert!(approximately_equal(nominal.value.get(), 14.2875));
 
     root.annotations
         .entities
@@ -810,7 +810,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(12.0));
+    assert_eq!(*nominal, length(12.0).expect("finite length"));
 }
 
 #[test]
@@ -856,7 +856,7 @@ fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(12.7));
+    assert_eq!(*nominal, length(12.7).expect("finite length"));
 
     root.features
         .entities
@@ -945,9 +945,9 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 12.7));
-    assert!(approximately_equal(lower_deviation.value, -0.2));
-    assert!(approximately_equal(upper_deviation.value, 0.2));
+    assert!(approximately_equal(nominal.value.get(), 12.7));
+    assert!(approximately_equal(lower_deviation.value.get(), -0.2));
+    assert!(approximately_equal(upper_deviation.value.get(), 0.2));
     let length = annotations
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("Length 1"))
@@ -959,7 +959,7 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 38.1));
+    assert!(approximately_equal(nominal.value.get(), 38.1));
 }
 
 #[test]
@@ -1026,7 +1026,7 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
             panic!("dimension definition");
         };
         assert_eq!(nominal.quantity, quantity);
-        assert!(approximately_equal(nominal.value, expected));
+        assert!(approximately_equal(nominal.value.get(), expected));
     }
 }
 
@@ -1085,7 +1085,7 @@ fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 9.525));
+    assert!(approximately_equal(nominal.value.get(), 9.525));
 
     root.features
         .entities
@@ -1164,8 +1164,8 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
     else {
         panic!("dimension definition");
     };
-    assert!(approximately_equal(nominal.value, 3.175));
-    assert_eq!(*upper_deviation, length(0.0));
+    assert!(approximately_equal(nominal.value.get(), 3.175));
+    assert_eq!(*upper_deviation, length(0.0).expect("finite length"));
 
     *root.features.entities.get_mut(2).expect("second member") =
         feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 4.0);
@@ -1271,8 +1271,8 @@ fn zero_nominal_dimension_keeps_the_annotation_without_a_nominal() {
     assert_eq!(
         *tolerance,
         Some(DimensionTolerance::PlusMinus {
-            lower: pmi_value(-0.5, PmiQuantity::Angle),
-            upper: pmi_value(0.5, PmiQuantity::Angle),
+            lower: pmi_value(-0.5, PmiQuantity::Angle).expect("finite angle"),
+            upper: pmi_value(0.5, PmiQuantity::Angle).expect("finite angle"),
         })
     );
 }

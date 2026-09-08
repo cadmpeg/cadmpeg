@@ -70,7 +70,8 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
     assert!(ir.model.surfaces.is_empty());
@@ -104,7 +105,8 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         1
     );
     let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } =

@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
+
 use crate::decode::blend::{
     blend_contact_offset_matches, blend_surface_parameters, blend_surface_parameters_for_fit,
     blend_surface_point, blend_surface_u_derivative, closest_pcurve_parameters,
@@ -1423,7 +1425,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         end: VertexId::mint("test:model:entity#synthetic:blend-boundary-end")
             .expect("identity grammar"),
         param_range: Some([0.0, 1.0]),
-        tolerance: Some(1.0e-8),
+        tolerance: Some(
+            cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
+                .expect("positive finite tolerance"),
+        ),
     });
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
