@@ -300,7 +300,7 @@ pub fn project_sketch_design(
         let sketch = neutral_sketch_id(placement);
         Some(
             SketchEntity::new(
-                neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id),
                 sketch,
                 geometry,
             )
@@ -574,7 +574,11 @@ pub fn project_spatial_sketch_design(
             let sketch = neutral_spatial_sketch_id(placement);
             Some(
                 SpatialSketchEntity::new(
-                    neutral_spatial_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                    neutral_spatial_sketch_curve_id(
+                        &sketch,
+                        curve.primary_id.get(),
+                        curve.secondary_id,
+                    ),
                     sketch,
                     geometry,
                 )
@@ -615,7 +619,7 @@ pub fn project_spatial_sketch_design(
         let sketch = neutral_spatial_sketch_id(placement);
         Some(
             SpatialSketchEntity::new(
-                neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
+                neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get()),
                 sketch,
                 SpatialSketchGeometry::NurbsSurface {
                     surface: cadmpeg_ir::geometry::BsplineSurface::new(

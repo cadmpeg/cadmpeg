@@ -647,7 +647,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: Some(901),
-            primary_id: 700,
+            primary_id: std::num::NonZeroU64::new(700).unwrap(),
             secondary_id: 701,
             geometry: Some(SketchCurveGeometry::Line {
                 start: Point3::new(10.0, 20.0, 0.0),
@@ -664,7 +664,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
-            primary_id: 702,
+            primary_id: std::num::NonZeroU64::new(702).unwrap(),
             secondary_id: 703,
             geometry: Some(SketchCurveGeometry::Arc {
                 center: Point3::new(5.0, 6.0, 0.0),
@@ -683,7 +683,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
-            primary_id: 704,
+            primary_id: std::num::NonZeroU64::new(704).unwrap(),
             secondary_id: 705,
             geometry: Some(SketchCurveGeometry::Nurbs {
                 carrier_reference: None,
@@ -897,7 +897,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let genesis_curve = native
         .sketch_curve_identities
         .iter()
-        .find(|curve| curve.primary_id == 700)
+        .find(|curve| curve.primary_id.get() == 700)
         .expect("genesis curve");
     assert_eq!(genesis_curve.entity_genesis, Some(901));
     assert_eq!(genesis_curve.geometry_offset, 185);
@@ -960,7 +960,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     {
         let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
-        let persistent_id = point.persistent_id().unwrap_or(0);
+        let persistent_id = std::num::NonZeroU64::new(point.persistent_id().unwrap()).unwrap();
         point.record_form = crate::records::SketchPointRecordForm::Version11 {
             depth: 7.5,
             entity_genesis: point.entity_genesis(),

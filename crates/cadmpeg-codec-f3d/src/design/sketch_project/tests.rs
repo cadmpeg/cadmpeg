@@ -115,7 +115,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             byte_offset: record_index as u64,
             geometry_offset: 0,
             entity_genesis: Some(0),
-            primary_id,
+            primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
             secondary_id: 0,
             geometry: Some(SketchCurveGeometry::Line {
                 start: Point3::new(start.0, start.1, 0.0),
@@ -307,7 +307,7 @@ fn point_closure_does_not_mark_construction_geometry() {
         byte_offset: 20,
         geometry_offset: 0,
         entity_genesis: Some(0),
-        primary_id: 20,
+        primary_id: std::num::NonZeroU64::new(20).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(0.0, 0.0, 0.0),
@@ -385,7 +385,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 500,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 20,
+        primary_id: std::num::NonZeroU64::new(20).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(1.0, 2.0, 0.0),
@@ -402,7 +402,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 800,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 22,
+        primary_id: std::num::NonZeroU64::new(22).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Arc {
             center: Point3::new(0.0, 0.0, 0.0),
@@ -421,7 +421,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 700,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 21,
+        primary_id: std::num::NonZeroU64::new(21).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Nurbs {
             carrier_reference: None,
@@ -767,7 +767,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: u64::from(record_index),
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id,
+        primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id: 0,
         geometry: Some(geometry),
     };
@@ -813,7 +813,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 103,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 3,
+        primary_id: std::num::NonZeroU64::new(3).unwrap(),
         secondary_id: 0,
         geometry: None,
     });
@@ -915,7 +915,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     else {
         panic!("point fixture has a version-11 record form");
     };
-    *persistent_id = 6;
+    *persistent_id = std::num::NonZeroU64::new(6).unwrap();
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
@@ -957,7 +957,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         byte_offset: 109,
         entity_genesis: None,
-        persistent_id: 8,
+        persistent_id: std::num::NonZeroU64::new(8).unwrap(),
         u_degree: 1,
         v_degree: 1,
         u_knots: vec![0.0, 0.0, 1.0, 1.0],

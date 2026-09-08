@@ -128,7 +128,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
                     depth: 0.25 * 10.0,
                     entity_genesis: None,
                     padded_paired_reference,
-                    persistent_id: 500,
+                    persistent_id: std::num::NonZeroU64::new(500).unwrap(),
                     flags: [false; 8],
                     closure: SketchPointClosure::from_pair(selector, state).unwrap(),
                 }

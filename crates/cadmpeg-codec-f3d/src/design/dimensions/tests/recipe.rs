@@ -239,7 +239,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 51,
+        primary_id: std::num::NonZeroU64::new(51).unwrap(),
         secondary_id: 0,
         geometry: None,
     };
@@ -334,7 +334,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: u64::from(record_index),
+        primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
         geometry: None,
     });

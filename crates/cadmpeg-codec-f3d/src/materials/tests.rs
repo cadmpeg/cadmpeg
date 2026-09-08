@@ -1160,7 +1160,9 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(point_600.entity_genesis(), Some(9));
     assert_eq!(f3d_native(result.ir()).sketch_curve_identities.len(), 2);
     assert_eq!(
-        f3d_native(result.ir()).sketch_curve_identities[0].primary_id,
+        f3d_native(result.ir()).sketch_curve_identities[0]
+            .primary_id
+            .get(),
         440
     );
     assert_eq!(

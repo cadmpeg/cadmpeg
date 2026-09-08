@@ -2390,6 +2390,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         }
         _ => return None,
     };
+    let persistent_id = std::num::NonZeroU64::new(persistent_id)?;
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
     let inline_typed = match (class_version, paired_type_guid.as_deref()) {
         (8 | 10 | 11, None) => false,
@@ -2704,6 +2705,9 @@ pub(crate) fn decode_sketch_curve_identities_from_stream(
         else {
             continue;
         };
+        let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
+            continue;
+        };
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
         let curve_class = SketchCurveClass::of(
@@ -2762,7 +2766,7 @@ pub fn decode_sketch_curve_identities(
 
 pub(crate) struct ParsedSketchSurface {
     pub(crate) entity_genesis: Option<u64>,
-    pub(crate) persistent_id: u64,
+    pub(crate) persistent_id: std::num::NonZeroU64,
     pub(crate) u_degree: u32,
     pub(crate) v_degree: u32,
     pub(crate) u_knots: Vec<f64>,
@@ -2785,7 +2789,7 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
         return None;
     }
     let entity_genesis = View::u64_le_at(payload, 69);
-    let persistent_id = View::u64_le_at(payload, 119)?;
+    let persistent_id = std::num::NonZeroU64::new(View::u64_le_at(payload, 119)?)?;
     let point_count = usize::try_from(View::u32_le_at(payload, 127)?).ok()?;
     if point_count == 0 || point_count > 100_000 {
         return None;
@@ -3058,7 +3062,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&curve.id)?, curve.record_index),
                 SketchRelationOperand::Curve {
                     record_index: curve.record_index,
-                    primary_id: curve.primary_id,
+                    primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
                 },
             ))
@@ -3068,7 +3072,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&surface.id)?, surface.record_index),
                 SketchRelationOperand::Surface {
                     record_index: surface.record_index,
-                    persistent_id: surface.persistent_id,
+                    persistent_id: surface.persistent_id.get(),
                 },
             ))
         }))

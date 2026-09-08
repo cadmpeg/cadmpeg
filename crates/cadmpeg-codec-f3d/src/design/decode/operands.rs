@@ -3167,7 +3167,7 @@ pub(crate) fn entity_selection_matches_curve(
     curve: &SketchCurveIdentity,
 ) -> bool {
     operand.secondary.is_some_and(|secondary| {
-        curve.primary_id == secondary.identity.value
+        curve.primary_id.get() == secondary.identity.value
             && secondary
                 .curve_identity
                 .is_none_or(|identity| curve.secondary_id == identity.value)
@@ -3889,11 +3889,11 @@ pub fn bind_extrude_selection_geometry(
         let curve_operands = curves.iter().filter_map(|curve| {
             (native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(entity_suffix)
-                && (curve.primary_id == member.local_id
+                && (curve.primary_id.get() == member.local_id
                     || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
                 .then_some(SketchRelationOperand::Curve {
                     record_index: curve.record_index,
-                    primary_id: curve.primary_id,
+                    primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
                 })
         });

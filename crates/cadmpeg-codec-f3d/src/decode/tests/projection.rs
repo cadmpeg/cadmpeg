@@ -1300,7 +1300,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 1,
+        primary_id: std::num::NonZeroU64::new(1).unwrap(),
         secondary_id: 2,
         geometry: None,
     });

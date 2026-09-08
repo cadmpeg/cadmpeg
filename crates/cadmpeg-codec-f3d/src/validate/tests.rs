@@ -703,7 +703,7 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         else {
             panic!("generated point has a version-11 record form");
         };
-        *persistent_id = source_id;
+        *persistent_id = std::num::NonZeroU64::new(source_id).unwrap();
         native.sketch_points[0].owner_reference = Some(100);
         native.sketch_points[1].owner_reference = Some(100);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
@@ -749,7 +749,7 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         else {
             panic!("generated point has a version-11 record form");
         };
-        *persistent_id = source_id;
+        *persistent_id = std::num::NonZeroU64::new(source_id).unwrap();
         native.sketch_points[0].owner_reference = Some(100);
         native.sketch_points[1].owner_reference = Some(101);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
@@ -792,7 +792,7 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
         else {
             panic!("generated point has a version-11 record form");
         };
-        *persistent_id = source_id;
+        *persistent_id = std::num::NonZeroU64::new(source_id).unwrap();
         native.sketch_points[0].owner_reference = None;
         native.sketch_points[1].owner_reference = None;
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;

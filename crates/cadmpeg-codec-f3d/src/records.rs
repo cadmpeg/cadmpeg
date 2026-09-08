@@ -6861,7 +6861,7 @@ pub enum SketchPointRecordForm {
     Version8 {
         /// Incident curves of the paired companion, in source order.
         companion: Option<Vec<u32>>,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         /// Third sketch coordinate in millimetres.
         depth: f64,
@@ -6872,7 +6872,7 @@ pub enum SketchPointRecordForm {
         companion: Option<Vec<u32>>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         closure: SketchPointClosure10,
     },
@@ -6884,7 +6884,7 @@ pub enum SketchPointRecordForm {
         depth: f64,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         closure: SketchPointClosure10Inline,
     },
@@ -6898,7 +6898,7 @@ pub enum SketchPointRecordForm {
         entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
     },
@@ -6912,7 +6912,7 @@ pub enum SketchPointRecordForm {
         entity_genesis: Option<u64>,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
-        persistent_id: u64,
+        persistent_id: std::num::NonZeroU64,
         flags: [bool; 8],
         closure: SketchPointClosure,
     },
@@ -6932,7 +6932,7 @@ impl SketchPointRecordForm {
             depth,
             entity_genesis,
             padded_paired_reference: false,
-            persistent_id,
+            persistent_id: std::num::NonZeroU64::new(persistent_id).unwrap(),
             flags: [false; 8],
             closure,
         }
@@ -6992,7 +6992,7 @@ impl SketchPointRecordForm {
             | Self::Version10 { persistent_id, .. }
             | Self::Version10InlineTyped { persistent_id, .. }
             | Self::Version11 { persistent_id, .. }
-            | Self::Version11InlineTyped { persistent_id, .. } => Some(persistent_id),
+            | Self::Version11InlineTyped { persistent_id, .. } => Some(persistent_id.get()),
         }
     }
 
@@ -7217,7 +7217,11 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         }
         let flags = wire.flags.map(|flag| flag == 1);
         let closure = wire.closure.map(SketchPointClosure::try_from).transpose()?;
-        let mut record_form = match (wire.record_form, wire.persistent_id, closure) {
+        let persistent_id = wire
+            .persistent_id
+            .map(|value| std::num::NonZeroU64::new(value).ok_or("persistent_id must be nonzero"))
+            .transpose()?;
+        let mut record_form = match (wire.record_form, persistent_id, closure) {
             (SketchPointRecordFormSerde::Version0, None, None) => SketchPointRecordForm::Version0 {
                 companion: None,
                 flag: flags[0],
@@ -7414,7 +7418,7 @@ pub struct SketchCurveIdentity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
-    pub primary_id: u64,
+    pub primary_id: std::num::NonZeroU64,
     /// Secondary persistent identifier of the source sketch curve (e.g. its
     /// complementary endpoint or paired-curve identity).
     pub secondary_id: u64,
@@ -7442,7 +7446,7 @@ pub struct SketchSurface {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for the sketch surface.
-    pub persistent_id: u64,
+    pub persistent_id: std::num::NonZeroU64,
     /// Degree in the first surface parameter.
     pub u_degree: u32,
     /// Degree in the second surface parameter.

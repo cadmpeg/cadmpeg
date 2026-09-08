@@ -258,7 +258,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     return None;
                 }
                 let selected =
-                    neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+                    neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id);
                 sketch_entities
                     .iter()
                     .any(|entity| entity.sketch == sketch && entity.id() == &selected)
@@ -1905,18 +1905,18 @@ fn resolve_entity_selection_path(
         let mut curves = resolution.curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
-                && curve.primary_id == secondary_identity
+                && curve.primary_id.get() == secondary_identity
                 && secondary
                     .curve_identity
                     .is_none_or(|identity| curve.secondary_id == identity.value)
         });
         let curve = curves.next()?;
         if curves.next().is_some()
-            || !selected_curve_identities.insert((curve.primary_id, curve.secondary_id))
+            || !selected_curve_identities.insert((curve.primary_id.get(), curve.secondary_id))
         {
             return None;
         }
-        curve_ids.push((curve.primary_id, curve.secondary_id));
+        curve_ids.push((curve.primary_id.get(), curve.secondary_id));
     }
 
     let spatial_sketch = neutral_spatial_sketch_id(placement);
@@ -2003,14 +2003,17 @@ fn spatial_profile_member_entity<'a>(
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
-            && curve.primary_id == u64::from(member.curve_primary_id.get())
+            && curve.primary_id.get() == u64::from(member.curve_primary_id.get())
     });
     let curve = curves.next()?;
     if curves.next().is_some() {
         return None;
     }
-    let entity_id =
-        neutral_spatial_sketch_curve_id(&spatial_sketch.id, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_spatial_sketch_curve_id(
+        &spatial_sketch.id,
+        curve.primary_id.get(),
+        curve.secondary_id,
+    );
     let mut entities = spatial_entities
         .iter()
         .filter(|entity| entity.sketch == spatial_sketch.id && entity.id() == &entity_id);
@@ -2029,13 +2032,13 @@ fn sketch_profile_member_entity(
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
-            && curve.primary_id == u64::from(member.curve_primary_id.get())
+            && curve.primary_id.get() == u64::from(member.curve_primary_id.get())
     });
     let curve = curves.next()?;
     if curves.next().is_some() {
         return None;
     }
-    let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id.get(), curve.secondary_id);
     let mut entities = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id && entity.id() == &entity_id);
@@ -2396,7 +2399,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         }
         let entity = neutral_spatial_sketch_curve_id(
             &spatial_sketch_id,
-            curve.primary_id,
+            curve.primary_id.get(),
             curve.secondary_id,
         );
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);

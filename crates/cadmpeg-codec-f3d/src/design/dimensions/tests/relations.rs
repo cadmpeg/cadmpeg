@@ -479,7 +479,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id,
+        primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
         geometry: None,
     };
@@ -951,7 +951,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             byte_offset: 0,
             geometry_offset: 0,
             entity_genesis: None,
-            primary_id: u64::from(record_index),
+            primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
             secondary_id: 0,
             geometry: Some(SketchCurveGeometry::Line {
                 start: Point3::new(start.u, start.v, 0.0),
