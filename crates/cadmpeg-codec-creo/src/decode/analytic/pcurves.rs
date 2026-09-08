@@ -2167,12 +2167,7 @@ mod tests {
         for (value, raw) in token_specs {
             let offset = body.len();
             body.extend_from_slice(&raw);
-            scalar_tokens.push(crate::curve::CurveParameterScalar {
-                value,
-                raw,
-                offset,
-                length: body.len() - offset,
-            });
+            scalar_tokens.push(crate::curve::CurveParameterScalar { value, raw, offset });
         }
         body.extend_from_slice(&[0x34, 0xb0, 0x00]);
         let record = crate::curve::CurveParameterRecord {
@@ -2184,12 +2179,10 @@ mod tests {
                 crate::curve::CurveParameterOpaqueSpan {
                     raw: vec![0xfc, 0x02],
                     offset: 0,
-                    length: 2,
                 },
                 crate::curve::CurveParameterOpaqueSpan {
                     raw: vec![0x34, 0xb0, 0x00],
                     offset: body.len() - 3,
-                    length: 3,
                 },
             ],
             body,

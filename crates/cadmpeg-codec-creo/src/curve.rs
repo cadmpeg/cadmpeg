@@ -478,8 +478,6 @@ pub struct CurveParameterScalar {
     pub raw: Vec<u8>,
     /// Body-relative token offset.
     pub offset: usize,
-    /// Token length in bytes.
-    pub length: usize,
 }
 
 /// One canonical entity reference in a positional curve body.
@@ -500,8 +498,6 @@ pub struct CurveParameterOpaqueSpan {
     pub raw: Vec<u8>,
     /// Body-relative span offset.
     pub offset: usize,
-    /// Span length in bytes.
-    pub length: usize,
 }
 
 /// Two pcurve endpoints represented in both adjacent face parameter frames.
@@ -6092,7 +6088,6 @@ fn curve_scalar_lane(
                 value: 0.0,
                 raw: vec![0x18],
                 offset: cursor,
-                length: 1,
             });
             claimed[cursor] = true;
             cursor += 1;
@@ -6108,7 +6103,6 @@ fn curve_scalar_lane(
                 value,
                 raw: body[cursor..next].to_vec(),
                 offset: cursor,
-                length: next - cursor,
             });
             claimed[cursor..next].fill(true);
             cursor = next;
@@ -6130,7 +6124,6 @@ fn curve_scalar_lane(
         opaque_spans.push(CurveParameterOpaqueSpan {
             raw: body[start..cursor].to_vec(),
             offset: start,
-            length: cursor - start,
         });
     }
     Some((scalars, references, opaque_spans))
@@ -6217,21 +6210,21 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
         if record.body.get(cursor..cursor + HELD_SCALAR_OPEN.len()) == Some(HELD_SCALAR_OPEN) {
             cursor += HELD_SCALAR_OPEN.len();
             let token = tokens.next().filter(|token| token.offset == cursor)?;
-            (token.length != 0
-                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            (!token.raw.is_empty()
+                && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
             values.push(token.value);
-            cursor += token.length;
+            cursor += token.raw.len();
             (record.body.get(cursor) == Some(&HELD_SCALAR_CLOSE)).then_some(())?;
             cursor += 1;
             continue;
         }
         if let Some(token) = tokens.peek().filter(|token| token.offset == cursor) {
-            (token.length != 0
-                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            (!token.raw.is_empty()
+                && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
             values.push(token.value);
-            cursor += token.length;
+            cursor += token.raw.len();
             tokens.next();
         } else if record.body[cursor] == 0x12 {
             values.push(0.0);
@@ -6408,17 +6401,17 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
     (prefix.offset == 0
         && prefix.raw == [0xfc, 0x02]
         && terminal.raw.first() == Some(&0x34)
-        && terminal.length == 3)
+        && terminal.raw.len() == 3)
         .then_some(())?;
-    let mut cursor = prefix.length;
+    let mut cursor = prefix.raw.len();
     for token in tokens {
         (token.offset == cursor
-            && token.length != 0
-            && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            && !token.raw.is_empty()
+            && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
         .then_some(())?;
-        cursor += token.length;
+        cursor += token.raw.len();
     }
-    (terminal.offset == cursor && terminal.offset + terminal.length == record.body.len())
+    (terminal.offset == cursor && terminal.offset + terminal.raw.len() == record.body.len())
         .then_some(())?;
     let values = tokens.each_ref().map(|token| token.value);
     (values.iter().all(|value| value.is_finite())
