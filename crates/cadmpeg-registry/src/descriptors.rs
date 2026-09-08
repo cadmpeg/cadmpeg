@@ -18,6 +18,7 @@ pub struct NativeDescriptor {
 }
 
 impl NativeDescriptor {
+    /// Stable native format identifier.
     pub(crate) const fn id(&self) -> FormatId {
         self.id
     }
