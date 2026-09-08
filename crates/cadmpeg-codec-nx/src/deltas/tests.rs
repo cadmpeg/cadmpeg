@@ -739,7 +739,12 @@ fn deltas_intersection_normalizes_during_full_record_merge() {
     let intersections = crate::topology::composite_curves(&merged);
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
-    assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
+    assert_eq!(
+        intersections[0]
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+        [6, 7, 20, 21, 22, 23]
+    );
 }
 
 #[test]
@@ -818,7 +823,12 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     );
     let curves = crate::topology::intersection_data_curves(&stream);
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].references, [6, 6, 1, 1, 1, 1]);
+    assert_eq!(
+        curves[0]
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+        [6, 6, 1, 1, 1, 1]
+    );
 
     let residual = crate::deltas::semantic_residual(&stream);
     assert!(residual[record_offset..record_end]
