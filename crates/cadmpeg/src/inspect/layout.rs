@@ -121,7 +121,7 @@ pub enum FieldKind {
     /// A fixed-width number in a stated byte order.
     Scalar(ScalarType, Endian),
     /// A run of raw bytes rendered as hexadecimal.
-    Bytes(usize),
+    Bytes(NonZeroUsize),
 }
 
 impl FieldKind {
@@ -129,7 +129,7 @@ impl FieldKind {
     pub const fn width(self) -> usize {
         match self {
             Self::Scalar(ty, _) => ty.width(),
-            Self::Bytes(count) => count,
+            Self::Bytes(count) => count.get(),
         }
     }
 
@@ -301,7 +301,7 @@ fn split_name(token: &str, index: usize) -> Result<(&str, Option<String>), Layou
 
 fn parse_kind(type_text: &str, token: &str) -> Result<FieldKind, LayoutError> {
     if let Some(count) = type_text.strip_prefix("bytes") {
-        return parse_count(count, token, "bytes").map(|count| FieldKind::Bytes(count.get()));
+        return parse_count(count, token, "bytes").map(FieldKind::Bytes);
     }
     if let Some(ty) = ScalarType::from_base_name(type_text) {
         if ty.is_single_byte() {
