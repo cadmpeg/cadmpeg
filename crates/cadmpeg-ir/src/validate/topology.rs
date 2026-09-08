@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use super::*;
 use crate::features::{
     BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, FeatureSourceContent,
-    HoleKind, Length, PatternKind, PatternSeed, PatternTransform, SplitFaceTool, UnresolvedFamily,
+    HoleKind, PatternKind, PatternSeed, PatternTransform, SplitFaceTool, UnresolvedFamily,
 };
 
 fn collect_pattern_paths<'a>(
@@ -2520,12 +2520,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     face_selections.push(face);
                 }
             }
-            FeatureDefinition::SheetMetalEdgeFlange {
-                edges,
-                height,
-                width,
-                ..
-            } => {
+            FeatureDefinition::SheetMetalEdgeFlange { edges, height, .. } => {
                 edge_selections.push(edges);
                 if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
                     target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
@@ -2536,18 +2531,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         feature,
                         "sheet-metal edge-flange height is invalid",
                     );
-                }
-                if let crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } = width {
-                    if !widths.as_slice().iter().all(|width| {
-                        positive_feature_length(width.first)
-                            && positive_feature_length(width.second)
-                    }) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "sheet-metal edge-flange width is invalid",
-                        );
-                    }
                 }
             }
             FeatureDefinition::SheetMetalHem { edges, .. } => edge_selections.push(edges),
@@ -3912,10 +3895,6 @@ fn check_historical_members<'a, I, F>(
             );
         }
     }
-}
-
-fn positive_feature_length(value: Length) -> bool {
-    value.get() > 0.0
 }
 
 fn regeneration_references(
