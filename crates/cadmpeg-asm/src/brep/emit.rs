@@ -1872,8 +1872,8 @@ fn emit_sweep_surface(
                     formula,
                     trailing_flag,
                 }) => {
-                    let first_law = map_sweep_law(&mut *out, i, "law:first", first_law, format);
-                    let second_law = map_sweep_law(&mut *out, i, "law:second", second_law, format);
+                    let first_law = map_sweep_law(&mut *out, i, "law:first", *first_law, format);
+                    let second_law = map_sweep_law(&mut *out, i, "law:second", *second_law, format);
                     let formula = map_law_formula(formula, |index, variable| {
                         map_sweep_law(
                             &mut *out,
