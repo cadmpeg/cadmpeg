@@ -51,10 +51,11 @@ impl IndexedRecordOffsets {
     /// Index every exact indexed-record header in `bytes` in one forward pass.
     pub(crate) fn build(bytes: &[u8]) -> Self {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        for at in indexed_record_offsets(bytes) {
-            if let Some(record_index) = indexed_record_index(bytes, at) {
-                by_record_index.entry(record_index).or_default().push(at);
-            }
+        for header in indexed_record_offsets(bytes) {
+            by_record_index
+                .entry(header.record_index)
+                .or_default()
+                .push(header.offset);
         }
         Self { by_record_index }
     }
@@ -984,17 +985,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .map(|prefix| ids::native_scope(&format!("{prefix}MetaStream.dat")))
             .and_then(|meta_scope| entity_modules.get(&meta_scope));
         let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
-        for &start in &indexed_offsets {
-            let Some(class_tag) = bytes
-                .get(start + 4..start + 7)
-                .and_then(|bytes| std::str::from_utf8(bytes).ok())
-            else {
-                continue;
-            };
-            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag.to_owned())
-            else {
-                continue;
-            };
+        for header in &indexed_offsets {
+            let start = header.offset;
+            let class_tag = header.class_tag.clone();
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some((entity_id, optional_slot_present, end)) =
@@ -1056,24 +1049,13 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
             .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<std::collections::HashSet<_>>();
-        for &start in &indexed_offsets {
-            let Some(entity_suffix) = View::u32_le_at(bytes, start + 7) else {
-                continue;
-            };
+        for header in &indexed_offsets {
+            let start = header.offset;
+            let entity_suffix = header.record_index;
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
                 continue;
             }
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
-            else {
-                continue;
-            };
-            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
-                continue;
-            };
-            if after_tag != start + 7 {
-                continue;
-            }
+            let class_tag = header.class_tag.clone();
             let Some(members) =
                 parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
             else {
@@ -1156,19 +1138,15 @@ fn decode_headers_for_indices(
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        for position in indexed_record_offsets(bytes) {
-            let record_index = indexed_record_index(bytes, position)
-                .expect("validated indexed-record header carries a four-byte record index");
+        for header in indexed_record_offsets(bytes) {
+            let position = header.offset;
+            let record_index = header.record_index;
             let scope = ids::native_scope(&entry.name);
             if wanted.contains(&(scope, record_index)) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
                     id: ids::native_design_record_header_id(&entry.name, position),
                     record_index,
-                    class_tag: std::str::from_utf8(&bytes[position + 4..position + 7])
-                        .expect("validated indexed-record class tag is ASCII")
-                        .to_owned()
-                        .try_into()
-                        .map_err(CodecError::Malformed)?,
+                    class_tag: header.class_tag,
                     byte_offset: position as u64,
                 });
             }
@@ -3916,15 +3894,27 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     Some((text_reference, transforms, view.position()))
 }
 
-/// Whether an indexed-record header starts at `at`: a u32 length prefix of
-/// three, a three-digit ASCII class tag, and a u32 record index. The eleven
-/// bytes must be present.
-fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
-    View::u32_le_at(bytes, at) == Some(3)
-        && bytes
-            .get(at + 4..at + 7)
-            .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit))
-        && bytes.get(at + 7..at + 11).is_some()
+/// Validated indexed-record identity and byte offset.
+pub(crate) struct IndexedRecordHeader {
+    pub(crate) offset: usize,
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::DesignClassTag,
+}
+
+fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader> {
+    if View::u32_le_at(bytes, at)? != 3 {
+        return None;
+    }
+    let class_tag = std::str::from_utf8(bytes.get(at + 4..at + 7)?)
+        .ok()?
+        .to_owned()
+        .try_into()
+        .ok()?;
+    Some(IndexedRecordHeader {
+        offset: at,
+        record_index: View::u32_le_at(bytes, at + 7)?,
+        class_tag,
+    })
 }
 
 /// The record index carried by the indexed-record header at `at`. The header
@@ -3937,7 +3927,7 @@ pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
     indexed_record_offsets(bytes.get(position..)?)
         .next()
-        .map(|at| position + at)
+        .map(|header| position + header.offset)
 }
 
 /// Header offsets of every indexed record whose class tag is three characters.
@@ -3947,9 +3937,11 @@ pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Optio
 /// types. No segment registers that many, and `indexed_record_index` reads the
 /// record index at a fixed `at + 7` on the same assumption; both would have to
 /// change together to widen it.
-pub(crate) fn indexed_record_offsets(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
+pub(crate) fn indexed_record_offsets(
+    bytes: &[u8],
+) -> impl Iterator<Item = IndexedRecordHeader> + '_ {
     memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
-        .filter(|at| indexed_record_header_at(bytes, *at))
+        .filter_map(|at| indexed_record_header_at(bytes, at))
 }
 
 pub(crate) fn next_indexed_record_offset_with_index(

@@ -1476,18 +1476,11 @@ pub fn decode_dimension_presentation_frames(
             .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        for start in indexed_record_offsets(bytes) {
-            let Some(class_tag) = bytes
-                .get(start + 4..start + 7)
-                .and_then(|tag| std::str::from_utf8(tag).ok())
+        for header in indexed_record_offsets(bytes) {
+            let start = header.offset;
+            let Some(primary_type_guid) =
+                presentation_classes.get(&u64::from(header.class_tag.code()))
             else {
-                continue;
-            };
-            let Some(primary_type_guid) = presentation_classes.get(
-                &class_tag
-                    .parse::<u64>()
-                    .expect("indexed dimension presentation class tag is numeric"),
-            ) else {
                 continue;
             };
             let Some(mut frame) = parse_dimension_presentation_frame(
