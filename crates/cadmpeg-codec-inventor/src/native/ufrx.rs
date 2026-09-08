@@ -864,8 +864,12 @@ mod tests {
             "active_representation_kind": "LOD", "secondary_active_lod_state": [0, 0],
             "active_model_state": "Primary", "active_model_state_state": [0, 0]
         });
-        let record: UfrxRepresentationRecord = serde_json::from_value(valid.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), valid);
+        let record: UfrxRepresentationRecord =
+            serde_json::from_value(valid.clone()).expect("valid native record fixture");
+        assert_eq!(
+            serde_json::to_value(record).expect("valid native record fixture"),
+            valid
+        );
         for field in [
             "active_representation",
             "active_representation_kind",
@@ -874,7 +878,7 @@ mod tests {
             let mut wire = valid.clone();
             wire[field] = serde_json::json!("");
             assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
-                .unwrap_err()
+                .expect_err("invalid native record fixture")
                 .to_string()
                 .contains(field));
         }
