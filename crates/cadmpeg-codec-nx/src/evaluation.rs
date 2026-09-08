@@ -610,8 +610,9 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     selection,
-                    *mode,
-                    feature_completeness::delete_body_definition_is_incomplete(feature),
+                    ResolvedBodyRetentionMode::try_from(*mode)
+                        .map_err(|reason| (feature_boundary(feature), reason))?,
+                    feature_completeness::operands::body_selection_is_incomplete(selection),
                 )?;
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
@@ -995,11 +996,31 @@ fn apply_complete_body_replacement(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResolvedBodyRetentionMode {
+    DeleteSelected,
+    KeepSelected,
+}
+
+impl TryFrom<BodyRetentionMode> for ResolvedBodyRetentionMode {
+    type Error = UnsupportedBodyCensusReason;
+
+    fn try_from(mode: BodyRetentionMode) -> Result<Self, Self::Error> {
+        match mode {
+            BodyRetentionMode::DeleteSelected => Ok(Self::DeleteSelected),
+            BodyRetentionMode::KeepSelected => Ok(Self::KeepSelected),
+            BodyRetentionMode::Unresolved => {
+                Err(UnsupportedBodyCensusReason::IncompleteFeatureDefinition)
+            }
+        }
+    }
+}
+
 fn apply_complete_body_retention(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &mut BTreeSet<BodyId>,
     selection: &BodySelection,
-    mode: BodyRetentionMode,
+    mode: ResolvedBodyRetentionMode,
     incomplete: bool,
 ) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
@@ -1008,7 +1029,7 @@ fn apply_complete_body_retention(
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
-    if mode == BodyRetentionMode::DeleteSelected
+    if mode == ResolvedBodyRetentionMode::DeleteSelected
         && matches!(selection, BodySelection::Local { .. })
         && feature.outputs.is_empty()
     {
@@ -1027,13 +1048,12 @@ fn apply_complete_body_retention(
         ));
     }
     match mode {
-        BodyRetentionMode::DeleteSelected => {
+        ResolvedBodyRetentionMode::DeleteSelected => {
             for body in selected {
                 bodies.remove(&body);
             }
         }
-        BodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
-        BodyRetentionMode::Unresolved => unreachable!("incomplete retention mode returned above"),
+        ResolvedBodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
     }
     Ok(())
 }
