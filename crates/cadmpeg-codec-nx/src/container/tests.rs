@@ -50,7 +50,7 @@ fn container_parses_header_and_directory() {
     assert!(c
         .entries
         .iter()
-        .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
+        .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span().is_some()));
 }
 
 #[test]
@@ -67,12 +67,12 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
             DirEntry {
                 name: "/Root/first".into(),
                 region: Region::Header,
-                file_span: Some((0, 3)),
+                body: crate::container::DirEntryBody::File { offset: 0, len: 3 },
             },
             DirEntry {
                 name: "/Root/second".into(),
                 region: Region::Header,
-                file_span: Some((3, 3)),
+                body: crate::container::DirEntryBody::File { offset: 3, len: 3 },
             },
         ],
         indexed_section_layouts: std::sync::OnceLock::new(),
@@ -96,7 +96,10 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
-            file_span: Some((0, payload.len() as u64)),
+            body: crate::container::DirEntryBody::File {
+                offset: 0,
+                len: payload.len() as u64,
+            },
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
@@ -136,7 +139,10 @@ fn container_caches_owned_section_layouts() {
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
-            file_span: Some((17, payload_len)),
+            body: crate::container::DirEntryBody::File {
+                offset: 17,
+                len: payload_len,
+            },
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
