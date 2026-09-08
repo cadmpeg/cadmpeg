@@ -6247,20 +6247,26 @@ fn resolved_loft_path(
     loft_path_from_edge_selection(&group.id, selection)
 }
 
+#[derive(Clone, Copy)]
+enum SurfacePatchRecipe {
+    Grouped,
+    Direct,
+}
+
 fn resolved_surface_patch_path(
     groups: &[&DesignConstructionOperandGroup],
     all_groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     scope: &DesignParameterScope,
-    grouped_recipe: bool,
+    recipe: SurfacePatchRecipe,
 ) -> cadmpeg_ir::features::PathRef {
     use cadmpeg_ir::features::PathRef;
 
     let paths = groups
         .iter()
         .map(|group| {
-            let selection = if grouped_recipe {
+            let selection = if matches!(recipe, SurfacePatchRecipe::Grouped) {
                 resolved_surface_patch_edge_group(
                     group,
                     all_groups,
@@ -6282,7 +6288,7 @@ fn resolved_surface_patch_path(
             loft_path_from_edge_selection(&group.id, selection)
         })
         .collect::<Vec<_>>();
-    if grouped_recipe {
+    if matches!(recipe, SurfacePatchRecipe::Grouped) {
         if let [path] = paths.as_slice() {
             return path.clone();
         }
@@ -7078,7 +7084,7 @@ pub(crate) fn project_surface_patch(
                 edge_operands,
                 edge_identity_operands,
                 scope,
-                true,
+                SurfacePatchRecipe::Grouped,
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
@@ -7168,7 +7174,7 @@ pub(crate) fn project_surface_patch(
             edge_operands,
             edge_identity_operands,
             scope,
-            false,
+            SurfacePatchRecipe::Direct,
         )
     };
     Some(FeatureDefinition::FilledSurface {
