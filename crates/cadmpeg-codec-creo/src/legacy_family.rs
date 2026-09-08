@@ -21,15 +21,12 @@ const VALUE_STRING: &str = "value(s_val)";
 /// One complete legacy family-table root and its ordered rows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct FamilyTable {
-    /// Stable native identity derived from the root object's source offset.
-    pub(crate) id: String,
-    /// Legacy root object identity.
-    pub(crate) root_object_id: String,
     /// Direct owning model object identity.
     pub(crate) root_parent_id: String,
     /// Direct owning model object name.
     pub(crate) root_parent_name: String,
     /// Source offset of the root object row.
+    #[serde(flatten, serialize_with = "serialize_root_identity")]
     pub(crate) offset: usize,
     /// Optional root generic-name field.
     pub(crate) generic_name: Option<legacy::StringValue>,
@@ -150,12 +147,12 @@ fn serialize_ordered<T: Serialize, S: serde::Serializer>(
 }
 
 struct Index<'a> {
-    object_by_id: BTreeMap<&'a str, &'a ObjectRecord>,
-    objects_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a ObjectRecord>>,
-    integers_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a legacy::IntegerRecord>>,
-    reals_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a legacy::RealRecord>>,
-    strings_by_parent_name: BTreeMap<(&'a str, &'a str), Vec<&'a legacy::StringRecord>>,
-    typed_field_names: BTreeMap<&'a str, Vec<&'a str>>,
+    object_by_id: BTreeMap<String, &'a ObjectRecord>,
+    objects_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a ObjectRecord>>,
+    integers_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>,
+    reals_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::RealRecord>>,
+    strings_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::StringRecord>>,
+    typed_field_names: BTreeMap<usize, Vec<&'a str>>,
 }
 
 impl<'a> Index<'a> {
@@ -163,10 +160,10 @@ impl<'a> Index<'a> {
         let mut object_by_id = BTreeMap::new();
         let mut objects_by_parent_name = BTreeMap::new();
         for object in &persistence.objects {
-            if object_by_id.insert(object.id.as_str(), object).is_some() {
+            if object_by_id.insert(object.id(), object).is_some() {
                 return None;
             }
-            if let Some(parent) = object.parent.as_deref() {
+            if let Some(parent) = object.parent {
                 objects_by_parent_name
                     .entry((parent, object.name.as_str()))
                     .or_insert_with(Vec::new)
@@ -205,11 +202,11 @@ impl<'a> Index<'a> {
 }
 
 fn add_value_index<'a, T>(
-    index: &mut BTreeMap<(&'a str, &'a str), Vec<&'a legacy::ValueRecord<T>>>,
+    index: &mut BTreeMap<(usize, &'a str), Vec<&'a legacy::ValueRecord<T>>>,
     records: &'a [legacy::ValueRecord<T>],
 ) {
     for record in records {
-        if let Some(parent) = record.parent.as_deref() {
+        if let Some(parent) = record.parent {
             index
                 .entry((parent, record.name.as_str()))
                 .or_default()
@@ -219,20 +216,20 @@ fn add_value_index<'a, T>(
 }
 
 fn add_typed_field_names<'a, T>(
-    index: &mut BTreeMap<&'a str, Vec<&'a str>>,
+    index: &mut BTreeMap<usize, Vec<&'a str>>,
     records: &'a [legacy::ValueRecord<T>],
 ) {
     for record in records {
         if !record.name.starts_with("value(") {
             continue;
         }
-        if let Some(parent) = record.parent.as_deref() {
+        if let Some(parent) = record.parent {
             index.entry(parent).or_default().push(record.name.as_str());
         }
     }
 }
 
-fn one_object<'a>(index: &Index<'a>, parent: &str, name: &str) -> Option<&'a ObjectRecord> {
+fn one_object<'a>(index: &Index<'a>, parent: usize, name: &str) -> Option<&'a ObjectRecord> {
     let records = index.objects_by_parent_name.get(&(parent, name))?;
     let [record] = records.as_slice() else {
         return None;
@@ -242,7 +239,7 @@ fn one_object<'a>(index: &Index<'a>, parent: &str, name: &str) -> Option<&'a Obj
 
 fn array_elements<'a>(
     index: &Index<'a>,
-    parent: &str,
+    parent: usize,
     name: &str,
 ) -> Option<Vec<&'a ObjectRecord>> {
     let array = one_object(index, parent, name)?;
@@ -260,12 +257,12 @@ fn array_elements<'a>(
         .iter()
         .map(|element_id| {
             let element = index.object_by_id.get(element_id.as_str()).copied()?;
-            (element.parent.as_deref() == Some(array.id.as_str())).then_some(element)
+            (element.parent == Some(array.offset)).then_some(element)
         })
         .collect()
 }
 
-fn optional_integer(index: &Index<'_>, parent: &str, name: &str) -> Result<Option<i32>, ()> {
+fn optional_integer(index: &Index<'_>, parent: usize, name: &str) -> Result<Option<i32>, ()> {
     let Some(records) = index.integers_by_parent_name.get(&(parent, name)) else {
         return Ok(None);
     };
@@ -280,7 +277,7 @@ fn optional_integer(index: &Index<'_>, parent: &str, name: &str) -> Result<Optio
 
 fn optional_string(
     index: &Index<'_>,
-    parent: &str,
+    parent: usize,
     name: &str,
 ) -> Result<Option<legacy::StringValue>, ()> {
     let Some(records) = index.strings_by_parent_name.get(&(parent, name)) else {
@@ -300,7 +297,7 @@ fn typed_value(
     value_object: &ObjectRecord,
     type_code: i32,
 ) -> Option<(usize, FamilyTableValuePayload)> {
-    let names = index.typed_field_names.get(value_object.id.as_str())?;
+    let names = index.typed_field_names.get(&value_object.offset)?;
     if names.len() != 1 {
         return None;
     }
@@ -317,7 +314,7 @@ fn typed_value(
         50 => {
             let records = index
                 .reals_by_parent_name
-                .get(&(value_object.id.as_str(), expected_name))?;
+                .get(&(value_object.offset, expected_name))?;
             if records.len() != 1 {
                 return None;
             }
@@ -330,7 +327,7 @@ fn typed_value(
         51 => {
             let records = index
                 .strings_by_parent_name
-                .get(&(value_object.id.as_str(), expected_name))?;
+                .get(&(value_object.offset, expected_name))?;
             if records.len() != 1 {
                 return None;
             }
@@ -343,7 +340,7 @@ fn typed_value(
         52 => {
             let records = index
                 .integers_by_parent_name
-                .get(&(value_object.id.as_str(), expected_name))?;
+                .get(&(value_object.offset, expected_name))?;
             if records.len() != 1 {
                 return None;
             }
@@ -375,12 +372,12 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
             if object.name != FAMILY_ROOT {
                 return false;
             }
-            let Some(parent_id) = object.parent.as_deref() else {
+            let Some(parent_id) = object.parent else {
                 return false;
             };
             index
                 .object_by_id
-                .get(parent_id)
+                .get(&legacy::object_node_id(parent_id))
                 .is_some_and(|parent| FAMILY_PARENT_NAMES.contains(&parent.name.as_str()))
         })
         .collect::<Vec<_>>();
@@ -390,11 +387,13 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
     if !matches!(root.payload, ObjectPayload::Arrow) {
         return None;
     }
-    let root_parent_id = root.parent.as_deref()?;
-    let root_parent = index.object_by_id.get(root_parent_id)?;
-    let generic_name = optional_string(&index, &root.id, "gen_name").ok()?;
-    let item_rows = array_elements(&index, &root.id, ITEMS_ARRAY)?;
-    let instance_rows = array_elements(&index, &root.id, INSTANCES_ARRAY)?;
+    let root_parent_id = root.parent?;
+    let root_parent = index
+        .object_by_id
+        .get(&legacy::object_node_id(root_parent_id))?;
+    let generic_name = optional_string(&index, root.offset, "gen_name").ok()?;
+    let item_rows = array_elements(&index, root.offset, ITEMS_ARRAY)?;
+    let instance_rows = array_elements(&index, root.offset, INSTANCES_ARRAY)?;
     if item_rows.is_empty() || instance_rows.is_empty() {
         return None;
     }
@@ -406,12 +405,12 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                 return None;
             }
             Some(FamilyTableItem {
-                source_object_id: item.id.clone(),
+                source_object_id: item.id(),
                 offset: item.offset,
-                item_id: optional_integer(&index, &item.id, "id").ok()??,
-                type_code: optional_integer(&index, &item.id, "type").ok()??,
-                invisible: optional_integer(&index, &item.id, "invisible").ok()??,
-                name: optional_string(&index, &item.id, "name").ok()??,
+                item_id: optional_integer(&index, item.offset, "id").ok()??,
+                type_code: optional_integer(&index, item.offset, "type").ok()??,
+                invisible: optional_integer(&index, item.offset, "invisible").ok()??,
+                name: optional_string(&index, item.offset, "name").ok()??,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -423,19 +422,19 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
             if !matches!(instance.payload, ObjectPayload::Arrow) {
                 return None;
             }
-            let name = match optional_string(&index, &instance.id, "name").ok()?? {
+            let name = match optional_string(&index, instance.offset, "name").ok()?? {
                 legacy::StringValue::Utf8 { text } if !text.is_empty() => text,
                 _ => return None,
             };
             if !instance_names.insert(name.clone()) {
                 return None;
             }
-            let attributes = optional_integer(&index, &instance.id, "attributes").ok()??;
-            let model = one_object(&index, &instance.id, FAMILY_ROOT)?;
+            let attributes = optional_integer(&index, instance.offset, "attributes").ok()??;
+            let model = one_object(&index, instance.offset, FAMILY_ROOT)?;
             if !matches!(model.payload, ObjectPayload::Arrow) {
                 return None;
             }
-            let value_rows = array_elements(&index, &instance.id, VALUES_ARRAY)?;
+            let value_rows = array_elements(&index, instance.offset, VALUES_ARRAY)?;
             if value_rows.len() != items.len() {
                 return None;
             }
@@ -445,30 +444,28 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                     if !matches!(value_row.payload, ObjectPayload::Inline) {
                         return None;
                     }
-                    let type_code = optional_integer(&index, &value_row.id, "type").ok()??;
+                    let type_code = optional_integer(&index, value_row.offset, "type").ok()??;
                     let (offset, value) = typed_value(&index, value_row, type_code)?;
                     Some(FamilyTableValue {
-                        source_object_id: value_row.id.clone(),
+                        source_object_id: value_row.id(),
                         offset,
                         value,
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(FamilyTableInstance {
-                source_object_id: instance.id.clone(),
+                source_object_id: instance.id(),
                 offset: instance.offset,
                 name,
                 attributes,
-                model_object_id: model.id.clone(),
+                model_object_id: model.id(),
                 values,
             })
         })
         .collect::<Option<Vec<_>>>()?;
 
     Some(FamilyTable {
-        id: format!("creo:legacy_family:driver_table#{}", root.offset),
-        root_object_id: root.id.clone(),
-        root_parent_id: root_parent.id.clone(),
+        root_parent_id: root_parent.id(),
         root_parent_name: root_parent.name.clone(),
         offset: root.offset,
         generic_name,
@@ -477,23 +474,60 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
     })
 }
 
+fn serialize_root_identity<S: serde::Serializer>(
+    offset: &usize,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+    let mut wire = serializer.serialize_struct("FamilyRootIdentity", 3)?;
+    wire.serialize_field("id", &format!("creo:legacy_family:driver_table#{offset}"))?;
+    wire.serialize_field("root_object_id", &legacy::object_node_id(*offset))?;
+    wire.serialize_field("offset", offset)?;
+    wire.end()
+}
+
+impl FamilyTable {
+    /// Native identity derived from the root offset.
+    pub(crate) fn id(&self) -> String {
+        format!("creo:legacy_family:driver_table#{}", self.offset)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn fixture_offset(id: &str) -> usize {
+        match id {
+            "solid" => 1,
+            "root" => 2,
+            "items-array" => 3,
+            "item" => 4,
+            "instances-array" => 5,
+            "instance" => 6,
+            "model" => 7,
+            "values-array" => 8,
+            "value" => 9,
+            _ => panic!("unknown fixture object"),
+        }
+    }
     fn object(
-        id: &str,
+        _id: &str,
         name: &str,
         parent: Option<&str>,
-        payload: ObjectPayload,
+        mut payload: ObjectPayload,
         offset: usize,
     ) -> ObjectRecord {
+        if let ObjectPayload::Array { elements, .. } = &mut payload {
+            for element in elements {
+                *element = crate::legacy::object_node_id(fixture_offset(element));
+            }
+        }
         ObjectRecord {
-            id: id.to_string(),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: parent.map(str::to_string),
+            parent: parent.map(fixture_offset),
             depth: 0,
             payload,
             offset,
@@ -502,11 +536,11 @@ mod tests {
 
     fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
         legacy::ValueRecord {
-            id: format!("integer#{offset}"),
+            kind: crate::legacy::ValueKind::Integer,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: NumericPayload::Scalar { value },
             offset,
@@ -515,11 +549,11 @@ mod tests {
 
     fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
         legacy::ValueRecord {
-            id: format!("real#{offset}"),
+            kind: crate::legacy::ValueKind::Real,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: NumericPayload::Scalar {
                 value: legacy::Real::from_bits(value.to_bits()),
@@ -530,11 +564,11 @@ mod tests {
 
     fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
         legacy::ValueRecord {
-            id: format!("string#{offset}"),
+            kind: crate::legacy::ValueKind::String,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: StringPayload::Scalar {
                 value: legacy::StringValue::Utf8 {
@@ -645,7 +679,9 @@ mod tests {
     #[test]
     fn nested_pointer_is_not_a_family_root() {
         let mut persistence = complete_table();
-        persistence.objects.retain(|object| object.id != "root");
+        persistence
+            .objects
+            .retain(|object| object.offset != fixture_offset("root"));
         assert!(parse(&persistence).is_none());
     }
 
@@ -655,7 +691,7 @@ mod tests {
         null_root
             .objects
             .iter_mut()
-            .find(|object| object.id == "root")
+            .find(|object| object.offset == fixture_offset("root"))
             .expect("synthetic family-table root")
             .payload = ObjectPayload::Null;
         assert!(parse(&null_root).is_none());
@@ -674,9 +710,9 @@ mod tests {
     #[test]
     fn incomplete_value_form_is_retained() {
         let mut persistence = complete_table();
-        persistence
-            .integer_values
-            .retain(|record| record.name != "type" || record.parent.as_deref() != Some("value"));
+        persistence.integer_values.retain(|record| {
+            record.name != "type" || record.parent != Some(fixture_offset("value"))
+        });
         assert!(parse(&persistence).is_none());
     }
 
@@ -686,7 +722,7 @@ mod tests {
         persistence.real_values.clear();
         persistence
             .integer_values
-            .retain(|record| record.parent.as_deref() != Some("value"));
+            .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
             .push(integer("value", "type", 52, 30));
@@ -708,7 +744,7 @@ mod tests {
         persistence.real_values.clear();
         persistence
             .integer_values
-            .retain(|record| record.parent.as_deref() != Some("value"));
+            .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
             .push(integer("value", "type", 51, 40));

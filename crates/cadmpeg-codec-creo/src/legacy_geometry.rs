@@ -142,10 +142,10 @@ pub(crate) struct LegacyGeometryScan {
     pub(crate) pcurves: Vec<PcurveEndpoints>,
 }
 
-type ObjectIdIndex<'a> = BTreeMap<&'a str, &'a ObjectRecord>;
-type ChildIndex<'a> = BTreeMap<&'a str, Vec<&'a ObjectRecord>>;
-type IntegerFieldIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a legacy::IntegerRecord>>;
-type RealFieldIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a RealRecord>>;
+type ObjectIdIndex<'a> = BTreeMap<String, &'a ObjectRecord>;
+type ChildIndex<'a> = BTreeMap<usize, Vec<&'a ObjectRecord>>;
+type IntegerFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>;
+type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a RealRecord>>;
 
 /// Decode the surface portions of one legacy persistence object graph.
 pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
@@ -230,9 +230,9 @@ fn curve_array_elements<'a>(
     let root = roots.next()?;
     roots.next().is_none().then_some(())?;
 
-    let mut branches = objects.iter().filter(|object| {
-        object.parent.as_deref() == Some(root.id.as_str()) && object.name == branch_name
-    });
+    let mut branches = objects
+        .iter()
+        .filter(|object| object.parent == Some(root.offset) && object.name == branch_name);
     let branch = branches.next()?;
     branches.next().is_none().then_some(())?;
 
@@ -240,7 +240,7 @@ fn curve_array_elements<'a>(
         let ObjectPayload::Array { elements, .. } = &object.payload else {
             return None;
         };
-        (object.parent.as_deref() == Some(branch.id.as_str())
+        (object.parent == Some(branch.offset)
             && object.name == "crv_array"
             && object.payload.is_complete())
         .then_some((object, elements))
@@ -252,8 +252,7 @@ fn curve_array_elements<'a>(
         .iter()
         .map(|element_id| {
             let element = object_ids.get(element_id.as_str()).copied()?;
-            (element.parent.as_deref() == Some(array.id.as_str()) && element.name == "crv_array")
-                .then_some(())?;
+            (element.parent == Some(array.offset) && element.name == "crv_array").then_some(())?;
             Some(element)
         })
         .collect()
@@ -263,10 +262,11 @@ fn curve_topology_row(
     curve_object: &ObjectRecord,
     integers: &IntegerFieldIndex<'_>,
 ) -> Option<CurveTopologyRow> {
-    let id = u32::try_from(integer_field(integers, &curve_object.id, "crv_id")?).ok()?;
-    let type_byte = u8::try_from(integer_field(integers, &curve_object.id, "type")?).ok()?;
-    let feature_id = u32::try_from(integer_field(integers, &curve_object.id, "feat_id")?).ok()?;
-    let directions = integer_array(integers, &curve_object.id, "crv_pnt_dir")?
+    let id = u32::try_from(integer_field(integers, curve_object.offset, "crv_id")?).ok()?;
+    let type_byte = u8::try_from(integer_field(integers, curve_object.offset, "type")?).ok()?;
+    let feature_id =
+        u32::try_from(integer_field(integers, curve_object.offset, "feat_id")?).ok()?;
+    let directions = integer_array(integers, curve_object.offset, "crv_pnt_dir")?
         .into_iter()
         .map(legacy_direction)
         .collect::<Option<Vec<_>>>()?;
@@ -276,13 +276,13 @@ fn curve_topology_row(
     let faces = [
         u32::try_from(integer_field(
             integers,
-            &curve_object.id,
+            curve_object.offset,
             "crv_hdr_geom_ptr[0]",
         )?)
         .ok()?,
         u32::try_from(integer_field(
             integers,
-            &curve_object.id,
+            curve_object.offset,
             "crv_hdr_geom_ptr[1]",
         )?)
         .ok()?,
@@ -290,13 +290,13 @@ fn curve_topology_row(
     let next_edges = [
         u32::try_from(integer_field(
             integers,
-            &curve_object.id,
+            curve_object.offset,
             "next_crv_hdr_ptr[0]",
         )?)
         .ok()?,
         u32::try_from(integer_field(
             integers,
-            &curve_object.id,
+            curve_object.offset,
             "next_crv_hdr_ptr[1]",
         )?)
         .ok()?,
@@ -308,7 +308,7 @@ fn curve_topology_row(
         directions: [*first_direction, *second_direction],
         faces: faces.map(std::num::NonZeroU32::new),
         next_edges,
-        offset: integer_record(integers, &curve_object.id, "crv_id")?.offset,
+        offset: integer_record(integers, curve_object.offset, "crv_id")?.offset,
     })
 }
 
@@ -317,7 +317,7 @@ fn curve_pcurve(
     topology: &CurveTopologyRow,
     reals: &RealFieldIndex<'_>,
 ) -> Option<PcurveEndpoints> {
-    let record = real_record(reals, &curve_object.id, "crv_pnt_arr")?;
+    let record = real_record(reals, curve_object.offset, "crv_pnt_arr")?;
     let NumericPayload::Array { dimensions, runs } = &record.payload else {
         return None;
     };
@@ -406,9 +406,9 @@ fn surface_array_elements<'a>(
     let root = roots.next()?;
     roots.next().is_none().then_some(())?;
 
-    let mut branches = objects.iter().filter(|object| {
-        object.parent.as_deref() == Some(root.id.as_str()) && object.name == branch_name
-    });
+    let mut branches = objects
+        .iter()
+        .filter(|object| object.parent == Some(root.offset) && object.name == branch_name);
     let branch = branches.next()?;
     branches.next().is_none().then_some(())?;
 
@@ -416,7 +416,7 @@ fn surface_array_elements<'a>(
         let ObjectPayload::Array { elements, .. } = &object.payload else {
             return None;
         };
-        (object.parent.as_deref() == Some(branch.id.as_str())
+        (object.parent == Some(branch.offset)
             && object.name == "srf_array"
             && object.payload.is_complete())
         .then_some((object, elements))
@@ -428,29 +428,28 @@ fn surface_array_elements<'a>(
         .iter()
         .map(|element_id| {
             let element = object_ids.get(element_id.as_str()).copied()?;
-            (element.parent.as_deref() == Some(array.id.as_str()) && element.name == "srf_array")
-                .then_some(())?;
+            (element.parent == Some(array.offset) && element.name == "srf_array").then_some(())?;
             Some(element)
         })
         .collect()
 }
 
 fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> Option<SurfaceRow> {
-    let type_byte = u8::try_from(integer_field(integers, &row_object.id, "geom_type")?).ok()?;
+    let type_byte = u8::try_from(integer_field(integers, row_object.offset, "geom_type")?).ok()?;
     let kind = SurfaceKind::from_byte(type_byte)?;
-    let feature_id = u32::try_from(integer_field(integers, &row_object.id, "feat_id")?).ok()?;
-    let id = u32::try_from(integer_field(integers, &row_object.id, "geom_id")?).ok()?;
+    let feature_id = u32::try_from(integer_field(integers, row_object.offset, "feat_id")?).ok()?;
+    let id = u32::try_from(integer_field(integers, row_object.offset, "geom_id")?).ok()?;
     let boundary_type =
-        u8::try_from(integer_field(integers, &row_object.id, "boundary_type")?).ok()?;
+        u8::try_from(integer_field(integers, row_object.offset, "boundary_type")?).ok()?;
     let boundary_type = surface::BoundaryType::from_byte(boundary_type)?;
-    let orientation = integer_field(integers, &row_object.id, "orient")?;
+    let orientation = integer_field(integers, row_object.offset, "orient")?;
     let reversed = match orientation {
         1 => false,
         -1 => true,
         _ => return None,
     };
     let next_surface =
-        u32::try_from(integer_field(integers, &row_object.id, "next_geom_ptr")?).ok()?;
+        u32::try_from(integer_field(integers, row_object.offset, "next_geom_ptr")?).ok()?;
     Some(SurfaceRow {
         id,
         kind,
@@ -458,7 +457,7 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
         reversed,
         boundary_type,
         next_surface,
-        offset: integer_record(integers, &row_object.id, "geom_id")?.offset,
+        offset: integer_record(integers, row_object.offset, "geom_id")?.offset,
     })
 }
 
@@ -470,7 +469,7 @@ fn surface_carrier(
     namespace: LegacySurfaceNamespace,
 ) -> Option<LegacySurfaceCarrier> {
     let mut primitives = children
-        .get(row_object.id.as_str())?
+        .get(&row_object.offset)?
         .iter()
         .copied()
         .filter(|object| object.name.starts_with("srf_prim_ptr("));
@@ -487,12 +486,12 @@ fn surface_carrier(
     (primitive.name == expected_name).then_some(())?;
 
     if row.kind == SurfaceKind::Spline {
-        let points = real_vector_array(reals, &primitive.id, "i_points")?;
-        let u_parameters = real_scalar_array(reals, &primitive.id, "u_params")?;
-        let v_parameters = real_scalar_array(reals, &primitive.id, "v_params")?;
-        let u_tangents = real_vector_array(reals, &primitive.id, "u_tangts")?;
-        let v_tangents = real_vector_array(reals, &primitive.id, "v_tangts")?;
-        let mixed_derivatives = real_vector_array(reals, &primitive.id, "uv_deriv")?;
+        let points = real_vector_array(reals, primitive.offset, "i_points")?;
+        let u_parameters = real_scalar_array(reals, primitive.offset, "u_params")?;
+        let v_parameters = real_scalar_array(reals, primitive.offset, "v_params")?;
+        let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
+        let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
+        let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
         let (u_derivatives, v_derivatives, mixed_derivatives) = legacy_spline_boundary_derivatives(
             &points,
             &u_parameters,
@@ -516,7 +515,7 @@ fn surface_carrier(
         });
     }
 
-    let local_system = real_record(reals, &primitive.id, "local_sys")?;
+    let local_system = real_record(reals, primitive.offset, "local_sys")?;
     let slots = local_system_slots(local_system)?;
     let first = [slots[0], slots[3], slots[6]];
     let second = [slots[1], slots[4], slots[7]];
@@ -533,11 +532,11 @@ fn surface_carrier(
             origin,
             axis: third,
             ref_direction: first,
-            radius: real_scalar(reals, &primitive.id, "radius")
+            radius: real_scalar(reals, primitive.offset, "radius")
                 .filter(|radius| radius.is_finite() && *radius > 0.0)?,
         },
         SurfaceKind::Cone => {
-            let signed_half_angle = real_scalar(reals, &primitive.id, "half_angle")?;
+            let signed_half_angle = real_scalar(reals, primitive.offset, "half_angle")?;
             if !signed_half_angle.is_finite()
                 || signed_half_angle == 0.0
                 || signed_half_angle.abs() >= std::f64::consts::FRAC_PI_2
@@ -559,9 +558,9 @@ fn surface_carrier(
             }
         }
         SurfaceKind::TorusOrSphere => {
-            let major_radius = real_scalar(reals, &primitive.id, "radius1")
+            let major_radius = real_scalar(reals, primitive.offset, "radius1")
                 .filter(|radius| radius.is_finite() && *radius >= 0.0)?;
-            let minor_radius = real_scalar(reals, &primitive.id, "radius2")
+            let minor_radius = real_scalar(reals, primitive.offset, "radius2")
                 .filter(|radius| radius.is_finite() && *radius > 0.0)?;
             if major_radius == 0.0 {
                 LegacySurfaceGeometry::Sphere {
@@ -613,7 +612,7 @@ pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
 
 fn real_vector_array(
     records: &RealFieldIndex<'_>,
-    parent: &str,
+    parent: usize,
     name: &str,
 ) -> Option<Vec<[f64; 3]>> {
     let record = real_record(records, parent, name)?;
@@ -631,7 +630,7 @@ fn real_vector_array(
         .collect()
 }
 
-fn real_scalar_array(records: &RealFieldIndex<'_>, parent: &str, name: &str) -> Option<Vec<f64>> {
+fn real_scalar_array(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<f64>> {
     let record = real_record(records, parent, name)?;
     let NumericPayload::Array { dimensions, .. } = &record.payload else {
         return None;
@@ -659,16 +658,13 @@ fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
 }
 
 fn object_id_index(objects: &[ObjectRecord]) -> ObjectIdIndex<'_> {
-    objects
-        .iter()
-        .map(|object| (object.id.as_str(), object))
-        .collect()
+    objects.iter().map(|object| (object.id(), object)).collect()
 }
 
 fn child_index(objects: &[ObjectRecord]) -> ChildIndex<'_> {
     let mut index = BTreeMap::new();
     for object in objects {
-        if let Some(parent) = object.parent.as_deref() {
+        if let Some(parent) = object.parent {
             index.entry(parent).or_insert_with(Vec::new).push(object);
         }
     }
@@ -678,7 +674,7 @@ fn child_index(objects: &[ObjectRecord]) -> ChildIndex<'_> {
 fn integer_field_index(records: &[legacy::IntegerRecord]) -> IntegerFieldIndex<'_> {
     let mut index = BTreeMap::new();
     for record in records {
-        if let Some(parent) = record.parent.as_deref() {
+        if let Some(parent) = record.parent {
             index
                 .entry((parent, record.name.as_str()))
                 .or_insert_with(Vec::new)
@@ -691,7 +687,7 @@ fn integer_field_index(records: &[legacy::IntegerRecord]) -> IntegerFieldIndex<'
 fn real_field_index(records: &[RealRecord]) -> RealFieldIndex<'_> {
     let mut index = BTreeMap::new();
     for record in records {
-        if let Some(parent) = record.parent.as_deref() {
+        if let Some(parent) = record.parent {
             index
                 .entry((parent, record.name.as_str()))
                 .or_insert_with(Vec::new)
@@ -703,14 +699,14 @@ fn real_field_index(records: &[RealRecord]) -> RealFieldIndex<'_> {
 
 fn integer_record<'a>(
     records: &'a IntegerFieldIndex<'a>,
-    parent: &str,
+    parent: usize,
     name: &str,
 ) -> Option<&'a legacy::IntegerRecord> {
     let matches = records.get(&(parent, name))?;
     (matches.len() == 1).then_some(matches[0])
 }
 
-fn integer_field(records: &IntegerFieldIndex<'_>, parent: &str, name: &str) -> Option<i32> {
+fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<i32> {
     let record = integer_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(*value),
@@ -718,7 +714,7 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: &str, name: &str) -> O
     }
 }
 
-fn integer_array(records: &IntegerFieldIndex<'_>, parent: &str, name: &str) -> Option<Vec<i32>> {
+fn integer_array(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<i32>> {
     let record = integer_record(records, parent, name)?;
     let NumericPayload::Array { dimensions, runs } = &record.payload else {
         return None;
@@ -739,14 +735,14 @@ fn integer_array(records: &IntegerFieldIndex<'_>, parent: &str, name: &str) -> O
 
 fn real_record<'a>(
     records: &'a RealFieldIndex<'a>,
-    parent: &str,
+    parent: usize,
     name: &str,
 ) -> Option<&'a RealRecord> {
     let matches = records.get(&(parent, name))?;
     (matches.len() == 1).then_some(matches[0])
 }
 
-fn real_scalar(records: &RealFieldIndex<'_>, parent: &str, name: &str) -> Option<f64> {
+fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<f64> {
     let record = real_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(value.value()),
@@ -841,6 +837,12 @@ mod tests {
         RealRecord, RealRun, ValueRecord,
     };
 
+    fn fixture_offset(id: &str) -> usize {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        id.hash(&mut hash);
+        hash.finish() as usize
+    }
     fn real(value: f64) -> String {
         format!("{:016X}", value.to_bits())
     }
@@ -905,11 +907,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             })
             .collect();
         ValueRecord {
-            id: format!("{parent}:{name}"),
+            kind: crate::legacy::ValueKind::Real,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: RealPayload::Array { dimensions, runs },
             offset,
@@ -1055,11 +1057,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         )];
         if with_angle {
             real_values.push(ValueRecord {
-                id: format!("{primitive}:half_angle"),
+                kind: crate::legacy::ValueKind::Real,
                 name: "half_angle".to_string(),
                 attribute_id: 0,
                 scope_offset: 0,
-                parent: Some(primitive.to_string()),
+                parent: Some(fixture_offset(primitive)),
                 depth: 0,
                 payload: RealPayload::Scalar {
                     value: Real::from_bits((-std::f64::consts::FRAC_PI_4).to_bits()),
@@ -1077,11 +1079,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     fn real_scalar(parent: &str, name: &str, value: f64, offset: usize) -> RealRecord {
         ValueRecord {
-            id: format!("{parent}:{name}"),
+            kind: crate::legacy::ValueKind::Real,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: RealPayload::Scalar {
                 value: Real::from_bits(value.to_bits()),
@@ -1357,16 +1359,25 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         );
     }
 
-    fn object(id: &str, name: &str, parent: Option<&str>, payload: ObjectPayload) -> ObjectRecord {
+    fn object(
+        id: &str,
+        name: &str,
+        parent: Option<&str>,
+        mut payload: ObjectPayload,
+    ) -> ObjectRecord {
+        if let ObjectPayload::Array { elements, .. } = &mut payload {
+            for element in elements {
+                *element = crate::legacy::object_node_id(fixture_offset(element));
+            }
+        }
         ObjectRecord {
-            id: id.to_string(),
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: parent.map(str::to_string),
+            parent: parent.map(fixture_offset),
             depth: 0,
             payload,
-            offset: 0,
+            offset: fixture_offset(id),
         }
     }
 
@@ -1377,11 +1388,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            id: format!("{parent}:{name}"),
+            kind: crate::legacy::ValueKind::Integer,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload,
             offset,
@@ -1395,11 +1406,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| Real::from_bits(value.to_bits()));
         let runs = values.map(|value| RealRun { count: 1, value }).collect();
         ValueRecord {
-            id: format!("{parent}:crv_pnt_arr"),
+            kind: crate::legacy::ValueKind::Real,
             name: "crv_pnt_arr".to_string(),
             attribute_id: 0,
             scope_offset: 0,
-            parent: Some(parent.to_string()),
+            parent: Some(fixture_offset(parent)),
             depth: 0,
             payload: RealPayload::Array {
                 dimensions: vec![2, 4],
@@ -1537,7 +1548,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     fn incomplete_legacy_curve_fields_withhold_topology() {
         let mut persistence = topology_persistence();
         persistence.integer_values.retain(|record| {
-            !(record.parent.as_deref() == Some("curve_11") && record.name == "next_crv_hdr_ptr[1]")
+            !(record.parent == Some(fixture_offset("curve_11"))
+                && record.name == "next_crv_hdr_ptr[1]")
         });
 
         let result = scan(&persistence);
