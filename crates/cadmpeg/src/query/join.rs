@@ -176,12 +176,12 @@ fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {
         match spec.mode {
             JoinMode::Matched => {
                 for (ri, key) in pairs {
-                    rows.push(row_pair(spec, left_rec, Some(&spec.right[ri]), Some(&key)));
+                    rows.push(row_pair(spec, left_rec, Some((&spec.right[ri], &key))));
                 }
             }
             JoinMode::Unmatched => {
                 if pairs.is_empty() {
-                    rows.push(row_pair(spec, left_rec, None, None));
+                    rows.push(row_pair(spec, left_rec, None));
                 }
             }
             JoinMode::All => {
@@ -199,7 +199,7 @@ fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {
     rows
 }
 
-fn row_pair(spec: &JoinSpec<'_>, left: &Value, right: Option<&Value>, key: Option<&str>) -> Value {
+fn row_pair(spec: &JoinSpec<'_>, left: &Value, matched: Option<(&Value, &str)>) -> Value {
     let mut map = Map::new();
     map.insert(
         "left_arena".to_owned(),
@@ -209,11 +209,15 @@ fn row_pair(spec: &JoinSpec<'_>, left: &Value, right: Option<&Value>, key: Optio
         "right_arena".to_owned(),
         Value::String(spec.right_arena.to_owned()),
     );
-    if let Some(k) = key {
-        map.insert("key".to_owned(), Value::String(k.to_owned()));
-    }
+    let right = match matched {
+        Some((right, key)) => {
+            map.insert("key".to_owned(), Value::String(key.to_owned()));
+            right.clone()
+        }
+        None => Value::Null,
+    };
     map.insert("left".to_owned(), left.clone());
-    map.insert("right".to_owned(), right.cloned().unwrap_or(Value::Null));
+    map.insert("right".to_owned(), right);
     attach_files(&mut map, spec);
     Value::Object(map)
 }
