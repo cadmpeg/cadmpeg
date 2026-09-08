@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 
-use crate::archive::{PhysicalSpan, SpanRole};
+use crate::archive::{CfbSpanRole, PhysicalSpan, SpanRole};
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -481,16 +481,16 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         let mut structural = BTreeMap::new();
         for &sector in &self.parsed.fat_sectors {
-            structural.insert(sector, SpanRole::CfbFat);
+            structural.insert(sector, CfbSpanRole::Fat);
         }
         for &sector in &self.parsed.difat_sectors {
-            structural.insert(sector, SpanRole::CfbDifat);
+            structural.insert(sector, CfbSpanRole::Difat);
         }
         for &sector in &self.parsed.directory_chain {
-            structural.insert(sector, SpanRole::CfbDirectory);
+            structural.insert(sector, CfbSpanRole::Directory);
         }
         for &sector in &self.parsed.mini_fat_chain {
-            structural.insert(sector, SpanRole::CfbMiniFat);
+            structural.insert(sector, CfbSpanRole::MiniFat);
         }
         let mut regular = BTreeMap::new();
         let mut mini = BTreeMap::new();
@@ -519,7 +519,7 @@ impl<'a> CompoundSnapshot<'a> {
         let mut spans = vec![PhysicalSpan {
             start: 0,
             end: self.parsed.version.sector_size() as u64,
-            role: SpanRole::CfbHeader,
+            role: SpanRole::Cfb(CfbSpanRole::Header),
         }];
         let root_size = directory_root(&self.parsed.directory)?.size;
         let root_sectors = self
@@ -556,7 +556,7 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     sector_length,
-                    SpanRole::CfbRangeLockSector,
+                    CfbSpanRole::RangeLockSector,
                 );
             } else if let Some(role) = structural.get(&sector) {
                 push_span(&mut spans, start, sector_length, role.clone());
@@ -568,13 +568,13 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     *payload,
-                    SpanRole::CfbRegularStreamPayload(entry.clone()),
+                    CfbSpanRole::RegularStreamPayload(entry.clone()),
                 );
                 push_span(
                     &mut spans,
                     start + *payload as u64,
                     sector_length - *payload,
-                    SpanRole::CfbPadding {
+                    CfbSpanRole::Padding {
                         entry: Some(entry.clone()),
                     },
                 );
@@ -606,13 +606,13 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start,
                             *payload,
-                            SpanRole::CfbMiniStreamPayload(entry.clone()),
+                            CfbSpanRole::MiniStreamPayload(entry.clone()),
                         );
                         push_span(
                             &mut spans,
                             mini_start + *payload as u64,
                             mini_length - *payload,
-                            SpanRole::CfbPadding {
+                            CfbSpanRole::Padding {
                                 entry: Some(entry.clone()),
                             },
                         );
@@ -621,13 +621,13 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start,
                             mapped,
-                            SpanRole::CfbMiniStreamPadding,
+                            CfbSpanRole::MiniStreamPadding,
                         );
                         push_span(
                             &mut spans,
                             mini_start + mapped as u64,
                             mini_length - mapped,
-                            SpanRole::CfbPadding { entry: None },
+                            CfbSpanRole::Padding { entry: None },
                         );
                     }
                 }
@@ -636,7 +636,7 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     sector_length,
-                    SpanRole::CfbUnallocatedSector,
+                    CfbSpanRole::UnallocatedSector,
                 );
             }
         }
@@ -1782,14 +1782,14 @@ fn join_sectors(
     Ok(output)
 }
 
-fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: SpanRole) {
+fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: CfbSpanRole) {
     if length == 0 {
         return;
     }
     spans.push(PhysicalSpan {
         start,
         end: start + length as u64,
-        role,
+        role: SpanRole::Cfb(role),
     });
 }
 
