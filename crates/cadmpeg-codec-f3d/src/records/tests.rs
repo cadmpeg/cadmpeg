@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 
+mod configurations;
 mod graphics;
 mod parameter;
 

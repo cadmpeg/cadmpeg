@@ -194,8 +194,9 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &wrong_pair,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
     )
-    .index
-    .contains_key(&8304));
+    .ordered
+    .iter()
+    .any(|(surface, _)| *surface == 8304));
 
     let mut nonzero_tail = bytes;
     nonzero_tail[131] = 1;
@@ -203,8 +204,9 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &nonzero_tail,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
     )
-    .index
-    .contains_key(&8304));
+    .ordered
+    .iter()
+    .any(|(surface, _)| *surface == 8304));
 }
 
 #[test]

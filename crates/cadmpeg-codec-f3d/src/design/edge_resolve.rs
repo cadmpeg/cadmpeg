@@ -1538,9 +1538,17 @@ pub(crate) fn edge_assignment_candidates<'a>(
             .iter()
             .all(|selector| !selector.incidence_matching_edge_slots.is_empty())
     {
-        corroborated_edge_candidates(selector_contexts, shared_edge_sets.iter().copied(), false)
+        corroborated_edge_candidates(
+            selector_contexts,
+            shared_edge_sets.iter().copied(),
+            SelectorSlots::Incidence,
+        )
     } else {
-        corroborated_edge_candidates(selector_contexts, shared_edge_sets.iter().copied(), true)
+        corroborated_edge_candidates(
+            selector_contexts,
+            shared_edge_sets.iter().copied(),
+            SelectorSlots::BoundaryCount,
+        )
     }
 }
 
@@ -2118,10 +2126,22 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         _ => None,
     };
     let incidence = (!references_unavailable)
-        .then(|| corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false))
+        .then(|| {
+            corroborated_edge_intersection(
+                selector_contexts,
+                &shared_edge_sets,
+                SelectorSlots::Incidence,
+            )
+        })
         .flatten();
     let boundary_count = (!references_unavailable)
-        .then(|| corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true))
+        .then(|| {
+            corroborated_edge_intersection(
+                selector_contexts,
+                &shared_edge_sets,
+                SelectorSlots::BoundaryCount,
+            )
+        })
         .flatten();
     let common_triplet =
         corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
@@ -2226,16 +2246,19 @@ fn edge_set_intersection(edge_sets: &[&[i64]]) -> Vec<i64> {
     candidates
 }
 
+#[derive(Clone, Copy)]
+enum SelectorSlots {
+    Incidence,
+    BoundaryCount,
+}
+
 fn corroborated_edge_intersection(
     selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
-    boundary_counts_only: bool,
+    slots: SelectorSlots,
 ) -> Option<i64> {
-    let candidates = corroborated_edge_candidates(
-        selector_contexts,
-        shared_edge_sets.iter().copied(),
-        boundary_counts_only,
-    )?;
+    let candidates =
+        corroborated_edge_candidates(selector_contexts, shared_edge_sets.iter().copied(), slots)?;
     match candidates.as_slice() {
         [candidate] => Some(*candidate),
         _ => None,
@@ -2245,10 +2268,10 @@ fn corroborated_edge_intersection(
 fn corroborated_edge_candidates<'a>(
     selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-    boundary_counts_only: bool,
+    slots: SelectorSlots,
 ) -> Option<Vec<i64>> {
     let mut selectors = selector_contexts.iter();
-    let first = selector_candidate_edges(selectors.next()?, boundary_counts_only);
+    let first = selector_candidate_edges(selectors.next()?, slots);
     if first.is_empty() {
         return None;
     }
@@ -2256,7 +2279,7 @@ fn corroborated_edge_candidates<'a>(
     candidates.sort_unstable();
     candidates.dedup();
     for selector in selectors {
-        let selector_edges = selector_candidate_edges(selector, boundary_counts_only);
+        let selector_edges = selector_candidate_edges(selector, slots);
         if selector_edges.is_empty() {
             return None;
         }
@@ -2276,12 +2299,11 @@ fn corroborated_edge_candidates<'a>(
 
 fn selector_candidate_edges(
     selector: &crate::records::topology::DesignEdgeRecipeSelectorContext,
-    boundary_counts_only: bool,
+    slots: SelectorSlots,
 ) -> &[i64] {
-    if boundary_counts_only {
-        &selector.boundary_count_matching_edge_slots
-    } else {
-        &selector.incidence_matching_edge_slots
+    match slots {
+        SelectorSlots::BoundaryCount => &selector.boundary_count_matching_edge_slots,
+        SelectorSlots::Incidence => &selector.incidence_matching_edge_slots,
     }
 }
 
