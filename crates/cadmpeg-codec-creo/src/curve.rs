@@ -3779,26 +3779,21 @@ impl ExpressionValue for DimensionProbeValue {
                     constraints,
                 ))
             }
-            (
-                name @ (CreoMathFunction::Abs | CreoMathFunction::Ceil | CreoMathFunction::Floor),
-                [argument],
-            ) => {
-                let value = match name {
-                    CreoMathFunction::Abs => argument.numeric_value().map(f64::abs),
-                    CreoMathFunction::Ceil => {
-                        Self::optional_round(argument, None, true)?.into_option()
-                    }
-                    CreoMathFunction::Floor => {
-                        Self::optional_round(argument, None, false)?.into_option()
-                    }
-                    _ => unreachable!(),
-                };
-                Some(Self::numeric_result(
-                    argument.dimension.clone(),
-                    value,
-                    constraints,
-                ))
-            }
+            (CreoMathFunction::Abs, [argument]) => Some(Self::numeric_result(
+                argument.dimension.clone(),
+                argument.numeric_value().map(f64::abs),
+                constraints,
+            )),
+            (CreoMathFunction::Ceil, [argument]) => Some(Self::numeric_result(
+                argument.dimension.clone(),
+                Self::optional_round(argument, None, true)?.into_option(),
+                constraints,
+            )),
+            (CreoMathFunction::Floor, [argument]) => Some(Self::numeric_result(
+                argument.dimension.clone(),
+                Self::optional_round(argument, None, false)?.into_option(),
+                constraints,
+            )),
             (
                 name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
                 [argument, decimal_places],
