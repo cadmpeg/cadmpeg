@@ -5,6 +5,7 @@ use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKin
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::products::NonEmptyString;
 
+/// A native kind name admitted by the nonempty string owner.
 pub(super) fn checked_nonempty_name(value: impl Into<String>) -> NonEmptyString {
     NonEmptyString::new(value).expect("native kind name must not be empty")
 }
