@@ -1125,7 +1125,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
-                entities: Vec::new(),
+                entities: vec![SketchEntityId::mint("synthetic:test:id#entity").unwrap()],
                 parameter: None,
                 operands: Vec::new(),
             },
@@ -1756,7 +1756,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             "sketch": "f3d:model:sketch#1",
             "definition": {
                 "kind": "distance",
-                "entities": [],
+                "entities": ["f3d:model:sketch-entity#first", "f3d:model:sketch-entity#second"],
                 "parameter": "f3d:model:parameter#1"
             },
             "native_ref": format!("{stream}:design-parameter-companion#30")
