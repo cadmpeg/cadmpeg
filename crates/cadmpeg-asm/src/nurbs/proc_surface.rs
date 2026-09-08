@@ -24,6 +24,21 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
 
+/// The legacy and revision offset surface layouts.
+pub enum EmbeddedOffsetLayout {
+    /// A legacy offset with its required sense pair.
+    Legacy {
+        /// The U sense enum.
+        u_sense: i64,
+        /// The V sense enum.
+        v_sense: i64,
+        /// The conditional extension flags.
+        extension: cadmpeg_ir::geometry::LegacyExtensionFlags,
+    },
+    /// A revision offset with its four orientation flags.
+    Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm<[bool; 4]>>),
+}
+
 /// A decoded native procedural definition and the fit contract of its solved cache.
 pub struct DecodedProceduralSurface {
     /// The native procedural surface construction (blend, sweep, loft, or
@@ -134,12 +149,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         support: SurfaceGeometry,
         /// Signed model-space distance.
         distance: f64,
-        /// Native U sense enum, absent from the revision-gated layout.
-        u_sense: Option<i64>,
-        /// Native V sense enum, absent from the revision-gated layout.
-        v_sense: Option<i64>,
-        /// Pre-revision conditional flags or revision-gated form.
-        extension: cadmpeg_ir::geometry::OffsetExtension,
+        /// The legacy or revision offset fields.
+        layout: EmbeddedOffsetLayout,
     },
     /// Translation of an embedded directrix along a length-bearing direction.
     Extrusion {
@@ -3320,9 +3331,7 @@ fn off_spl_sur(
             definition: DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense: None,
-                v_sense: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Revision(
+                layout: EmbeddedOffsetLayout::Revision(Box::new(
                     cadmpeg_ir::geometry::RevisionSurfaceForm {
                         revision,
                         support_bounds,
@@ -3334,15 +3343,15 @@ fn off_spl_sur(
                         tail_flag,
                         trailing_flags: Vec::new(),
                     },
-                ),
+                )),
             },
             cache_fit_tolerance: None,
         });
     }
     let support = embedded_surface(&mut cur)?;
     let distance = cur.take_f64()? * LEN_TO_MM;
-    let u_sense = Some(cur.take_enum()?);
-    let v_sense = Some(cur.take_enum()?);
+    let u_sense = cur.take_enum()?;
+    let v_sense = cur.take_enum()?;
     let extension_flags = if modern {
         let first = cur.take_bool()?;
         if first {
@@ -3365,9 +3374,11 @@ fn off_spl_sur(
         definition: DecodedProceduralSurfaceDefinition::Offset {
             support,
             distance,
-            u_sense,
-            v_sense,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(extension_flags),
+            layout: EmbeddedOffsetLayout::Legacy {
+                u_sense,
+                v_sense,
+                extension: extension_flags,
+            },
         },
         cache_fit_tolerance,
     })

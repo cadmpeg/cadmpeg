@@ -20,12 +20,12 @@ use crate::nurbs::proc_surface::{
     EmbeddedDeformableSurface, EmbeddedDeformableSurfaceData, EmbeddedG2Blend,
     EmbeddedG2FirstShape, EmbeddedG2Side, EmbeddedLawExpression, EmbeddedLawFormula,
     EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftLayout, EmbeddedLoftPath,
-    EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedRevisionCompoundLoft,
-    EmbeddedRevisionG2Blend, EmbeddedRollingBall, EmbeddedScaledCompoundLoft,
-    EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape, EmbeddedSkinSurface,
-    EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface, EmbeddedSweepSurfaceLayout,
-    EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundaryGeometry,
-    LegacySweepLayout, LoftProfileData, SweepLawOrFormula,
+    EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedOffsetLayout,
+    EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
+    EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
+    EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
+    EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
+    EmbeddedVertexBlendBoundaryGeometry, LegacySweepLayout, LoftProfileData, SweepLawOrFormula,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -304,9 +304,7 @@ fn emit_carrier_surface(
             DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense,
-                v_sense,
-                extension,
+                layout,
             } => {
                 let support_id =
                     SurfaceId::mint(format!("{format}:brep:procedural_surface#{i}:support"))
@@ -316,6 +314,22 @@ fn emit_carrier_surface(
                     geometry: support,
                     source_object: None,
                 });
+                let (u_sense, v_sense, extension) = match layout {
+                    EmbeddedOffsetLayout::Legacy {
+                        u_sense,
+                        v_sense,
+                        extension,
+                    } => (
+                        Some(u_sense),
+                        Some(v_sense),
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy(extension),
+                    ),
+                    EmbeddedOffsetLayout::Revision(form) => (
+                        None,
+                        None,
+                        cadmpeg_ir::geometry::OffsetExtension::Revision(*form),
+                    ),
+                };
                 ProceduralSurfaceDefinition::Offset {
                     support: support_id,
                     distance,
