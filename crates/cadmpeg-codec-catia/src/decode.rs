@@ -95,13 +95,18 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
 
 #[derive(Default)]
 struct IncomingEntityIncidenceCounts {
-    total: usize,
     payload: usize,
     storage: usize,
     classified: usize,
     zero: usize,
     one: usize,
     multiple: usize,
+}
+
+impl IncomingEntityIncidenceCounts {
+    fn total(&self) -> usize {
+        self.payload + self.storage
+    }
 }
 
 fn incoming_entity_incidence_counts<'a>(
@@ -117,7 +122,6 @@ fn incoming_entity_incidence_counts<'a>(
         let payload_count = payload_references.len();
         let storage_count = storage_references.len();
         let total = payload_count + storage_count;
-        counts.total += total;
         counts.payload += payload_count;
         counts.storage += storage_count;
         counts.classified += payload_references
@@ -896,15 +900,7 @@ fn finish_decode(
             }
         })
         .count();
-    let IncomingEntityIncidenceCounts {
-        total: constraint_range_incoming_reference_count,
-        payload: constraint_range_incoming_payload_reference_count,
-        storage: constraint_range_incoming_storage_reference_count,
-        classified: classified_constraint_range_source_entity_count,
-        zero: unreferenced_constraint_range_count,
-        one: uniquely_referenced_constraint_range_count,
-        multiple: multiply_referenced_constraint_range_count,
-    } = incoming_entity_incidence_counts(
+    let constraint_range_incidences = incoming_entity_incidence_counts(
         native
             .entity_records
             .iter()
@@ -916,15 +912,16 @@ fn finish_decode(
                 )
             }),
     );
+    let constraint_range_incoming_reference_count = constraint_range_incidences.total();
     let IncomingEntityIncidenceCounts {
-        total: range_interval_incoming_reference_count,
-        payload: range_interval_incoming_payload_reference_count,
-        storage: range_interval_incoming_storage_reference_count,
-        classified: classified_range_interval_source_entity_count,
-        zero: unreferenced_range_interval_count,
-        one: uniquely_referenced_range_interval_count,
-        multiple: multiply_referenced_range_interval_count,
-    } = incoming_entity_incidence_counts(
+        payload: constraint_range_incoming_payload_reference_count,
+        storage: constraint_range_incoming_storage_reference_count,
+        classified: classified_constraint_range_source_entity_count,
+        zero: unreferenced_constraint_range_count,
+        one: uniquely_referenced_constraint_range_count,
+        multiple: multiply_referenced_constraint_range_count,
+    } = constraint_range_incidences;
+    let range_interval_incidences = incoming_entity_incidence_counts(
         native
             .entity_records
             .iter()
@@ -936,6 +933,15 @@ fn finish_decode(
                 )
             }),
     );
+    let range_interval_incoming_reference_count = range_interval_incidences.total();
+    let IncomingEntityIncidenceCounts {
+        payload: range_interval_incoming_payload_reference_count,
+        storage: range_interval_incoming_storage_reference_count,
+        classified: classified_range_interval_source_entity_count,
+        zero: unreferenced_range_interval_count,
+        one: uniquely_referenced_range_interval_count,
+        multiple: multiply_referenced_range_interval_count,
+    } = range_interval_incidences;
     let definition_value_count = native
         .entity_records
         .iter()
