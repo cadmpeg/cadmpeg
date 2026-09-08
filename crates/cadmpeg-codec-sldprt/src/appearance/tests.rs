@@ -153,12 +153,13 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .appearance_bindings
                 .iter()
                 .find(|binding| {
-                    binding.target == AppearanceTarget::Tessellation(tessellation.id.clone())
+                    binding.target == AppearanceTarget::Tessellation(tessellation.id.to_string())
                 })
                 .unwrap();
             let color = colors[&binding.appearance];
             let table_index = tessellation
                 .id
+                .as_str()
                 .rsplit(':')
                 .next()
                 .unwrap()

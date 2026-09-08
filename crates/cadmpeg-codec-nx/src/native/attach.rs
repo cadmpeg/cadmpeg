@@ -224,9 +224,9 @@ pub(crate) fn attach(
     .unwrap_or_default();
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
-            .note(&tessellation.id, annotation_stream, source_offset)
+            .note(tessellation.id.as_str(), annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
-        annotations.exactness(&tessellation.id, Exactness::Derived);
+        annotations.exactness(tessellation.id.as_str(), Exactness::Derived);
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);

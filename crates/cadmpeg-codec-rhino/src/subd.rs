@@ -1129,8 +1129,8 @@ fn materialize(
             let tag = vertex
                 .tag
                 .ok_or_else(|| malformed(0, "invalid materialized SubD vertex tag"))?;
-            Ok(SubdVertex {
-                point: Point3::new(
+            SubdVertex::new(
+                Point3::new(
                     crate::wire::scaled_coordinate(vertex.point.x, scale)
                         .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
                     crate::wire::scaled_coordinate(vertex.point.y, scale)
@@ -1139,8 +1139,9 @@ fn materialize(
                         .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
                 ),
                 tag,
-                secondary_grips: None,
-            })
+                None,
+            )
+            .map_err(|error| malformed(0, &error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let edges = level
@@ -1150,8 +1151,8 @@ fn materialize(
             let tag = edge
                 .tag
                 .ok_or_else(|| malformed(0, "invalid materialized SubD edge tag"))?;
-            Ok(SubdEdge {
-                vertices: [
+            SubdEdge::new(
+                [
                     *vertex_indices
                         .get(&edge.vertices[0].archive_id)
                         .ok_or_else(|| malformed(0, "missing SubD edge endpoint"))?,
@@ -1159,20 +1160,20 @@ fn materialize(
                         .get(&edge.vertices[1].archive_id)
                         .ok_or_else(|| malformed(0, "missing SubD edge endpoint"))?,
                 ],
-                sharpness: edge.sharpness,
+                edge.sharpness,
                 tag,
-                knot_interval: None,
-                sector_coefficients: edge.sector_coefficients,
-            })
+                None,
+                edge.sector_coefficients,
+            )
+            .map_err(|error| malformed(0, &error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let faces = level
         .faces
         .into_iter()
         .map(|face| {
-            Ok(SubdFace {
-                edges: face
-                    .edges
+            SubdFace::new(
+                face.edges
                     .into_iter()
                     .map(|edge| {
                         Ok(SubdEdgeUse {
@@ -1183,17 +1184,16 @@ fn materialize(
                         })
                     })
                     .collect::<Result<Vec<_>, SubdError>>()?,
-            })
+            )
+            .map_err(|error| malformed(0, &error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     Ok(SubdSurface {
         id,
         scheme: SubdScheme::CatmullClark,
-        vertices,
-        edges,
-        faces,
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
+            .map_err(|error| malformed(0, &error.to_string()))?,
     })
 }
 

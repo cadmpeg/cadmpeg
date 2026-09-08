@@ -991,11 +991,8 @@ pub(crate) fn semantic_writer_rejects_subds() {
     decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     });
 
     let error = crate::test_support::plan_inherited_write(

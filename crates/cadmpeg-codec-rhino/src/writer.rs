@@ -215,7 +215,7 @@ pub(crate) fn write_seekable(
     }
     for mesh in &ir.model.tessellations {
         let payload = mesh_payload(mesh, version);
-        output.write_all(&mesh_object_record(&payload, &mesh.id)?)?;
+        output.write_all(&mesh_object_record(&payload, mesh.id.as_str())?)?;
     }
 
     output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
