@@ -7,7 +7,7 @@ use crate::math::Vector3;
 fn scale() -> CompoundLoftScale {
     CompoundLoftScale {
         members: Vec::new(),
-        path: "test:curve#0".try_into().unwrap(),
+        path: "test:model:curve#0".try_into().unwrap(),
         auxiliaries: Vec::new(),
         tail: [0, 0],
     }
