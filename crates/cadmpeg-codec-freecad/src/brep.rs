@@ -5391,7 +5391,6 @@ pub(crate) mod tests {
         assert!(
             TextTShape::try_from(serde_json::from_value::<TextTShapeWire>(wire).unwrap())
                 .unwrap_err()
-                .to_string()
                 .contains("triangulation")
         );
         assert!(TableRef::<TextSurface>::new(0).is_err());
