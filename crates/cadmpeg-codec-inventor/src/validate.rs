@@ -1966,19 +1966,12 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     } = record
     {
         let representation_pair_present = representation.active_representation.is_some();
-        let empty_representation = representation
-            .active_representation
-            .as_ref()
-            .is_some_and(|(name, kind)| name.is_empty() || kind.is_empty());
         let expected_pair = document_kind(ir).and_then(|kind| match kind {
             "assembly" => Some(true),
             "part" => Some(false),
             _ => None,
         });
-        if empty_representation
-            || expected_pair.is_some_and(|expected| representation_pair_present != expected)
-            || representation.active_model_state.is_empty()
-        {
+        if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor UFRxDoc representation state is inconsistent".into(),
