@@ -252,21 +252,22 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                         let frame = parameters.positional_cylinder_frame()?;
                         let transferred_origin = [origin.x, origin.y, origin.z];
                         let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
-                        let frame_axis = normalized(frame.axis)?;
+                        let frame_axis = normalized(frame.axis())?;
                         let scale = transferred_origin
                             .into_iter()
-                            .chain(frame.origin)
+                            .chain(frame.origin())
                             .map(f64::abs)
                             .fold(1.0, f64::max);
-                        (transferred_origin
-                            .into_iter()
-                            .zip(frame.origin)
-                            .all(|(left, right)| {
+                        (transferred_origin.into_iter().zip(frame.origin()).all(
+                            |(left, right)| {
                                 (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale
-                            })
-                            && transferred_axis.into_iter().zip(frame_axis).all(
-                                |(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE,
-                            ))
+                            },
+                        ) && transferred_axis
+                            .into_iter()
+                            .zip(frame_axis)
+                            .all(|(left, right)| {
+                                (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE
+                            }))
                         .then_some(())?;
                         frames.push(frame);
                     }
@@ -287,21 +288,18 @@ pub(in super::super) fn bounded_cylinder_span(
     frame: crate::surface::PositionalCylinderFrame,
     planes: &[([f64; 3], [f64; 3])],
 ) -> Option<ExtrusionCarrierSpan> {
-    let axis = normalized(frame.axis)?;
-    let vector = match frame.length {
-        Some(length) => {
-            (length.is_finite() && length > 0.0).then_some(())?;
-            axis.map(|component| component * length)
-        }
+    let axis = normalized(frame.axis())?;
+    let vector = match frame.length() {
+        Some(length) => axis.map(|component| component * length),
         None => {
             let scale = planes
                 .iter()
                 .flat_map(|(origin, _)| *origin)
-                .chain(frame.origin)
+                .chain(frame.origin())
                 .map(f64::abs)
                 .fold(1.0, f64::max);
             let tolerance = EPS_COORDINATE_AGREEMENT * scale;
-            let start_station = dot(frame.origin, axis);
+            let start_station = dot(frame.origin(), axis);
             let mut terminal_offsets = Vec::new();
             for (origin, normal) in planes {
                 let normal = normalized(*normal)?;
@@ -326,7 +324,7 @@ pub(in super::super) fn bounded_cylinder_span(
         }
     };
     Some(ExtrusionCarrierSpan {
-        starts: vec![frame.origin],
+        starts: vec![frame.origin()],
         vector,
     })
 }

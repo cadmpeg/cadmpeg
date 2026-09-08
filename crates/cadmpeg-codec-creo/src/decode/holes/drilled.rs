@@ -435,27 +435,22 @@ pub fn simple_drilled_axis_placement_from_frames(
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
     let first = *frames.first()?;
-    let axis = normalized(first.axis)?;
+    let axis = normalized(first.axis())?;
     let coordinate_scale = frames
         .iter()
-        .flat_map(|frame| frame.origin)
+        .flat_map(|frame| frame.origin())
         .map(f64::abs)
         .fold(1.0, f64::max);
-    (diameter.is_finite() && diameter > 0.0 && first.origin.into_iter().all(f64::is_finite))
-        .then_some(())?;
+    (diameter.is_finite() && diameter > 0.0).then_some(())?;
     let radius = 0.5 * diameter;
     frames
         .iter()
         .all(|frame| {
-            let Some(candidate_axis) = normalized(frame.axis) else {
+            let Some(candidate_axis) = normalized(frame.axis()) else {
                 return false;
             };
-            let radius_scale = frame.radius.abs().max(radius.abs()).max(1.0);
-            if !frame.origin.into_iter().all(f64::is_finite)
-                || !frame.radius.is_finite()
-                || frame.radius <= 0.0
-                || (frame.radius - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale
-            {
+            let radius_scale = frame.radius().abs().max(radius.abs()).max(1.0);
+            if (frame.radius() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale {
                 return false;
             }
             let alignment = axis
@@ -466,8 +461,9 @@ pub fn simple_drilled_axis_placement_from_frames(
             if alignment.abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                 return false;
             }
-            let delta =
-                std::array::from_fn::<_, 3, _>(|index| frame.origin[index] - first.origin[index]);
+            let delta = std::array::from_fn::<_, 3, _>(|index| {
+                frame.origin()[index] - first.origin()[index]
+            });
             let axial_delta = delta
                 .into_iter()
                 .zip(axis)
@@ -483,7 +479,7 @@ pub fn simple_drilled_axis_placement_from_frames(
                 <= EPS_COORDINATE_AGREEMENT * coordinate_scale
         })
         .then_some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(first.origin[0], first.origin[1], first.origin[2]),
+            origin: Point3::new(first.origin()[0], first.origin()[1], first.origin()[2]),
             axis: Vector3::new(axis[0], axis[1], axis[2]),
         })
 }

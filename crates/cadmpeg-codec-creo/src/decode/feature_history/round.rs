@@ -770,13 +770,13 @@ pub(in super::super) fn round_support_envelope_cylinder(
     let origin = std::array::from_fn(|index| {
         start[index] + support_normal[index] * (support_midpoint - start_offset)
     });
-    Some(crate::surface::PositionalCylinderFrame {
+    crate::surface::PositionalCylinderFrame::new(
         origin,
         axis,
-        ref_direction: support_normal,
+        support_normal,
         radius,
-        length: Some(cap_gap),
-    })
+        Some(cap_gap),
+    )
 }
 
 fn resolved_round_support_planes(
@@ -984,12 +984,12 @@ fn chamfer_cone_equation(
         .and_then(|record| record.positional_cone_frame())
     {
         return ConeEquation::new(
-            frame.apex,
-            frame.axis,
-            frame.ref_direction,
+            frame.apex(),
+            frame.axis(),
+            frame.ref_direction(),
             0.0,
             1.0,
-            frame.half_angle,
+            frame.half_angle(),
         );
     }
     let id =

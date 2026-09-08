@@ -417,14 +417,12 @@ fn positional_cylinder_carrier(
         }
     }
     let frame = record.positional_cylinder_frame()?;
-    frame
-        .is_valid()
-        .then_some(CarrierEquation::Cylinder(CylinderEquation {
-            origin: frame.origin,
-            axis: frame.axis,
-            ref_direction: frame.ref_direction,
-            radius: frame.radius,
-        }))
+    Some(CarrierEquation::Cylinder(CylinderEquation {
+        origin: frame.origin(),
+        axis: frame.axis(),
+        ref_direction: frame.ref_direction(),
+        radius: frame.radius(),
+    }))
 }
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {

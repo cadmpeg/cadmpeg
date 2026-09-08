@@ -219,23 +219,23 @@ pub fn compact_simple_hole_geometry(
     )?;
     let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
         .positional_cylinder_frame()?;
-    let length = frame.length?;
+    let length = frame.length()?;
     Some(SimpleHoleGeometry {
         entry_surface_id: None,
         cylinder_ids: vec![cylinder_id],
-        direction: frame.axis,
+        direction: frame.axis(),
         extent: LinearTermination::Blind {
             length: Length(length),
         },
         geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-            axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+            origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+            axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             ref_direction: Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
             ),
-            radius: frame.radius,
+            radius: frame.radius(),
         },
     })
 }

@@ -1212,12 +1212,9 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
 
 #[test]
 fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
-    let frame = |origin, axis, radius| crate::surface::PositionalCylinderFrame {
-        origin,
-        axis,
-        ref_direction: [0.0, 1.0, 0.0],
-        radius,
-        length: None,
+    let frame = |origin, axis, radius| {
+        crate::surface::PositionalCylinderFrame::new(origin, axis, [0.0, 1.0, 0.0], radius, None)
+            .unwrap()
     };
     let first = frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.25);
     let shifted = frame([7.0, -3.0, 4.0], [-1.0, 0.0, 0.0], 0.25);

@@ -324,16 +324,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     continue;
                 };
                 SurfaceGeometry::Cone {
-                    origin: Point3::new(frame.apex[0], frame.apex[1], frame.apex[2]),
-                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    origin: Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
+                    axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                     ref_direction: Vector3::new(
-                        frame.ref_direction[0],
-                        frame.ref_direction[1],
-                        frame.ref_direction[2],
+                        frame.ref_direction()[0],
+                        frame.ref_direction()[1],
+                        frame.ref_direction()[2],
                     ),
                     radius: 0.0,
                     ratio: 1.0,
-                    half_angle: frame.half_angle,
+                    half_angle: frame.half_angle(),
                 }
             }
             crate::surface::SurfacePrototypeFamily::Spline(_) => {
