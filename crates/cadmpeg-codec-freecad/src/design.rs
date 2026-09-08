@@ -6285,7 +6285,7 @@ mod profile_tests {
         let entities = (1..=11)
             .map(|ordinal| {
                 entity(
-                    &format!("test:entity#{ordinal}"),
+                    &format!("test:test:entity#{ordinal}"),
                     SketchGeometry::Line {
                         start: Point2::new(ordinal as f64 * 10.0, 0.0),
                         end: Point2::new(ordinal as f64 * 10.0 + 1.0, 0.0),
@@ -6548,7 +6548,7 @@ mod profile_tests {
         let entities = (0..3)
             .map(|ordinal| {
                 entity(
-                    &format!("test:entity#{}", ordinal + 1),
+                    &format!("test:test:entity#{}", ordinal + 1),
                     SketchGeometry::Line {
                         start: Point2::new(0.0, 0.0),
                         end: Point2::new(ordinal as f64 + 1.0, 1.0),
