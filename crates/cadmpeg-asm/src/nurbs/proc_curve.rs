@@ -323,8 +323,8 @@ pub struct EmbeddedSilhouette {
 pub struct EmbeddedSurfaceOffset {
     /// Shared embedded support context.
     pub context: EmbeddedIntersection,
-    /// The boolean serialized after the discontinuity arrays.
-    pub discontinuity_flag: bool,
+    /// The native field layout.
+    pub layout: EmbeddedSurfaceOffsetLayout,
     /// U parameter interval of the base surface.
     pub base_u_range: [f64; 2],
     /// V parameter interval of the base surface.
@@ -333,16 +333,28 @@ pub struct EmbeddedSurfaceOffset {
     pub base: NurbsCurve,
     /// Native parameter interval of the base curve.
     pub base_range: [f64; 2],
-    /// Optional endpoint bounds of the base curve.
-    pub base_endpoints: [Option<f64>; 2],
-    /// Layout form when the cache precedes the construction.
-    pub cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
     /// Signed offset distance in document length units.
     pub distance: f64,
     /// The shift value serialized after the distance.
     pub shift: f64,
     /// The scale value serialized after the shift.
     pub scale: f64,
+}
+
+/// The mutually exclusive surface-offset curve layouts.
+pub enum EmbeddedSurfaceOffsetLayout {
+    /// The support context precedes the cache.
+    ContextFirst {
+        /// The flag after the discontinuity arrays.
+        discontinuity_flag: bool,
+    },
+    /// The solved cache precedes the support context.
+    CacheFirst {
+        /// The cache-first form fields.
+        form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+        /// The base curve endpoint bounds.
+        base_endpoints: [Option<f64>; 2],
+    },
 }
 
 /// One context-first spring support slot.
@@ -1634,13 +1646,14 @@ fn embedded_surface_offset(
                 parameter_range: context.parameter_range,
                 discontinuities: context.discontinuities,
             },
-            discontinuity_flag: false,
+            layout: EmbeddedSurfaceOffsetLayout::CacheFirst {
+                form: context.form,
+                base_endpoints,
+            },
             base_u_range,
             base_v_range,
             base,
             base_range,
-            base_endpoints,
-            cache_first: Some(context.form),
             distance: cur.take_f64()? * LEN_TO_MM,
             shift: cur.take_f64()?,
             scale: cur.take_f64()?,
@@ -1666,13 +1679,11 @@ fn embedded_surface_offset(
             parameter_range,
             discontinuities,
         },
-        discontinuity_flag,
+        layout: EmbeddedSurfaceOffsetLayout::ContextFirst { discontinuity_flag },
         base_u_range,
         base_v_range,
         base,
         base_range,
-        base_endpoints: [None, None],
-        cache_first: None,
         distance: cur.take_f64()? * LEN_TO_MM,
         shift: cur.take_f64()?,
         scale: cur.take_f64()?,
