@@ -652,7 +652,6 @@ fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry>
 
 fn variable_blend_value(
     cur: &mut Cur<'_>,
-    modern: bool,
     depth: usize,
 ) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
     use cadmpeg_ir::geometry::{
@@ -669,7 +668,7 @@ fn variable_blend_value(
         1
     };
     let calibrated = cur.take_enum()?;
-    let modern_flag = if modern { cur.take_bool()? } else { false };
+    let modern_flag = cur.take_bool()?;
     let payload = match name.as_str() {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
             discriminator,
@@ -714,7 +713,7 @@ fn variable_blend_value(
             radius: cur.take_f64()? * LEN_TO_MM,
             variable_chamfer: cur.take_enum()?,
             chamfer_type: cur.take_enum()?,
-            nested: Box::new(variable_blend_value(cur, modern, depth + 1)?),
+            nested: Box::new(variable_blend_value(cur, depth + 1)?),
         },
         "interp" => {
             let parameter = cur.take_f64()?;
@@ -812,7 +811,7 @@ mod variable_blend_value_tests {
         two_ends(&mut direct);
         let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, true, 0).expect("generated two-ends value");
+        let decoded = variable_blend_value(&mut cur, 0).expect("generated two-ends value");
         assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
         assert_eq!(decoded.payload.discriminator(), 7);
@@ -837,8 +836,7 @@ mod variable_blend_value_tests {
         two_ends(&mut recursive);
         let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded =
-            variable_blend_value(&mut cur, true, 0).expect("generated recursive const value");
+        let decoded = variable_blend_value(&mut cur, 0).expect("generated recursive const value");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
             panic!("expected constant payload")
@@ -862,7 +860,7 @@ mod variable_blend_value_tests {
         }
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, true, 0).expect("generated fixed-width value");
+        let decoded = variable_blend_value(&mut cur, 0).expect("generated fixed-width value");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::FixedWidth {
             parameters, width, ..
@@ -918,7 +916,7 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded =
-            variable_blend_value(&mut cur, true, 0).expect("generated enum-tagged interp value");
+            variable_blend_value(&mut cur, 0).expect("generated enum-tagged interp value");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
@@ -989,7 +987,7 @@ mod variable_blend_value_tests {
         integer(&mut bytes, 0x15, 0);
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, true, 0)
+        let decoded = variable_blend_value(&mut cur, 0)
             .expect("generated interp value with unset derivatives");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
@@ -1050,11 +1048,11 @@ pub(crate) fn var_blend_spl_sur(
         1 => true,
         _ => return None,
     };
-    let first_value = variable_blend_value(&mut cur, true, 0)?;
+    let first_value = variable_blend_value(&mut cur, 0)?;
     let radii = if two_radii {
         cadmpeg_ir::geometry::VariableBlendRadii::Two {
             first: first_value,
-            second: variable_blend_value(&mut cur, true, 0)?,
+            second: variable_blend_value(&mut cur, 0)?,
         }
     } else {
         cadmpeg_ir::geometry::VariableBlendRadii::Single { value: first_value }
@@ -1073,7 +1071,7 @@ pub(crate) fn var_blend_spl_sur(
             }),
             3 => {
                 let radius = if cur.take_bool()? {
-                    Some(Box::new(variable_blend_value(&mut cur, true, 0)?))
+                    Some(Box::new(variable_blend_value(&mut cur, 0)?))
                 } else {
                     None
                 };
