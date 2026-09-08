@@ -1442,7 +1442,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         panic!("expected historical multi-group SurfacePatch path");
     };
     assert_eq!(edges.len(), 2);
-    assert_eq!(native, patch_scope.id);
+    assert_eq!(native.as_str(), patch_scope.id);
     patch_scope.previous_history_state_id = None;
 
     patch_scope.frame_length = 339;

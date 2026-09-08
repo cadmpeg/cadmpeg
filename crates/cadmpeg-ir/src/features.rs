@@ -5295,6 +5295,10 @@ selection_field_deserializer!(deserialize_selection_local_id, "local_id");
 selection_field_deserializer!(deserialize_selection_edges, "edges");
 selection_field_deserializer!(deserialize_selection_faces, "faces");
 selection_field_deserializer!(deserialize_selection_unresolved, "unresolved");
+selection_field_deserializer!(deserialize_selection_profiles, "profiles");
+selection_field_deserializer!(deserialize_selection_entities, "entities");
+selection_field_deserializer!(deserialize_selection_selections, "selections");
+selection_field_deserializer!(deserialize_selection_curves, "curves");
 
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5829,6 +5833,14 @@ impl<T> SelectionMembers<T> {
     }
 }
 
+impl<T> IntoIterator for SelectionMembers<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl<T> std::ops::Deref for SelectionMembers<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
@@ -5876,6 +5888,14 @@ impl NativeSelections {
     /// The native names in source order.
     pub fn as_slice(&self) -> &[String] {
         &self.0
+    }
+}
+
+impl IntoIterator for NativeSelections {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -7503,7 +7523,8 @@ pub enum ProfileRef {
         /// Sketch containing the selected loops.
         sketch: crate::sketches::SketchId,
         /// Zero-based indices into [`crate::sketches::Sketch::profiles`].
-        profiles: Vec<u32>,
+        #[serde(deserialize_with = "deserialize_selection_profiles")]
+        profiles: SelectionMembers<u32>,
     },
     /// Exact union of bounded atomic regions within one neutral sketch.
     SketchRegions {
@@ -7517,37 +7538,43 @@ pub enum ProfileRef {
         /// Sketch containing every selected entity.
         sketch: crate::sketches::SketchId,
         /// Selected entities in source order.
-        entities: Vec<crate::sketches::SketchEntityId>,
+        #[serde(deserialize_with = "deserialize_selection_entities")]
+        entities: SelectionMembers<crate::sketches::SketchEntityId>,
     },
     /// Source-native selection within a known neutral sketch.
     SketchSelection {
         /// Sketch containing the unresolved selected geometry.
         sketch: crate::sketches::SketchId,
         /// Full-fidelity native selection records in source order.
-        selections: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
     },
     /// Specific solved profile loops within one neutral spatial sketch.
     SpatialSketchProfiles {
         /// Spatial sketch containing the selected loops.
         sketch: crate::sketches::SpatialSketchId,
         /// Zero-based indices into [`crate::sketches::SpatialSketch::profiles`].
-        profiles: Vec<u32>,
+        #[serde(deserialize_with = "deserialize_selection_profiles")]
+        profiles: SelectionMembers<u32>,
     },
     /// Source-native selection within a known neutral spatial sketch.
     SpatialSketchSelection {
         /// Spatial sketch containing the unresolved selected geometry.
         sketch: crate::sketches::SpatialSketchId,
         /// Full-fidelity native selection records in source order.
-        selections: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
     },
     /// Profile given by faces in the consuming feature's input topology.
     HistoricalFaces {
         /// Input topology containing every selected face.
         state: FeatureInputTopologyId,
         /// State-local face identities in source selection order.
-        faces: Vec<HistoricalFaceId>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: SelectionMembers<HistoricalFaceId>,
         /// Full-fidelity source selection groups in source order.
-        native: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NativeSelections,
     },
     /// Complete curve result of an earlier construction-history feature.
     Feature(FeatureId),
@@ -7555,9 +7582,11 @@ pub enum ProfileRef {
     /// format-native persistent reference required for rewrite.
     Generated {
         /// Persistent feature-local curve identities.
-        curves: Vec<GeneratedCurveRef>,
+        #[serde(deserialize_with = "deserialize_selection_curves")]
+        curves: NonEmptyMembers<GeneratedCurveRef>,
         /// Format-native persistent profile reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
@@ -7595,7 +7624,8 @@ pub struct GeneratedCurveRef {
     /// Feature whose regenerated result owns the curve.
     pub feature: FeatureId,
     /// Complete ordered feature-local component identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Trajectory consumed by a sweep or path-driven operation.
@@ -7614,21 +7644,24 @@ pub enum PathRef {
         /// Sketch containing every selected curve.
         sketch: crate::sketches::SketchId,
         /// Selected curve identities in source order.
-        curves: Vec<crate::sketches::SketchEntityId>,
+        #[serde(deserialize_with = "deserialize_selection_curves")]
+        curves: SelectionMembers<crate::sketches::SketchEntityId>,
     },
     /// Source-native curve selection within a known neutral spatial sketch.
     SpatialSketchSelection {
         /// Spatial sketch containing the selected curves.
         sketch: crate::sketches::SpatialSketchId,
         /// Full-fidelity native selection records in path order.
-        selections: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
     },
     /// Ordered selected curves from one neutral spatial sketch.
     SpatialSketchCurves {
         /// Spatial sketch containing every selected curve.
         sketch: crate::sketches::SpatialSketchId,
         /// Selected curve identities in source order.
-        curves: Vec<crate::sketches::SpatialSketchEntityId>,
+        #[serde(deserialize_with = "deserialize_selection_curves")]
+        curves: SelectionMembers<crate::sketches::SpatialSketchEntityId>,
     },
     /// Path resolved as ordered topological edges.
     Edges(Vec<EdgeId>),
@@ -7639,10 +7672,151 @@ pub enum PathRef {
         /// Input topology containing every path edge.
         state: FeatureInputTopologyId,
         /// State-local edge identities in path order.
-        edges: Vec<HistoricalEdgeId>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: SelectionMembers<HistoricalEdgeId>,
         /// Full-fidelity source path selection.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonEmptyString,
     },
+}
+
+impl ProfileRef {
+    /// Admits distinct profile indices in one planar sketch.
+    pub fn sketch_profiles(
+        sketch: crate::sketches::SketchId,
+        profiles: Vec<u32>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SketchProfiles {
+            sketch,
+            profiles: profiles.try_into()?,
+        })
+    }
+
+    /// Admits distinct profile indices in one spatial sketch.
+    pub fn spatial_sketch_profiles(
+        sketch: crate::sketches::SpatialSketchId,
+        profiles: Vec<u32>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SpatialSketchProfiles {
+            sketch,
+            profiles: profiles.try_into()?,
+        })
+    }
+
+    /// Admits distinct profile entities in one sketch.
+    pub fn sketch_entities(
+        sketch: crate::sketches::SketchId,
+        entities: Vec<crate::sketches::SketchEntityId>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SketchEntities {
+            sketch,
+            entities: entities.try_into()?,
+        })
+    }
+
+    /// Admits native profile selections in one sketch.
+    pub fn sketch_selection(
+        sketch: crate::sketches::SketchId,
+        selections: Vec<String>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SketchSelection {
+            sketch,
+            selections: selections.try_into()?,
+        })
+    }
+
+    /// Admits native profile selections in one spatial sketch.
+    pub fn spatial_sketch_selection(
+        sketch: crate::sketches::SpatialSketchId,
+        selections: Vec<String>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SpatialSketchSelection {
+            sketch,
+            selections: selections.try_into()?,
+        })
+    }
+
+    /// Admits historical profile faces and native selection groups.
+    pub fn historical_faces(
+        state: FeatureInputTopologyId,
+        faces: Vec<HistoricalFaceId>,
+        native: Vec<String>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::HistoricalFaces {
+            state,
+            faces: faces.try_into()?,
+            native: native.try_into()?,
+        })
+    }
+
+    /// Admits generated profile curves and their native reference.
+    pub fn generated(
+        curves: Vec<GeneratedCurveRef>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Generated {
+            curves: curves.try_into()?,
+            native: native.try_into()?,
+        })
+    }
+}
+
+impl PathRef {
+    /// Admits distinct path curves in one planar sketch.
+    pub fn sketch_curves(
+        sketch: crate::sketches::SketchId,
+        curves: Vec<crate::sketches::SketchEntityId>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SketchCurves {
+            sketch,
+            curves: curves.try_into()?,
+        })
+    }
+
+    /// Admits distinct path curves in one spatial sketch.
+    pub fn spatial_sketch_curves(
+        sketch: crate::sketches::SpatialSketchId,
+        curves: Vec<crate::sketches::SpatialSketchEntityId>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SpatialSketchCurves {
+            sketch,
+            curves: curves.try_into()?,
+        })
+    }
+
+    /// Admits native path selections in one spatial sketch.
+    pub fn spatial_sketch_selection(
+        sketch: crate::sketches::SpatialSketchId,
+        selections: Vec<String>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SpatialSketchSelection {
+            sketch,
+            selections: selections.try_into()?,
+        })
+    }
+
+    /// Admits historical path edges and their native reference.
+    pub fn historical_edges(
+        state: FeatureInputTopologyId,
+        edges: Vec<HistoricalEdgeId>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::HistoricalEdges {
+            state,
+            edges: edges.try_into()?,
+            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+        })
+    }
+}
+
+impl GeneratedCurveRef {
+    /// Admits a feature-local persistent curve identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        Ok(Self {
+            feature,
+            local_id: local_id.try_into()?,
+        })
+    }
 }
 
 /// Geometry used to partition faces in a `SplitFace` operation.

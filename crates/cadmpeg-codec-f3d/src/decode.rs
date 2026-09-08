@@ -423,12 +423,11 @@ fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
         | ProfileRef::SketchSelection { .. }
         | ProfileRef::SpatialSketchSelection { .. } => false,
         ProfileRef::Sketch(_) | ProfileRef::Feature(_) => true,
-        ProfileRef::SketchProfiles { profiles, .. }
-        | ProfileRef::SpatialSketchProfiles { profiles, .. } => !profiles.is_empty(),
+        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => true,
         ProfileRef::SketchRegions { regions, .. } => !regions.is_empty(),
-        ProfileRef::SketchEntities { entities, .. } => !entities.is_empty(),
-        ProfileRef::HistoricalFaces { faces, .. } => !faces.is_empty(),
-        ProfileRef::Generated { curves, .. } => !curves.is_empty(),
+        ProfileRef::SketchEntities { .. } => true,
+        ProfileRef::HistoricalFaces { .. } => true,
+        ProfileRef::Generated { .. } => true,
         ProfileRef::Faces(faces) => !faces.is_empty(),
     }
 }
@@ -481,11 +480,11 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
             false
         }
         PathRef::Sketch(_) => true,
-        PathRef::SketchCurves { curves, .. } => !curves.is_empty(),
-        PathRef::SpatialSketchCurves { curves, .. } => !curves.is_empty(),
+        PathRef::SketchCurves { .. } => true,
+        PathRef::SpatialSketchCurves { .. } => true,
         PathRef::Edges(edges) => !edges.is_empty(),
         PathRef::Curves(curves) => !curves.is_empty(),
-        PathRef::HistoricalEdges { edges, .. } => !edges.is_empty(),
+        PathRef::HistoricalEdges { .. } => true,
     }
 }
 

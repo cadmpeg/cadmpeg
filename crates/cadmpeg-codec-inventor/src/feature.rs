@@ -1104,10 +1104,7 @@ fn project_extrusion(
         source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::SketchSelection {
-                sketch: sketch_id,
-                selections,
-            },
+            profile: ProfileRef::sketch_selection(sketch_id, selections).ok()?,
             direction: ExtrudeDirection::Explicit {
                 vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 source: Some(ExtrusionDirectionSource::Custom),

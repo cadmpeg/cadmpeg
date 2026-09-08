@@ -984,19 +984,21 @@ fn spatial_sketch_paths_round_trip_through_json() {
     use crate::features::PathRef;
     use crate::sketches::{SpatialSketchEntityId, SpatialSketchId};
 
-    let path = PathRef::SpatialSketchCurves {
-        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
-        curves: vec![SpatialSketchEntityId(
+    let path = PathRef::spatial_sketch_curves(
+        SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        vec![SpatialSketchEntityId(
             "synthetic:test:spatial-sketch-entity#0".into(),
         )],
-    };
+    )
+    .unwrap();
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
-    let native = PathRef::SpatialSketchSelection {
-        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
-        selections: vec!["native:path-selection#0".into()],
-    };
+    let native = PathRef::spatial_sketch_selection(
+        SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        vec!["native:path-selection#0".into()],
+    )
+    .unwrap();
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }

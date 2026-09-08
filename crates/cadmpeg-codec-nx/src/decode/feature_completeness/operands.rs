@@ -493,11 +493,8 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         | ProfileRef::SketchSelection { .. }
         | ProfileRef::SpatialSketchSelection { .. } => true,
         ProfileRef::Sketch(_) => false,
-        ProfileRef::SketchEntities { entities, .. } => selection_ids_are_incomplete(entities),
-        ProfileRef::SketchProfiles { profiles, .. }
-        | ProfileRef::SpatialSketchProfiles { profiles, .. } => {
-            selection_ids_are_incomplete(profiles)
-        }
+        ProfileRef::SketchEntities { .. } => false,
+        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
         ProfileRef::SketchRegions { regions, .. } => {
             regions.is_empty()
                 || regions
@@ -505,14 +502,11 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
                     .enumerate()
                     .any(|(index, region)| regions[..index].contains(region))
         }
-        ProfileRef::HistoricalFaces { faces, .. } => selection_ids_are_incomplete(faces),
-        ProfileRef::Generated { curves, native } => {
-            native.trim().is_empty()
-                || curves.is_empty()
-                || curves.iter().enumerate().any(|(index, curve)| {
-                    curve.local_id.trim().is_empty() || curves[..index].contains(curve)
-                })
-        }
+        ProfileRef::HistoricalFaces { .. } => false,
+        ProfileRef::Generated { curves, .. } => curves
+            .iter()
+            .enumerate()
+            .any(|(index, curve)| curves[..index].contains(curve)),
         ProfileRef::Feature(_) => false,
         ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
     }
@@ -549,10 +543,10 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
             true
         }
-        PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
+        PathRef::HistoricalEdges { .. } => false,
         PathRef::Sketch(_) => false,
-        PathRef::SketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
-        PathRef::SpatialSketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
+        PathRef::SketchCurves { .. } => false,
+        PathRef::SpatialSketchCurves { .. } => false,
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }

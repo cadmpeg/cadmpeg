@@ -796,11 +796,7 @@ fn loft_path_preserves_complete_historical_edge_selection() {
             EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
                 .unwrap(),
         ),
-        PathRef::HistoricalEdges {
-            state: state.clone(),
-            edges: vec![edge.clone()],
-            native: "selection".into(),
-        }
+        PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
     );
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(

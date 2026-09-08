@@ -1027,13 +1027,11 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             profile.clone(),
             6,
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Generated {
-                    curves: vec![GeneratedCurveRef {
-                        feature: source.clone(),
-                        local_id: "curve-0".into(),
-                    }],
-                    native: "synthetic:test:profile-selection".into(),
-                },
+                profile: ProfileRef::generated(
+                    vec![GeneratedCurveRef::new(source.clone(), "curve-0".into()).unwrap()],
+                    "synthetic:test:profile-selection".into(),
+                )
+                .unwrap(),
                 direction: ExtrudeDirection::ProfileNormal,
                 start: ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {

@@ -783,13 +783,16 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
     );
     assert_eq!(
         resolved_loft_entity_selection_path(&group, &resolution),
-        Some(PathRef::SketchCurves {
-            sketch: sketch.clone(),
-            curves: vec![
-                neutral_sketch_curve_id(&sketch, 100, 101),
-                neutral_sketch_curve_id(&sketch, 200, 201),
-            ],
-        })
+        Some(
+            PathRef::sketch_curves(
+                sketch.clone(),
+                vec![
+                    neutral_sketch_curve_id(&sketch, 100, 101),
+                    neutral_sketch_curve_id(&sketch, 200, 201),
+                ]
+            )
+            .unwrap()
+        )
     );
 
     let mut mixed_operands = operands.to_vec();
@@ -859,19 +862,22 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
 
     assert_eq!(
         resolve_entity_selection_path(&group, &resolution),
-        Some(PathRef::SpatialSketchCurves {
-            sketch: spatial_sketch.clone(),
-            curves: curves
-                .iter()
-                .map(|curve| {
-                    neutral_spatial_sketch_curve_id(
-                        &spatial_sketch,
-                        curve.primary_id,
-                        curve.secondary_id,
-                    )
-                })
-                .collect(),
-        })
+        Some(
+            PathRef::spatial_sketch_curves(
+                spatial_sketch.clone(),
+                curves
+                    .iter()
+                    .map(|curve| {
+                        neutral_spatial_sketch_curve_id(
+                            &spatial_sketch,
+                            curve.primary_id,
+                            curve.secondary_id,
+                        )
+                    })
+                    .collect()
+            )
+            .unwrap()
+        )
     );
 }
 
@@ -936,10 +942,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
     };
     assert_eq!(
         resolve_entity_selection_profile(&group, &resolution),
-        Some(ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![1],
-        })
+        Some(ProfileRef::sketch_profiles(sketch.clone(), vec![1]).unwrap())
     );
 
     sketches[0].profiles[0].push(SketchEntityUse {
@@ -1001,10 +1004,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
 
     assert_eq!(
         resolve_entity_selection_profile(&group, &resolution),
-        Some(ProfileRef::SketchEntities {
-            sketch,
-            entities: vec![entity_id],
-        })
+        Some(ProfileRef::sketch_entities(sketch, vec![entity_id]).unwrap())
     );
 }
 
@@ -1259,21 +1259,12 @@ fn historical_selection_preserves_first_member_region_order() {
 fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     let sketch = SketchId("f3d:model:sketch#multi-profile".into());
     let loops = [
-        ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![3, 1],
-        },
-        ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![1, 2],
-        },
+        ProfileRef::sketch_profiles(sketch.clone(), vec![3, 1]).unwrap(),
+        ProfileRef::sketch_profiles(sketch.clone(), vec![1, 2]).unwrap(),
     ];
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops),
-        Some(ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles: vec![3, 1, 2],
-        })
+        Some(ProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2]).unwrap())
     );
 
     let regions = [
@@ -1321,10 +1312,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
             &sketch,
             &[
                 loops[0].clone(),
-                ProfileRef::SketchSelection {
-                    sketch: sketch.clone(),
-                    selections: vec!["native-group".into()],
-                },
+                ProfileRef::sketch_selection(sketch.clone(), vec!["native-group".into()]).unwrap(),
             ]
         ),
         None

@@ -600,7 +600,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 ref profiles
             },
             ..
-        } if sketch == &spatial_sketch.id && profiles == &[0]
+        } if sketch == &spatial_sketch.id && profiles.as_slice() == &[0]
     ));
     assert_eq!(
         spatial_extrude.dependencies.as_slice(),
@@ -645,7 +645,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             },
             ..
         } if sketch == &open_spatial_sketch.id
-            && selections == &[format!(
+            && selections.as_slice() == &[format!(
                 "f3d:Design/BulkStream.dat:design-record-header#{}",
                 scope
                     .extrude_profile()
@@ -1540,14 +1540,12 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         3,
         FeatureDefinition::Loft {
             sections: vec![
-                LoftSection::Profile(ProfileRef::SpatialSketchProfiles {
-                    sketch: spatial_sketch.clone(),
-                    profiles: vec![2],
-                }),
-                LoftSection::Profile(ProfileRef::SpatialSketchProfiles {
-                    sketch: spatial_sketch.clone(),
-                    profiles: vec![5],
-                }),
+                LoftSection::Profile(
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![2]).unwrap(),
+                ),
+                LoftSection::Profile(
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![5]).unwrap(),
+                ),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Sketch(
                 planar_sketch,

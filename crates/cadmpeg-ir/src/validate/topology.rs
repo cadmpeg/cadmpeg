@@ -3447,31 +3447,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 ),
-                ProfileRef::HistoricalFaces {
-                    state,
-                    faces,
-                    native,
-                } => {
-                    if native.is_empty()
-                        || native.iter().any(String::is_empty)
-                        || native.iter().collect::<HashSet<_>>().len() != native.len()
-                    {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "historical profile source groups are empty or repeated",
-                        );
-                    }
-                    check_historical_selection(
+                ProfileRef::HistoricalFaces { state, faces, .. } => {
+                    check_historical_members(
                         findings,
                         &feature.id,
                         (
                             state,
                             faces.iter().map(crate::ids::HistoricalFaceId::as_str),
-                            native.first().map_or("", String::as_str),
                         ),
                         "profile face",
-                        false,
                         &input_topologies,
                         |topology| {
                             topology
@@ -3501,16 +3485,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                     Some(_) => {}
                 },
-                ProfileRef::Generated { curves, native }
-                    if curves.is_empty()
-                        || native.trim().is_empty()
-                        || curves.iter().any(|curve| {
-                            curve.local_id.trim().is_empty()
-                                || features
-                                    .get(curve.feature.as_str())
-                                    .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                                || !feature.dependencies.contains(&curve.feature)
-                        }) =>
+                ProfileRef::Generated { curves, .. }
+                    if curves.iter().any(|curve| {
+                        features
+                            .get(curve.feature.as_str())
+                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                            || !feature.dependencies.contains(&curve.feature)
+                    }) =>
                 {
                     feature_geometry_error(findings, feature, "generated profile curve is invalid");
                 }
@@ -3547,20 +3528,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     curves.iter().map(|id| id.0.as_str()),
                     |identity| spatial_sketch_entity_owners.contains_key(identity),
                 ),
-                PathRef::HistoricalEdges {
-                    state,
-                    edges,
-                    native,
-                } => check_historical_selection(
+                PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(
                     findings,
                     &feature.id,
                     (
                         state,
                         edges.iter().map(crate::ids::HistoricalEdgeId::as_str),
-                        native,
                     ),
                     "path edge",
-                    false,
                     &input_topologies,
                     |topology| {
                         topology
@@ -3894,57 +3869,6 @@ fn same_vertex_target(
         (VertexSelection::Unresolved, VertexSelection::Unresolved) => true,
         _ => false,
     }
-}
-
-fn check_historical_selection<'a, I, F>(
-    findings: &mut Vec<Finding>,
-    feature: &crate::features::FeatureId,
-    selection: (&crate::ids::FeatureInputTopologyId, I, &str),
-    kind: &str,
-    allow_empty: bool,
-    states: &HashMap<&str, &crate::features::FeatureInputTopology>,
-    members: F,
-) where
-    I: IntoIterator<Item = &'a str>,
-    F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
-{
-    let (state_id, selected, native) = selection;
-    if native.is_empty() {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!("historical {kind} selection has an empty native reference"),
-            entity: Some(feature.as_str().to_owned()),
-        });
-    }
-    let selected = selected.into_iter().collect::<Vec<_>>();
-    if selected.is_empty() && !allow_empty {
-        findings.push(Finding {
-            check: Check::Counts,
-            severity: Severity::Error,
-            message: format!("historical {kind} selection is empty"),
-            entity: Some(feature.as_str().to_owned()),
-        });
-    }
-    let mut seen = HashSet::new();
-    for id in &selected {
-        if !seen.insert(id) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: format!("historical {kind} selection repeats `{id}`"),
-                entity: Some(feature.as_str().to_owned()),
-            });
-        }
-    }
-    check_historical_members(
-        findings,
-        feature,
-        (state_id, selected),
-        kind,
-        states,
-        members,
-    );
 }
 
 fn check_historical_members<'a, I, F>(
@@ -4617,12 +4541,9 @@ fn check_feature_sketch_references(
                             .iter()
                             .find(|candidate| candidate.id == *sketch)
                             .map_or(0, |sketch| sketch.profiles.len());
-                        let unique = profiles.iter().copied().collect::<HashSet<_>>();
-                        if profiles.is_empty()
-                            || unique.len() != profiles.len()
-                            || profiles
-                                .iter()
-                                .any(|index| *index as usize >= profile_count)
+                        if profiles
+                            .iter()
+                            .any(|index| *index as usize >= profile_count)
                         {
                             feature_geometry_error(
                                 findings,
@@ -4630,18 +4551,6 @@ fn check_feature_sketch_references(
                                 "spatial sketch profile indices are empty, repeated, or out of range",
                             );
                         }
-                    }
-                    ProfileRef::SpatialSketchSelection { selections, .. }
-                        if selections.is_empty()
-                            || selections.iter().any(String::is_empty)
-                            || selections.iter().collect::<HashSet<_>>().len()
-                                != selections.len() =>
-                    {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "native spatial sketch profile selections are empty or repeated",
-                        );
                     }
                     ProfileRef::SpatialSketchSelection { .. } => {}
                     _ => unreachable!(),
@@ -4685,12 +4594,9 @@ fn check_feature_sketch_references(
                         .iter()
                         .find(|candidate| candidate.id == *sketch)
                         .map_or(0, |sketch| sketch.profiles.len());
-                    let unique = profiles.iter().copied().collect::<HashSet<_>>();
-                    if profiles.is_empty()
-                        || unique.len() != profiles.len()
-                        || profiles
-                            .iter()
-                            .any(|index| *index as usize >= sketch_profile_count)
+                    if profiles
+                        .iter()
+                        .any(|index| *index as usize >= sketch_profile_count)
                     {
                         feature_geometry_error(
                             findings,
@@ -4755,32 +4661,17 @@ fn check_feature_sketch_references(
                     }
                 }
                 ProfileRef::SketchEntities { entities, .. } => {
-                    let unique = entities.iter().collect::<HashSet<_>>();
-                    if entities.is_empty()
-                        || unique.len() != entities.len()
-                        || entities.iter().any(|entity| {
-                            sketch_entity_owners
-                                .get(entity.0.as_str())
-                                .is_none_or(|owner| *owner != sketch.0.as_str())
-                        })
-                    {
+                    if entities.iter().any(|entity| {
+                        sketch_entity_owners
+                            .get(entity.0.as_str())
+                            .is_none_or(|owner| *owner != sketch.0.as_str())
+                    }) {
                         feature_geometry_error(
                             findings,
                             feature,
                             "sketch profile entities are empty, repeated, missing, or owned by another sketch",
                         );
                     }
-                }
-                ProfileRef::SketchSelection { selections, .. }
-                    if selections.is_empty()
-                        || selections.iter().any(String::is_empty)
-                        || selections.iter().collect::<HashSet<_>>().len() != selections.len() =>
-                {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "native sketch profile selections are empty or repeated",
-                    );
                 }
                 ProfileRef::Native(_)
                 | ProfileRef::Unresolved(_)
@@ -4796,13 +4687,11 @@ fn check_feature_sketch_references(
         }
         for path in paths {
             if let PathRef::SketchCurves { sketch, curves } = path {
-                let invalid = curves.is_empty()
-                    || curves.iter().collect::<HashSet<_>>().len() != curves.len()
-                    || curves.iter().any(|curve| {
-                        sketch_entity_owners
-                            .get(curve.0.as_str())
-                            .is_none_or(|owner| *owner != sketch.0.as_str())
-                    });
+                let invalid = curves.iter().any(|curve| {
+                    sketch_entity_owners
+                        .get(curve.0.as_str())
+                        .is_none_or(|owner| *owner != sketch.0.as_str())
+                });
                 if invalid {
                     feature_geometry_error(
                         findings,
@@ -4811,19 +4700,17 @@ fn check_feature_sketch_references(
                     );
                 }
             }
-            let (sketch, known_sketches, description, selections) = match path {
-                PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path", None),
+            let (sketch, known_sketches, description) = match path {
+                PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path"),
                 PathRef::SketchCurves { sketch, .. } => {
-                    (sketch.0.as_str(), sketches, "sketch curve path", None)
+                    (sketch.0.as_str(), sketches, "sketch curve path")
                 }
                 PathRef::SpatialSketchCurves { sketch, curves } => {
-                    let invalid = curves.is_empty()
-                        || curves.iter().collect::<HashSet<_>>().len() != curves.len()
-                        || curves.iter().any(|curve| {
-                            spatial_sketch_entity_owners
-                                .get(curve.0.as_str())
-                                .is_none_or(|owner| *owner != sketch.0.as_str())
-                        });
+                    let invalid = curves.iter().any(|curve| {
+                        spatial_sketch_entity_owners
+                            .get(curve.0.as_str())
+                            .is_none_or(|owner| *owner != sketch.0.as_str())
+                    });
                     if invalid {
                         feature_geometry_error(
                             findings,
@@ -4835,15 +4722,11 @@ fn check_feature_sketch_references(
                         sketch.0.as_str(),
                         &spatial_sketches,
                         "spatial sketch curve path",
-                        None,
                     )
                 }
-                PathRef::SpatialSketchSelection { sketch, selections } => (
-                    sketch.0.as_str(),
-                    &spatial_sketches,
-                    "spatial sketch path",
-                    Some(selections),
-                ),
+                PathRef::SpatialSketchSelection { sketch, .. } => {
+                    (sketch.0.as_str(), &spatial_sketches, "spatial sketch path")
+                }
                 _ => continue,
             };
             if !known_sketches.contains(sketch) {
@@ -4859,17 +4742,6 @@ fn check_feature_sketch_references(
                         entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
-            }
-            if selections.is_some_and(|selections| {
-                selections.is_empty()
-                    || selections.iter().any(String::is_empty)
-                    || selections.iter().collect::<HashSet<_>>().len() != selections.len()
-            }) {
-                feature_geometry_error(
-                    findings,
-                    feature,
-                    "native spatial sketch path selections are empty or repeated",
-                );
             }
         }
     }
