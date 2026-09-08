@@ -6,7 +6,8 @@ use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::View;
 
-use super::{CarrierIndex, CurveCarrier, LEN_TO_MM};
+use super::index::CarrierIndex;
+use super::{CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
@@ -200,19 +201,16 @@ mod tests {
 
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
-        carriers.curves.insert(
-            10,
-            CurveCarrier {
-                attr: 10,
-                offset: 100,
-                end: 120,
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    direction: Vector3::new(0.0, 1.0, 0.0),
-                },
-                parameter_range: None,
+        carriers.insert(super::super::Carrier::Curve(CurveCarrier {
+            attr: 10,
+            offset: 100,
+            end: 120,
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 1.0, 0.0),
             },
-        );
+            parameter_range: None,
+        }));
         carriers
     }
 

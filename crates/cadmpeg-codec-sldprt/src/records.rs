@@ -803,7 +803,7 @@ pub(crate) struct FeatureInputClass {
 
 impl FeatureInputClass {
     pub(crate) fn role(&self) -> FeatureInputClassRole {
-        crate::classification::native_object_class(&self.name).role
+        crate::classification::native_object_class(&self.name).role()
     }
 }
 
@@ -822,7 +822,7 @@ mod feature_class_wire {
     pub(super) fn serialize<S: Serializer>(name: &str, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("name", name)?;
-        map.serialize_entry("role", &native_object_class(name).role)?;
+        map.serialize_entry("role", &native_object_class(name).role())?;
         map.end()
     }
 
@@ -832,7 +832,7 @@ mod feature_class_wire {
         let wire = Wire::deserialize(deserializer)?;
         if wire
             .role
-            .is_some_and(|role| role != native_object_class(&wire.name).role)
+            .is_some_and(|role| role != native_object_class(&wire.name).role())
         {
             return Err(serde::de::Error::custom(
                 "role must match the native class name",
@@ -878,9 +878,9 @@ pub(crate) struct SketchInputEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) feature_ref: Option<String>,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
-    pub(crate) ordinal: u32,
+    ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
-    pub(crate) offset: u64,
+    offset: u64,
     /// Feature-local object index stored immediately before the marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) object_index: Option<u32>,
@@ -967,7 +967,43 @@ impl SketchInputEntity {
         self.links.as_ref().map_or(&[], SketchInputLinks::entries)
     }
 
-    /// Construct a marker from its identity, parent lane, ordinal, offset, and kind.
+    pub(crate) fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+
+    pub(crate) fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    pub(crate) fn try_new(
+        id: String,
+        parent: String,
+        ordinal: u32,
+        offset: u64,
+        kind: SketchInputKind,
+        payload: &[u8],
+    ) -> Result<Self, &'static str> {
+        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
+        if position >= payload.len()
+            || !crate::resolved_features::markers::sketch_marker_at(payload, position)
+        {
+            return Err("sketch entity offset is not a marker in native_payload");
+        }
+        Ok(Self {
+            id,
+            parent,
+            feature_ref: None,
+            ordinal,
+            offset,
+            object_index: crate::resolved_features::markers::marker_object_index(payload, position),
+            local_id: crate::resolved_features::markers::marker_local_id(payload, position),
+            kind,
+            state_value: None,
+            coordinates_m: None,
+            links: None,
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn new(
         id: impl Into<String>,
@@ -976,19 +1012,24 @@ impl SketchInputEntity {
         offset: u64,
         kind: SketchInputKind,
     ) -> Self {
-        Self {
-            id: id.into(),
-            parent: parent.into(),
-            feature_ref: None,
-            ordinal,
-            offset,
-            object_index: None,
-            local_id: None,
-            kind,
-            state_value: None,
-            coordinates_m: None,
-            links: None,
+        let position = usize::try_from(offset).unwrap();
+        let mut payload = vec![0; position.checked_add(39).unwrap()];
+        if position >= 4 {
+            payload[position - 4..position].fill(0xff);
         }
+        payload[position..position + 5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+        payload[position + 5..position + 13].fill(0xff);
+        payload[position + 13..position + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_position(&self, ordinal: u32, offset: u64) -> Self {
+        let mut updated = self.clone();
+        let position = Self::new(String::new(), String::new(), ordinal, offset, self.kind);
+        updated.ordinal = position.ordinal;
+        updated.offset = position.offset;
+        updated
     }
 }
 

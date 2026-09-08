@@ -324,6 +324,53 @@ fn parses_array16_dim_items() {
 }
 
 #[test]
+fn identical_dimension_fields_can_have_different_patch_positions() {
+    let payload = fixture_payload(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &[("Linear", 0.025)],
+        "25.000 mm",
+        false,
+        false,
+        false,
+    );
+    let mut losses = Vec::new();
+    let original = parse_payload(&payload, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(original.len(), 1);
+    let record = &original[0];
+    let basic = patch_slots::field_offset(&payload, record.offset, "isBasic").unwrap();
+    let inspection = patch_slots::field_offset(&payload, record.offset, "isInspection").unwrap();
+    let mut reordered = payload.clone();
+    let start = basic - (1 + "isBasic".len());
+    reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
+    let other = parse_payload(&reordered, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
+    let mut left = serde_json::to_value(&original[0]).unwrap();
+    let mut right = serde_json::to_value(&other[0]).unwrap();
+    for value in [&mut left, &mut right] {
+        for field in [
+            "value_offset",
+            "precision_offset",
+            "basic_offset",
+            "inspection_offset",
+            "reference_only_offset",
+        ] {
+            value.as_object_mut().unwrap().remove(field);
+        }
+    }
+    assert_eq!(left, right);
+    assert_ne!(
+        basic,
+        patch_slots::field_offset(&reordered, record.offset, "isBasic").unwrap()
+    );
+    assert_ne!(
+        inspection,
+        patch_slots::field_offset(&reordered, record.offset, "isInspection").unwrap()
+    );
+}
+
+#[test]
 fn parses_reordered_map_with_extra_key() {
     let payload = fixture_payload(
         "D1@Sketch1",

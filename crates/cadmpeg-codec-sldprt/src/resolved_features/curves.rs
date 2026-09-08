@@ -124,7 +124,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
         .iter()
         .copied()
         .filter(|marker| {
-            usize::try_from(marker.offset)
+            usize::try_from(marker.offset())
                 .ok()
                 .is_some_and(|offset| current_linked_semicircle_record(payload, offset))
         })
@@ -538,7 +538,7 @@ pub(super) fn resolve_slot_marker_arcs(
     tolerance: f64,
 ) {
     let Some((curve_indices, center_indices)) = markers.iter().find_map(|marker| {
-        let offset = usize::try_from(marker.offset).ok()?;
+        let offset = usize::try_from(marker.offset()).ok()?;
         slot_curve_and_center_indices(payload, offset)
     }) else {
         return;
@@ -554,7 +554,7 @@ pub(super) fn resolve_slot_marker_arcs(
                 )
         })
         .collect::<Vec<_>>();
-    curves.sort_unstable_by_key(|marker| marker.offset);
+    curves.sort_unstable_by_key(|marker| marker.offset());
     if curves.len() != 4 {
         return;
     }
@@ -585,7 +585,7 @@ pub(super) fn resolve_slot_marker_arcs(
                 )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|marker| marker.offset);
+    points.sort_unstable_by_key(|marker| marker.offset());
     let Some(center_refs) = center_indices
         .map(|index| points.get(index).map(|point| point.id.as_str()))
         .into_iter()
@@ -1439,11 +1439,11 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     }
 
     let mut roster = markers.to_vec();
-    roster.sort_unstable_by_key(|marker| marker.offset);
+    roster.sort_unstable_by_key(|marker| marker.offset());
     let records = markers
         .iter()
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset).ok()?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             if let Some(endpoints) = legacy_extended_rectangle_line_endpoints(payload, offset) {
                 return (marker.kind == SketchInputKind::LineOrCircle).then_some(
                     RectangleLineRecord::Indexed {
@@ -1840,7 +1840,7 @@ pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
     payload: &[u8],
     marker: &SketchInputEntity,
 ) -> Option<[f64; 2]> {
-    let offset = usize::try_from(marker.offset).ok()?;
+    let offset = usize::try_from(marker.offset()).ok()?;
     if marker.kind != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             != Some(LEGACY_EXTENDED_SKETCH_MARKER)

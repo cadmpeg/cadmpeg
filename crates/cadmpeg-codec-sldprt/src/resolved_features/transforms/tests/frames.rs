@@ -774,13 +774,13 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     ];
     let mut horizontal = marker("horizontal-marker", Some([0.020, 0.020]));
     horizontal.kind = SketchInputKind::LineOrCircle;
-    horizontal.offset = 0;
+    horizontal = horizontal.with_test_position(horizontal.ordinal(), 0);
     let mut vertical = marker("vertical-marker", Some([0.035, 0.030]));
     vertical.kind = SketchInputKind::LineOrCircle;
-    vertical.offset = 32;
+    vertical = vertical.with_test_position(vertical.ordinal(), 32);
     let mut center = marker("circle-center", Some([0.040, 0.015]));
     center.kind = SketchInputKind::LineOrCircle;
-    center.offset = 64;
+    center = center.with_test_position(center.ordinal(), 64);
     let mut native_payload = vec![0; 96];
     for offset in [0, 32, 64] {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
@@ -855,10 +855,10 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     let mut implicit_lane = lane;
     let mut implicit_center = marker("implicit-center", Some([0.010, 0.020]));
     implicit_center.local_id = Some(1);
-    implicit_center.offset = 100;
+    implicit_center = implicit_center.with_test_position(implicit_center.ordinal(), 100);
     let mut implicit_radial = marker("implicit-radial", Some([0.013, 0.024]));
     implicit_radial.local_id = Some(2);
-    implicit_radial.offset = 200;
+    implicit_radial = implicit_radial.with_test_position(implicit_radial.ordinal(), 200);
     implicit_lane.sketch_entities = vec![implicit_center, implicit_radial];
     let (resolved, radius) = implicit_circle_marker(
         std::slice::from_ref(&implicit_lane),
@@ -883,18 +883,18 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
 #[test]
 fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     let mut unrelated = marker("unrelated", Some([0.0, 0.0]));
-    unrelated.offset = 10;
+    unrelated = unrelated.with_test_position(unrelated.ordinal(), 10);
     unrelated.object_index = Some(7);
     let mut center = marker("center", Some([0.010, 0.020]));
-    center.offset = 20;
+    center = center.with_test_position(center.ordinal(), 20);
     center.object_index = Some(9);
     center.local_id = Some(11);
     let mut radial = marker("radial", Some([0.013, 0.024]));
-    radial.offset = 30;
+    radial = radial.with_test_position(radial.ordinal(), 30);
     radial.object_index = Some(8);
     radial.local_id = Some(12);
     let mut relation = marker("circle-owner", None);
-    relation.offset = 40;
+    relation = relation.with_test_position(relation.ordinal(), 40);
     relation.object_index = Some(1);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
     relation.links = crate::records::SketchInputLinks::new(
@@ -944,16 +944,16 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
 #[test]
 fn implicit_circle_uses_unique_terminal_radial_point() {
     let mut unrelated = marker("unrelated", Some([0.0, 0.0]));
-    unrelated.offset = 10;
+    unrelated = unrelated.with_test_position(unrelated.ordinal(), 10);
     unrelated.local_id = Some(1);
     let mut center = marker("center", Some([0.010, 0.010]));
-    center.offset = 20;
+    center = center.with_test_position(center.ordinal(), 20);
     center.local_id = Some(2);
     let mut another = marker("another", Some([0.020, 0.020]));
-    another.offset = 30;
+    another = another.with_test_position(another.ordinal(), 30);
     another.local_id = Some(3);
     let mut radial = marker("radial", Some([0.013, 0.014]));
-    radial.offset = 40;
+    radial = radial.with_test_position(radial.ordinal(), 40);
     radial.local_id = None;
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -1014,11 +1014,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         object_index: 0,
     };
     let mut center = marker("center", Some([0.010, 0.020]));
-    center.offset = 10;
+    center = center.with_test_position(center.ordinal(), 10);
     center.object_index = Some(50);
     center.local_id = Some(49);
     let mut radial = marker("radial", Some([0.013, 0.024]));
-    radial.offset = 20;
+    radial = radial.with_test_position(radial.ordinal(), 20);
     radial.object_index = Some(49);
     radial.local_id = Some(0);
     let lane = FeatureInputLane {
@@ -1072,11 +1072,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
 
     let mut ambiguous = lane;
     let mut second_center = marker("second-center", Some([0.020, 0.030]));
-    second_center.offset = 30;
+    second_center = second_center.with_test_position(second_center.ordinal(), 30);
     second_center.object_index = Some(52);
     second_center.local_id = Some(51);
     let mut second_radial = marker("second-radial", Some([0.023, 0.034]));
-    second_radial.offset = 40;
+    second_radial = second_radial.with_test_position(second_radial.ordinal(), 40);
     second_radial.object_index = Some(51);
     second_radial.local_id = Some(0);
     ambiguous
@@ -1213,11 +1213,11 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         name: "sgEntHandle".into(),
     };
     let mut center = marker("center", Some([0.010, 0.020]));
-    center.offset = 400;
+    center = center.with_test_position(center.ordinal(), 400);
     center.object_index = Some(50);
     center.local_id = Some(49);
     let mut radial = marker("radial", Some([0.013, 0.024]));
-    radial.offset = 410;
+    radial = radial.with_test_position(radial.ordinal(), 410);
     radial.object_index = Some(49);
     radial.local_id = Some(0);
     let lane = FeatureInputLane {

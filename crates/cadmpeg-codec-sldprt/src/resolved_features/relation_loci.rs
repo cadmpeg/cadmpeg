@@ -2769,7 +2769,7 @@ pub(super) fn relation_operand_marker<'a>(
                 )
             })
             .collect::<Vec<_>>();
-        coordinate_handles.sort_unstable_by_key(|marker| marker.offset);
+        coordinate_handles.sort_unstable_by_key(|marker| marker.offset());
         return coordinate_handles
             .get(usize::from(operand.entity_index))
             .map(|marker| marker.id.as_str());
@@ -2892,9 +2892,9 @@ fn dynamic_relation_marker<'a>(
         .filter(|marker| direct_kind(marker))
         .collect::<Vec<_>>();
     ordinal.sort_unstable_by(|left, right| {
-        left.offset
-            .cmp(&right.offset)
-            .then_with(|| left.ordinal.cmp(&right.ordinal))
+        left.offset()
+            .cmp(&right.offset())
+            .then_with(|| left.ordinal().cmp(&right.ordinal()))
             .then_with(|| left.id.cmp(&right.id))
     });
     ordinal
@@ -3620,7 +3620,7 @@ pub(super) fn profile_loci_by_marker(
                 let Some([u, v]) = marker.coordinates_m else {
                     continue;
                 };
-                let primary_geometry_locus = usize::try_from(marker.offset)
+                let primary_geometry_locus = usize::try_from(marker.offset())
                     .ok()
                     .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
@@ -3964,7 +3964,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                         continue;
                     };
                     if primary_only
-                        && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                        && usize::try_from(marker.offset()).ok().is_none_or(|offset| {
                             !marker_is_geometry_locus(&lane.native_payload, offset)
                         })
                     {

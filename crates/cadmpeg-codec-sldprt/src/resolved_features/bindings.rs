@@ -114,7 +114,7 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len())
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
             {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
@@ -659,7 +659,7 @@ pub(crate) fn bind_mirror_surface_planes(
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| {
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
         })
         .map(|feature| feature.id.as_str())
@@ -898,7 +898,7 @@ pub(crate) fn bind_scalar_operands(
             for entity in lane
                 .sketch_entities
                 .iter_mut()
-                .filter(|entity| entity.offset > start && entity.offset < end)
+                .filter(|entity| entity.offset() > start && entity.offset() < end)
             {
                 entity.feature_ref = Some(feature_id.to_string());
             }
@@ -933,7 +933,7 @@ pub(crate) fn bind_scalar_operands(
             ) else {
                 continue;
             };
-            if native_object_class(parent.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(parent.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::Extrusion
                 && !matches!(parent.xml_tag.as_str(), "Extrusion" | "Cut")
             {
@@ -958,7 +958,7 @@ pub(crate) fn bind_scalar_operands(
     }
 }
 
-pub(super) fn finalize_lane_bindings(
+pub(crate) fn finalize_lane_bindings(
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
 ) {
@@ -973,7 +973,7 @@ pub(super) fn finalize_lane_bindings(
         }
     }
     for entity in &mut lane.sketch_entities {
-        let Ok(offset) = usize::try_from(entity.offset) else {
+        let Ok(offset) = usize::try_from(entity.offset()) else {
             continue;
         };
         let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
@@ -1071,7 +1071,7 @@ fn represented_sketch_features(
             }
             let end = objects.get(index + 1).map_or(u64::MAX, |next| next.0);
             if lane.sketch_entities.iter().any(|entity| {
-                entity.offset > start && entity.offset < end && entity.coordinates_m.is_some()
+                entity.offset() > start && entity.offset() < end && entity.coordinates_m.is_some()
             }) {
                 represented.insert(feature.id.clone());
             }
@@ -1134,13 +1134,13 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let markers = lane
         .sketch_entities
         .iter()
-        .filter(|entity| entity.offset < limit)
+        .filter(|entity| entity.offset() < limit)
         .filter(|entity| {
             relation_bindings
                 .iter()
-                .all(|(start, end, _)| entity.offset < *start || entity.offset >= *end)
+                .all(|(start, end, _)| entity.offset() < *start || entity.offset() >= *end)
         })
-        .map(|entity| entity.offset)
+        .map(crate::records::SketchInputEntity::offset)
         .collect::<Vec<_>>();
     let Some(&first) = markers.first() else {
         return;
@@ -1157,7 +1157,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         .flat_map(|history| &history.features)
         .filter(|feature| feature.xml_tag == "Sketch")
         .filter(|feature| {
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::OriginProfileFeature
         })
         .filter(|feature| !represented.contains(&feature.id))
@@ -1178,7 +1178,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         for entity in lane
             .sketch_entities
             .iter_mut()
-            .filter(|entity| entity.offset >= start && entity.offset < end)
+            .filter(|entity| entity.offset() >= start && entity.offset() < end)
         {
             entity.feature_ref = Some(owner.id.clone());
         }
@@ -1321,7 +1321,7 @@ fn bind_detached_spatial_relation_objects(
         for entity in lane
             .sketch_entities
             .iter_mut()
-            .filter(|entity| entity.offset > *start && entity.offset < *end)
+            .filter(|entity| entity.offset() > *start && entity.offset() < *end)
         {
             entity.feature_ref = Some(owner.clone());
         }
@@ -1365,7 +1365,7 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         .iter()
         .filter_map(|curve| {
             let feature = curve.feature_ref.as_ref()?;
-            let offset = usize::try_from(curve.offset).ok()?;
+            let offset = usize::try_from(curve.offset()).ok()?;
             let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
                 .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
                 .or_else(|| {
@@ -1399,9 +1399,9 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             continue;
         };
         if marker.coordinates_m.is_none() {
-            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset).copied();
+            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset()).copied();
         }
-        if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset))
+        if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset()))
             && marker.coordinates_m.is_some()
         {
             marker.kind = SketchInputKind::Point;
@@ -1421,7 +1421,7 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
             .iter()
             .copied()
             .filter(|curve| {
-                usize::try_from(curve.offset).ok().is_some_and(|offset| {
+                usize::try_from(curve.offset()).ok().is_some_and(|offset| {
                     marker_is_selected_construction_line(&lane.native_payload, offset)
                 })
             })

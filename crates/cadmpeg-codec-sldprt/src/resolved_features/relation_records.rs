@@ -1764,7 +1764,7 @@ pub(super) fn bind_detached_relation_drivers(
 }
 
 fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
-    match native_object_class(name).kind {
+    match native_object_class(name) {
         NativeClassKind::SketchRelation(family) => Some(family),
         _ => None,
     }
@@ -1945,7 +1945,7 @@ fn feature_entities<'a>(
         .iter()
         .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
         .collect::<Vec<_>>();
-    entities.sort_unstable_by_key(|entity| (entity.offset, entity.ordinal));
+    entities.sort_unstable_by_key(|entity| (entity.offset(), entity.ordinal()));
     entities
 }
 

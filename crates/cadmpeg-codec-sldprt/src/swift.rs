@@ -165,48 +165,43 @@ impl TopologyIdentityIndex {
 
 fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<FaceId> {
     let prefix = format!("sldprt:brep:face#{attr}");
-    unique_id_for_attribute(
-        faces.iter().map(|face| face.id.as_str().to_owned()),
-        &prefix,
-    )
-    .map(|id| FaceId::try_from(id).expect("existing entity identity"))
+    unique_id_for_attribute(faces.iter().map(|face| &face.id), &prefix, FaceId::as_str).cloned()
 }
 
 fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<EdgeId> {
     let prefix = format!("sldprt:brep:edge#{attr}");
-    unique_id_for_attribute(
-        edges.iter().map(|edge| edge.id.as_str().to_owned()),
-        &prefix,
-    )
-    .map(|id| EdgeId::try_from(id).expect("existing entity identity"))
+    unique_id_for_attribute(edges.iter().map(|edge| &edge.id), &prefix, EdgeId::as_str).cloned()
 }
 
 fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<VertexId> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
     unique_id_for_attribute(
-        vertices.iter().map(|vertex| vertex.id.as_str().to_owned()),
+        vertices.iter().map(|vertex| &vertex.id),
         &prefix,
+        VertexId::as_str,
     )
-    .map(|id| VertexId::try_from(id).expect("existing entity identity"))
+    .cloned()
 }
 
-fn unique_id_for_attribute<I>(ids: I, prefix: &str) -> Option<String>
-where
-    I: IntoIterator<Item = String>,
-{
+fn unique_id_for_attribute<'a, T: 'a>(
+    ids: impl IntoIterator<Item = &'a T>,
+    prefix: &str,
+    as_str: impl Fn(&T) -> &str,
+) -> Option<&'a T> {
     let ids = ids
         .into_iter()
         .filter(|id| {
-            id == prefix
-                || id
+            as_str(id) == prefix
+                || as_str(id)
                     .strip_prefix(prefix)
                     .is_some_and(|suffix| suffix.starts_with('@'))
         })
-        .collect::<BTreeSet<_>>();
-    if let Some(id) = ids.iter().find(|id| id.as_str() == prefix) {
-        return Some((*id).clone());
+        .map(|id| (as_str(id), id))
+        .collect::<BTreeMap<_, _>>();
+    if let Some(id) = ids.get(prefix) {
+        return Some(*id);
     }
-    let mut ids = ids.into_iter();
+    let mut ids = ids.into_values();
     let first = ids.next()?;
     ids.next().is_none().then_some(first)
 }
