@@ -393,10 +393,36 @@ mod point_tail {
 pub(crate) struct PmDcTransformPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    pub(crate) prefix: Option<u32>,
+    #[serde(default, rename = "prefix", with = "transform_prefix")]
+    pub(crate) prefix_present: bool,
     pub(crate) value_mask: u16,
     pub(crate) zero_mask: u16,
     pub(crate) matrix: [[f64; 4]; 4],
+}
+
+mod transform_prefix {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub(super) const VALUE: u32 = 0x203;
+
+    pub(super) fn serialize<S: Serializer>(
+        present: &bool,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        present.then_some(VALUE).serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<bool, D::Error> {
+        match Option::<u32>::deserialize(deserializer)? {
+            None => Ok(false),
+            Some(VALUE) => Ok(true),
+            Some(_) => Err(serde::de::Error::custom(
+                "transform prefix must be 515 or null",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -736,11 +762,10 @@ fn parse_ellipse(
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let prefix = if cursor.peek_u32("transform prefix")? == 0x203 {
-        Some(cursor.u32("transform prefix")?)
-    } else {
-        None
-    };
+    let prefix_present = cursor.peek_u32("transform prefix")? == transform_prefix::VALUE;
+    if prefix_present {
+        cursor.u32("transform prefix")?;
+    }
     let value_mask = cursor.u16("transform value mask")?;
     let zero_mask = cursor.u16("transform zero mask")?;
     let mut matrix = [[0.0; 4]; 4];
@@ -764,7 +789,7 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload
     Ok(PmDcTransformPayload {
         save_version_major: version,
         header,
-        prefix,
+        prefix_present,
         value_mask,
         zero_mask,
         matrix,
@@ -2246,5 +2271,30 @@ mod tests {
         assert_eq!(serde_json::to_value(point).unwrap(), wire);
         wire["state"] = serde_json::Value::Null;
         assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
+    }
+    #[test]
+    fn transform_prefix_wire_is_constant_or_absent() {
+        let mut bytes = content(1);
+        bytes.extend_from_slice(&0x8421u16.to_le_bytes());
+        bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
+        let transform = parse(&bytes, |_, source| parse_transform(source, 22).unwrap());
+        let mut wire = serde_json::to_value(transform).unwrap();
+        for (prefix, present) in [
+            (serde_json::Value::Null, false),
+            (serde_json::json!(515), true),
+        ] {
+            wire["prefix"] = prefix;
+            let parsed: PmDcTransformPayload = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(parsed.prefix_present, present);
+            assert_eq!(serde_json::to_value(parsed).unwrap(), wire);
+        }
+        wire["prefix"] = serde_json::json!(516);
+        assert!(serde_json::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
+        wire.as_object_mut().unwrap().remove("prefix");
+        assert!(
+            !serde_json::from_value::<PmDcTransformPayload>(wire)
+                .unwrap()
+                .prefix_present
+        );
     }
 }

@@ -2368,7 +2368,7 @@ mod tests {
             crate::sketch::PmDcTransformPayload {
                 save_version_major: 16,
                 header: test_header(),
-                prefix: None,
+                prefix_present: false,
                 value_mask: 0,
                 zero_mask: 0,
                 matrix: [
