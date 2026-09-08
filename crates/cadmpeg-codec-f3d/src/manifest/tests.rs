@@ -195,8 +195,12 @@ fn generated_asset_manifest_has_a_joinable_header() {
     let bytes = generated_design_asset().unwrap();
     let header = parse_asset_header(&bytes).unwrap();
     assert_eq!(header.base_name, GENERATED_DESIGN_ASSET_BASE);
-    assert_eq!(header.asset_type, DESIGN_ASSET_TYPE);
-    assert_eq!(header.fusion_subtype, None);
+    assert_eq!(
+        header.kind,
+        AssetKind::Design {
+            fusion_subtype: None
+        }
+    );
 }
 
 #[test]
@@ -222,7 +226,12 @@ fn revision_zero_design_asset_has_no_named_capability_registry() {
 
     let header = parse_asset_header(&bytes).unwrap();
     assert_eq!(header.base_name, "Legacy Design");
-    assert_eq!(header.fusion_subtype, None);
+    assert_eq!(
+        header.kind,
+        AssetKind::Design {
+            fusion_subtype: None
+        }
+    );
 }
 
 #[test]
@@ -253,7 +262,12 @@ fn revision_ten_design_asset_carries_linked_document_triples() {
 
     let header = parse_asset_header(&bytes).unwrap();
     assert_eq!(header.base_name, "Linked Design");
-    assert_eq!(header.fusion_subtype, None);
+    assert_eq!(
+        header.kind,
+        AssetKind::Design {
+            fusion_subtype: None
+        }
+    );
 }
 
 #[test]
@@ -268,7 +282,12 @@ fn revision_fourteen_uses_the_ascii_subtype_header() {
 
     let header = parse_asset_header(&bytes).unwrap();
     assert_eq!(header.base_name, "Design 14");
-    assert_eq!(header.fusion_subtype, None);
+    assert_eq!(
+        header.kind,
+        AssetKind::Design {
+            fusion_subtype: None
+        }
+    );
 }
 
 #[test]
@@ -291,7 +310,12 @@ fn current_revisions_use_the_current_asset_header() {
 
         let header = parse_asset_header(&bytes).unwrap();
         assert_eq!(header.base_name, "Intermediate Design");
-        assert_eq!(header.fusion_subtype, None);
+        assert_eq!(
+            header.kind,
+            AssetKind::Design {
+                fusion_subtype: None
+            }
+        );
     }
 }
 
@@ -314,7 +338,12 @@ fn an_unknown_revision_uses_the_current_asset_header() {
 
     let header = parse_asset_header(&bytes).unwrap();
     assert_eq!(header.base_name, "Future Design");
-    assert_eq!(header.fusion_subtype, None);
+    assert_eq!(
+        header.kind,
+        AssetKind::Design {
+            fusion_subtype: None
+        }
+    );
 }
 
 #[test]
