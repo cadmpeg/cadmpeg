@@ -140,12 +140,12 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("variable-reference compact operand paths");
     assert_eq!(
-        paths.each_ref().map(|path| path.class_tag.as_str()),
+        paths.each_ref().map(|path| path.class_tag().as_str()),
         ["330", "330"]
     );
-    assert_eq!(paths[0].link.locator_class_tag.as_str(), "390");
-    assert_eq!(paths[0].link.wrapper_class_tag.as_str(), "397");
-    assert_eq!(paths[1].occurrence_guids.len(), 2);
+    assert_eq!(paths[0].link().locator_class_tag.as_str(), "390");
+    assert_eq!(paths[0].link().wrapper_class_tag.as_str(), "397");
+    assert_eq!(paths[1].occurrence_guids().len(), 2);
 
     let mut wrong_generation = scope.clone();
     wrong_generation.paired_class_tag =

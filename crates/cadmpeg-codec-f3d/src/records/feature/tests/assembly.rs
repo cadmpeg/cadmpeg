@@ -170,8 +170,8 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         .unwrap(),
         transform_offset: 22,
     };
-    let path = crate::records::feature::DesignAssemblyOperandPath {
-        link: crate::records::feature::DesignAssemblyOperandPathLink {
+    let path = crate::records::feature::DesignAssemblyOperandPath::try_new(
+        crate::records::feature::DesignAssemblyOperandPathLink {
             locator_reference_offset: 11,
             locator_record_index: 10,
             locator_class_tag: crate::records::DesignClassTag::try_from("363".to_owned()).unwrap(),
@@ -183,24 +183,25 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             wrapper_byte_offset: 200,
             path_reference_offset: 211,
         },
-        record_index: 30,
-        class_tag: crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
-        byte_offset: 300,
-        occurrence_guids: vec![crate::records::Located {
+        30,
+        crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
+        300,
+        vec![crate::records::Located {
             value: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 311,
         }],
-        identity_guids: vec![crate::records::Located {
+        vec![crate::records::Located {
             value: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 322,
         }],
-    };
+    )
+    .unwrap();
     let limits: crate::records::feature::DesignAssemblyLimits =
         crate::records::feature::DesignAssemblyLimitsWire {
             kind: crate::records::feature::DesignAssemblyLimitKind::Angular,
@@ -488,11 +489,11 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
 
 #[test]
 fn assembly_path_wire_pairs_guid_locations() {
-    for count in [0, 1, 3] {
+    for count in [1, 3] {
         let values: Vec<_> = (0..count)
             .map(|index| format!("{index:08}-1111-4111-8111-111111111111"))
             .collect();
-        let offsets: Vec<_> = (0..count).map(|index| 300 + index * 80).collect();
+        let offsets: Vec<_> = (0..count).map(|index| 400 + index * 80).collect();
         let wire = serde_json::json!({
             "link": {
                 "locator_reference_offset": 11, "locator_record_index": 10,
@@ -501,18 +502,18 @@ fn assembly_path_wire_pairs_guid_locations() {
                 "wrapper_reference_offset": 122, "wrapper_class_tag": "388",
                 "wrapper_byte_offset": 200, "path_reference_offset": 211
             },
-            "record_index": 30, "class_tag": "386", "byte_offset": 300,
+            "record_index": 30, "class_tag": "329", "byte_offset": 300,
             "occurrence_guids": values, "occurrence_guid_offsets": offsets
         });
         for identities in [false, true] {
             let mut wire = wire.clone();
-            if identities && count != 0 {
-                wire["identity_guids"] = wire["occurrence_guids"].clone();
-                wire["identity_guid_offsets"] = wire["occurrence_guid_offsets"].clone();
+            if identities {
+                wire["identity_guids"] = serde_json::json!(vec![values[0].clone(); 4]);
+                wire["identity_guid_offsets"] = serde_json::json!([700, 780, 860, 940]);
             }
             let path: crate::records::feature::DesignAssemblyOperandPath =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(path.occurrence_guids.len(), count);
+            assert_eq!(path.occurrence_guids().len(), count);
             assert_eq!(serde_json::to_value(&path).unwrap(), wire);
             for (value_field, offset_field) in [
                 ("occurrence_guids", "occurrence_guid_offsets"),
@@ -664,4 +665,77 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
             }
         }
     }
+}
+
+#[test]
+fn assembly_path_admission_checks_class_arity_and_guid_order() {
+    use crate::records::feature::{DesignAssemblyOperandPath, DesignAssemblyOperandPathLink};
+    let link: DesignAssemblyOperandPathLink = serde_json::from_value(serde_json::json!({
+        "locator_reference_offset": 11, "locator_record_index": 10,
+        "locator_class_tag": "451", "locator_byte_offset": 100,
+        "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+        "wrapper_reference_offset": 122, "wrapper_class_tag": "369",
+        "wrapper_byte_offset": 200, "path_reference_offset": 211
+    }))
+    .unwrap();
+    let guids = |offsets: &[u64]| {
+        offsets
+            .iter()
+            .map(|offset| crate::records::Located {
+                value: "11111111-1111-4111-8111-111111111111"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                offset: *offset,
+            })
+            .collect()
+    };
+    for tag in ["294", "299", "307", "329", "330", "386", "390"] {
+        for count in [0, 1, 3, 4, 8] {
+            let offsets: Vec<_> = (0..count).map(|index| 500 + index * 80).collect();
+            let valid = match tag {
+                "329" => count == 0 || count == 4,
+                "330" => count == 4 || count == 8,
+                _ => count == 4,
+            };
+            let result = DesignAssemblyOperandPath::try_new(
+                link.clone(),
+                30,
+                tag.to_owned().try_into().unwrap(),
+                300,
+                guids(&[400]),
+                guids(&offsets),
+            );
+            assert_eq!(result.is_ok(), valid);
+        }
+    }
+    let path = DesignAssemblyOperandPath::try_new(
+        link,
+        30,
+        "390".to_owned().try_into().unwrap(),
+        300,
+        guids(&[400, 480]),
+        guids(&[560, 640, 720, 800]),
+    )
+    .unwrap();
+    let wire = serde_json::to_value(path).unwrap();
+    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wire.clone()).is_ok());
+    for (field, offsets) in [
+        ("occurrence_guid_offsets", vec![300, 480]),
+        ("occurrence_guid_offsets", vec![480, 400]),
+        ("identity_guid_offsets", vec![560, 560, 720, 800]),
+        ("identity_guid_offsets", vec![299, 640, 720, 800]),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = serde_json::json!(offsets);
+        assert!(serde_json::from_value::<DesignAssemblyOperandPath>(invalid).is_err());
+    }
+    let mut empty = wire.clone();
+    empty["occurrence_guids"] = serde_json::json!([]);
+    empty["occurrence_guid_offsets"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(empty).is_err());
+    let mut wrong_class = wire;
+    wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");
+    wrong_class["class_tag"] = serde_json::json!("386");
+    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wrong_class).is_err());
 }

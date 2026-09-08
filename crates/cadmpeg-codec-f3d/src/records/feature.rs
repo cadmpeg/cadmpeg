@@ -2916,14 +2916,14 @@ pub struct DesignAssemblyOperandPathLink {
     into = "DesignAssemblyOperandPathWire"
 )]
 pub struct DesignAssemblyOperandPath {
-    pub link: DesignAssemblyOperandPathLink,
+    link: DesignAssemblyOperandPathLink,
     pub record_index: u32,
-    pub class_tag: DesignClassTag,
-    pub byte_offset: u64,
+    class_tag: DesignClassTag,
+    byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
-    pub occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+    occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
-    pub identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+    identity_guids: Vec<Located<DesignRelaxedGuidText>>,
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -2949,6 +2949,90 @@ struct DesignAssemblyOperandPathWire {
     identity_guid_offsets: Vec<u64>,
 }
 
+impl DesignAssemblyOperandPath {
+    pub(crate) fn try_new(
+        link: DesignAssemblyOperandPathLink,
+        record_index: u32,
+        class_tag: DesignClassTag,
+        byte_offset: u64,
+        occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+        identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+    ) -> Result<Self, String> {
+        let legacy_pair =
+            class_tag.as_str() == "386" && matches!(link.locator_class_tag.as_str(), "363" | "378");
+        if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
+            return Err("occurrence_guids has invalid assembly path arity".into());
+        }
+        let identity_arity = if legacy_pair {
+            identity_guids.len() == 1
+        } else {
+            match class_tag.as_str() {
+                "294" | "299" | "307" | "386" | "390" | "412" => identity_guids.len() == 4,
+                "329" => matches!(identity_guids.len(), 0 | 4),
+                "330" => !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4),
+                _ => false,
+            }
+        };
+        if !identity_arity {
+            return Err("identity_guids has invalid assembly path class arity".into());
+        }
+        for (field, guids) in [
+            ("occurrence_guids", &occurrence_guids),
+            ("identity_guids", &identity_guids),
+        ] {
+            if !guids.windows(2).all(|pair| pair[0].offset < pair[1].offset) {
+                return Err(format!("{field} offsets must strictly increase"));
+            }
+            if !legacy_pair
+                && class_tag.as_str() != "412"
+                && guids.iter().any(|guid| guid.offset <= byte_offset)
+            {
+                return Err(format!("{field} offsets must follow byte_offset"));
+            }
+        }
+        Ok(Self {
+            link,
+            record_index,
+            class_tag,
+            byte_offset,
+            occurrence_guids,
+            identity_guids,
+        })
+    }
+    pub(crate) fn link(&self) -> &DesignAssemblyOperandPathLink {
+        &self.link
+    }
+    pub(crate) fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn occurrence_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
+        &self.occurrence_guids
+    }
+    pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
+        &self.identity_guids
+    }
+    pub(crate) fn try_append(self, continuation: Self) -> Result<Self, String> {
+        if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
+            return Err("assembly path continuations require class_tag 330".into());
+        }
+        let mut occurrences = self.occurrence_guids;
+        occurrences.extend(continuation.occurrence_guids);
+        let mut identities = self.identity_guids;
+        identities.extend(continuation.identity_guids);
+        Self::try_new(
+            self.link,
+            self.record_index,
+            self.class_tag,
+            self.byte_offset,
+            occurrences,
+            identities,
+        )
+    }
+}
+
 impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
     type Error = String;
 
@@ -2961,24 +3045,22 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
         if wire.identity_guids.len() != wire.identity_guid_offsets.len() {
             return Err("identity_guids and identity_guid_offsets must have equal lengths".into());
         }
-        Ok(Self {
-            link: wire.link,
-            record_index: wire.record_index,
-            class_tag: wire.class_tag.try_into()?,
-            byte_offset: wire.byte_offset,
-            occurrence_guids: wire
-                .occurrence_guids
+        Self::try_new(
+            wire.link,
+            wire.record_index,
+            wire.class_tag.try_into()?,
+            wire.byte_offset,
+            wire.occurrence_guids
                 .into_iter()
                 .zip(wire.occurrence_guid_offsets)
                 .map(|(value, offset)| Located { value, offset })
                 .collect(),
-            identity_guids: wire
-                .identity_guids
+            wire.identity_guids
                 .into_iter()
                 .zip(wire.identity_guid_offsets)
                 .map(|(value, offset)| Located { value, offset })
                 .collect(),
-        })
+        )
     }
 }
 

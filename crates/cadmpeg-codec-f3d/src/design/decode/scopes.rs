@@ -3565,31 +3565,34 @@ fn exact_legacy_class_383_operand_path(
         bytes,
         leading_at.checked_add(class_383_leading::IDENTITY_REFERENCE)?,
     )?;
-    Some(DesignAssemblyOperandPath {
-        link: DesignAssemblyOperandPathLink {
-            locator_reference_offset,
-            locator_record_index,
-            locator_class_tag: "378".to_owned().try_into().ok()?,
-            locator_byte_offset: u64::try_from(carrier_at).ok()?,
-            locator_scope_reference_offset,
-            wrapper_record_index: leading_identity_record_index,
-            wrapper_reference_offset,
-            wrapper_class_tag: "359".to_owned().try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
-            path_reference_offset: occurrence_guid_offset,
-        },
-        record_index: leading_identity_record_index,
-        class_tag: "386".to_owned().try_into().ok()?,
-        byte_offset: u64::try_from(leading_identity_at).ok()?,
-        occurrence_guids: vec![crate::records::Located {
-            value: leading_occurrence_guid,
-            offset: occurrence_guid_offset,
-        }],
-        identity_guids: vec![crate::records::Located {
-            value: leading_identity_guid,
-            offset: identity_guid_offset,
-        }],
-    })
+    Some(
+        DesignAssemblyOperandPath::try_new(
+            DesignAssemblyOperandPathLink {
+                locator_reference_offset,
+                locator_record_index,
+                locator_class_tag: "378".to_owned().try_into().ok()?,
+                locator_byte_offset: u64::try_from(carrier_at).ok()?,
+                locator_scope_reference_offset,
+                wrapper_record_index: leading_identity_record_index,
+                wrapper_reference_offset,
+                wrapper_class_tag: "359".to_owned().try_into().ok()?,
+                wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
+                path_reference_offset: occurrence_guid_offset,
+            },
+            leading_identity_record_index,
+            "386".to_owned().try_into().ok()?,
+            u64::try_from(leading_identity_at).ok()?,
+            vec![crate::records::Located {
+                value: leading_occurrence_guid,
+                offset: occurrence_guid_offset,
+            }],
+            vec![crate::records::Located {
+                value: leading_identity_guid,
+                offset: identity_guid_offset,
+            }],
+        )
+        .ok()?,
+    )
 }
 
 fn exact_legacy_class_383_record_frame(
@@ -3696,15 +3699,15 @@ fn exact_legacy_class_388_operand_paths(
         return None;
     };
     let wrapper_end = |path: &DesignAssemblyOperandPath| {
-        let wrapper_at = usize::try_from(path.link.wrapper_byte_offset).ok()?;
+        let wrapper_at = usize::try_from(path.link().wrapper_byte_offset).ok()?;
         next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)
     };
-    let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
+    let first_start = usize::try_from(first.link().locator_byte_offset).ok()?;
     let first_end = wrapper_end(&first)?;
-    let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
+    let second_start = usize::try_from(second.link().locator_byte_offset).ok()?;
     let second_end = wrapper_end(&second)?;
-    if first.link.locator_record_index == second.link.locator_record_index
-        || first.link.wrapper_record_index == second.link.wrapper_record_index
+    if first.link().locator_record_index == second.link().locator_record_index
+        || first.link().wrapper_record_index == second.link().wrapper_record_index
         || (first_start < second_end && second_start < first_end)
     {
         return None;
@@ -3841,25 +3844,28 @@ fn exact_legacy_class_388_operand_path_envelope(
         .map(|path| path.occurrence_guid.clone())
         .chain(std::iter::once(final_path.occurrence_guid.clone()))
         .collect::<Vec<_>>();
-    Some(DesignAssemblyOperandPath {
-        link: DesignAssemblyOperandPathLink {
-            locator_reference_offset,
-            locator_record_index,
-            locator_class_tag: locator_class_tag.try_into().ok()?,
-            locator_byte_offset: u64::try_from(locator_at).ok()?,
-            locator_scope_reference_offset,
-            wrapper_record_index,
-            wrapper_reference_offset,
-            wrapper_class_tag: wrapper_class_tag.try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
-            path_reference_offset: final_path_reference_offset?,
-        },
-        record_index: final_path.record_index,
-        class_tag: "412".to_owned().try_into().ok()?,
-        byte_offset: final_path.byte_offset,
-        occurrence_guids,
-        identity_guids: final_path.identity_guids,
-    })
+    Some(
+        DesignAssemblyOperandPath::try_new(
+            DesignAssemblyOperandPathLink {
+                locator_reference_offset,
+                locator_record_index,
+                locator_class_tag: locator_class_tag.try_into().ok()?,
+                locator_byte_offset: u64::try_from(locator_at).ok()?,
+                locator_scope_reference_offset,
+                wrapper_record_index,
+                wrapper_reference_offset,
+                wrapper_class_tag: wrapper_class_tag.try_into().ok()?,
+                wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
+                path_reference_offset: final_path_reference_offset?,
+            },
+            final_path.record_index,
+            "412".to_owned().try_into().ok()?,
+            final_path.byte_offset,
+            occurrence_guids,
+            final_path.identity_guids,
+        )
+        .ok()?,
+    )
 }
 
 fn exact_legacy_class_412_path(
@@ -3939,7 +3945,7 @@ fn exact_as_built_operand_frames(
     paths: &[DesignAssemblyOperandPath; 2],
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let frames = paths.each_ref().map(|path| {
-        let locator_at = usize::try_from(path.link.locator_byte_offset).ok()?;
+        let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
         let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
         let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
         Some(DesignAssemblyOperandFrame {
@@ -4001,21 +4007,21 @@ fn exact_assembly_operand_paths(
     let [Some(first), Some(second)] = paths else {
         return None;
     };
-    let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
+    let first_start = usize::try_from(first.link().locator_byte_offset).ok()?;
     let first_end = next_indexed_record_offset(
         bytes,
-        usize::try_from(first.link.wrapper_byte_offset)
+        usize::try_from(first.link().wrapper_byte_offset)
             .ok()?
             .checked_add(1)?,
     )?;
-    let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
+    let second_start = usize::try_from(second.link().locator_byte_offset).ok()?;
     let second_end = next_indexed_record_offset(
         bytes,
-        usize::try_from(second.link.wrapper_byte_offset)
+        usize::try_from(second.link().wrapper_byte_offset)
             .ok()?
             .checked_add(1)?,
     )?;
-    if first.link.locator_record_index == second.link.locator_record_index
+    if first.link().locator_record_index == second.link().locator_record_index
         || (first_start < second_end && second_start < first_end)
     {
         return None;
@@ -4184,16 +4190,15 @@ fn exact_assembly_operand_path_envelope(
         exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
     });
     let mut path = paths.next()??;
-    if variable_reference && path.class_tag.as_str() != "330" {
+    if variable_reference && path.class_tag().as_str() != "330" {
         return None;
     }
     for continuation in paths {
         let continuation = continuation?;
-        if !variable_reference || continuation.class_tag.as_str() != "330" {
+        if !variable_reference || continuation.class_tag().as_str() != "330" {
             return None;
         }
-        path.occurrence_guids.extend(continuation.occurrence_guids);
-        path.identity_guids.extend(continuation.identity_guids);
+        path = path.try_append(continuation).ok()?;
     }
     Some(path)
 }
@@ -4317,14 +4322,17 @@ fn exact_assembly_operand_path(
         }
         _ => return None,
     }
-    Some(DesignAssemblyOperandPath {
-        link,
-        record_index,
-        class_tag: class_tag.try_into().ok()?,
-        byte_offset: u64::try_from(start).ok()?,
-        occurrence_guids,
-        identity_guids,
-    })
+    Some(
+        DesignAssemblyOperandPath::try_new(
+            link,
+            record_index,
+            class_tag.try_into().ok()?,
+            u64::try_from(start).ok()?,
+            occurrence_guids,
+            identity_guids,
+        )
+        .ok()?,
+    )
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(

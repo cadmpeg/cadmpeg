@@ -146,31 +146,34 @@ fn exact_class_363_operand_path(
             .start
             .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
     )?;
-    Some(DesignAssemblyOperandPath {
-        link: DesignAssemblyOperandPathLink {
-            locator_reference_offset: frame.reference_offset,
-            locator_record_index: frame.reference_record_index,
-            locator_class_tag: "363".to_owned().try_into().ok()?,
-            locator_byte_offset: u64::try_from(carrier_at).ok()?,
-            locator_scope_reference_offset,
-            wrapper_record_index: leading_identity_record_index,
-            wrapper_reference_offset,
-            wrapper_class_tag: "388".to_owned().try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(leading_identity.start).ok()?,
-            path_reference_offset: occurrence_guid_offset,
-        },
-        record_index: terminal_record_index,
-        class_tag: "386".to_owned().try_into().ok()?,
-        byte_offset: u64::try_from(terminal_at).ok()?,
-        occurrence_guids: vec![crate::records::Located {
-            value: occurrence_guid,
-            offset: occurrence_guid_offset,
-        }],
-        identity_guids: vec![crate::records::Located {
-            value: identity_guid,
-            offset: identity_guid_offset,
-        }],
-    })
+    Some(
+        DesignAssemblyOperandPath::try_new(
+            DesignAssemblyOperandPathLink {
+                locator_reference_offset: frame.reference_offset,
+                locator_record_index: frame.reference_record_index,
+                locator_class_tag: "363".to_owned().try_into().ok()?,
+                locator_byte_offset: u64::try_from(carrier_at).ok()?,
+                locator_scope_reference_offset,
+                wrapper_record_index: leading_identity_record_index,
+                wrapper_reference_offset,
+                wrapper_class_tag: "388".to_owned().try_into().ok()?,
+                wrapper_byte_offset: u64::try_from(leading_identity.start).ok()?,
+                path_reference_offset: occurrence_guid_offset,
+            },
+            terminal_record_index,
+            "386".to_owned().try_into().ok()?,
+            u64::try_from(terminal_at).ok()?,
+            vec![crate::records::Located {
+                value: occurrence_guid,
+                offset: occurrence_guid_offset,
+            }],
+            vec![crate::records::Located {
+                value: identity_guid,
+                offset: identity_guid_offset,
+            }],
+        )
+        .ok()?,
+    )
 }
 
 fn exact_class_307_joint_origin(
