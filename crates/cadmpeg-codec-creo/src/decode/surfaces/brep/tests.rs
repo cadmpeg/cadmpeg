@@ -741,7 +741,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         let curve = Curve {
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(origin, direction).unwrap(),
+                cadmpeg_ir::geometry::LineCurve::try_new(origin, direction.unit().unwrap())
+                    .unwrap(),
             ),
             source_object: None,
         };

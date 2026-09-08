@@ -334,7 +334,7 @@ fn nonperiodic_conics_recover_their_native_parameters() {
     let parabola_points = [evaluated(&parabola, 3.0), evaluated(&parabola, -2.0)];
     assert_eq!(
         nonperiodic_conic_edge_parameter_range(&parabola, parabola_points),
-        Some([-4.0, 6.0])
+        Some([-2.0, 3.0])
     );
     assert_eq!(
         nonperiodic_conic_parameter(&parabola, [1.0, 6.0, 3.0]),

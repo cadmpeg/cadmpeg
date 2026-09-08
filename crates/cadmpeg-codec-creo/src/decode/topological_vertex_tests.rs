@@ -10,7 +10,9 @@ fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
     CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
-            Vector3::new(direction[0], direction[1], direction[2]),
+            Vector3::new(direction[0], direction[1], direction[2])
+                .unit()
+                .unwrap(),
         )
         .unwrap(),
     )
