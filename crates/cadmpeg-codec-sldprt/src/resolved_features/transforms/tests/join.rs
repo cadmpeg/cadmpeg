@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SketchNativeOperand,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -26,18 +26,20 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         SketchEntity::new(
             first.clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(10.0, 20.0),
                 end: Point2::new(20.0, 20.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             second.clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(20.0, 20.0),
                 end: Point2::new(20.0, 30.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let feature = Feature {
@@ -572,10 +574,11 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let circle_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#dimensioned-circle").unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         typed_relation_definition(
@@ -624,26 +627,29 @@ fn line_handle_interior_points_identify_profile_entities() {
         SketchEntity::new(
             line_ids[0].clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(10.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             line_ids[1].clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(0.0, 20.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             line_ids[2].clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(10.0, 3.0),
                 end: Point2::new(20.0, 3.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let feature = Feature {
@@ -718,18 +724,20 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     let first = SketchEntity::new(
         first_id.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let second = SketchEntity::new(
         second_id.clone(),
         sketch,
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(1.0, 0.0),
             end: Point2::new(1.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let mut first_marker = marker("first-marker", Some([0.0, 0.0]));
     first_marker.kind = SketchInputKind::LineOrCircle;
@@ -772,10 +780,11 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     );
 
     let mut ambiguous = second;
-    ambiguous.geometry = SketchGeometry::Line {
+    ambiguous.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .unwrap();
     let entities = HashMap::from([(first.id(), &first), (ambiguous.id(), &ambiguous)]);
     assert_eq!(
         unique_linked_endpoint_locus(&point, &markers, &loci, &entities, 1.0e-8),
@@ -785,17 +794,20 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
 
 #[test]
 fn curve_handles_reject_point_geometry() {
-    let point = SketchGeometry::Point {
+    let point = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(0.0, 0.0),
-    };
-    let line = SketchGeometry::Line {
+    })
+    .unwrap();
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
-    let circle = SketchGeometry::Circle {
+    })
+    .unwrap();
+    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
         radius: Length(1.0),
-    };
+    })
+    .unwrap();
 
     assert!(!super::marker_accepts_locus(
         SketchInputKind::LineOrCircle,
@@ -818,18 +830,20 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
     let entity = SketchEntity::new(
         circle.clone(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(10.0),
-        },
+        })
+        .unwrap(),
     );
     let points = [-10.0, 10.0].map(|u| {
         SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#point-{u}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
     });

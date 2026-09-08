@@ -1244,9 +1244,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     ir.model.sketch_entities.push(SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Native {
-            native_kind: "test".into(),
-        },
+        SketchGeometry::native("test".into()),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("test:test:sketch-constraint#0").unwrap(),

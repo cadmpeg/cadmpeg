@@ -8,7 +8,7 @@ use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
 const EPS_PARAMETER_SCALE: f64 = 1.0e-12;
@@ -19,9 +19,9 @@ const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 pub(in super::super) fn sketch_geometry_endpoints(
     geometry: &SketchGeometry,
 ) -> Option<([f64; 2], [f64; 2])> {
-    match geometry {
-        SketchGeometry::Line { start, end } => Some(([start.u, start.v], [end.u, end.v])),
-        SketchGeometry::Arc {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some(([start.u, start.v], [end.u, end.v])),
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -36,7 +36,7 @@ pub(in super::super) fn sketch_geometry_endpoints(
                 center.v + radius.0 * end_angle.0.sin(),
             ],
         )),
-        SketchGeometry::Circle { center, radius }
+        SketchGeometryDefinition::Circle { center, radius }
             if center.u.is_finite()
                 && center.v.is_finite()
                 && radius.0.is_finite()
@@ -45,7 +45,7 @@ pub(in super::super) fn sketch_geometry_endpoints(
             let seam = [center.u + radius.0, center.v];
             Some((seam, seam))
         }
-        SketchGeometry::Nurbs { .. } => {
+        SketchGeometryDefinition::Nurbs { .. } => {
             let nurbs = sketch_nurbs_curve(geometry)?;
             let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
             let carrier = CurveGeometry::Nurbs(nurbs);
@@ -213,8 +213,8 @@ pub(in super::super) fn extrusion_cap_pcurve(
     start: [f64; 2],
     end: [f64; 2],
 ) -> PcurveGeometry {
-    match geometry {
-        SketchGeometry::Arc {
+    match geometry.definition() {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -227,11 +227,11 @@ pub(in super::super) fn extrusion_cap_pcurve(
             };
             circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
         }
-        SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Circle { center, radius } => {
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
             circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
         }
-        SketchGeometry::Nurbs { .. } => {
+        SketchGeometryDefinition::Nurbs { .. } => {
             sketch_nurbs_pcurve(geometry, reversed).unwrap_or_else(|| line_pcurve(start, end))
         }
         _ => line_pcurve(start, end),
@@ -245,7 +245,10 @@ pub(in super::super) fn extrusion_side_uvs(
     end: [f64; 2],
     span: ExtrusionSpan,
 ) -> [[[f64; 2]; 2]; 4] {
-    if matches!(geometry, SketchGeometry::Nurbs { .. }) {
+    if matches!(
+        geometry.definition(),
+        SketchGeometryDefinition::Nurbs { .. }
+    ) {
         if let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, reversed) {
             if let Some([lower, upper]) = nurbs_intrinsic_parameter_range(&nurbs) {
                 return [
@@ -257,18 +260,18 @@ pub(in super::super) fn extrusion_side_uvs(
             }
         }
     }
-    let [first, second] = match geometry {
-        SketchGeometry::Arc {
+    let [first, second] = match geometry.definition() {
+        SketchGeometryDefinition::Arc {
             start_angle,
             end_angle,
             ..
         } if reversed => [end_angle.0, start_angle.0],
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             start_angle,
             end_angle,
             ..
         } => [start_angle.0, end_angle.0],
-        SketchGeometry::Circle { .. } => oriented_full_turn_angles(reversed),
+        SketchGeometryDefinition::Circle { .. } => oriented_full_turn_angles(reversed),
         _ => [0.0, (end[0] - start[0]).hypot(end[1] - start[1])],
     };
     [
@@ -284,9 +287,11 @@ pub(in super::super) fn extrusion_profile_signed_area(
 ) -> Option<f64> {
     let mut area_twice = 0.0;
     for (geometry, reversed, start, end) in profile {
-        let contribution = match geometry {
-            SketchGeometry::Nurbs { .. } => nurbs_profile_signed_area_twice(geometry, *reversed)?,
-            SketchGeometry::Arc {
+        let contribution = match geometry.definition() {
+            SketchGeometryDefinition::Nurbs { .. } => {
+                nurbs_profile_signed_area_twice(geometry, *reversed)?
+            }
+            SketchGeometryDefinition::Arc {
                 center,
                 radius,
                 start_angle,
@@ -303,7 +308,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
                     -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
                 )
             }
-            SketchGeometry::Circle { center, radius } => {
+            SketchGeometryDefinition::Circle { center, radius } => {
                 let sweep = if *reversed {
                     -std::f64::consts::TAU
                 } else {
@@ -378,8 +383,8 @@ mod tests;
 pub(in super::super) fn profile_arc(
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
 ) -> Option<([f64; 2], f64, f64, f64)> {
-    let (center, radius, start, forward_delta) = match &segment.0 {
-        SketchGeometry::Arc {
+    let (center, radius, start, forward_delta) = match segment.0.definition() {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -390,7 +395,7 @@ pub(in super::super) fn profile_arc(
             (segment.2[1] - center.v).atan2(segment.2[0] - center.u),
             forward_arc_sweep(start_angle.0, end_angle.0),
         ),
-        SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Circle { center, radius } => {
             ([center.u, center.v], radius.0, 0.0, std::f64::consts::TAU)
         }
         _ => return None,
@@ -759,8 +764,11 @@ pub(in super::super) fn profile_segments_intersect(
     second: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     tolerance: f64,
 ) -> bool {
-    let first_nurbs = matches!(first.0, SketchGeometry::Nurbs { .. });
-    let second_nurbs = matches!(second.0, SketchGeometry::Nurbs { .. });
+    let first_nurbs = matches!(first.0.definition(), SketchGeometryDefinition::Nurbs { .. });
+    let second_nurbs = matches!(
+        second.0.definition(),
+        SketchGeometryDefinition::Nurbs { .. }
+    );
     if first_nurbs || second_nurbs {
         if first_nurbs {
             if let Some(arc) = profile_arc(second) {
@@ -823,7 +831,10 @@ pub(in super::super) fn profile_strictly_contains(
                 .mul_add(second[1], -(first[1] * second[0]))
                 .atan2(first[0].mul_add(second[0], first[1] * second[1]));
         };
-        if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
+        if matches!(
+            segment.0.definition(),
+            SketchGeometryDefinition::Nurbs { .. }
+        ) {
             let Some(polyline) = profile_nurbs_polyline(segment, tolerance) else {
                 return false;
             };

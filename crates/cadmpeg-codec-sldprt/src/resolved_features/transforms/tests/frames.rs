@@ -16,7 +16,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchPlacement,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    SketchPlacement,
 };
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap};
@@ -110,9 +111,10 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
@@ -239,9 +241,10 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             SketchEntityId::mint("synthetic:test:id#hint-b").unwrap(),
         )],
     );
-    directional_entities[1].geometry = SketchGeometry::Point {
+    directional_entities[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 0.05),
-    };
+    })
+    .unwrap();
     let mut directional_parameter = parameter.clone();
     directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
     assert!(matches!(
@@ -267,9 +270,10 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         ),
         Some(SketchConstraintDefinition::VerticalDistance { .. })
     ));
-    directional_entities[1].geometry = SketchGeometry::Point {
+    directional_entities[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 1.0),
-    };
+    })
+    .unwrap();
     directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
     assert!(matches!(
         typed_relation_definition(
@@ -769,18 +773,20 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#horizontal").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(10.0, 20.0),
                 end: Point2::new(30.0, 20.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#vertical").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(30.0, 20.0),
                 end: Point2::new(30.0, 50.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let mut horizontal = marker("horizontal-marker", Some([0.020, 0.020]));
@@ -856,9 +862,8 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         &[parameter],
         std::slice::from_ref(&lane),
     );
-    assert!(matches!(
-        &entities[2].geometry,
-        SketchGeometry::Circle { center, radius }
+    assert!(matches!(entities[2].geometry.definition(),
+        SketchGeometryDefinition::Circle { center, radius }
             if *center == Point2::new(15.0, 40.0) && *radius == Length(4.0)
     ));
     assert!(!entities[2].construction);
@@ -1121,10 +1126,11 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
     let circle = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch_id,
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(10.0, 20.0),
             radius: Length(5.0),
-        },
+        })
+        .unwrap(),
     );
     let declared = [([0.010, 0.020], 5.0)];
 
@@ -1134,12 +1140,13 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         &declared,
     ));
     let mut arc = circle;
-    arc.geometry = SketchGeometry::Arc {
+    arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(10.0, 20.0),
         radius: Length(5.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
+    })
+    .unwrap();
     assert!(nested_profile_contains_declared_circular_carriers(
         &sketch,
         std::slice::from_ref(&arc),
@@ -1297,10 +1304,11 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let mut entities = vec![SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )];
     let mut constraints = vec![SketchConstraint {
         id: constraint_id.clone(),

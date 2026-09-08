@@ -1295,7 +1295,7 @@ fn semantic_losses(
         })
         .collect::<Vec<_>>());
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
-        let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
             return None;
         };
         Some(

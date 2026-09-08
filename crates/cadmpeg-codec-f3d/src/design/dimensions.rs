@@ -222,7 +222,7 @@ fn project_all_dimension_constraints(
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometryDefinition,
         SketchNativeOperand,
     };
 
@@ -447,13 +447,16 @@ fn project_all_dimension_constraints(
                 });
             }
             let (
-                SketchGeometry::Point {
+                SketchGeometryDefinition::Point {
                     position: first_position,
                 },
-                SketchGeometry::Point {
+                SketchGeometryDefinition::Point {
                     position: second_position,
                 },
-            ) = (&entities[0].geometry, &entities[1].geometry)
+            ) = (
+                entities[0].geometry.definition(),
+                entities[1].geometry.definition(),
+            )
             else {
                 return None;
             };
@@ -470,9 +473,12 @@ fn project_all_dimension_constraints(
         }
         if source_kind.starts_with("Angular Dimension")
             && entities.len() == 2
-            && entities
-                .iter()
-                .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            && entities.iter().all(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
+            })
             && line_angle_matches(
                 &entities[0].geometry,
                 &entities[1].geometry,
@@ -1300,7 +1306,9 @@ fn presentation_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     if !design_dimension_unit(parameter) {
         return None;
@@ -1336,7 +1344,7 @@ fn presentation_dimension_definition(
             if !parameter.source_kind().starts_with("Linear Dimension") {
                 return None;
             }
-            let SketchGeometry::Line { start, end } = &entity.geometry else {
+            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
                 return None;
             };
             let measured = (end.u - start.u).hypot(end.v - start.v);
@@ -1384,10 +1392,13 @@ fn tangent_radius_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
-    let radius = match &entity.geometry {
-        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
+    let radius = match entity.geometry.definition() {
+        SketchGeometryDefinition::Circle { radius, .. }
+        | SketchGeometryDefinition::Arc { radius, .. } => radius.0,
         _ => return None,
     };
     linear_measurement_matches(radius, parameter.evaluated_value * 10.0, linear_tolerance).then(
@@ -1405,18 +1416,21 @@ fn tangent_entity_distance_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
-
-    let circle_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            Some((*center, radius.0))
-        }
-        _ => None,
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
     };
-    let candidates = match (&first.geometry, &second.geometry) {
+
+    let circle_geometry =
+        |entity: &cadmpeg_ir::sketches::SketchEntity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. } => Some((*center, radius.0)),
+            _ => None,
+        };
+    let candidates = match (first.geometry.definition(), second.geometry.definition()) {
         (
-            SketchGeometry::Line { start, end },
-            SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. },
+            SketchGeometryDefinition::Line { start, end },
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. },
         ) => {
             let line = (*start, *end);
             let circle = (*center, radius.0);
@@ -1433,8 +1447,9 @@ fn tangent_entity_distance_definition(
             ]
         }
         (
-            SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. },
-            SketchGeometry::Line { start, end },
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. },
+            SketchGeometryDefinition::Line { start, end },
         ) => {
             let line = (*start, *end);
             let circle = (*center, radius.0);
@@ -1491,7 +1506,7 @@ fn explicit_linear_dimension_definition(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     let expected = parameter.evaluated_value * 10.0;
@@ -1513,13 +1528,13 @@ fn explicit_linear_dimension_definition(
         });
     }
     let (
-        SketchGeometry::Point {
+        SketchGeometryDefinition::Point {
             position: first_position,
         },
-        SketchGeometry::Point {
+        SketchGeometryDefinition::Point {
             position: second_position,
         },
-    ) = (&first.geometry, &second.geometry)
+    ) = (first.geometry.definition(), second.geometry.definition())
     else {
         return None;
     };
@@ -1545,7 +1560,9 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
@@ -1591,8 +1608,14 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
         };
         if &first.sketch != sketch
             || &second.sketch != sketch
-            || !matches!(first.geometry, SketchGeometry::Line { .. })
-            || !matches!(second.geometry, SketchGeometry::Line { .. })
+            || !matches!(
+                *first.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+            || !matches!(
+                *second.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
             || !line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value)
         {
             continue;
@@ -1626,7 +1649,9 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
@@ -1637,7 +1662,11 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
     let lines = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
         })
         .collect::<Vec<_>>();
     let mut matched = None;
@@ -1673,6 +1702,7 @@ pub(crate) fn parallel_group_axis_angle_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchGeometryDefinition,
     };
 
     let [first, second] = entities else {
@@ -1684,10 +1714,11 @@ pub(crate) fn parallel_group_axis_angle_definition(
     {
         return None;
     }
-    let horizontal_axis = SketchGeometry::Line {
+    let horizontal_axis = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .ok()?;
     (line_angle_matches(&first.geometry, &horizontal_axis, parameter.evaluated_value)
         && line_angle_matches(
             &second.geometry,
@@ -1712,7 +1743,7 @@ pub(crate) fn concentric_circle_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
-        SketchGeometry, SketchLocus,
+        SketchGeometryDefinition, SketchLocus,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
@@ -1726,7 +1757,11 @@ pub(crate) fn concentric_circle_dimension_definition(
     let circles = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Circle { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. }
+                )
         })
         .collect::<Vec<_>>();
     let mut pairs = Vec::new();
@@ -1777,7 +1812,9 @@ pub(crate) fn unique_point_line_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
     {
@@ -1790,13 +1827,21 @@ pub(crate) fn unique_point_line_dimension_definition(
     let points = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Point { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
         .collect::<Vec<_>>();
     let lines = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
         })
         .collect::<Vec<_>>();
     let mut matched = None;
@@ -1826,7 +1871,9 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
     {
@@ -1839,7 +1886,11 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     let lines = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
         })
         .collect::<Vec<_>>();
     let mut matched = None;
@@ -1869,7 +1920,9 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
@@ -1885,7 +1938,11 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
     let lines = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
         })
         .collect::<Vec<_>>();
     let collinear = |first: &cadmpeg_ir::sketches::SketchEntity,
@@ -1961,7 +2018,7 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -1981,7 +2038,7 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
             if &entity.sketch != sketch {
                 return false;
             }
-            let SketchGeometry::Line { start, end } = &entity.geometry else {
+            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
                 return false;
             };
             let measured = (end.u - start.u).hypot(end.v - start.v);
@@ -2018,7 +2075,7 @@ pub(crate) fn unique_point_class_dimension_definition(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2035,11 +2092,16 @@ pub(crate) fn unique_point_class_dimension_definition(
     let points = entities
         .iter()
         .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Point { .. })
+            &entity.sketch == sketch
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
         .collect::<Vec<_>>();
-    let position = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
-        SketchGeometry::Point { position } => *position,
+    let position = |entity: &cadmpeg_ir::sketches::SketchEntity| match entity.geometry.definition()
+    {
+        SketchGeometryDefinition::Point { position } => *position,
         _ => unreachable!("point-class members are point entities"),
     };
     let coincident = |first: &cadmpeg_ir::sketches::SketchEntity,
@@ -3388,6 +3450,7 @@ pub(crate) fn null_locus_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchGeometryDefinition,
     };
 
     if let Some(definition) = radial_dimension_definition_at_tolerance(
@@ -3402,14 +3465,18 @@ pub(crate) fn null_locus_dimension_definition(
     if source_kind != "Angular Dimension-2"
         || pair.loci[0].role != 14
         || pair.loci[1].role != 3
-        || !matches!(entity.geometry, SketchGeometry::Line { .. })
+        || !matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        )
     {
         return None;
     }
-    let horizontal_axis = SketchGeometry::Line {
+    let horizontal_axis = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .ok()?;
     line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(|| {
         Definition::AngleToAxis {
             entity: entity.id().clone(),
@@ -3436,10 +3503,10 @@ fn radial_dimension_definition_at_tolerance(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry,
     };
 
-    let radius = match &entity.geometry {
+    let radius = match entity.geometry.definition() {
         Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.0,
         _ => return None,
     };
@@ -3633,7 +3700,9 @@ pub(crate) fn radial_locus_dimension_definition(
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     let unique = |mut definitions: Vec<_>| {
         let definition = definitions.pop()?;
@@ -3688,8 +3757,8 @@ pub(crate) fn radial_locus_dimension_definition(
     }
     let centers = loci
         .iter()
-        .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Point { position } => Some(*position),
+        .filter_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => Some(*position),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -3700,10 +3769,9 @@ pub(crate) fn radial_locus_dimension_definition(
         .iter()
         .filter(|entity| entity.sketch == sketch)
         .filter(|entity| {
-            let center = match &entity.geometry {
-                SketchGeometry::Circle { center, .. } | SketchGeometry::Arc { center, .. } => {
-                    *center
-                }
+            let center = match entity.geometry.definition() {
+                SketchGeometryDefinition::Circle { center, .. }
+                | SketchGeometryDefinition::Arc { center, .. } => *center,
                 _ => return false,
             };
             centers.iter().any(|witness| {
@@ -3732,7 +3800,7 @@ pub(crate) fn radial_extension_annotation_group(
     loci: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: &DesignParameter,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if !design_dimension_unit(parameter)
         || !(parameter.source_kind().starts_with("Radius Dimension")
@@ -3744,11 +3812,15 @@ pub(crate) fn radial_extension_annotation_group(
     let [first, second] = loci else {
         return false;
     };
-    let (point, start, end) = match (&first.geometry, &second.geometry) {
-        (SketchGeometry::Point { position }, SketchGeometry::Line { start, end })
-        | (SketchGeometry::Line { start, end }, SketchGeometry::Point { position }) => {
-            (*position, *start, *end)
-        }
+    let (point, start, end) = match (first.geometry.definition(), second.geometry.definition()) {
+        (
+            SketchGeometryDefinition::Point { position },
+            SketchGeometryDefinition::Line { start, end },
+        )
+        | (
+            SketchGeometryDefinition::Line { start, end },
+            SketchGeometryDefinition::Point { position },
+        ) => (*position, *start, *end),
         _ => return false,
     };
     let du = end.u - start.u;
@@ -3947,8 +4019,8 @@ pub(crate) fn exact_atomic_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchCoordinateAxis, SketchGeometry as Geometry,
-        SketchLocus,
+        SketchConstraintDefinition as Definition, SketchCoordinateAxis,
+        SketchGeometryDefinition as Geometry, SketchLocus,
     };
 
     let lines = || {
@@ -3956,7 +4028,7 @@ pub(crate) fn exact_atomic_constraint(
             && entities[0].id() != entities[1].id()
             && entities
                 .iter()
-                .all(|entity| matches!(entity.geometry, Geometry::Line { .. })))
+                .all(|entity| matches!(*entity.geometry.definition(), Geometry::Line { .. })))
         .then(|| (entities[0].id().clone(), entities[1].id().clone()))
     };
     let curves = || {
@@ -3964,7 +4036,7 @@ pub(crate) fn exact_atomic_constraint(
             && entities[0].id() != entities[1].id()
             && entities.iter().all(|entity| {
                 matches!(
-                    entity.geometry,
+                    *entity.geometry.definition(),
                     Geometry::Line { .. }
                         | Geometry::Circle { .. }
                         | Geometry::Arc { .. }
@@ -3980,7 +4052,7 @@ pub(crate) fn exact_atomic_constraint(
         };
         (first.id() != second.id()
             && matches!(
-                (&first.geometry, &second.geometry),
+                (first.geometry.definition(), second.geometry.definition()),
                 (Geometry::Line { .. }, Geometry::Line { .. })
                     | (
                         Geometry::Circle { .. } | Geometry::Arc { .. },
@@ -4012,7 +4084,7 @@ pub(crate) fn exact_atomic_constraint(
                 && entities[0].id() != entities[1].id()
                 && entities.iter().all(|entity| {
                     matches!(
-                        entity.geometry,
+                        *entity.geometry.definition(),
                         Geometry::Circle { .. } | Geometry::Arc { .. } | Geometry::Ellipse { .. }
                     )
                 })
@@ -4047,7 +4119,8 @@ pub(crate) fn exact_atomic_constraint(
             lines().map(|(first, second)| Definition::Perpendicular { first, second })
         }
         SketchConstraintKind::Horizontal
-            if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
+            if entities.len() == 1
+                && matches!(*entities[0].geometry.definition(), Geometry::Line { .. }) =>
         {
             Some(Definition::Horizontal {
                 entity: entities[0].id().clone(),
@@ -4056,9 +4129,9 @@ pub(crate) fn exact_atomic_constraint(
         SketchConstraintKind::Horizontal
             if entities.len() == 2
                 && entities[0].id() != entities[1].id()
-                && entities
-                    .iter()
-                    .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
+                && entities.iter().all(|entity| {
+                    matches!(*entity.geometry.definition(), Geometry::Point { .. })
+                }) =>
         {
             Some(Definition::SameCoordinate {
                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
@@ -4070,7 +4143,8 @@ pub(crate) fn exact_atomic_constraint(
             })
         }
         SketchConstraintKind::Vertical
-            if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
+            if entities.len() == 1
+                && matches!(*entities[0].geometry.definition(), Geometry::Line { .. }) =>
         {
             Some(Definition::Vertical {
                 entity: entities[0].id().clone(),
@@ -4079,9 +4153,9 @@ pub(crate) fn exact_atomic_constraint(
         SketchConstraintKind::Vertical
             if entities.len() == 2
                 && entities[0].id() != entities[1].id()
-                && entities
-                    .iter()
-                    .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
+                && entities.iter().all(|entity| {
+                    matches!(*entity.geometry.definition(), Geometry::Point { .. })
+                }) =>
         {
             Some(Definition::SameCoordinate {
                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
@@ -4139,7 +4213,7 @@ pub(crate) fn exact_coincident_loci(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry, SketchLocus,
     };
 
     let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
@@ -4148,7 +4222,7 @@ pub(crate) fn exact_coincident_loci(
             loci.push((SketchLocus::Start(entity.id().clone()), start));
             loci.push((SketchLocus::End(entity.id().clone()), end));
         }
-        match &entity.geometry {
+        match entity.geometry.definition() {
             Geometry::Point { position } => {
                 loci.push((SketchLocus::Entity(entity.id().clone()), *position));
             }
@@ -4214,28 +4288,28 @@ fn midpoint_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry, SketchLocus,
     };
 
     let (line, point) = match entities {
         [line, point]
-            if matches!(line.geometry, Geometry::Line { .. })
-                && matches!(point.geometry, Geometry::Point { .. }) =>
+            if matches!(*line.geometry.definition(), Geometry::Line { .. })
+                && matches!(*point.geometry.definition(), Geometry::Point { .. }) =>
         {
             (*line, *point)
         }
         [point, line]
-            if matches!(line.geometry, Geometry::Line { .. })
-                && matches!(point.geometry, Geometry::Point { .. }) =>
+            if matches!(*line.geometry.definition(), Geometry::Line { .. })
+                && matches!(*point.geometry.definition(), Geometry::Point { .. }) =>
         {
             (*line, *point)
         }
         _ => return None,
     };
-    let Geometry::Line { start, end } = &line.geometry else {
+    let Geometry::Line { start, end } = line.geometry.definition() else {
         unreachable!("line operand matched above")
     };
-    let Geometry::Point { position } = &point.geometry else {
+    let Geometry::Point { position } = point.geometry.definition() else {
         unreachable!("point operand matched above")
     };
     let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
@@ -4256,24 +4330,34 @@ pub(crate) fn indirect_angular_lines(
     cadmpeg_ir::sketches::SketchEntityId,
     cadmpeg_ir::sketches::SketchEntityId,
 )> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let (point_ordinal, point, explicit_line) = match operands {
         [point, line]
-            if matches!(point.geometry, SketchGeometry::Point { .. })
-                && matches!(line.geometry, SketchGeometry::Line { .. }) =>
+            if matches!(
+                *point.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            ) && matches!(
+                *line.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            ) =>
         {
             (0, *point, *line)
         }
         [line, point]
-            if matches!(line.geometry, SketchGeometry::Line { .. })
-                && matches!(point.geometry, SketchGeometry::Point { .. }) =>
+            if matches!(
+                *line.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            ) && matches!(
+                *point.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            ) =>
         {
             (1, *point, *line)
         }
         _ => return None,
     };
-    let SketchGeometry::Point { position } = &point.geometry else {
+    let SketchGeometryDefinition::Point { position } = point.geometry.definition() else {
         unreachable!("point operand matched above")
     };
     if !evaluated_value.is_finite() || !(0.0..=std::f64::consts::PI).contains(&evaluated_value) {
@@ -4287,7 +4371,8 @@ pub(crate) fn indirect_angular_lines(
                 && candidate.id() != explicit_line.id()
         })
         .filter_map(|(_, candidate)| {
-            let SketchGeometry::Line { start, end } = &candidate.geometry else {
+            let SketchGeometryDefinition::Line { start, end } = candidate.geometry.definition()
+            else {
                 return None;
             };
             (sketch_points_close(*position, *start) || sketch_points_close(*position, *end))
@@ -4318,21 +4403,21 @@ pub(crate) fn directional_point_dimension(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     let [first, second] = entities else {
         return None;
     };
-    let SketchGeometry::Point {
+    let SketchGeometryDefinition::Point {
         position: first_position,
-    } = &first.geometry
+    } = first.geometry.definition()
     else {
         return None;
     };
-    let SketchGeometry::Point {
+    let SketchGeometryDefinition::Point {
         position: second_position,
-    } = &second.geometry
+    } = second.geometry.definition()
     else {
         return None;
     };
@@ -4370,7 +4455,9 @@ pub(crate) fn recipe_linear_dimension_candidates(
     parameter: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     let sketch_entities = entities
         .iter()
@@ -4381,8 +4468,8 @@ pub(crate) fn recipe_linear_dimension_candidates(
         .copied()
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Point { .. }
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
             )
         })
         .collect::<Vec<_>>();
@@ -4391,8 +4478,8 @@ pub(crate) fn recipe_linear_dimension_candidates(
         .copied()
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Line { .. }
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
             )
         })
         .collect::<Vec<_>>();
@@ -4419,7 +4506,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
     };
     let point_on_endpoint =
         |point: &cadmpeg_ir::sketches::SketchEntity, line: &cadmpeg_ir::sketches::SketchEntity| {
-            let SketchGeometry::Point { position } = &point.geometry else {
+            let SketchGeometryDefinition::Point { position } = point.geometry.definition() else {
                 unreachable!("point candidates contain only point entities")
             };
             sketch_entity_endpoints(line).is_some_and(|endpoints| {
@@ -4497,7 +4584,9 @@ pub(crate) fn recipe_extension_point_dimension(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     let sketch_entities = entities
         .iter()
@@ -4506,11 +4595,20 @@ pub(crate) fn recipe_extension_point_dimension(
     let lines = sketch_entities
         .iter()
         .copied()
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .filter(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .collect::<Vec<_>>();
     let point = |id: &cadmpeg_ir::sketches::SketchEntityId| {
         sketch_entities.iter().copied().find(|entity| {
-            entity.id() == id && matches!(entity.geometry, SketchGeometry::Point { .. })
+            entity.id() == id
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
     };
     let is_any_line_endpoint = |position: Point2| {
@@ -4533,15 +4631,15 @@ pub(crate) fn recipe_extension_point_dimension(
         };
         let first = point(first_id)?;
         let second = point(second_id)?;
-        let SketchGeometry::Point {
+        let SketchGeometryDefinition::Point {
             position: first_position,
-        } = first.geometry
+        } = *first.geometry.definition()
         else {
             unreachable!("point lookup returns only point entities")
         };
-        let SketchGeometry::Point {
+        let SketchGeometryDefinition::Point {
             position: second_position,
-        } = second.geometry
+        } = *second.geometry.definition()
         else {
             unreachable!("point lookup returns only point entities")
         };
@@ -4553,7 +4651,8 @@ pub(crate) fn recipe_extension_point_dimension(
         .any(|(detached, endpoint)| {
             !is_any_line_endpoint(detached)
                 && lines.iter().any(|line| {
-                    let SketchGeometry::Line { start, end } = line.geometry else {
+                    let SketchGeometryDefinition::Line { start, end } = *line.geometry.definition()
+                    else {
                         unreachable!("line candidates contain only line entities")
                     };
                     let du = end.u - start.u;
@@ -4644,19 +4743,19 @@ fn parallel_line_distance(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let SketchGeometry::Line {
+    let SketchGeometryDefinition::Line {
         start: first_start,
         end: first_end,
-    } = &first.geometry
+    } = first.geometry.definition()
     else {
         return None;
     };
-    let SketchGeometry::Line {
+    let SketchGeometryDefinition::Line {
         start: second_start,
         end: second_end,
-    } = &second.geometry
+    } = second.geometry.definition()
     else {
         return None;
     };
@@ -4686,19 +4785,19 @@ fn parallel_line_span_distance(
     second: &cadmpeg_ir::sketches::SketchEntity,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let distance = parallel_line_distance(first, second)?;
     let (
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (&first.geometry, &second.geometry)
+    ) = (first.geometry.definition(), second.geometry.definition())
     else {
         unreachable!("parallel line distance requires line entities")
     };
@@ -4720,18 +4819,18 @@ pub(crate) fn concentric_circle_separation(
     evaluated_mm: f64,
     linear_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let (
-        SketchGeometry::Circle {
+        SketchGeometryDefinition::Circle {
             center: first_center,
             radius: first_radius,
         },
-        SketchGeometry::Circle {
+        SketchGeometryDefinition::Circle {
             center: second_center,
             radius: second_radius,
         },
-    ) = (&first.geometry, &second.geometry)
+    ) = (first.geometry.definition(), second.geometry.definition())
     else {
         return false;
     };
@@ -4753,13 +4852,17 @@ pub(crate) fn point_line_separation(
     evaluated_mm: f64,
     linear_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let (point, line) = match (&first.geometry, &second.geometry) {
-        (SketchGeometry::Point { position }, SketchGeometry::Line { start, end })
-        | (SketchGeometry::Line { start, end }, SketchGeometry::Point { position }) => {
-            (*position, (*start, *end))
-        }
+    let (point, line) = match (first.geometry.definition(), second.geometry.definition()) {
+        (
+            SketchGeometryDefinition::Point { position },
+            SketchGeometryDefinition::Line { start, end },
+        )
+        | (
+            SketchGeometryDefinition::Line { start, end },
+            SketchGeometryDefinition::Point { position },
+        ) => (*position, (*start, *end)),
         _ => return false,
     };
     let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
@@ -4812,7 +4915,7 @@ pub(crate) fn counted_role_relation_at_tolerance(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry,
     };
 
     match owner_role {
@@ -4820,7 +4923,7 @@ pub(crate) fn counted_role_relation_at_tolerance(
             let [entity] = entities else {
                 return None;
             };
-            let Geometry::Line { start, end } = &entity.geometry else {
+            let Geometry::Line { start, end } = entity.geometry.definition() else {
                 return None;
             };
             let du = end.u - start.u;
@@ -4876,13 +4979,13 @@ fn exact_line_arc_tangency(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 
     let [first, second] = entities else {
         return false;
     };
     let (line_start, line_end, center, radius, arc_start, arc_end) =
-        match (&first.geometry, &second.geometry) {
+        match (first.geometry.definition(), second.geometry.definition()) {
             (
                 Geometry::Line {
                     start: line_start,
@@ -4952,7 +5055,7 @@ fn exact_circular_tangency(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 
     let [first, second] = entities else {
         return false;
@@ -4960,7 +5063,7 @@ fn exact_circular_tangency(
     if first.id() == second.id() {
         return false;
     }
-    let circular = |geometry: &Geometry| match geometry {
+    let circular = |geometry: &cadmpeg_ir::sketches::SketchGeometry| match geometry.definition() {
         Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
             (radius.0.is_finite() && radius.0 > 0.0).then_some((*center, radius.0))
         }
@@ -5018,9 +5121,9 @@ fn circular_entity_contains_point(
     point: Point2,
     linear_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 
-    match geometry {
+    match geometry.definition() {
         Geometry::Circle { .. } => true,
         Geometry::Arc {
             center,
@@ -5050,7 +5153,7 @@ const EPS_CIRCULAR_TANGENCY: f64 = 1.0e-9;
 const EPS_CIRCULAR_TANGENCY_LENGTH: f64 = 1.0e-12;
 
 fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 
     let [first, second] = entities else {
         return false;
@@ -5062,7 +5165,7 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
         (first - second).abs()
             <= EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E9 * (1.0 + first.abs().max(second.abs()))
     };
-    match (&first.geometry, &second.geometry) {
+    match (first.geometry.definition(), second.geometry.definition()) {
         (
             Geometry::Line {
                 start: first_start,
@@ -5106,7 +5209,9 @@ const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 fn exact_centered_entity_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
 
     let [first, second] = entities else {
         return None;
@@ -5114,12 +5219,15 @@ fn exact_centered_entity_relation(
     if first.id() == second.id() {
         return None;
     }
-    let centered_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+    let centered_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match (&entity.geometry)
+        .definition()
+    {
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
             (center.u.is_finite() && center.v.is_finite() && radius.0.is_finite() && radius.0 > 0.0)
                 .then_some((*center, Some(radius.0)))
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_radius,
             minor_radius,
@@ -5157,7 +5265,7 @@ pub(crate) fn exact_counted_dimension_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if let Some(definition) = exact_centered_entity_relation(entities) {
@@ -5179,7 +5287,7 @@ pub(crate) fn exact_counted_dimension_relation(
     let point_on_geometry =
         |point: &cadmpeg_ir::sketches::SketchEntity,
          geometry: &cadmpeg_ir::sketches::SketchEntity| {
-            let SketchGeometry::Point { position } = point.geometry else {
+            let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
                 return false;
             };
             point_lies_on_sketch_geometry(position, &geometry.geometry)
@@ -5190,15 +5298,15 @@ pub(crate) fn exact_counted_dimension_relation(
         });
     }
     let (
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (&first.geometry, &second.geometry)
+    ) = (first.geometry.definition(), second.geometry.definition())
     else {
         return None;
     };
@@ -5255,15 +5363,15 @@ pub(crate) fn point_lies_on_sketch_geometry(
     point: Point2,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let close = |left: f64, right: f64| {
         (left - right).abs()
             <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + left.abs().max(right.abs()))
     };
-    match geometry {
-        SketchGeometry::Point { position } => sketch_points_close(point, *position),
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Point { position } => sketch_points_close(point, *position),
+        SketchGeometryDefinition::Line { start, end } => {
             let direction = Point2::new(end.u - start.u, end.v - start.v);
             let length_squared = direction.u.mul_add(direction.u, direction.v * direction.v);
             if length_squared <= 1.0e-18 {
@@ -5280,7 +5388,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                         * (1.0 + length_squared.sqrt())
         }
-        SketchGeometry::ReferenceLine { origin, direction } => {
+        SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let length = direction.u.hypot(direction.v);
             if length <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 {
                 return false;
@@ -5292,10 +5400,10 @@ pub(crate) fn point_lies_on_sketch_geometry(
                 .abs()
                 <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + length)
         }
-        SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Circle { center, radius } => {
             close((point.u - center.u).hypot(point.v - center.v), radius.0)
         }
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -5310,7 +5418,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9,
                 )
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -5335,7 +5443,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     None => true,
                 }
         }
-        SketchGeometry::Hyperbola {
+        SketchGeometryDefinition::Hyperbola {
             center,
             major_angle,
             major_radius,
@@ -5359,7 +5467,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     None => true,
                 }
         }
-        SketchGeometry::Parabola {
+        SketchGeometryDefinition::Parabola {
             vertex,
             axis_angle,
             focal_length,
@@ -5382,7 +5490,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     None => true,
                 }
         }
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                 * (1.0 + point.u.abs().max(point.v.abs()));
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
@@ -5395,10 +5503,10 @@ pub(crate) fn point_lies_on_sketch_geometry(
             )
             .unwrap_or(false)
         }
-        SketchGeometry::Nurbs { .. }
-        | SketchGeometry::Text { .. }
-        | SketchGeometry::ExternalReference { .. }
-        | SketchGeometry::Native { .. } => false,
+        SketchGeometryDefinition::Nurbs { .. }
+        | SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => false,
     }
 }
 
@@ -5503,19 +5611,19 @@ pub(crate) fn line_angle_matches(
     second: &cadmpeg_ir::sketches::SketchGeometry,
     expected: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let SketchGeometry::Line {
+    let SketchGeometryDefinition::Line {
         start: first_start,
         end: first_end,
-    } = first
+    } = first.definition()
     else {
         return false;
     };
-    let SketchGeometry::Line {
+    let SketchGeometryDefinition::Line {
         start: second_start,
         end: second_end,
-    } = second
+    } = second.definition()
     else {
         return false;
     };
@@ -5629,15 +5737,15 @@ fn sketch_curve_offset(
     source: &cadmpeg_ir::sketches::SketchGeometry,
     result: &cadmpeg_ir::sketches::SketchGeometry,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match (source, result) {
+    match (source.definition(), result.definition()) {
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: source_center,
                 radius: source_radius,
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: result_center,
                 radius: result_radius,
             },
@@ -5658,11 +5766,11 @@ fn sketch_curve_offset(
                 .then_some(source_radius.0 - result_radius.0)
         }
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: source_center,
                 radius: source_radius,
             },
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: result_center,
                 radius: result_radius,
                 start_angle: result_start,
@@ -5687,13 +5795,13 @@ fn sketch_curve_offset(
                 .then_some(source_radius.0 - result_radius.0)
         }
         (
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: source_center,
                 radius: source_radius,
                 start_angle: source_start,
                 end_angle: source_end,
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: result_center,
                 radius: result_radius,
             },
@@ -5716,13 +5824,13 @@ fn sketch_curve_offset(
                 .then_some(source_sweep.signum() * (source_radius.0 - result_radius.0))
         }
         (
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: source_center,
                 radius: source_radius,
                 start_angle: source_start,
                 end_angle: source_end,
             },
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: result_center,
                 radius: result_radius,
                 start_angle: result_start,
@@ -5775,19 +5883,19 @@ fn parallel_line_offset(
     source: &cadmpeg_ir::sketches::SketchGeometry,
     result: &cadmpeg_ir::sketches::SketchGeometry,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let SketchGeometry::Line {
+    let SketchGeometryDefinition::Line {
         start: source_start,
         end: source_end,
-    } = source
+    } = source.definition()
     else {
         return None;
     };
-    let SketchGeometry::Line {
+    let SketchGeometryDefinition::Line {
         start: result_start,
         end: result_end,
-    } = result
+    } = result.definition()
     else {
         return None;
     };
@@ -5826,7 +5934,7 @@ fn reflected_symmetry<'a>(
     &'a cadmpeg_ir::sketches::SketchEntity,
     &'a cadmpeg_ir::sketches::SketchEntity,
 )> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if entities.len() != 3
         || entities
@@ -5841,10 +5949,10 @@ fn reflected_symmetry<'a>(
     let mut candidates = Vec::new();
     for axis_ordinal in 0..entities.len() {
         let axis = entities[axis_ordinal];
-        let SketchGeometry::Line {
+        let SketchGeometryDefinition::Line {
             start: axis_start,
             end: axis_end,
-        } = &axis.geometry
+        } = axis.geometry.definition()
         else {
             continue;
         };
@@ -5872,24 +5980,24 @@ fn reflected_geometry_matches(
     axis_start: &Point2,
     axis_end: &Point2,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match (first, second) {
+    match (first.definition(), second.definition()) {
         (
-            SketchGeometry::Point {
+            SketchGeometryDefinition::Point {
                 position: first_position,
             },
-            SketchGeometry::Point {
+            SketchGeometryDefinition::Point {
                 position: second_position,
             },
         ) => reflect_point(*first_position, *axis_start, *axis_end)
             .is_some_and(|reflected| sketch_points_close(reflected, *second_position)),
         (
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: first_start,
                 end: first_end,
             },
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: second_start,
                 end: second_end,
             },
@@ -5906,11 +6014,11 @@ fn reflected_geometry_matches(
                     && sketch_points_close(reflected_end, *second_start)
         }
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: first_center,
                 radius: first_radius,
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: second_center,
                 radius: second_radius,
             },
@@ -5922,13 +6030,13 @@ fn reflected_geometry_matches(
                     .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
         }
         (
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: first_center,
                 radius: first_radius,
                 start_angle: first_start,
                 end_angle: first_end,
             },
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: second_center,
                 radius: second_radius,
                 start_angle: second_start,

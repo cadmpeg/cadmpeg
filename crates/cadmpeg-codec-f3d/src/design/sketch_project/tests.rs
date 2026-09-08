@@ -12,7 +12,8 @@ use crate::records::{
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometryDefinition,
 };
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
@@ -237,9 +238,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             .as_deref()
             .is_some_and(|id| id.contains(":curve#")))
         .all(|entity| entity.construction));
-    assert!(entities.iter().any(
-        |entity| matches!(entity.geometry, SketchGeometry::Text { .. }) && !entity.construction
-    ));
+    assert!(entities.iter().any(|entity| matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Text { .. }
+    ) && !entity.construction));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("f3d:BulkStream.dat:point#14") && !entity.construction
     }));
@@ -455,21 +457,24 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         ))
     );
     assert_eq!(entities.len(), 4);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Point { position } if position == Point2::new(2.5, 4.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Line { start, end }
-            if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Arc { start_angle, end_angle, .. }
-            if start_angle.0 == 0.0
-                && end_angle.0 == -std::f64::consts::FRAC_PI_2
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position } if position == Point2::new(2.5, 4.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Line { start, end }
+                if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Arc { start_angle, end_angle, .. }
+                if start_angle.0 == 0.0
+                    && end_angle.0 == -std::f64::consts::FRAC_PI_2
+        )));
     let nurbs = entities
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
@@ -653,11 +658,21 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     ));
     let line = entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .unwrap();
     let point = entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
         .unwrap();
     let other_point = SketchEntity::new(
         SketchEntityId::mint("generated:test:point#other").unwrap(),

@@ -6,8 +6,8 @@ use crate::records::{
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
-    SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchPlacement,
 };
 
 fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
@@ -90,9 +90,7 @@ fn native_entity(sketch: &SketchId, id: &str, native_ref: &str) -> SketchEntity 
     SketchEntity::new(
         SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
-        SketchGeometry::Native {
-            native_kind: "native-circle".into(),
-        },
+        SketchGeometry::native("native-circle".into()),
     )
     .with_native_ref(Some(native_ref.into()))
 }
@@ -111,10 +109,11 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
     let typed = SketchEntity::new(
         typed_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(marker_ref.into()))
     .with_geometry_ref(Some(relation_ref.into()));
@@ -188,7 +187,7 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
 
     assert_eq!(entities.len(), 1);
     assert!(matches!(
-        entities[0].geometry,
-        SketchGeometry::Native { .. }
+        *entities[0].geometry.definition(),
+        SketchGeometryDefinition::Native { .. }
     ));
 }

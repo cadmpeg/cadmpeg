@@ -129,7 +129,7 @@ pub fn project_sketch_design(
     Vec<cadmpeg_ir::sketches::SketchEntity>,
 ) {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
+    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
     let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let placements_by_suffix = placements
@@ -211,9 +211,10 @@ pub fn project_sketch_design(
                         |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
                     )?,
                     sketch,
-                    SketchGeometry::Point {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
                         position: point.coordinates,
-                    },
+                    })
+                    .ok()?,
                 )
                 .with_native_ref(Some(point.id.clone())),
             )
@@ -234,10 +235,11 @@ pub fn project_sketch_design(
                 && normal.z.is_finite()
                 && normal.z != 0.0 =>
             {
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(start.x, start.y),
                     end: Point2::new(end.x, end.y),
-                }
+                })
+                .ok()?
             }
             SketchCurveGeometry::Arc {
                 center,
@@ -257,17 +259,19 @@ pub fn project_sketch_design(
                 if (end_angle - start_angle).abs()
                     >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
                 {
-                    SketchGeometry::Circle {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                         center: Point2::new(center.x, center.y),
                         radius: Length(*radius),
-                    }
+                    })
+                    .ok()?
                 } else {
-                    SketchGeometry::Arc {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                         center: Point2::new(center.x, center.y),
                         radius: Length(*radius),
                         start_angle: Angle(start_angle),
                         end_angle: Angle(end_angle),
-                    }
+                    })
+                    .ok()?
                 }
             }
             SketchCurveGeometry::Nurbs {
@@ -279,8 +283,8 @@ pub fn project_sketch_design(
                 && usize::try_from(*degree).is_ok_and(|degree| poles.point_count() > degree)
                 && poles.points().all(planar_point) =>
             {
-                SketchGeometry::Nurbs {
-                    curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                SketchGeometry::nurbs(
+                    cadmpeg_ir::geometry::PcurveNurbs::new(
                         *degree,
                         knots.clone(),
                         poles
@@ -295,7 +299,7 @@ pub fn project_sketch_design(
                         false,
                     )
                     .ok()?,
-                }
+                )
             }
             _ => return None,
         };
@@ -321,7 +325,7 @@ pub fn project_sketch_design(
                     |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
                 )?,
                 sketch,
-                SketchGeometry::Text {
+                SketchGeometry::try_from(SketchGeometryDefinition::Text {
                     text: text.text.clone(),
                     font_family: text.font_family.clone(),
                     font_weight: text.font_weight,
@@ -337,7 +341,8 @@ pub fn project_sketch_design(
                     vertical_alignment: sketch_text_vertical_alignment(
                         text.alignment().map(|alignment| alignment.vertical),
                     ),
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(text.id.clone())),
         )

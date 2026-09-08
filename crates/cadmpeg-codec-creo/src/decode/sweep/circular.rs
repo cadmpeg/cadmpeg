@@ -21,7 +21,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
@@ -329,11 +329,11 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
     ) {
         if let [profile] = sketch.profiles.as_slice() {
             if let [entity_use] = profile.as_slice() {
-                if let Some(SketchGeometry::Circle { center, radius }) =
+                if let Some(SketchGeometryDefinition::Circle { center, radius }) =
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
-                    .map(|entity| &entity.geometry)
+                    .map(|entity| entity.geometry.definition())
                 {
                     return Some(([center.u, center.v], radius.0));
                 }

@@ -249,9 +249,8 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             Vector3::new(0.0, 1.0, 0.0),
         ))
     );
-    assert!(matches!(
-        entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+    assert!(matches!(*entities[0].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position }
             if position == Point2::new(120.0, 30.0)
     ));
     assert_eq!(

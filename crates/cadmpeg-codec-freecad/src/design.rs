@@ -23,8 +23,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
-    SketchNativeOperand,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+    SketchId, SketchLocus, SketchNativeOperand,
 };
 use cadmpeg_ir::spreadsheets::{
     CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
@@ -1395,7 +1395,7 @@ fn parse_sketch(
             });
             let geometry_value = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
-                .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
+                .map_or_else(|| sketch_geometry(&native_kind, &attributes), Ok)?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::mint(format!(
@@ -1478,7 +1478,7 @@ fn parse_sketch(
             });
             let geometry = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
-                .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
+                .map_or_else(|| sketch_geometry(&native_kind, &attributes), Ok)?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::mint(format!(
@@ -1528,11 +1528,12 @@ fn parse_sketch(
                     ))
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                     id.clone(),
-                    SketchGeometry::ExternalReference {
+                    SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
                         object: target_object,
                         subelements: reference.subelements.clone(),
-                    },
+                    })
+                    .map_err(CodecError::malformed)?,
                 )
                 .with_construction(true)
                 .with_native_ref(Some(references.id.clone()))
@@ -1551,10 +1552,11 @@ fn parse_sketch(
                 ))
                 .map_err(cadmpeg_core::CodecError::malformed)?,
                 id.clone(),
-                SketchGeometry::ReferenceLine {
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
-                },
+                })
+                .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
             .with_native_ref(Some(object.id.clone())),
@@ -1569,10 +1571,11 @@ fn parse_sketch(
                 ))
                 .map_err(cadmpeg_core::CodecError::malformed)?,
                 id.clone(),
-                SketchGeometry::ReferenceLine {
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(0.0, 1.0),
-                },
+                })
+                .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
             .with_native_ref(Some(object.id.clone())),
@@ -1587,9 +1590,10 @@ fn parse_sketch(
                 ))
                 .map_err(cadmpeg_core::CodecError::malformed)?,
                 id.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
             .with_native_ref(Some(object.id.clone())),
@@ -1738,8 +1742,8 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
         .iter()
         .map(|(_, _, weight)| *weight)
         .collect::<Vec<_>>();
-    Some(SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    Some(SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::new(
             degree,
             full_knots,
             control_points,
@@ -1750,7 +1754,7 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
             periodic,
         )
         .ok()?,
-    })
+    ))
 }
 
 fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
@@ -2280,7 +2284,10 @@ fn midpoint_constraint(
         let bounded = entities
             .iter()
             .find(|candidate| candidate.id() == locus_entity(&midpoint))?;
-        if !matches!(bounded.geometry, SketchGeometry::Line { .. }) {
+        if !matches!(
+            *bounded.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ) {
             continue;
         }
         let (entity, position) = operands[point_index];
@@ -2288,7 +2295,10 @@ fn midpoint_constraint(
         let point_entity = entities
             .iter()
             .find(|candidate| candidate.id() == locus_entity(&point))?;
-        if !matches!(point_entity.geometry, SketchGeometry::Point { .. }) {
+        if !matches!(
+            *point_entity.geometry.definition(),
+            SketchGeometryDefinition::Point { .. }
+        ) {
             continue;
         }
         return Some(SketchConstraintDefinition::Midpoint {
@@ -2760,7 +2770,11 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
 
 fn sketch_locus(entity: &SketchEntity, position: i64) -> Option<SketchLocus> {
     let id = entity.id().clone();
-    if matches!(entity.geometry, SketchGeometry::Point { .. }) && matches!(position, 0..=3) {
+    if matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Point { .. }
+    ) && matches!(position, 0..=3)
+    {
         return Some(SketchLocus::Entity(id));
     }
     Some(match position {
@@ -2809,12 +2823,15 @@ fn constraint_kind(kind: i64) -> &'static str {
     }
 }
 
-fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchGeometry {
+fn sketch_geometry(
+    kind: &str,
+    attributes: &BTreeMap<String, String>,
+) -> Result<SketchGeometry, CodecError> {
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
-    let native = || SketchGeometry::Native {
+    let native = || SketchGeometryDefinition::Native {
         native_kind: kind.to_owned(),
     };
-    if matches!(
+    let definition = if matches!(
         kind,
         "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
     ) {
@@ -2824,10 +2841,12 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("EndX"),
             number("EndY"),
         ) {
-            (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => SketchGeometry::Line {
-                start: Point2::new(start_x, start_y),
-                end: Point2::new(end_x, end_y),
-            },
+            (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => {
+                SketchGeometryDefinition::Line {
+                    start: Point2::new(start_x, start_y),
+                    end: Point2::new(end_x, end_y),
+                }
+            }
             _ => native(),
         }
     } else if matches!(
@@ -2856,7 +2875,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
                 if major > 0.0 && minor > 0.0 =>
             {
-                SketchGeometry::Ellipse {
+                SketchGeometryDefinition::Ellipse {
                     center: Point2::new(x, y),
                     major_angle: cadmpeg_ir::features::Angle(angle),
                     major_radius: Length(major),
@@ -2894,7 +2913,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
                 if major > 0.0 && minor > 0.0 =>
             {
-                SketchGeometry::Hyperbola {
+                SketchGeometryDefinition::Hyperbola {
                     center: Point2::new(x, y),
                     major_angle: cadmpeg_ir::features::Angle(angle),
                     major_radius: Length(major),
@@ -2924,7 +2943,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             bounds,
         ) {
             (Some(x), Some(y), Some(angle), Some(focal), Some(bounds)) if focal > 0.0 => {
-                SketchGeometry::Parabola {
+                SketchGeometryDefinition::Parabola {
                     vertex: Point2::new(x, y),
                     axis_angle: cadmpeg_ir::features::Angle(angle),
                     focal_length: Length(focal),
@@ -2948,7 +2967,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
                         .into_iter()
                         .all(f64::is_finite) =>
             {
-                SketchGeometry::Arc {
+                SketchGeometryDefinition::Arc {
                     center: Point2::new(x, y),
                     radius: Length(radius),
                     start_angle: cadmpeg_ir::features::Angle(start + frame_angle),
@@ -2959,25 +2978,26 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
         }
     } else if matches!(kind, "Part::GeomCircle" | "Circle") {
         match (number("CenterX"), number("CenterY"), number("Radius")) {
-            (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometry::Circle {
+            (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometryDefinition::Circle {
                 center: Point2::new(x, y),
                 radius: Length(radius),
             },
-            (Some(x), Some(y), Some(0.0)) => SketchGeometry::Point {
+            (Some(x), Some(y), Some(0.0)) => SketchGeometryDefinition::Point {
                 position: Point2::new(x, y),
             },
             _ => native(),
         }
     } else if kind == "Part::GeomPoint" {
         match (number("X"), number("Y")) {
-            (Some(x), Some(y)) => SketchGeometry::Point {
+            (Some(x), Some(y)) => SketchGeometryDefinition::Point {
                 position: Point2::new(x, y),
             },
             _ => native(),
         }
     } else {
         native()
-    }
+    };
+    SketchGeometry::try_from(definition).map_err(CodecError::malformed)
 }
 
 fn build_profiles(
@@ -3150,9 +3170,9 @@ fn endpoint_point(endpoint: (usize, bool), entities: &[SketchEntity]) -> Option<
 }
 
 fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
-    match entity.geometry {
-        SketchGeometry::Line { start, end } => Some((start, end)),
-        SketchGeometry::Arc {
+    match *entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some((start, end)),
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -3167,7 +3187,7 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
                 center.v + radius.0 * end_angle.0.sin(),
             ),
         )),
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -6257,26 +6277,29 @@ mod profile_tests {
         let entities = [
             entity(
                 "test:test:entity#line",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#arc",
-                SketchGeometry::Arc {
+                SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                     center: Point2::new(0.0, 0.0),
                     radius: Length(1.0),
                     start_angle: cadmpeg_ir::features::Angle(0.0),
                     end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#line-after-arc",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, 1.0),
                     end: Point2::new(1.0, 1.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         let profiles = build_profiles(&entities, &[]);
@@ -6290,10 +6313,11 @@ mod profile_tests {
             .map(|ordinal| {
                 entity(
                     &format!("test:test:entity#{ordinal}"),
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(ordinal as f64 * 10.0, 0.0),
                         end: Point2::new(ordinal as f64 * 10.0 + 1.0, 0.0),
-                    },
+                    })
+                    .unwrap(),
                 )
             })
             .collect::<Vec<_>>();
@@ -6311,27 +6335,30 @@ mod profile_tests {
     fn disconnected_profile_seeds_skip_construction_in_persisted_order() {
         let mut construction = entity(
             "test:test:entity#1",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(-1.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         );
         construction.construction = true;
         let entities = vec![
             construction,
             entity(
                 "test:test:entity#2",
-                SketchGeometry::Circle {
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(0.0, 0.0),
                     radius: Length(2.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#3",
-                SketchGeometry::Circle {
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(10.0, 0.0),
                     radius: Length(2.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
 
@@ -6351,17 +6378,19 @@ mod profile_tests {
         let entities = [
             entity(
                 "test:test:entity#1",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#2",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(2.0, 0.0),
                     end: Point2::new(3.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         let constraint = SketchConstraint {
@@ -6396,24 +6425,27 @@ mod profile_tests {
         let entities = [
             entity(
                 "test:test:entity#anchor",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#nearby",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(32.0 * f64::EPSILON, 0.0),
                     end: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#constrained",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(2.0, 0.0),
                     end: Point2::new(3.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         let constraint = SketchConstraint {
@@ -6458,17 +6490,19 @@ mod profile_tests {
             [
                 entity(
                     "test:test:entity#anchor",
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(0.0, 0.0),
                         end: Point2::new(1.0, 0.0),
-                    },
+                    })
+                    .unwrap(),
                 ),
                 entity(
                     "test:test:entity#continuation",
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(1.0 + gap, 0.0),
                         end: Point2::new(2.0, 0.0),
-                    },
+                    })
+                    .unwrap(),
                 ),
             ]
         };
@@ -6489,24 +6523,27 @@ mod profile_tests {
         let entities = [
             entity(
                 "test:test:entity#anchor",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#first-continuation",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             entity(
                 "test:test:entity#second-continuation",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(0.0, 1.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         let constraint = SketchConstraint {
@@ -6553,10 +6590,11 @@ mod profile_tests {
             .map(|ordinal| {
                 entity(
                     &format!("test:test:entity#{}", ordinal + 1),
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(0.0, 0.0),
                         end: Point2::new(ordinal as f64 + 1.0, 1.0),
-                    },
+                    })
+                    .unwrap(),
                 )
             })
             .collect::<Vec<_>>();

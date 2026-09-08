@@ -22,8 +22,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchGeometry,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use std::collections::{HashMap, HashSet};
@@ -700,16 +700,16 @@ fn profiled_hole_construction_with_evidence(
     let lines = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Line { start, end } => Some((start, end)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => Some((start, end)),
             _ => None,
         })
         .collect::<Vec<_>>();
     let points = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some(position),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => Some(position),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -1489,7 +1489,10 @@ pub(crate) fn project_hole_position_sketches(
             let mut entities = sketch_entities.iter().filter(|entity| {
                 entity.sketch == *sketch_id
                     && entity.native_ref.as_deref() == Some(marker.id.as_str())
-                    && matches!(entity.geometry, SketchGeometry::Point { .. })
+                    && matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    )
             });
             let entity = entities.next();
             if entities.next().is_some() {
@@ -1498,7 +1501,9 @@ pub(crate) fn project_hole_position_sketches(
             }
             let position = match entity {
                 Some(entity) => {
-                    let SketchGeometry::Point { position } = entity.geometry else {
+                    let SketchGeometryDefinition::Point { position } =
+                        *entity.geometry.definition()
+                    else {
                         unreachable!("point geometry was filtered above");
                     };
                     position
@@ -3425,9 +3430,10 @@ pub(crate) fn project_bore_backed_position_sketches(
                     SketchEntityId::mint(format!("{}:entity:{ordinal}", sketch_id.as_str()))
                         .ok()?,
                     sketch_id.clone(),
-                    SketchGeometry::Point {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
                         position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
-                    },
+                    })
+                    .ok()?,
                 ))
             })
             .collect::<Option<Vec<_>>>()

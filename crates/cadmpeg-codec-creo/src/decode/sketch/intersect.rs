@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 pub(crate) use crate::vecmath::normalized;
 
@@ -38,11 +38,13 @@ const EPS_OFFSET_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
 const EPS_ENDPOINT_AGREEMENT: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
 
 pub(crate) fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
-    match geometry {
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             Some((*start, Point2::new(end.u - start.u, end.v - start.v)))
         }
-        SketchGeometry::ReferenceLine { origin, direction } => Some((*origin, *direction)),
+        SketchGeometryDefinition::ReferenceLine { origin, direction } => {
+            Some((*origin, *direction))
+        }
         _ => None,
     }
 }
@@ -97,16 +99,16 @@ pub(crate) fn intersect_section_line_arc(
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
     let (
-        (line @ SketchGeometry::Line { .. }, arc @ SketchGeometry::Arc { .. })
-        | (arc @ SketchGeometry::Arc { .. }, line @ SketchGeometry::Line { .. }),
-    ) = ((first, second),)
+        (line @ SketchGeometryDefinition::Line { .. }, arc @ SketchGeometryDefinition::Arc { .. })
+        | (arc @ SketchGeometryDefinition::Arc { .. }, line @ SketchGeometryDefinition::Line { .. }),
+    ) = ((first.definition(), second.definition()),)
     else {
         return None;
     };
-    let SketchGeometry::Line { start, end } = line else {
+    let SketchGeometryDefinition::Line { start, end } = line else {
         return None;
     };
-    let SketchGeometry::Arc { center, radius, .. } = arc else {
+    let SketchGeometryDefinition::Arc { center, radius, .. } = arc else {
         return None;
     };
     let direction = [end.u - start.u, end.v - start.v];
@@ -170,17 +172,17 @@ pub(crate) fn intersect_tangent_section_arcs(
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
     let (
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center: first_center,
             radius: first_radius,
             ..
         },
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center: second_center,
             radius: second_radius,
             ..
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         return None;
     };
@@ -216,9 +218,14 @@ pub(crate) fn intersect_section_carriers(
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
     let line_arc_is_bounded = matches!(
-        (first, second),
-        (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. })
-            | (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. })
+        (first.definition(), second.definition()),
+        (
+            SketchGeometryDefinition::Line { .. },
+            SketchGeometryDefinition::Arc { .. }
+        ) | (
+            SketchGeometryDefinition::Arc { .. },
+            SketchGeometryDefinition::Line { .. }
+        )
     );
     intersect_section_lines(first, second)
         .or_else(|| {
@@ -440,13 +447,14 @@ pub(crate) fn resolved_trim_vertex_coordinates(
             let Some(segment) = segments.unique_segment(external_id) else {
                 continue;
             };
-            let Some(SketchGeometry::Line { start, end }) =
-                resolved_section_segment_geometry_with_missing_line(
+            let Some(SketchGeometryDefinition::Line { start, end }) =
+                (resolved_section_segment_geometry_with_missing_line(
                     definition,
                     points,
                     segment,
                     missing_line.as_ref(),
-                )
+                ))
+                .map(SketchGeometry::into_definition)
             else {
                 continue;
             };
@@ -541,15 +549,17 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))?;
     let start = trim_vertices.get(&trim.vertices[0])?;
     let end = trim_vertices.get(&trim.vertices[1])?;
-    if let Some(SketchGeometry::Line {
+    if let Some(SketchGeometryDefinition::Line {
         start: carrier_start,
         end: carrier_end,
-    }) = resolved_section_segment_geometry_with_missing_line(
+    }) = (resolved_section_segment_geometry_with_missing_line(
         definition,
         points,
         segment,
         missing_line,
-    ) {
+    ))
+    .map(SketchGeometry::into_definition)
+    {
         let scale = [
             carrier_start.u,
             carrier_start.v,
@@ -599,12 +609,15 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         while end_angle <= start_angle {
             end_angle += std::f64::consts::TAU;
         }
-        return Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length(radius),
-            start_angle: Angle(start_angle),
-            end_angle: Angle(end_angle),
-        });
+        return Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+                radius: Length(radius),
+                start_angle: Angle(start_angle),
+                end_angle: Angle(end_angle),
+            })
+            .ok()?,
+        );
     } else {
         let scale = start
             .iter()
@@ -625,10 +638,13 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         };
         orientation_matches.then_some(())?;
     }
-    Some(SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_point_in_model(
@@ -662,7 +678,7 @@ mod tests {
         resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
     };
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
     use std::collections::BTreeMap;
 
     #[test]
@@ -838,10 +854,13 @@ mod tests {
                 &segment,
                 None,
             ),
-            Some(SketchGeometry::Line {
-                start: Point2::new(0.0, 4.0),
-                end: Point2::new(7.0, 4.0),
-            })
+            Some(
+                cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(0.0, 4.0),
+                    end: Point2::new(7.0, 4.0),
+                })
+                .unwrap()
+            )
         );
 
         let mut duplicate = definition;

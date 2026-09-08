@@ -8,8 +8,9 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+    SpatialSketchId,
 };
 
 use super::super::*;
@@ -597,9 +598,10 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let entities = [SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.id.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(2.0, 3.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("authored-point".into()))];
     let mut features = vec![hole, sketch_feature];

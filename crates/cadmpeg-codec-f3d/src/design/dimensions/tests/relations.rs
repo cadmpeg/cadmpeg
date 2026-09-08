@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn three_member_symmetry_states_project_unique_reflection_axis() {
@@ -19,22 +20,25 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
     };
     let first = entity(
         "generated:test:point#left",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(-2.0, 3.0),
-        },
+        })
+        .unwrap(),
     );
     let axis_entity = entity(
         "generated:test:line#axis",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -5.0),
             end: Point2::new(0.0, 5.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
         "generated:test:point#right",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(2.0, 3.0),
-        },
+        })
+        .unwrap(),
     );
 
     for kind in [
@@ -56,10 +60,11 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
 
     let off_axis = entity(
         "generated:test:line#off-axis",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(1.0, -5.0),
             end: Point2::new(1.0, 5.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(exact_atomic_constraint(
         SketchConstraintKind::Concentric,
@@ -68,9 +73,10 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
     .is_none());
     let on_axis = entity(
         "generated:test:point#on-axis",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 3.0),
-        },
+        })
+        .unwrap(),
     );
     for kind in [
         SketchConstraintKind::Concentric,
@@ -91,24 +97,27 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     };
     let first = entity(
         "generated:test:circle#first",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(-3.0, 2.0),
             radius: Length(1.5),
-        },
+        })
+        .unwrap(),
     );
     let axis = entity(
         "generated:test:line#axis",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -1.0),
             end: Point2::new(0.0, 4.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
         "generated:test:circle#second",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, 2.0),
             radius: Length(1.5),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(matches!(
@@ -121,10 +130,11 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     ));
 
     let mut mismatched = second.clone();
-    mismatched.geometry = SketchGeometry::Circle {
+    mismatched.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, 2.0),
         radius: Length(2.0),
-    };
+    })
+    .unwrap();
     assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
 
@@ -139,28 +149,31 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     };
     let first = entity(
         "generated:test:arc#first",
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-3.0, 2.0),
             radius: Length(1.5),
             start_angle: Angle(-std::f64::consts::FRAC_PI_4),
             end_angle: Angle(std::f64::consts::FRAC_PI_3),
-        },
+        })
+        .unwrap(),
     );
     let axis = entity(
         "generated:test:line#axis",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -1.0),
             end: Point2::new(0.0, 4.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
         "generated:test:arc#second",
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(3.0, 2.0),
             radius: Length(1.5),
             start_angle: Angle(2.0 * std::f64::consts::FRAC_PI_3),
             end_angle: Angle(5.0 * std::f64::consts::FRAC_PI_4),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(matches!(
@@ -173,12 +186,13 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     ));
 
     let mut mismatched = second.clone();
-    mismatched.geometry = SketchGeometry::Arc {
+    mismatched.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, 2.0),
         radius: Length(1.5),
         start_angle: Angle(2.0 * std::f64::consts::FRAC_PI_3),
         end_angle: Angle(5.0 * std::f64::consts::FRAC_PI_4 + 0.1),
-    };
+    })
+    .unwrap();
     assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
 
@@ -193,19 +207,21 @@ fn counted_dimension_groups_resolve_centered_entities() {
     };
     let circle = entity(
         "generated:test:circle#first",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
             radius: Length(3.0),
-        },
+        })
+        .unwrap(),
     );
     let arc = entity(
         "generated:test:arc#second",
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(1.0, 2.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(1.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &arc]),
@@ -215,10 +231,11 @@ fn counted_dimension_groups_resolve_centered_entities() {
 
     let coradial = entity(
         "generated:test:circle#coradial",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
             radius: Length(3.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &coradial]),
@@ -228,13 +245,14 @@ fn counted_dimension_groups_resolve_centered_entities() {
 
     let ellipse = entity(
         "generated:test:ellipse#same-center",
-        SketchGeometry::Ellipse {
+        SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, 2.0),
             major_angle: Angle(0.25),
             major_radius: Length(4.0),
             minor_radius: Length(1.5),
             bounds: None,
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &ellipse]),
@@ -243,21 +261,23 @@ fn counted_dimension_groups_resolve_centered_entities() {
     ));
 
     let mut displaced = arc.clone();
-    displaced.geometry = SketchGeometry::Arc {
+    displaced.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(1.0, 2.1),
         radius: Length(2.0),
         start_angle: Angle(0.0),
         end_angle: Angle(1.0),
-    };
+    })
+    .unwrap();
     assert!(exact_counted_dimension_relation(&[&circle, &displaced]).is_none());
 
     let mut invalid = arc;
-    invalid.geometry = SketchGeometry::Arc {
+    invalid.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(1.0, 2.0),
         radius: Length(0.0),
         start_angle: Angle(0.0),
         end_angle: Angle(1.0),
-    };
+    })
+    .unwrap();
     assert!(exact_counted_dimension_relation(&[&circle, &invalid]).is_none());
 }
 
@@ -272,16 +292,18 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     };
     let line = entity(
         "generated:test:line#0",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(1.0, 2.0),
             end: Point2::new(4.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let point = entity(
         "generated:test:point#0",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     assert_eq!(
         crate::design::dimensions::exact_coincident_loci(&[&line, &point]),
@@ -295,10 +317,11 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
 
     let degenerate = entity(
         "generated:test:line#degenerate",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(1.0, 2.0),
             end: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point]).is_none());
     assert!(crate::design::dimensions::exact_coincident_loci(&[&line, &line]).is_none());
@@ -311,9 +334,10 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
     };
     let first = entity("generated:test:point#0");
@@ -348,31 +372,35 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     };
     let source_horizontal = entity(
         "generated:test:line#source-horizontal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let result_horizontal = entity(
         "generated:test:line#result-horizontal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(2.0, -2.0),
             end: Point2::new(8.0, -2.0),
-        },
+        })
+        .unwrap(),
     );
     let source_vertical = entity(
         "generated:test:line#source-vertical",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 10.0),
             end: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let result_vertical = entity(
         "generated:test:line#result-vertical",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(2.0, 2.0),
             end: Point2::new(2.0, 8.0),
-        },
+        })
+        .unwrap(),
     );
     let curve = |record_index, secondary_id| SketchRelationOperand::Curve {
         record_index,
@@ -494,7 +522,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
         .with_native_ref(Some(native_ref))
     };
@@ -697,36 +725,40 @@ fn single_curve_annotation_projects_parameterized_offset() {
 
 #[test]
 fn mixed_circle_arc_offset_uses_concentric_radius_difference() {
-    let circle = SketchGeometry::Circle {
+    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
         radius: Length(20.0),
-    };
-    let arc = SketchGeometry::Arc {
+    })
+    .unwrap();
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(22.0),
         start_angle: Angle(-0.2),
         end_angle: Angle(0.1),
-    };
+    })
+    .unwrap();
     let distance = crate::design::dimensions::sketch_curve_offset(&circle, &arc)
         .expect("concentric circle-to-arc offset");
     assert!((distance + 2.0).abs() <= 1.0e-9);
 
-    let clockwise_arc = SketchGeometry::Arc {
+    let clockwise_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(22.0),
         start_angle: Angle(0.1),
         end_angle: Angle(-0.2),
-    };
+    })
+    .unwrap();
     let distance = crate::design::dimensions::sketch_curve_offset(&clockwise_arc, &circle)
         .expect("concentric arc-to-circle offset");
     assert!((distance + 2.0).abs() <= 1.0e-9);
 
-    let displaced_arc = SketchGeometry::Arc {
+    let displaced_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(1.0e-6, 0.0),
         radius: Length(22.0),
         start_angle: Angle(0.1),
         end_angle: Angle(-0.2),
-    };
+    })
+    .unwrap();
     assert!(crate::design::dimensions::sketch_curve_offset(&circle, &displaced_arc).is_none());
 }
 
@@ -741,30 +773,34 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
     };
     let point = entity(
         "generated:test:point#vertex",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let explicit = entity(
         "generated:test:line#explicit",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(2.0, -2.0),
             end: Point2::new(2.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let diagonal = entity(
         "generated:test:line#diagonal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let horizontal = entity(
         "generated:test:line#horizontal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let projected = HashMap::from([
         (("native", 1), &point),
@@ -791,10 +827,11 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
     assert_eq!(supplementary, lines);
     let duplicate_diagonal = entity(
         "generated:test:line#duplicate-diagonal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(4.0, 4.0),
-        },
+        })
+        .unwrap(),
     );
     let projected_with_duplicate = HashMap::from([
         (("native", 1), &point),
@@ -973,27 +1010,30 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let point_entity = SketchEntity::new(
         SketchEntityId::mint("generated:test:point#40").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: point.coordinates,
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(point.id.clone()));
     let explicit_entity = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#41").unwrap(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(explicit.id.clone()));
     let candidate_entity = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#42").unwrap(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 3.0f64.sqrt()),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(candidate.id.clone()));
     let entities = vec![point_entity, explicit_entity, candidate_entity];
@@ -1035,10 +1075,11 @@ fn parallel_group_binds_one_common_axis_angle() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end,
-            },
+            })
+            .unwrap(),
         )
     };
     let first = line("generated:test:line#first", Point2::new(1.0, 1.0));

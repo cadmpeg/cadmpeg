@@ -14,8 +14,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
-    SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -82,10 +82,11 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     let entities = vec![SketchEntity::new(
         line_id.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(5.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(corner.id.clone()))];
 
@@ -554,23 +555,20 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
-    assert!(matches!(
-        entities[0].geometry,
-        SketchGeometry::Point { position }
+    assert!(matches!(*entities[0].geometry.definition(),
+        SketchGeometryDefinition::Point { position }
             if position == Point2::new(-2.0, 1.0)
     ));
-    assert!(matches!(
-        entities[1].geometry,
-        SketchGeometry::Line { start, end }
+    assert!(matches!(*entities[1].geometry.definition(),
+        SketchGeometryDefinition::Line { start, end }
             if start == Point2::new(-2.0, 1.0)
                 && end == Point2::new(-6.0, 5.0)
     ));
     assert!(!entities[0].construction);
     assert!(entities[1].construction);
     assert!(entities[2..].iter().all(|entity| !entity.construction));
-    assert!(matches!(
-        entities[3].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[3].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center,
             radius: Length(radius),
             start_angle: Angle(start_angle),
@@ -716,13 +714,10 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
-    assert!(matches!(
-        entities.as_slice(),
-        [SketchEntity {
-            geometry: SketchGeometry::Point { position },
-            ..
-        }] if *position == Point2::new(1.0, 2.0)
-    ));
+    assert!(matches!(entities.as_slice(), [entity] if matches!(
+        entity.geometry.definition(), SketchGeometryDefinition::Point { position }
+        if *position == Point2::new(1.0, 2.0)
+    )));
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
@@ -755,7 +750,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
@@ -763,9 +758,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::native("sldprt:marker-geometry:2".into()),
         )
         .with_native_ref(Some(id.into()))
         .with_endpoint_refs(vec![start.into(), end.into()])
@@ -781,9 +774,8 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     resolve_connected_marker_arcs(&mut entities, 1.0e-8);
 
     for entity in &entities[3..] {
-        assert!(matches!(
-            entity.geometry,
-            SketchGeometry::Arc {
+        assert!(matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Arc {
                 center,
                 radius: Length(2.0),
                 ..
@@ -792,24 +784,24 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     }
     for entity in &mut entities[3..] {
         entity.endpoint_refs.reverse();
-        entity.geometry = SketchGeometry::Native {
-            native_kind: "sldprt:marker-geometry:2".into(),
-        };
+        entity.geometry = SketchGeometry::native("sldprt:marker-geometry:2".into());
     }
     resolve_connected_marker_arcs(&mut entities, 1.0e-8);
-    assert!(entities[3..]
-        .iter()
-        .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. })));
+    assert!(entities[3..].iter().all(|entity| matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Arc { .. }
+    )));
     assert_eq!(entities[3].endpoint_refs, ["p0", "p1"]);
     assert_eq!(entities[4].endpoint_refs, ["p1", "p2"]);
     entities.push(
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#entity-line").unwrap(),
             sketch,
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 2.0),
                 end: Point2::new(0.0, -2.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("line".into()))
         .with_endpoint_refs(vec!["p2".into(), "p0".into()]),
@@ -824,10 +816,11 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
             entities[0].sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(2.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("circle".into())),
     );
@@ -924,9 +917,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     let carrier = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#carrier").unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Native {
-            native_kind: "sldprt:marker-geometry:0".into(),
-        },
+        SketchGeometry::native("sldprt:marker-geometry:0".into()),
     )
     .with_native_ref(Some("center".into()));
     let mut entities = vec![
@@ -934,18 +925,20 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#first-entity").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(5.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some("first".into())),
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 8.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some("second".into())),
@@ -981,20 +974,22 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
 
     assert_eq!(entities.len(), 4);
     assert_eq!(sketches[0].profiles.len(), 2);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Circle {
-            center,
-            radius: Length(5.0)
-        } if center == Point2::new(0.0, 0.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Circle {
-            center,
-            radius: Length(8.0)
-        } if center == Point2::new(0.0, 0.0)
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Circle {
+                center,
+                radius: Length(5.0)
+            } if center == Point2::new(0.0, 0.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Circle {
+                center,
+                radius: Length(8.0)
+            } if center == Point2::new(0.0, 0.0)
+        )));
 }
 
 #[test]

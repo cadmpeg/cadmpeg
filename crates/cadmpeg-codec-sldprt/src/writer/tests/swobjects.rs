@@ -204,7 +204,8 @@ fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
+        SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -229,10 +230,11 @@ fn encoder_writes_source_less_line_sketches() {
         ir.model.sketch_entities.push(SketchEntity::new(
             entity_ids[index].clone(),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: points[index],
                 end: points[(index + 1) % 3],
-            },
+            })
+            .unwrap(),
         ));
     }
     for index in 0..3 {
@@ -297,9 +299,10 @@ fn encoder_writes_source_less_line_sketches() {
     ir.model.sketch_entities.push(SketchEntity::new(
         SketchEntityId::mint("synthetic:test:sketch-entity#point").unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 5.0),
-        },
+        })
+        .unwrap(),
     ));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
@@ -553,21 +556,20 @@ fn encoder_writes_source_less_line_sketches() {
             .model
             .sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            ))
             .count(),
         3
     );
-    assert!(decoded
-        .ir()
-        .model
-        .sketch_entities
-        .iter()
-        .any(|entity| matches!(
-            entity.geometry,
-            SketchGeometry::Point { position }
+    assert!(decoded.ir().model.sketch_entities.iter().any(
+        |entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position }
                 if (position.u - 4.0).abs() < 1.0e-12
                     && (position.v - 5.0).abs() < 1.0e-12
-        )));
+        )
+    ));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch {
@@ -620,13 +622,23 @@ fn encoder_writes_source_less_line_sketches() {
             .model
             .sketch_entities
             .iter_mut()
-            .find_map(|entity| match &mut entity.geometry {
-                SketchGeometry::Point { position } => Some(position),
-                _ => None,
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
             })
             .unwrap();
-        point.u = 7.0;
-        point.v = 8.0;
+        point
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Point { position } = definition else {
+                    panic!("point geometry")
+                };
+                position.u = 7.0;
+                position.v = 8.0;
+            })
+            .unwrap();
     }
     let mut rewritten = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -638,17 +650,13 @@ fn encoder_writes_source_less_line_sketches() {
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
-    assert!(rewritten
-        .ir()
-        .model
-        .sketch_entities
-        .iter()
-        .any(|entity| matches!(
-            entity.geometry,
-            SketchGeometry::Point { position }
+    assert!(rewritten.ir().model.sketch_entities.iter().any(
+        |entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position }
                 if (position.u - 7.0).abs() < 1.0e-12
                     && (position.v - 8.0).abs() < 1.0e-12
-        )));
+        )
+    ));
 }
 
 #[test]
@@ -803,7 +811,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -828,10 +836,11 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     ir.model.sketch_entities.push(SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),

@@ -23,9 +23,9 @@ use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
-    SketchPlacement, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityUse,
-    SpatialSketchGeometry, SpatialSketchProfile,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchPlacement, SpatialSketch, SpatialSketchEntity,
+    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
 };
 
 fn group() -> DesignConstructionOperandGroup {
@@ -748,18 +748,20 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         SketchEntity::new(
             neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(1.0, 0.0),
                 end: Point2::new(1.0, 1.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let sketches = [Sketch {
@@ -892,18 +894,20 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         SketchEntity::new(
             curve_ids[0].clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             curve_ids[1].clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(1.0, 0.0),
                 end: Point2::new(0.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let mut sketches = [Sketch {
@@ -971,10 +975,11 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let sketch_entities = [SketchEntity::new(
         entity_id.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )];
     let sketches = [Sketch {
         id: sketch.clone(),
@@ -1023,18 +1028,20 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         SketchEntity::new(
             first_entity.clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             second_entity.clone(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(1.0, 1.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let mut source = Sketch {
@@ -1149,10 +1156,11 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     let entity = SketchEntity::new(
         entity_id,
         sketch_id,
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let point = Point3::new(11.0, 20.0, 9.0);
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
@@ -1188,7 +1196,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         SketchEntity::new(
             id,
             branched_sketch.id.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
     let branched_entities = [
@@ -1521,10 +1529,11 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
     let circle = SketchEntity::new(
         circle_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     );
     let sketch = Sketch {
         id: sketch_id,
@@ -1767,10 +1776,11 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
             entities.push(SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(start_u, start_v),
                     end: Point2::new(end_u, end_v),
-                },
+                })
+                .unwrap(),
             ));
         }
         profiles.push(profile);

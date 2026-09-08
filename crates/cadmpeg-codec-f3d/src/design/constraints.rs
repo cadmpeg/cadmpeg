@@ -462,7 +462,9 @@ pub(crate) fn exact_text_relation(
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use crate::records::SketchPatternDefinition;
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+    };
     use cadmpeg_ir::transform::Transform;
 
     if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
@@ -484,7 +486,10 @@ pub(crate) fn exact_text_relation(
                 && relation.return_member_indices() == relation.member_indices()[1..] =>
         {
             let text = projected.get(&(scope, *text_reference))?;
-            if !matches!(text.geometry, SketchGeometry::Text { .. }) {
+            if !matches!(
+                *text.geometry.definition(),
+                SketchGeometryDefinition::Text { .. }
+            ) {
                 return None;
             }
             let frame = relation
@@ -499,7 +504,10 @@ pub(crate) fn exact_text_relation(
             (!frame.is_empty()
                 && frame.iter().all(|entity| {
                     entity.id() != text.id()
-                        && !matches!(entity.geometry, SketchGeometry::Text { .. })
+                        && !matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Text { .. }
+                        )
                 }))
             .then(|| Definition::TextFrame {
                 text: text.id().clone(),
@@ -526,10 +534,13 @@ pub(crate) fn exact_text_relation(
             let text = projected.get(&(scope, *text_reference))?;
             if path.id() == text.id()
                 || matches!(
-                    path.geometry,
-                    SketchGeometry::Point { .. } | SketchGeometry::Text { .. }
+                    *path.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. } | SketchGeometryDefinition::Text { .. }
                 )
-                || !matches!(text.geometry, SketchGeometry::Text { .. })
+                || !matches!(
+                    *text.geometry.definition(),
+                    SketchGeometryDefinition::Text { .. }
+                )
                 || glyph_transforms.is_empty()
             {
                 return None;
@@ -564,7 +575,7 @@ pub(crate) fn exact_circular_pattern(
     use crate::records::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance,
-        SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
     };
 
     if relation.unknown_constraint_bits() != 0
@@ -622,9 +633,9 @@ pub(crate) fn exact_circular_pattern(
     }
     let mut candidates = Vec::new();
     for center in members.iter().copied() {
-        let SketchGeometry::Point {
+        let SketchGeometryDefinition::Point {
             position: center_position,
-        } = center.geometry
+        } = *center.geometry.definition()
         else {
             continue;
         };
@@ -694,7 +705,7 @@ fn rotated_sketch_geometry_matches(
     center: Point2,
     angle: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let rotate = |point: Point2| {
         let (sin, cos) = angle.sin_cos();
@@ -710,31 +721,33 @@ fn rotated_sketch_geometry_matches(
         let delta = (first + angle - second).rem_euclid(std::f64::consts::TAU);
         scalar_close(delta, 0.0) || scalar_close(delta, std::f64::consts::TAU)
     };
-    match (source, result) {
-        (SketchGeometry::Point { position: first }, SketchGeometry::Point { position: second }) => {
-            point_matches(*first, *second)
-        }
-        (SketchGeometry::Line { start: a, end: b }, SketchGeometry::Line { start: c, end: d }) => {
-            point_matches(*a, *c) && point_matches(*b, *d)
-        }
+    match (source.definition(), result.definition()) {
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Point { position: first },
+            SketchGeometryDefinition::Point { position: second },
+        ) => point_matches(*first, *second),
+        (
+            SketchGeometryDefinition::Line { start: a, end: b },
+            SketchGeometryDefinition::Line { start: c, end: d },
+        ) => point_matches(*a, *c) && point_matches(*b, *d),
+        (
+            SketchGeometryDefinition::Circle {
                 center: a,
                 radius: ar,
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: b,
                 radius: br,
             },
         ) => point_matches(*a, *b) && scalar_close(ar.0, br.0),
         (
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: a,
                 radius: ar,
                 start_angle: as_,
                 end_angle: ae,
             },
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: b,
                 radius: br,
                 start_angle: bs,
@@ -747,14 +760,14 @@ fn rotated_sketch_geometry_matches(
                 && angle_matches(ae.0, be.0)
         }
         (
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 center: a,
                 major_angle: aa,
                 major_radius: ar,
                 minor_radius: ai,
                 bounds: ab,
             },
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 center: b,
                 major_angle: ba,
                 major_radius: br,
@@ -768,7 +781,10 @@ fn rotated_sketch_geometry_matches(
                 && scalar_close(ai.0, bi.0)
                 && optional_angle_bounds_match(ab.as_ref(), bb.as_ref())
         }
-        (SketchGeometry::Nurbs { curve: first }, SketchGeometry::Nurbs { curve: second }) => {
+        (
+            SketchGeometryDefinition::Nurbs { curve: first },
+            SketchGeometryDefinition::Nurbs { curve: second },
+        ) => {
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
@@ -800,32 +816,33 @@ pub(crate) fn translated_sketch_geometry_matches(
     result: &cadmpeg_ir::sketches::SketchGeometry,
     translation: Point2,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let point_matches = |first: Point2, second: Point2| {
         scalar_close(first.u + translation.u, second.u)
             && scalar_close(first.v + translation.v, second.v)
     };
-    match (source, result) {
-        (SketchGeometry::Point { position: first }, SketchGeometry::Point { position: second }) => {
-            point_matches(*first, *second)
-        }
+    match (source.definition(), result.definition()) {
         (
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Point { position: first },
+            SketchGeometryDefinition::Point { position: second },
+        ) => point_matches(*first, *second),
+        (
+            SketchGeometryDefinition::Line {
                 start: first_start,
                 end: first_end,
             },
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: second_start,
                 end: second_end,
             },
         ) => point_matches(*first_start, *second_start) && point_matches(*first_end, *second_end),
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: first_center,
                 radius: first_radius,
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 center: second_center,
                 radius: second_radius,
             },
@@ -834,13 +851,13 @@ pub(crate) fn translated_sketch_geometry_matches(
                 && scalar_close(first_radius.0, second_radius.0)
         }
         (
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: first_center,
                 radius: first_radius,
                 start_angle: first_start,
                 end_angle: first_end,
             },
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center: second_center,
                 radius: second_radius,
                 start_angle: second_start,
@@ -853,14 +870,14 @@ pub(crate) fn translated_sketch_geometry_matches(
                 && scalar_close(first_end.0, second_end.0)
         }
         (
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 center: first_center,
                 major_angle: first_major_angle,
                 major_radius: first_major_radius,
                 minor_radius: first_minor_radius,
                 bounds: first_bounds,
             },
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 center: second_center,
                 major_angle: second_major_angle,
                 major_radius: second_major_radius,
@@ -874,7 +891,10 @@ pub(crate) fn translated_sketch_geometry_matches(
                 && scalar_close(first_minor_radius.0, second_minor_radius.0)
                 && optional_angle_bounds_match(first_bounds.as_ref(), second_bounds.as_ref())
         }
-        (SketchGeometry::Nurbs { curve: first }, SketchGeometry::Nurbs { curve: second }) => {
+        (
+            SketchGeometryDefinition::Nurbs { curve: first },
+            SketchGeometryDefinition::Nurbs { curve: second },
+        ) => {
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
@@ -927,41 +947,47 @@ mod tests {
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId,
+        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+        SketchId,
     };
     #[test]
     fn rectangular_pattern_instances_require_exact_translated_geometry() {
-        let source = SketchGeometry::Line {
+        let source = SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(1.0, 2.0),
             end: Point2::new(4.0, 6.0),
-        };
-        let translated = SketchGeometry::Line {
+        })
+        .unwrap();
+        let translated = SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(11.0, -1.0),
             end: Point2::new(14.0, 3.0),
-        };
+        })
+        .unwrap();
         assert!(translated_sketch_geometry_matches(
             &source,
             &translated,
             Point2::new(10.0, -3.0),
         ));
-        let reversed = SketchGeometry::Line {
+        let reversed = SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(14.0, 3.0),
             end: Point2::new(11.0, -1.0),
-        };
+        })
+        .unwrap();
         assert!(!translated_sketch_geometry_matches(
             &source,
             &reversed,
             Point2::new(10.0, -3.0),
         ));
-        let resized = SketchGeometry::Circle {
+        let resized = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(12.0, 0.0),
             radius: cadmpeg_ir::features::Length(3.1),
-        };
+        })
+        .unwrap();
         assert!(!translated_sketch_geometry_matches(
-            &SketchGeometry::Circle {
+            &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(2.0, 3.0),
                 radius: cadmpeg_ir::features::Length(3.0),
-            },
+            })
+            .unwrap(),
             &resized,
             Point2::new(10.0, -3.0),
         ));
@@ -971,9 +997,10 @@ mod tests {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, 4.0),
-            },
+            })
+            .unwrap(),
         )
     }
 
@@ -1209,17 +1236,19 @@ mod tests {
         };
         let center = entity(
             "generated:test:point#center",
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(2.0, -3.0),
-            },
+            })
+            .unwrap(),
         );
         let circle = |id: &str, angle: f64| {
             entity(
                 id,
-                SketchGeometry::Circle {
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
                     radius: cadmpeg_ir::features::Length(0.75),
-                },
+                })
+                .unwrap(),
             )
         };
         let seed = circle("generated:circle#seed", 0.0);
@@ -1319,17 +1348,19 @@ mod tests {
         };
         let center = entity(
             "generated:test:point#center",
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(2.0, -3.0),
-            },
+            })
+            .unwrap(),
         );
         let circle = |id: &str, angle: f64| {
             entity(
                 id,
-                SketchGeometry::Circle {
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
                     radius: cadmpeg_ir::features::Length(0.75),
-                },
+                })
+                .unwrap(),
             )
         };
         let seed = circle("generated:circle#seed", 0.0);
@@ -1392,22 +1423,24 @@ mod tests {
         use cadmpeg_ir::features::Length;
         use cadmpeg_ir::math::Point2;
         use cadmpeg_ir::sketches::{
-            SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+            SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+            SketchGeometryDefinition, SketchId,
         };
 
         let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let path = SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#path").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(10.0, 0.0),
-            },
+            })
+            .unwrap(),
         );
         let text = SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#text").unwrap(),
             sketch,
-            SketchGeometry::Text {
+            SketchGeometry::try_from(SketchGeometryDefinition::Text {
                 text: "A".into(),
                 font_family: "Arial".into(),
                 font_weight: 400,
@@ -1416,7 +1449,8 @@ mod tests {
                 placement: None,
                 horizontal_alignment: None,
                 vertical_alignment: None,
-            },
+            })
+            .unwrap(),
         );
         let mut glyph = [[0.0; 4]; 4];
         for ordinal in 0..4 {

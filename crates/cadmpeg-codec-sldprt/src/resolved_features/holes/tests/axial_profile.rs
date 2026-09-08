@@ -7,7 +7,9 @@ use cadmpeg_ir::features::{
     Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, LinearTermination,
 };
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 
 use super::super::*;
 
@@ -68,13 +70,18 @@ fn axial_profile_resolves_counterbore_roles() {
 
     let mut translated_entities = entities.clone();
     for entity in &mut translated_entities {
-        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-            unreachable!();
-        };
-        start.u += 42.0;
-        start.v -= 17.0;
-        end.u += 42.0;
-        end.v -= 17.0;
+        entity
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Line { start, end } = definition else {
+                    unreachable!();
+                };
+                start.u += 42.0;
+                start.v -= 17.0;
+                end.u += 42.0;
+                end.v -= 17.0;
+            })
+            .unwrap();
     }
     let translated = profiled_hole_construction(&profile, &sketch, &translated_entities)
         .expect("translated exact profile");
@@ -86,14 +93,19 @@ fn axial_profile_resolves_counterbore_roles() {
 
     let mut independently_translated_entities = entities.clone();
     for (ordinal, entity) in independently_translated_entities.iter_mut().enumerate() {
-        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-            unreachable!();
-        };
-        let offset = (ordinal + 1) as f64 * 100.0;
-        start.u += offset;
-        start.v -= offset;
-        end.u += offset;
-        end.v -= offset;
+        entity
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Line { start, end } = definition else {
+                    unreachable!();
+                };
+                let offset = (ordinal + 1) as f64 * 100.0;
+                start.u += offset;
+                start.v -= offset;
+                end.u += offset;
+                end.v -= offset;
+            })
+            .unwrap();
     }
     assert!(
         profiled_hole_construction(&profile, &sketch, &independently_translated_entities).is_none()
@@ -136,7 +148,7 @@ fn axial_profile_resolves_counterdrill_roles() {
         SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#profile-point-{ordinal}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = [
@@ -174,19 +186,22 @@ fn axial_profile_resolves_counterdrill_roles() {
 
     let mut translated = entities.clone();
     for entity in &mut translated {
-        match &mut entity.geometry {
-            SketchGeometry::Point { position } => {
-                position.u -= 11.0;
-                position.v += 7.0;
-            }
-            SketchGeometry::Line { start, end } => {
-                start.u -= 11.0;
-                start.v += 7.0;
-                end.u -= 11.0;
-                end.v += 7.0;
-            }
-            _ => unreachable!(),
-        }
+        entity
+            .geometry
+            .edit(|definition| match definition {
+                SketchGeometryDefinition::Point { position } => {
+                    position.u -= 11.0;
+                    position.v += 7.0;
+                }
+                SketchGeometryDefinition::Line { start, end } => {
+                    start.u -= 11.0;
+                    start.v += 7.0;
+                    end.u -= 11.0;
+                    end.v += 7.0;
+                }
+                _ => unreachable!(),
+            })
+            .unwrap();
     }
     assert_eq!(
         profiled_hole_construction(&profile, &sketch, &translated)
@@ -341,7 +356,7 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
         SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#profile-point-{ordinal}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = [
@@ -390,7 +405,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
         SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#profile-point-{ordinal}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = [
@@ -436,19 +451,22 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
 
     let mut translated_entities = entities.clone();
     for entity in &mut translated_entities {
-        match &mut entity.geometry {
-            SketchGeometry::Point { position } => {
-                position.u += 21.0;
-                position.v -= 33.0;
-            }
-            SketchGeometry::Line { start, end } => {
-                start.u += 21.0;
-                start.v -= 33.0;
-                end.u += 21.0;
-                end.v -= 33.0;
-            }
-            _ => unreachable!(),
-        }
+        entity
+            .geometry
+            .edit(|definition| match definition {
+                SketchGeometryDefinition::Point { position } => {
+                    position.u += 21.0;
+                    position.v -= 33.0;
+                }
+                SketchGeometryDefinition::Line { start, end } => {
+                    start.u += 21.0;
+                    start.v -= 33.0;
+                    end.u += 21.0;
+                    end.v -= 33.0;
+                }
+                _ => unreachable!(),
+            })
+            .unwrap();
     }
     let translated = profiled_hole_construction(&profile, &sketch, &translated_entities)
         .expect("translated exact profile");
@@ -513,13 +531,18 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 
         let mut translated_entities = exact_entities;
         for entity in &mut translated_entities {
-            let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-                unreachable!();
-            };
-            start.u += 20.0;
-            start.v += 30.0;
-            end.u += 20.0;
-            end.v += 30.0;
+            entity
+                .geometry
+                .edit(|definition| {
+                    let SketchGeometryDefinition::Line { start, end } = definition else {
+                        unreachable!();
+                    };
+                    start.u += 20.0;
+                    start.v += 30.0;
+                    end.u += 20.0;
+                    end.v += 30.0;
+                })
+                .unwrap();
         }
         assert_eq!(
             profiled_hole_construction(&profile, &sketch, &translated_entities)
@@ -532,14 +555,19 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 
     let mut independently_translated = entities(-6.0, false);
     for (index, entity) in independently_translated.iter_mut().enumerate() {
-        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-            unreachable!();
-        };
-        let offset = (index + 1) as f64 * 20.0;
-        start.u += offset;
-        start.v += offset;
-        end.u += offset;
-        end.v += offset;
+        entity
+            .geometry
+            .edit(|definition| {
+                let SketchGeometryDefinition::Line { start, end } = definition else {
+                    unreachable!();
+                };
+                let offset = (index + 1) as f64 * 20.0;
+                start.u += offset;
+                start.v += offset;
+                end.u += offset;
+                end.v += offset;
+            })
+            .unwrap();
     }
     assert!(profiled_hole_construction(&profile, &sketch, &independently_translated).is_none());
 }

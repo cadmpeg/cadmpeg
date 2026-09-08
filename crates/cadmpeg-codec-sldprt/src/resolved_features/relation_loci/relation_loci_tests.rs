@@ -15,7 +15,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap};
 mod direct_points;
@@ -94,7 +95,7 @@ fn line_entity(id: &str, sketch: &SketchId, start: Point2, end: Point2) -> Sketc
     SketchEntity::new(
         SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
-        SketchGeometry::Line { start, end },
+        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
     )
 }
 
@@ -128,19 +129,21 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let center = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("center-marker".into()));
     let circle = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     );
     let entities = vec![center, circle.clone()];
 
@@ -172,19 +175,21 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
     let line = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#line").unwrap(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("line-marker".into()));
     let circle = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     );
     let marker = SketchInputEntity {
         id: "line-marker".into(),
@@ -285,9 +290,10 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let first_line = line_entity(
         "synthetic:test:id#first-line",
@@ -346,9 +352,10 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(-14.0, 7.0),
-        },
+        })
+        .unwrap(),
     );
     let mut stale_line = line_entity(
         "synthetic:test:id#stale-line",
@@ -403,9 +410,10 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 1.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("point-marker".into()));
     let mut line = line_entity(
@@ -440,9 +448,10 @@ fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(-14.0, 7.0),
-        },
+        })
+        .unwrap(),
     );
     let first_line = line_entity(
         "synthetic:test:id#first-line",
@@ -524,17 +533,19 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 1.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("point-marker".into()));
     let unrelated_point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#unrelated-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(15.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let line = line_entity(
         "synthetic:test:id#second-line",
@@ -651,17 +662,19 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
     let first = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("first-marker".into()));
     let second = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.202_017_17, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-marker".into()));
     let markers = [
@@ -755,9 +768,10 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     let first_point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("first-marker".into()));
     let first_edge = line_entity(
@@ -769,25 +783,28 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     let second_target = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-target").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(140.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-target".into()));
     let second_near = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-near").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 1.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-near".into()));
     let second_other = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-other").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-other".into()));
     let markers = [
@@ -881,7 +898,7 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = vec![
@@ -916,7 +933,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = vec![
@@ -986,7 +1003,7 @@ fn dynamic_point_distance_with_ambiguous_complete_roster_stays_native() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = vec![
@@ -1019,17 +1036,19 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
     let first = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(first_marker.id.clone()));
     let second = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(second_marker.id.clone()));
     let markers = [first_marker, second_marker];
@@ -1086,20 +1105,22 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(point_marker.id.clone()));
     let arc = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
         sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 52.0),
             radius: Length(10.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     );
     let markers = [point_marker, arc_marker, wrapper_marker];
     let markers_by_id = markers
@@ -1161,30 +1182,33 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(point_marker.id.clone()));
     let first_arc = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-arc-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 52.0),
             radius: Length(10.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     );
     let second_arc = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-arc-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 53.0),
             radius: Length(10.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     );
     let markers = [point_marker, first_marker, second_marker, wrapper_marker];
     let markers_by_id = markers
@@ -1240,9 +1264,10 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 3.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("point-marker".into()));
     let mut first_line = line_entity(

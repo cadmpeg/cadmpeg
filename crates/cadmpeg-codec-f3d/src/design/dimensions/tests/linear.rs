@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn dimension_proofs_require_the_evaluated_measurement() {
@@ -57,15 +58,17 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     };
     let first = entity(
         "generated:test:point#0",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
         "generated:test:point#1",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(40.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#0")
         .expect("identity grammar");
@@ -87,9 +90,10 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
     let rounded = entity(
         "generated:test:point#rounded",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(40.000_000_5, 0.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         crate::design::dimensions::directional_point_dimension(
@@ -103,17 +107,19 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
     let horizontal = entity(
         "generated:test:line#horizontal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let diagonal = entity(
         "generated:test:line#diagonal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 10.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(!crate::design::dimensions::parallel_line_separation(
         &horizontal,
@@ -133,16 +139,18 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
     let vertical = entity(
         "generated:test:line#vertical",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -10.0),
             end: Point2::new(0.0, 10.0),
-        },
+        })
+        .unwrap(),
     );
     let offset_point = entity(
         "generated:test:point#offset",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(2.0, 4.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::point_line_separation(
         &offset_point,
@@ -165,17 +173,19 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
     let inner_circle = entity(
         "generated:test:circle#inner",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length(4.0),
-        },
+        })
+        .unwrap(),
     );
     let outer_circle = entity(
         "generated:test:circle#outer",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length(4.25),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -191,10 +201,11 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
     let displaced_circle = entity(
         "generated:test:circle#displaced",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.001, -2.0),
             radius: cadmpeg_ir::features::Length(4.25),
-        },
+        })
+        .unwrap(),
     );
     assert!(!crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -205,10 +216,11 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
     let tolerant_center_circle = entity(
         "generated:test:circle#tolerant-center",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.000_000_5, -2.0),
             radius: cadmpeg_ir::features::Length(4.25),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -224,10 +236,11 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
     let tolerant_parallel = entity(
         "generated:test:line#tolerant-parallel",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 2.000_000_5),
             end: Point2::new(10.0, 2.000_000_5),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::parallel_line_separation(
         &horizontal,
@@ -243,10 +256,11 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
     let tolerant_outer_circle = entity(
         "generated:test:circle#tolerant-outer",
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length(4.250_000_5),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -275,47 +289,53 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
     };
     let line = entity(
         306,
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(90.4875, -17.78),
             end: Point2::new(90.4875, 17.78),
-        },
+        })
+        .unwrap(),
     );
     let circle = entity(
         331,
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length(11.1125),
-        },
+        })
+        .unwrap(),
     );
     let arc = entity(
         796,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(60.344_057_626_1, -19.05),
             radius: cadmpeg_ir::features::Length(12.7),
             start_angle: cadmpeg_ir::features::Angle(0.0),
             end_angle: cadmpeg_ir::features::Angle(0.975_682_713_4),
-        },
+        })
+        .unwrap(),
     );
     let outer_arc = entity(
         782,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(60.344_057_626_1, 19.05),
             radius: cadmpeg_ir::features::Length(12.7),
             start_angle: cadmpeg_ir::features::Angle(0.0),
             end_angle: cadmpeg_ir::features::Angle(0.975_682_713_4),
-        },
+        })
+        .unwrap(),
     );
     let first_point = entity(
         1061,
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(11.1125, -11.1125),
-        },
+        })
+        .unwrap(),
     );
     let second_point = entity(
         1075,
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(11.1125, -7.3025),
-        },
+        })
+        .unwrap(),
     );
     let entities = [line, circle, arc, outer_arc, first_point, second_point];
     let projected = entities
@@ -465,17 +485,19 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     };
     let first = entity(
         "generated:test:line#first",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(0.0, 10.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
         "generated:test:line#second",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(5.0, 2.0),
             end: Point2::new(5.0, 8.0),
-        },
+        })
+        .unwrap(),
     );
     let parameter = parse_design_parameter(&parameter_record(
         Some(44),
@@ -538,7 +560,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let first = entity("generated:test:point#first", Point2::new(4.0, 16.0));
@@ -591,16 +613,18 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     };
     let point = entity(
         "generated:test:point#dimension",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let line = entity(
         "generated:test:line#dimension",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(-10.0, 0.0),
             end: Point2::new(-50.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
@@ -626,57 +650,65 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
     };
     let horizontal = entity(
         "generated:test:line#horizontal",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let vertical = entity(
         "generated:test:line#vertical",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -2.0),
             end: Point2::new(0.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let parallel = entity(
         "generated:test:line#parallel",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 2.0),
             end: Point2::new(10.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let point = entity(
         "generated:test:point#on-line",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let duplicate_point = entity(
         "generated:test:point#duplicate",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let arc = entity(
         "generated:test:arc#bounded",
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(3.0, 0.0),
             radius: cadmpeg_ir::features::Length(1.0),
             start_angle: cadmpeg_ir::features::Angle(0.0),
             end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
-        },
+        })
+        .unwrap(),
     );
     let arc_start = entity(
         "generated:test:point#arc-start",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let outside_arc = entity(
         "generated:test:point#outside-arc",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(matches!(
@@ -861,9 +893,10 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 SketchEntityId::mint(format!("synthetic:test:id#point-{}", point.record_index))
                     .unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: point.coordinates,
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(point.id.clone()))
         })

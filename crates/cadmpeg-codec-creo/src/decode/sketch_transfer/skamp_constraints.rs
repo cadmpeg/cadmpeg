@@ -15,7 +15,8 @@ use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis,
-    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    SketchNativeOperand,
 };
 use std::collections::BTreeMap;
 
@@ -134,15 +135,15 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             let inactive_curve_entity = |item: &crate::feature::FeatureSkampItem| {
                 (!active && item.sense == 0 && item_geometry(item).is_some_and(|geometry| {
                     matches!(
-                        geometry,
-                        SketchGeometry::Line { .. }
-                            | SketchGeometry::ReferenceLine { .. }
-                            | SketchGeometry::Circle { .. }
-                            | SketchGeometry::Arc { .. }
-                            | SketchGeometry::Nurbs { .. }
-                    ) || matches!(
-                        geometry,
-                        SketchGeometry::Native { native_kind }
+                        geometry.definition(),
+                        SketchGeometryDefinition::Line { .. }
+                            | SketchGeometryDefinition::ReferenceLine { .. }
+                            | SketchGeometryDefinition::Circle { .. }
+                            | SketchGeometryDefinition::Arc { .. }
+                            | SketchGeometryDefinition::Nurbs { .. }
+                    ) || matches!((
+                        geometry).definition(),
+                        SketchGeometryDefinition::Native { native_kind }
                             if matches!(native_kind.as_str(), "line" | "arc" | "circle" | "spline")
                     )
                 }))
@@ -155,11 +156,12 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         && item.sense == 4
                         && item_geometry(item).is_some_and(|geometry| {
                             matches!(
-                                geometry,
-                                SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
-                            ) || matches!(
-                                geometry,
-                                SketchGeometry::Native { native_kind }
+                                geometry.definition(),
+                                SketchGeometryDefinition::Circle { .. }
+                                    | SketchGeometryDefinition::Arc { .. }
+                            ) || matches!((
+                                geometry).definition(),
+                                SketchGeometryDefinition::Native { native_kind }
                                     if matches!(native_kind.as_str(), "arc" | "circle")
                             )
                         }))
@@ -172,14 +174,15 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 if section_skamp_is_point(definition, item) {
                     return Some(sketch_entity_id(sketch, item.entity_id)?);
                 }
-                (!active
-                    && item_geometry(item).is_some_and(|geometry| {
-                        matches!(geometry, SketchGeometry::Point { .. })
-                            || matches!(
-                                geometry,
-                                SketchGeometry::Native { native_kind } if native_kind == "point"
-                            )
-                    }))
+                (!active && item_geometry(item).is_some_and(|geometry| {
+                    matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    ) || matches!((
+                        geometry).definition(),
+                        SketchGeometryDefinition::Native { native_kind } if native_kind == "point"
+                    )
+                }))
                 .then(|| sketch_entity_id(sketch, item.entity_id))
                 .flatten()
             };
@@ -555,11 +558,12 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
             SketchLocus::Entity(_) => true,
             SketchLocus::Start(_) | SketchLocus::End(_) => {
                 !matches!(
-                    geometry,
-                    SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
-                ) && !matches!(
-                        geometry,
-                        SketchGeometry::Native { native_kind }
+                    geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                        | SketchGeometryDefinition::Circle { .. }
+                ) && !matches!((
+                        geometry).definition(),
+                        SketchGeometryDefinition::Native { native_kind }
                             if !(matches!(
                                 native_kind.as_str(),
                                 "bounded_curve" | "line" | "arc" | "spline"
@@ -569,13 +573,13 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
             }
             SketchLocus::Center(_) => {
                 matches!(
-                    geometry,
-                    SketchGeometry::Circle { .. }
-                        | SketchGeometry::Arc { .. }
-                        | SketchGeometry::Ellipse { .. }
-                ) || matches!(
-                    geometry,
-                    SketchGeometry::Native { native_kind }
+                    geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. }
+                        | SketchGeometryDefinition::Arc { .. }
+                        | SketchGeometryDefinition::Ellipse { .. }
+                ) || matches!((
+                    geometry).definition(),
+                    SketchGeometryDefinition::Native { native_kind }
                         if matches!(native_kind.as_str(), "circle" | "arc")
                             // A centered type-47 row retains its center on a native line.
                             || native_line_center_allowed && native_kind == "line"
@@ -662,7 +666,8 @@ mod tests {
     use super::sketch_constraint_loci_compatible_with_policy;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+        SketchLocus,
     };
     use std::collections::BTreeMap;
 
@@ -674,15 +679,17 @@ mod tests {
         let geometry = BTreeMap::from([
             (
                 first.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             (
                 second.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
         ]);
         let symmetry = SketchConstraintDefinition::Symmetric {
@@ -705,10 +712,11 @@ mod tests {
         let mut complete = geometry;
         complete.insert(
             axis.clone(),
-            SketchGeometry::ReferenceLine {
+            SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                 origin: Point2::new(0.0, 0.0),
                 direction: Point2::new(0.0, 1.0),
-            },
+            })
+            .unwrap(),
         );
         assert!(sketch_constraint_loci_compatible_with_policy(
             &symmetry, &complete, false,

@@ -60,7 +60,7 @@ use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchId, SketchPlacement,
+    SketchGeometryDefinition, SketchId, SketchPlacement,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::AnnotationBuilder;
@@ -264,12 +264,12 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
         let center = (center_u, center_v);
         entities.iter().any(|entity| {
             entity.sketch == sketch.id
-                && match &entity.geometry {
-                    SketchGeometry::Circle {
+                && match entity.geometry.definition() {
+                    SketchGeometryDefinition::Circle {
                         center: existing,
                         radius: existing_radius,
                     }
-                    | SketchGeometry::Arc {
+                    | SketchGeometryDefinition::Arc {
                         center: existing,
                         radius: existing_radius,
                         ..
@@ -518,18 +518,23 @@ pub(crate) fn project_compact_sketch_profiles(
                         Ok(id) => id,
                         Err(_) => continue,
                     };
+                    let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                        start: *start,
+                        end,
+                    }) else {
+                        continue;
+                    };
                     profile.push(SketchEntityUse {
                         entity: entity_id.clone(),
                         reversed: false,
                     });
                     sketch_entities.push(
-                        SketchEntity::new(
-                            entity_id,
-                            sketch_id.clone(),
-                            SketchGeometry::Line { start: *start, end },
-                        )
-                        .with_native_ref(Some(start_marker.id.clone()))
-                        .with_endpoint_refs(vec![start_marker.id.clone(), end_marker.id.clone()]),
+                        SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+                            .with_native_ref(Some(start_marker.id.clone()))
+                            .with_endpoint_refs(vec![
+                                start_marker.id.clone(),
+                                end_marker.id.clone(),
+                            ]),
                     );
                 }
                 let mut sketch = sketch;
@@ -582,17 +587,28 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profile = if let Some(profile) =
                     complete_ordered_compact_line_profile(&lines, markers.len())
                 {
-                    for (entity_id, marker, vertex, start, end) in lines {
-                        sketch_entities.push(
-                            SketchEntity::new(
-                                entity_id,
-                                sketch_id.clone(),
-                                SketchGeometry::Line { start, end },
+                    let Some(projected) = lines
+                        .into_iter()
+                        .map(|(entity_id, marker, vertex, start, end)| {
+                            Some(
+                                SketchEntity::new(
+                                    entity_id,
+                                    sketch_id.clone(),
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                                        start,
+                                        end,
+                                    })
+                                    .ok()?,
+                                )
+                                .with_native_ref(Some(marker.id.clone()))
+                                .with_endpoint_refs(vec![marker.id.clone(), vertex.id.clone()]),
                             )
-                            .with_native_ref(Some(marker.id.clone()))
-                            .with_endpoint_refs(vec![marker.id.clone(), vertex.id.clone()]),
-                        );
-                    }
+                        })
+                        .collect::<Option<Vec<_>>>()
+                    else {
+                        continue;
+                    };
+                    sketch_entities.extend(projected);
                     profile
                 } else {
                     let Some(points) = markers
@@ -629,21 +645,25 @@ pub(crate) fn project_compact_sketch_profiles(
                             Ok(id) => id,
                             Err(_) => continue,
                         };
+                        let Ok(geometry) =
+                            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                                start: *start,
+                                end,
+                            })
+                        else {
+                            continue;
+                        };
                         profile.push(SketchEntityUse {
                             entity: entity_id.clone(),
                             reversed: false,
                         });
                         sketch_entities.push(
-                            SketchEntity::new(
-                                entity_id,
-                                sketch_id.clone(),
-                                SketchGeometry::Line { start: *start, end },
-                            )
-                            .with_native_ref(Some(start_marker.id.clone()))
-                            .with_endpoint_refs(vec![
-                                start_marker.id.clone(),
-                                end_marker.id.clone(),
-                            ]),
+                            SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+                                .with_native_ref(Some(start_marker.id.clone()))
+                                .with_endpoint_refs(vec![
+                                    start_marker.id.clone(),
+                                    end_marker.id.clone(),
+                                ]),
                         );
                     }
                     profile
@@ -691,17 +711,18 @@ pub(crate) fn project_compact_sketch_profiles(
                     Ok(id) => id,
                     Err(_) => continue,
                 };
+                let Ok(geometry) =
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line { start: *start, end })
+                else {
+                    continue;
+                };
                 profile.push(SketchEntityUse {
                     entity: entity_id.clone(),
                     reversed: false,
                 });
                 sketch_entities.push(
-                    SketchEntity::new(
-                        entity_id,
-                        sketch_id.clone(),
-                        SketchGeometry::Line { start: *start, end },
-                    )
-                    .with_native_ref(Some(marker.id.clone())),
+                    SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+                        .with_native_ref(Some(marker.id.clone())),
                 );
             }
             let mut sketch = sketch;
@@ -1009,7 +1030,10 @@ pub(crate) fn project_marker_backed_sketches(
                     let geometry = match marker.kind {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                             let point = project(marker)?;
-                            SketchGeometry::Point { position: point }
+                            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                                position: point,
+                            })
+                            .ok()?
                         }
                         SketchInputKind::LineOrCircle => {
                             if let Some((center, radius)) = legacy_profile_radial_circle(
@@ -1070,13 +1094,14 @@ pub(crate) fn project_marker_backed_sketches(
                                     Point2::new(center[0] * NATIVE_TO_IR, center[1] * NATIVE_TO_IR),
                                     QUANTUM,
                                 ))?;
-                                SketchGeometry::Circle {
+                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center: Point2::new(
                                         point.0 as f64 * QUANTUM,
                                         point.1 as f64 * QUANTUM,
                                     ),
                                     radius: Length(radius * NATIVE_TO_IR),
-                                }
+                                })
+                                .ok()?
                             } else {
                                 let endpoints = output_curve_endpoint_markers(
                                     &lane.native_payload,
@@ -1097,17 +1122,19 @@ pub(crate) fn project_marker_backed_sketches(
                                             // A zero-length line is not valid IR geometry. Preserve
                                             // the marker whose endpoint collapsed because a newly
                                             // recognized profile point supplied its coordinates.
-                                            SketchGeometry::Native {
-                                                native_kind: format!(
-                                                    "sldprt:marker-geometry:{}",
-                                                    marker.kind.native_code()
-                                                ),
-                                            }
+                                            SketchGeometry::native(format!(
+                                                "sldprt:marker-geometry:{}",
+                                                marker.kind.native_code()
+                                            ))
                                         } else {
                                             return None;
                                         }
                                     } else {
-                                        SketchGeometry::Line { start, end }
+                                        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                                            start,
+                                            end,
+                                        })
+                                        .ok()?
                                     }
                                 } else if let Some([start, end]) =
                                     extended_declared_inline_line_endpoints(
@@ -1164,14 +1191,16 @@ pub(crate) fn project_marker_backed_sketches(
                                     if start == end {
                                         return None;
                                     }
-                                    SketchGeometry::Line { start, end }
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                                        start,
+                                        end,
+                                    })
+                                    .ok()?
                                 } else {
-                                    SketchGeometry::Native {
-                                        native_kind: format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ),
-                                    }
+                                    SketchGeometry::native(format!(
+                                        "sldprt:marker-geometry:{}",
+                                        marker.kind.native_code()
+                                    ))
                                 }
                             }
                         }
@@ -1214,13 +1243,14 @@ pub(crate) fn project_marker_backed_sketches(
                                     Point2::new(center[0] * NATIVE_TO_IR, center[1] * NATIVE_TO_IR),
                                     QUANTUM,
                                 ))?;
-                                SketchGeometry::Circle {
+                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center: Point2::new(
                                         point.0 as f64 * QUANTUM,
                                         point.1 as f64 * QUANTUM,
                                     ),
                                     radius: Length(radius * NATIVE_TO_IR),
-                                }
+                                })
+                                .ok()?
                             } else if let (Some(point), Some(radius)) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
                                 coordinate_circle_radius(
@@ -1236,10 +1266,11 @@ pub(crate) fn project_marker_backed_sketches(
                                     )
                                 }),
                             ) {
-                                SketchGeometry::Circle {
+                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center: point,
                                     radius: Length(radius * NATIVE_TO_IR),
-                                }
+                                })
+                                .ok()?
                             } else if let (Some(center), Some((major_axis, major, minor))) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
                                 coordinate_ellipse_axes(
@@ -1252,13 +1283,14 @@ pub(crate) fn project_marker_backed_sketches(
                                     Point2::new(major_axis[0], major_axis[1]),
                                     QUANTUM,
                                 ))?;
-                                SketchGeometry::Ellipse {
+                                SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                                     center,
                                     major_angle: Angle((axis.1 as f64).atan2(axis.0 as f64)),
                                     major_radius: Length(major * NATIVE_TO_IR),
                                     minor_radius: Length(minor * NATIVE_TO_IR),
                                     bounds: None,
-                                }
+                                })
+                                .ok()?
                             } else if let Some([center, start, end]) =
                                 usize::try_from(marker.offset).ok().and_then(|offset| {
                                     inline_arc_coordinates(&lane.native_payload, offset)
@@ -1281,11 +1313,11 @@ pub(crate) fn project_marker_backed_sketches(
                                     return None;
                                 };
                                 minor_arc_geometry(start, end, point, QUANTUM).unwrap_or_else(
-                                    || SketchGeometry::Native {
-                                        native_kind: format!(
+                                    || {
+                                        SketchGeometry::native(format!(
                                             "sldprt:marker-geometry:{}",
                                             marker.kind.native_code()
-                                        ),
+                                        ))
                                     },
                                 )
                             } else {
@@ -1318,7 +1350,12 @@ pub(crate) fn project_marker_backed_sketches(
                                         )
                                         .is_some()
                                     {
-                                        return Some(SketchGeometry::Line { start, end });
+                                        return Some(
+                                            SketchGeometry::try_from(
+                                                SketchGeometryDefinition::Line { start, end },
+                                            )
+                                            .ok()?,
+                                        );
                                     }
                                     if let Some([u, v]) = legacy_marker104_arc_center(
                                         &lane.native_payload,
@@ -1477,15 +1514,19 @@ pub(crate) fn project_marker_backed_sketches(
                                         &lane.native_payload,
                                         offset,
                                     ))
-                                    .then_some(SketchGeometry::Line { start, end })
+                                    .then_some(
+                                        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                                            start,
+                                            end,
+                                        })
+                                        .ok()?,
+                                    )
                                 })()
                                 .unwrap_or_else(|| {
-                                    SketchGeometry::Native {
-                                        native_kind: format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ),
-                                    }
+                                    SketchGeometry::native(format!(
+                                        "sldprt:marker-geometry:{}",
+                                        marker.kind.native_code()
+                                    ))
                                 })
                             }
                         }
@@ -1510,8 +1551,10 @@ pub(crate) fn project_marker_backed_sketches(
                     } else {
                         Vec::new()
                     };
-                    if matches!(geometry, SketchGeometry::Native { .. })
-                        && marker.coordinates_m.is_some()
+                    if matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Native { .. }
+                    ) && marker.coordinates_m.is_some()
                         && usize::try_from(marker.offset).ok().is_none_or(|offset| {
                             !marker_is_geometry_locus(&lane.native_payload, offset)
                         })
@@ -1521,9 +1564,11 @@ pub(crate) fn project_marker_backed_sketches(
                     let construction = usize::try_from(marker.offset).ok().is_some_and(|offset| {
                         (marker_is_selected_construction_line(&lane.native_payload, offset)
                             || current_compact_roster_selected_axis(&lane.native_payload, offset))
-                            && !(matches!(&geometry, SketchGeometry::Circle { .. })
-                                && marker_profile_curve_role(&lane.native_payload, offset)
-                                    == Some(1))
+                            && !(matches!(
+                                geometry.definition(),
+                                SketchGeometryDefinition::Circle { .. }
+                            ) && marker_profile_curve_role(&lane.native_payload, offset)
+                                == Some(1))
                     });
                     Some(
                         SketchEntity::new(
@@ -1607,7 +1652,9 @@ pub(crate) fn project_marker_backed_sketches(
                     .iter()
                     .enumerate()
                     .filter_map(|(index, entity)| {
-                        let SketchGeometry::Point { position } = entity.geometry else {
+                        let SketchGeometryDefinition::Point { position } =
+                            *entity.geometry.definition()
+                        else {
                             return None;
                         };
                         corners
@@ -1621,10 +1668,10 @@ pub(crate) fn project_marker_backed_sketches(
                     .copied()
                     .filter(|corner| {
                         projected.iter().all(|entity| {
-                            !matches!(
-                                entity.geometry,
-                                SketchGeometry::Point { position }
-                                    if point_matches_corner(position, *corner)
+                            !matches!((
+                                entity.geometry).definition(),
+                                SketchGeometryDefinition::Point { position }
+                                    if point_matches_corner(*position, *corner)
                             )
                         })
                     })
@@ -1632,10 +1679,17 @@ pub(crate) fn project_marker_backed_sketches(
                 if let ([point], [corner]) =
                     (misplaced_points.as_slice(), missing_corners.as_slice())
                 {
-                    projected[*point].geometry = SketchGeometry::Point { position: *corner };
+                    projected[*point].geometry =
+                        match SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                            position: *corner,
+                        }) {
+                            Ok(geometry) => geometry,
+                            Err(_) => continue,
+                        };
                 }
                 for entity in &mut projected {
-                    let SketchGeometry::Native { .. } = entity.geometry else {
+                    let SketchGeometryDefinition::Native { .. } = *entity.geometry.definition()
+                    else {
                         continue;
                     };
                     let Some(marker) = entity
@@ -1673,10 +1727,14 @@ pub(crate) fn project_marker_backed_sketches(
                     let [index] = matching.as_slice() else {
                         continue;
                     };
-                    entity.geometry = SketchGeometry::Line {
-                        start: endpoint,
-                        end: corners[(index + 2) % corners.len()],
-                    };
+                    entity.geometry =
+                        match SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                            start: endpoint,
+                            end: corners[(index + 2) % corners.len()],
+                        }) {
+                            Ok(geometry) => geometry,
+                            Err(_) => continue,
+                        };
                 }
                 for (index, start) in corners.iter().enumerate() {
                     projected.push(SketchEntity::new(
@@ -1688,9 +1746,12 @@ pub(crate) fn project_marker_backed_sketches(
                             Err(_) => continue,
                         },
                         sketch_id.clone(),
-                        SketchGeometry::Line {
+                        match SketchGeometry::try_from(SketchGeometryDefinition::Line {
                             start: *start,
                             end: corners[(index + 1) % corners.len()],
+                        }) {
+                            Ok(geometry) => geometry,
+                            Err(_) => continue,
                         },
                     ));
                 }
@@ -2156,74 +2217,88 @@ fn transform_sketch_block_geometry(
     let point = |point| transform_sketch_block_point(point, transform, frame);
     let direction = |direction| transform_sketch_block_direction(direction, transform, frame);
     let angle = |value: Angle| Angle(value.0 + rotation);
-    Some(match geometry {
-        SketchGeometry::Point { position } => SketchGeometry::Point {
-            position: point(*position)?,
-        },
-        SketchGeometry::Line { start, end } => SketchGeometry::Line {
-            start: point(*start)?,
-            end: point(*end)?,
-        },
-        SketchGeometry::ReferenceLine {
+    Some(match geometry.definition() {
+        SketchGeometryDefinition::Point { position } => {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: point(*position)?,
+            })
+            .ok()?
+        }
+        SketchGeometryDefinition::Line { start, end } => {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: point(*start)?,
+                end: point(*end)?,
+            })
+            .ok()?
+        }
+        SketchGeometryDefinition::ReferenceLine {
             origin,
             direction: axis,
-        } => SketchGeometry::ReferenceLine {
+        } => SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
             origin: point(*origin)?,
             direction: direction(*axis)?,
-        },
-        SketchGeometry::Circle { center, radius } => SketchGeometry::Circle {
-            center: point(*center)?,
-            radius: *radius,
-        },
-        SketchGeometry::Arc {
+        })
+        .ok()?,
+        SketchGeometryDefinition::Circle { center, radius } => {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: point(*center)?,
+                radius: *radius,
+            })
+            .ok()?
+        }
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             end_angle,
-        } => SketchGeometry::Arc {
+        } => SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: point(*center)?,
             radius: *radius,
             start_angle: angle(*start_angle),
             end_angle: angle(*end_angle),
-        },
-        SketchGeometry::Ellipse {
+        })
+        .ok()?,
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
             minor_radius,
             bounds,
-        } => SketchGeometry::Ellipse {
+        } => SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: point(*center)?,
             major_angle: angle(*major_angle),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
             bounds: bounds.map(|[start, end]| [angle(start), angle(end)]),
-        },
-        SketchGeometry::Hyperbola {
+        })
+        .ok()?,
+        SketchGeometryDefinition::Hyperbola {
             center,
             major_angle,
             major_radius,
             minor_radius,
             bounds,
-        } => SketchGeometry::Hyperbola {
+        } => SketchGeometry::try_from(SketchGeometryDefinition::Hyperbola {
             center: point(*center)?,
             major_angle: angle(*major_angle),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
             bounds: *bounds,
-        },
-        SketchGeometry::Parabola {
+        })
+        .ok()?,
+        SketchGeometryDefinition::Parabola {
             vertex,
             axis_angle,
             focal_length,
             bounds,
-        } => SketchGeometry::Parabola {
+        } => SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
             vertex: point(*vertex)?,
             axis_angle: angle(*axis_angle),
             focal_length: *focal_length,
             bounds: *bounds,
-        },
-        SketchGeometry::Nurbs { curve } => {
+        })
+        .ok()?,
+        SketchGeometryDefinition::Nurbs { curve } => {
             let mut curve = curve.clone();
             let transformed = curve
                 .control_points()
@@ -2234,9 +2309,9 @@ fn transform_sketch_block_geometry(
             curve
                 .edit_control_points(|points| points.copy_from_slice(&transformed))
                 .ok()?;
-            SketchGeometry::Nurbs { curve }
+            SketchGeometry::nurbs(curve)
         }
-        SketchGeometry::Text {
+        SketchGeometryDefinition::Text {
             text,
             font_family,
             font_weight,
@@ -2245,7 +2320,7 @@ fn transform_sketch_block_geometry(
             placement,
             horizontal_alignment,
             vertical_alignment,
-        } => SketchGeometry::Text {
+        } => SketchGeometry::try_from(SketchGeometryDefinition::Text {
             text: text.clone(),
             font_family: font_family.clone(),
             font_weight: *font_weight,
@@ -2260,8 +2335,10 @@ fn transform_sketch_block_geometry(
             },
             horizontal_alignment: *horizontal_alignment,
             vertical_alignment: *vertical_alignment,
-        },
-        SketchGeometry::ExternalReference { .. } | SketchGeometry::Native { .. } => return None,
+        })
+        .ok()?,
+        SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => return None,
     })
 }
 
@@ -2407,10 +2484,12 @@ fn project_detached_legacy_config_sketches(
             let Some((sketch, mut entities)) = projected else {
                 continue;
             };
-            if entities
-                .iter()
-                .any(|entity| matches!(entity.geometry, SketchGeometry::Native { .. }))
-            {
+            if entities.iter().any(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
+            }) {
                 continue;
             }
             sketch_entities.append(&mut entities);
@@ -2514,10 +2593,11 @@ fn legacy_config_hex_sketch(
             SketchEntity::new(
                 entity_id("axis", index)?,
                 sketch.id.clone(),
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: point(endpoints[0])?,
                     end: point(endpoints[1])?,
-                },
+                })
+                .ok()?,
             )
             .with_construction(true)
             .with_native_ref(Some(curve.id.clone()))
@@ -2528,10 +2608,11 @@ fn legacy_config_hex_sketch(
         SketchEntity::new(
             entity_id("circle", 0)?,
             sketch.id.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length(circle_radius),
-            },
+            })
+            .ok()?,
         )
         .with_native_ref(Some(circle.id.clone()))
         .with_endpoint_refs(vec![circle.id.clone(), circle_radial.id.clone()]),
@@ -2540,10 +2621,11 @@ fn legacy_config_hex_sketch(
         SketchEntity::new(
             entity_id("circle", 1)?,
             sketch.id.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: construction_center,
                 radius: Length(construction_radius),
-            },
+            })
+            .ok()?,
         )
         .with_construction(true)
         .with_native_ref(Some(construction_circle.id.clone()))
@@ -2563,10 +2645,11 @@ fn legacy_config_hex_sketch(
             SketchEntity::new(
                 id,
                 sketch.id.clone(),
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: point(start)?,
                     end: point(end)?,
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(curve.id.clone()))
             .with_endpoint_refs(vec![start.id.clone(), end.id.clone()]),
@@ -2670,10 +2753,11 @@ fn legacy_config_collinear_sketch(
                 SketchEntity::new(
                     entity_id("line", index)?,
                     sketch.id.clone(),
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: project(start)?,
                         end: project(end)?,
-                    },
+                    })
+                    .ok()?,
                 )
                 .with_native_ref(Some(curve.id.clone())),
             )
@@ -2698,9 +2782,10 @@ fn legacy_config_collinear_sketch(
             SketchEntity::new(
                 entity_id("point", index)?,
                 sketch.id.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: project(coordinates)?,
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(marker.map(|marker| marker.id.clone())),
         );
@@ -3126,14 +3211,20 @@ mod detached_legacy_sketch_tests {
             assert_eq!(
                 entities
                     .iter()
-                    .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+                    .filter(|entity| matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Line { .. }
+                    ))
                     .count(),
                 8
             );
             assert_eq!(
                 entities
                     .iter()
-                    .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
+                    .filter(|entity| matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Circle { .. }
+                    ))
                     .count(),
                 2
             );
@@ -3189,14 +3280,20 @@ mod detached_legacy_sketch_tests {
         assert_eq!(
             entities
                 .iter()
-                .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+                .filter(|entity| matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                ))
                 .count(),
             4
         );
         assert_eq!(
             entities
                 .iter()
-                .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+                .filter(|entity| matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                ))
                 .count(),
             11
         );
@@ -3227,19 +3324,21 @@ mod detached_legacy_sketch_tests {
             SketchEntity::new(
                 block_entity_id,
                 block_sketch_id.clone(),
-                SketchGeometry::Circle {
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(1.0, 2.0),
                     radius: Length(3.0),
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some("circle".into())),
             SketchEntity::new(
                 block_line_id,
                 block_sketch_id.clone(),
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             )
             .with_construction(true)
             .with_native_ref(Some("line".into())),
@@ -3290,8 +3389,8 @@ mod detached_legacy_sketch_tests {
         let circles = assembled
             .entities
             .iter()
-            .filter_map(|entity| match entity.geometry {
-                SketchGeometry::Circle { center, radius } => Some((center, radius)),
+            .filter_map(|entity| match *entity.geometry.definition() {
+                SketchGeometryDefinition::Circle { center, radius } => Some((center, radius)),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -3305,8 +3404,8 @@ mod detached_legacy_sketch_tests {
         let lines = assembled
             .entities
             .iter()
-            .filter_map(|entity| match entity.geometry {
-                SketchGeometry::Line { start, end } => Some((start, end)),
+            .filter_map(|entity| match *entity.geometry.definition() {
+                SketchGeometryDefinition::Line { start, end } => Some((start, end)),
                 _ => None,
             })
             .collect::<Vec<_>>();

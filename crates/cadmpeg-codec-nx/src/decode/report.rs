@@ -771,8 +771,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|entity| sketch_in_active_scope(&entity.sketch))
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();

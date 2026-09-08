@@ -22,8 +22,8 @@ fn encoder_writes_source_less_curved_sketches() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-        SketchId, SketchLocus,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse,
+        SketchGeometryDefinition, SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -35,30 +35,34 @@ fn encoder_writes_source_less_curved_sketches() {
         .for_each(|edge| edge.param_range = None);
     let sketch_id = SketchId::mint("synthetic:test:sketch#curves").unwrap();
     let geometries = vec![
-        SketchGeometry::Circle {
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(8.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(16.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(std::f64::consts::PI),
             end_angle: Angle(std::f64::consts::TAU),
-        },
-        SketchGeometry::Ellipse {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(0.0, 8.0),
             major_angle: Angle(0.4),
             major_radius: Length(3.0),
             minor_radius: Length(1.5),
             bounds: None,
-        },
-        SketchGeometry::Nurbs {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
             curve: cadmpeg_ir::geometry::PcurveNurbs::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -71,96 +75,117 @@ fn encoder_writes_source_less_curved_sketches() {
                 false,
             )
             .unwrap(),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(6.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(18.0, 0.0),
             end: Point2::new(14.0, 0.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(24.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(std::f64::consts::FRAC_PI_2),
             end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(24.0, -2.0),
             end: Point2::new(24.0, 2.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(8.0, 0.0),
             radius: Length(3.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(5.0, 0.0),
             end: Point2::new(11.0, 0.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(40.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(40.0, 2.0),
             end: Point2::new(42.0, 0.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(30.0, 0.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(34.0, 0.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(30.0, 4.0),
-        },
-        SketchGeometry::Point {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(41.0, 1.0),
-        },
-        SketchGeometry::Circle {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(8.0, 2.0),
             radius: Length(2.0),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(50.0, 0.0),
             end: Point2::new(54.0, 0.0),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(54.0, 4.0),
             end: Point2::new(50.0, 4.0),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(52.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
-        SketchGeometry::Arc {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(52.0, 4.0),
             radius: Length(2.0),
             start_angle: Angle(std::f64::consts::PI),
             end_angle: Angle(std::f64::consts::TAU),
-        },
-        SketchGeometry::Circle {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(8.0, 0.0),
             radius: Length(2.0),
-        },
-        SketchGeometry::Ellipse {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(60.0, 0.0),
             major_angle: Angle(0.0),
             major_radius: Length(3.0),
             minor_radius: Length(1.5),
             bounds: Some([Angle(0.0), Angle(std::f64::consts::FRAC_PI_2)]),
-        },
-        SketchGeometry::Line {
+        })
+        .unwrap(),
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(60.0, 1.5),
             end: Point2::new(63.0, 0.0),
-        },
+        })
+        .unwrap(),
     ];
     let entity_ids = geometries
         .into_iter()
@@ -776,7 +801,10 @@ fn encoder_writes_source_less_curved_sketches() {
             .model
             .sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+            ))
             .count(),
         3
     );
@@ -786,7 +814,10 @@ fn encoder_writes_source_less_curved_sketches() {
             .model
             .sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Arc { .. }
+            ))
             .count(),
         7
     );
@@ -795,13 +826,19 @@ fn encoder_writes_source_less_curved_sketches() {
         .model
         .sketch_entities
         .iter()
-        .any(|entity| matches!(entity.geometry, SketchGeometry::Ellipse { .. })));
+        .any(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Ellipse { .. }
+        )));
     assert!(decoded
         .ir()
         .model
         .sketch_entities
         .iter()
-        .any(|entity| matches!(entity.geometry, SketchGeometry::Nurbs { .. })));
+        .any(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Nurbs { .. }
+        )));
 
     let parameter = ir
         .model
@@ -824,7 +861,9 @@ fn encoder_writes_source_less_curved_sketches() {
 fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId,
+    };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     ir.model.bodies[0].name = None;
@@ -851,9 +890,10 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         ir.model.sketch_entities.push(SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:sketch-entity#named-{ordinal}")).unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(ordinal as f64, ordinal as f64 + 1.0),
-            },
+            })
+            .unwrap(),
         ));
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#named-{ordinal}"))

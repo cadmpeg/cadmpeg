@@ -13,7 +13,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -1303,11 +1304,11 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         super::transformed_dimensioned_arc(transform, &arc, 1000.0, 1.0e-8)
             .expect("valid dimensioned arc");
     assert_eq!(endpoint_refs, vec!["end", "start"]);
-    let SketchGeometry::Arc {
+    let SketchGeometryDefinition::Arc {
         start_angle,
         end_angle,
         ..
-    } = geometry
+    } = geometry.definition()
     else {
         panic!("dimensioned carrier should remain an arc");
     };
@@ -1585,9 +1586,10 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let center = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch_id,
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some(marker_id.into()));
@@ -1600,11 +1602,12 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&lane),
     );
 
-    assert!(matches!(
-        entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle { center, radius: Length(2.0) })
-            if *center == Point2::new(1.0, 2.0)
-    ));
+    assert!(
+        matches!((entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+            Some(SketchGeometryDefinition::Circle { center, radius: Length(2.0) })
+                if *center == Point2::new(1.0, 2.0)
+        )
+    );
     assert_eq!(entities[1].geometry_ref.as_deref(), Some("relation"));
 
     let mut ambiguous = entities[..1].to_vec();
@@ -1612,9 +1615,10 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#second-center").unwrap(),
             entities[0].sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(1.0, 2.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some(marker_id.into())),
@@ -1696,9 +1700,10 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let mut implicit_entities = vec![SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#implicit-center").unwrap(),
         entities[0].sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(3.0, 4.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("implicit-center".into()))];
@@ -1708,11 +1713,12 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&implicit_lane),
     );
-    assert!(matches!(
-        implicit_entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle { center, radius: Length(2.0) })
-            if *center == Point2::new(3.0, 4.0)
-    ));
+    assert!(
+        matches!((implicit_entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+            Some(SketchGeometryDefinition::Circle { center, radius: Length(2.0) })
+                if *center == Point2::new(3.0, 4.0)
+        )
+    );
 }
 
 #[test]

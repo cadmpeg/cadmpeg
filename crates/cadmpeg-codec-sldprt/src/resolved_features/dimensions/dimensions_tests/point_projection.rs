@@ -9,7 +9,7 @@ use cadmpeg_ir::features::{
     ParameterValue,
 };
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
 use std::collections::BTreeMap;
 
 #[test]
@@ -113,9 +113,10 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     let mut entities = vec![SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch_id,
-        SketchGeometry::Point {
+        cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("center".into()))];
@@ -127,13 +128,14 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&lane),
     );
 
-    assert!(matches!(
-        entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle {
-            center,
-            radius: Length(2.0)
-        }) if *center == Point2::new(1.0, 2.0)
-    ));
+    assert!(
+        matches!((entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+            Some(SketchGeometryDefinition::Circle {
+                center,
+                radius: Length(2.0)
+            }) if *center == Point2::new(1.0, 2.0)
+        )
+    );
 
     let mut classless_lane = lane.clone();
     classless_lane.references[0].class_ref = None;
@@ -144,13 +146,14 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&classless_lane),
     );
-    assert!(matches!(
-        classless_entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle {
-            center,
-            radius: Length(2.0)
-        }) if *center == Point2::new(1.0, 2.0)
-    ));
+    assert!(
+        matches!((classless_entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+            Some(SketchGeometryDefinition::Circle {
+                center,
+                radius: Length(2.0)
+            }) if *center == Point2::new(1.0, 2.0)
+        )
+    );
 
     let mut object_index_lane = lane.clone();
     object_index_lane.references[0].object_index = 1;
@@ -166,11 +169,12 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&object_index_lane),
     );
-    assert!(matches!(
-        object_index_entities.get(1).map(|entity| &entity.geometry),
-        Some(SketchGeometry::Circle {
-            center,
-            radius: Length(2.0)
-        }) if *center == Point2::new(1.0, 2.0)
-    ));
+    assert!(
+        matches!((object_index_entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+            Some(SketchGeometryDefinition::Circle {
+                center,
+                radius: Length(2.0)
+            }) if *center == Point2::new(1.0, 2.0)
+        )
+    );
 }

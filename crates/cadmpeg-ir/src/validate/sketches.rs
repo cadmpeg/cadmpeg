@@ -5,8 +5,9 @@
 use super::*;
 use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
-    SketchConstraintDefinition as Constraint, SketchDistancePair, SketchGeometry, SketchLocus,
-    SpatialSketchConstraintDefinition as SpatialConstraint, SpatialSketchGeometry,
+    SketchConstraintDefinition as Constraint, SketchDistancePair, SketchGeometry,
+    SketchGeometryDefinition, SketchLocus, SpatialSketchConstraintDefinition as SpatialConstraint,
+    SpatialSketchGeometry,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -37,10 +38,6 @@ fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
         message: message.into(),
         entity: Some(id.into()),
     });
-}
-
-fn finite2(point: crate::math::Point2) -> bool {
-    point.u.is_finite() && point.v.is_finite()
 }
 
 fn finite3(point: crate::math::Point3) -> bool {
@@ -134,15 +131,15 @@ fn sketch_curve_offset_matches(
     linear_tolerance: f64,
 ) -> bool {
     if let (
-        SketchGeometry::Circle {
+        SketchGeometryDefinition::Circle {
             center: source_center,
             radius: source_radius,
         },
-        SketchGeometry::Circle {
+        SketchGeometryDefinition::Circle {
             center: result_center,
             radius: result_radius,
         },
-    ) = (source, result)
+    ) = (source.definition(), result.definition())
     {
         let scale = 1.0
             + source_center
@@ -166,17 +163,17 @@ fn sketch_curve_offset_matches(
     }
 
     if let (
-        SketchGeometry::Circle {
+        SketchGeometryDefinition::Circle {
             center: source_center,
             radius: source_radius,
         },
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center: result_center,
             radius: result_radius,
             start_angle: result_start,
             end_angle: result_end,
         },
-    ) = (source, result)
+    ) = (source.definition(), result.definition())
     {
         let scale = 1.0
             + source_center
@@ -202,17 +199,17 @@ fn sketch_curve_offset_matches(
     }
 
     if let (
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center: source_center,
             radius: source_radius,
             start_angle: source_start,
             end_angle: source_end,
         },
-        SketchGeometry::Circle {
+        SketchGeometryDefinition::Circle {
             center: result_center,
             radius: result_radius,
         },
-    ) = (source, result)
+    ) = (source.definition(), result.definition())
     {
         let scale = 1.0
             + source_center
@@ -238,19 +235,19 @@ fn sketch_curve_offset_matches(
     }
 
     if let (
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center: source_center,
             radius: source_radius,
             start_angle: source_start,
             end_angle: source_end,
         },
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center: result_center,
             radius: result_radius,
             start_angle: result_start,
             end_angle: result_end,
         },
-    ) = (source, result)
+    ) = (source.definition(), result.definition())
     {
         let scale = 1.0
             + source_center
@@ -305,15 +302,15 @@ fn sketch_curve_offset_matches(
     }
 
     let (
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: source_start,
             end: source_end,
         },
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: result_start,
             end: result_end,
         },
-    ) = (source, result)
+    ) = (source.definition(), result.definition())
     else {
         return false;
     };
@@ -565,139 +562,30 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
 
     for entity in &ir.model.sketch_entities {
         let id = entity.id().as_str();
-        match &entity.geometry {
-            SketchGeometry::Point { position } => {
-                if !finite2(*position) {
-                    finding(findings, Check::Bounds, id, "sketch point is not finite");
-                }
-            }
-            SketchGeometry::Line { start, end } => {
-                if !finite2(*start) || !finite2(*end) {
-                    finding(findings, Check::Bounds, id, "sketch line is not finite");
-                }
-            }
-            SketchGeometry::ReferenceLine { origin, direction } => {
-                if !finite2(*origin)
-                    || !finite2(*direction)
-                    || direction.u.hypot(direction.v) <= f64::EPSILON
-                {
-                    finding(findings, Check::Bounds, id, "invalid sketch reference line");
-                }
-            }
-            SketchGeometry::Circle { center, radius }
-            | SketchGeometry::Arc { center, radius, .. } => {
-                if !finite2(*center) || nonpositive(radius.0) {
-                    finding(
-                        findings,
-                        Check::Bounds,
-                        id,
-                        "invalid circular sketch geometry",
-                    );
-                }
-                if let SketchGeometry::Arc {
-                    start_angle,
-                    end_angle,
-                    ..
-                } = &entity.geometry
-                {
-                    if !start_angle.0.is_finite() || !end_angle.0.is_finite() {
-                        finding(
-                            findings,
-                            Check::ParameterDomain,
-                            id,
-                            "arc angle is not finite",
-                        );
-                    }
-                }
-            }
-            SketchGeometry::Ellipse {
-                center,
-                major_angle,
-                major_radius,
-                minor_radius,
-                bounds,
-            } => {
-                if !finite2(*center)
-                    || !major_angle.0.is_finite()
-                    || nonpositive(major_radius.0)
-                    || nonpositive(minor_radius.0)
-                    || major_radius.0 < minor_radius.0
-                {
-                    finding(findings, Check::Bounds, id, "invalid sketch ellipse");
-                }
-                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
-                    finding(
-                        findings,
-                        Check::ParameterDomain,
-                        id,
-                        "invalid elliptical arc parameters",
-                    );
-                }
-            }
-            SketchGeometry::Hyperbola {
-                center,
-                major_angle,
-                major_radius,
-                minor_radius,
-                bounds,
-            } => {
-                if !finite2(*center)
-                    || !major_angle.0.is_finite()
-                    || nonpositive(major_radius.0)
-                    || nonpositive(minor_radius.0)
-                {
-                    finding(findings, Check::Bounds, id, "invalid sketch hyperbola");
-                }
-                if bounds.iter().flatten().any(|value| !value.is_finite()) {
-                    finding(
-                        findings,
-                        Check::ParameterDomain,
-                        id,
-                        "invalid hyperbolic arc parameters",
-                    );
-                }
-            }
-            SketchGeometry::Parabola {
-                vertex,
-                axis_angle,
-                focal_length,
-                bounds,
-            } => {
-                if !finite2(*vertex) || !axis_angle.0.is_finite() || nonpositive(focal_length.0) {
-                    finding(findings, Check::Bounds, id, "invalid sketch parabola");
-                }
-                if bounds.iter().flatten().any(|value| !value.is_finite()) {
-                    finding(
-                        findings,
-                        Check::ParameterDomain,
-                        id,
-                        "invalid parabolic arc parameters",
-                    );
-                }
-            }
-            SketchGeometry::Nurbs { .. } => {}
-            SketchGeometry::Text {
+        match entity.geometry.definition() {
+            SketchGeometryDefinition::Point { .. }
+            | SketchGeometryDefinition::Line { .. }
+            | SketchGeometryDefinition::ReferenceLine { .. }
+            | SketchGeometryDefinition::Circle { .. }
+            | SketchGeometryDefinition::Arc { .. }
+            | SketchGeometryDefinition::Ellipse { .. }
+            | SketchGeometryDefinition::Hyperbola { .. }
+            | SketchGeometryDefinition::Parabola { .. }
+            | SketchGeometryDefinition::Nurbs { .. } => {}
+            SketchGeometryDefinition::Text {
                 text,
                 font_family,
                 font_weight,
-                height,
-                width_factor,
-                placement,
                 ..
             } => {
                 if text.is_empty()
                     || font_family.is_empty()
                     || !matches!(font_weight, 400 | 500 | 750)
-                    || nonpositive(height.0)
-                    || width_factor.is_some_and(nonpositive)
-                    || placement.is_some_and(|placement| {
-                        !finite2(placement.anchor) || !placement.rotation.0.is_finite()
-                    })
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
             }
-            SketchGeometry::ExternalReference { object, .. } => {
+            SketchGeometryDefinition::ExternalReference { object, .. } => {
                 if object.is_empty() {
                     finding(
                         findings,
@@ -707,7 +595,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SketchGeometry::Native { native_kind } => {
+            SketchGeometryDefinition::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(findings, Check::Counts, id, "empty native sketch kind");
                 }
@@ -1482,12 +1370,17 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     })
             }
             Constraint::TextFrame { text, frame } => {
-                matches!(geometry.get(text), Some(SketchGeometry::Text { .. }))
-                    && !frame.is_empty()
+                matches!(
+                    geometry.get(text).map(|geometry| geometry.definition()),
+                    Some(SketchGeometryDefinition::Text { .. })
+                ) && !frame.is_empty()
                     && frame.iter().all(|entity| {
                         entity != text
                             && geometry.get(entity).is_some_and(|geometry| {
-                                !matches!(geometry, SketchGeometry::Text { .. })
+                                !matches!(
+                                    geometry.definition(),
+                                    SketchGeometryDefinition::Text { .. }
+                                )
                             })
                     })
             }
@@ -1496,12 +1389,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 path,
                 glyph_transforms,
             } => {
-                matches!(geometry.get(text), Some(SketchGeometry::Text { .. }))
-                    && text != path
+                matches!(
+                    geometry.get(text).map(|geometry| geometry.definition()),
+                    Some(SketchGeometryDefinition::Text { .. })
+                ) && text != path
                     && geometry.get(path).is_some_and(|geometry| {
                         !matches!(
-                            geometry,
-                            SketchGeometry::Point { .. } | SketchGeometry::Text { .. }
+                            geometry.definition(),
+                            SketchGeometryDefinition::Point { .. }
+                                | SketchGeometryDefinition::Text { .. }
                         )
                     })
                     && !glyph_transforms.is_empty()
@@ -1670,11 +1566,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let distinct = entities.iter().collect::<HashSet<_>>();
                 let lengths = entities
                     .iter()
-                    .filter_map(|entity| match geometry.get(entity) {
-                        Some(SketchGeometry::Line { start, end }) => {
-                            Some((end.u - start.u).hypot(end.v - start.v))
+                    .filter_map(|entity| {
+                        match geometry.get(entity).map(|geometry| geometry.definition()) {
+                            Some(SketchGeometryDefinition::Line { start, end }) => {
+                                Some((end.u - start.u).hypot(end.v - start.v))
+                            }
+                            _ => None,
                         }
-                        _ => None,
                     })
                     .collect::<Vec<_>>();
                 entities.len() >= 2
@@ -1749,12 +1647,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let distinct = entities.iter().collect::<HashSet<_>>();
                 let radii = entities
                     .iter()
-                    .filter_map(|entity| match geometry.get(entity) {
-                        Some(
-                            SketchGeometry::Circle { radius, .. }
-                            | SketchGeometry::Arc { radius, .. },
-                        ) => Some(radius.0),
-                        _ => None,
+                    .filter_map(|entity| {
+                        match geometry.get(entity).map(|geometry| geometry.definition()) {
+                            Some(
+                                SketchGeometryDefinition::Circle { radius, .. }
+                                | SketchGeometryDefinition::Arc { radius, .. },
+                            ) => Some(radius.0),
+                            _ => None,
+                        }
                     })
                     .collect::<Vec<_>>();
                 entities.len() >= 2
@@ -1815,10 +1715,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         if let Constraint::PointOnObject { point: _, entity } = &constraint.definition {
-            if geometry
-                .get(entity)
-                .is_some_and(|geometry| matches!(geometry, SketchGeometry::Point { .. }))
-            {
+            if geometry.get(entity).is_some_and(|geometry| {
+                matches!(
+                    geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+            }) {
                 finding(
                     findings,
                     Check::GeometricConsistency,
@@ -1834,16 +1736,17 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             let valid = match locus {
                 SketchLocus::Entity(_) => true,
                 SketchLocus::Start(_) | SketchLocus::End(_) => !matches!(
-                    entity_geometry,
-                    SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
+                    entity_geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                        | SketchGeometryDefinition::Circle { .. }
                 ),
                 SketchLocus::Center(_) => matches!(
-                    entity_geometry,
-                    SketchGeometry::Circle { .. }
-                        | SketchGeometry::Arc { .. }
-                        | SketchGeometry::Ellipse { .. }
-                        | SketchGeometry::ExternalReference { .. }
-                        | SketchGeometry::Native { .. }
+                    entity_geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. }
+                        | SketchGeometryDefinition::Arc { .. }
+                        | SketchGeometryDefinition::Ellipse { .. }
+                        | SketchGeometryDefinition::ExternalReference { .. }
+                        | SketchGeometryDefinition::Native { .. }
                 ),
             };
             if !valid {
@@ -1904,15 +1807,15 @@ fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
 
 fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
     let (
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         return None;
     };
@@ -1945,15 +1848,15 @@ fn planar_parallel_line_span_distance(
 ) -> Option<f64> {
     let distance = planar_parallel_line_distance(first, second)?;
     let (
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SketchGeometry::Line {
+        SketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         unreachable!("parallel line distance requires line geometry")
     };
@@ -1975,9 +1878,9 @@ fn oriented_endpoints(
     geometry: &SketchGeometry,
     reversed: bool,
 ) -> Option<(crate::math::Point2, crate::math::Point2)> {
-    let endpoints = match geometry {
-        SketchGeometry::Line { start, end } => (*start, *end),
-        SketchGeometry::Arc {
+    let endpoints = match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => (*start, *end),
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -1986,7 +1889,7 @@ fn oriented_endpoints(
             circular_point(*center, radius.0, start_angle.0),
             circular_point(*center, radius.0, end_angle.0),
         ),
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -2008,7 +1911,7 @@ fn oriented_endpoints(
                 end.0,
             ),
         ),
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let control_points = curve.control_points();
             (control_points[0], control_points[control_points.len() - 1])
         }
@@ -2056,8 +1959,8 @@ fn sketch_locus_point(
 ) -> Option<crate::math::Point2> {
     let entity_geometry = geometry.get(locus_entity(locus))?;
     match locus {
-        SketchLocus::Entity(_) => match entity_geometry {
-            SketchGeometry::Point { position } => Some(*position),
+        SketchLocus::Entity(_) => match entity_geometry.definition() {
+            SketchGeometryDefinition::Point { position } => Some(*position),
             _ => None,
         },
         SketchLocus::Start(_) | SketchLocus::End(_) => {
@@ -2068,12 +1971,12 @@ fn sketch_locus_point(
                 end
             })
         }
-        SketchLocus::Center(_) => match entity_geometry {
-            SketchGeometry::Circle { center, .. }
-            | SketchGeometry::Arc { center, .. }
-            | SketchGeometry::Ellipse { center, .. }
-            | SketchGeometry::Hyperbola { center, .. } => Some(*center),
-            SketchGeometry::Parabola { vertex, .. } => Some(*vertex),
+        SketchLocus::Center(_) => match entity_geometry.definition() {
+            SketchGeometryDefinition::Circle { center, .. }
+            | SketchGeometryDefinition::Arc { center, .. }
+            | SketchGeometryDefinition::Ellipse { center, .. }
+            | SketchGeometryDefinition::Hyperbola { center, .. } => Some(*center),
+            SketchGeometryDefinition::Parabola { vertex, .. } => Some(*vertex),
             _ => None,
         },
     }

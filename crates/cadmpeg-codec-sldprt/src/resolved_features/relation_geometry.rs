@@ -37,9 +37,9 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
-    SketchGeometry, SketchNativeOperand, SpatialSketch, SpatialSketchConstraint,
-    SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
-    SpatialSketchGeometry,
+    SketchGeometry, SketchGeometryDefinition, SketchNativeOperand, SpatialSketch,
+    SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchEntity,
+    SpatialSketchEntityId, SpatialSketchGeometry,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -467,7 +467,10 @@ pub(crate) fn project_relation_point_geometry(
             let has_existing_point = entities.iter().any(|entity| {
                 (entity.native_ref.as_deref() == Some(marker.id.as_str())
                     || entity.geometry_ref.as_deref() == Some(marker.id.as_str()))
-                    && matches!(entity.geometry, SketchGeometry::Point { .. })
+                    && matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    )
             });
             if !referenced.contains(marker.id.as_str())
                 || !(qualified_point
@@ -547,7 +550,10 @@ pub(crate) fn project_relation_point_geometry(
                         Err(_) => continue,
                     },
                     sketch.clone(),
-                    SketchGeometry::Point { position },
+                    match SketchGeometry::try_from(SketchGeometryDefinition::Point { position }) {
+                        Ok(geometry) => geometry,
+                        Err(_) => continue,
+                    },
                 )
                 .with_construction(true)
                 .with_native_ref(
@@ -648,8 +654,8 @@ pub(crate) fn project_relation_point_geometry(
                                     && entities.iter().any(|entity| {
                                         entity.sketch == *sketch
                                             && matches!(
-                                                entity.geometry,
-                                                SketchGeometry::Point { .. }
+                                                *entity.geometry.definition(),
+                                                SketchGeometryDefinition::Point { .. }
                                             )
                                             && (entity.native_ref.as_deref()
                                                 == Some(endpoint.id.as_str())
@@ -700,7 +706,7 @@ pub(crate) fn project_relation_point_geometry(
             let end = Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM);
             let already_present = entities.iter().any(|entity| {
                 entity.sketch == *sketch
-                    && matches!(&entity.geometry, SketchGeometry::Line { start: existing_start, end: existing_end }
+                    && matches!(entity.geometry.definition(), SketchGeometryDefinition::Line { start: existing_start, end: existing_end }
                         if (quantize(*existing_start, QUANTUM) == quantize(start, QUANTUM)
                             && quantize(*existing_end, QUANTUM) == quantize(end, QUANTUM))
                             || (quantize(*existing_start, QUANTUM) == quantize(end, QUANTUM)
@@ -719,7 +725,10 @@ pub(crate) fn project_relation_point_geometry(
                         Err(_) => continue,
                     },
                     sketch.clone(),
-                    SketchGeometry::Line { start, end },
+                    match SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }) {
+                        Ok(geometry) => geometry,
+                        Err(_) => continue,
+                    },
                 )
                 .with_construction(true)
                 .with_native_ref(
@@ -822,7 +831,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let mut matches = entities.iter().filter(|entity| {
                     entity.sketch == *sketch
                         && entity.native_ref.as_deref() == Some(entity_ref)
-                        && matches!(entity.geometry, SketchGeometry::Line { .. })
+                        && matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Line { .. }
+                        )
                 });
                 matches.next().is_some() && matches.next().is_none()
             };
@@ -949,8 +961,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                         entity.sketch == *sketch
                             && entity.native_ref.as_deref() == Some(marker.id.as_str())
                     })
-                    .and_then(|entity| match &entity.geometry {
-                        SketchGeometry::Point { position } => Some(*position),
+                    .and_then(|entity| match entity.geometry.definition() {
+                        SketchGeometryDefinition::Point { position } => Some(*position),
                         _ => None,
                     });
                 if resolved.is_some() {
@@ -989,7 +1001,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                     SketchEntity::new(
                         SketchEntityId::mint("sldprt:model:sketch-entity#solver-line").ok()?,
                         sketch.clone(),
-                        SketchGeometry::Line { start, end },
+                        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
+                            .ok()?,
                     )
                     .with_construction(true),
                 )
@@ -1265,7 +1278,12 @@ fn unique_dynamic_line_pair(
     }
     let mut candidates = Vec::<([(i64, i64); 2], SketchEntity)>::new();
     for entity in generated.iter().chain(entities.iter()) {
-        if entity.sketch != *sketch || !matches!(entity.geometry, SketchGeometry::Line { .. }) {
+        if entity.sketch != *sketch
+            || !matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        {
             continue;
         }
         let Some(key) = dynamic_line_geometry_key(entity, quantum) else {
@@ -1311,7 +1329,7 @@ fn unique_dynamic_line_pair(
 }
 
 fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[(i64, i64); 2]> {
-    let SketchGeometry::Line { start, end } = &entity.geometry else {
+    let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
         return None;
     };
     let mut endpoints = [quantize(*start, quantum), quantize(*end, quantum)];
@@ -1455,11 +1473,14 @@ pub(crate) fn project_relation_solved_point_geometry(
                                 Err(_) => continue,
                             },
                             sketch.clone(),
-                            SketchGeometry::Point {
+                            match SketchGeometry::try_from(SketchGeometryDefinition::Point {
                                 position: Point2::new(
                                     position.0 as f64 * QUANTUM,
                                     position.1 as f64 * QUANTUM,
                                 ),
+                            }) {
+                                Ok(geometry) => geometry,
+                                Err(_) => continue,
                             },
                         )
                         .with_construction(true)
@@ -1545,8 +1566,11 @@ pub(crate) fn project_relation_solved_point_geometry(
                         Err(_) => continue,
                     },
                     sketch.clone(),
-                    SketchGeometry::Point {
+                    match SketchGeometry::try_from(SketchGeometryDefinition::Point {
                         position: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
+                    }) {
+                        Ok(geometry) => geometry,
+                        Err(_) => continue,
                     },
                 )
                 .with_construction(true)
@@ -2944,7 +2968,8 @@ mod relation_geometry_tests {
             .iter()
             .filter_map(|entity| {
                 let geometry_ref = entity.geometry_ref.as_deref()?;
-                let SketchGeometry::Point { position } = entity.geometry else {
+                let SketchGeometryDefinition::Point { position } = *entity.geometry.definition()
+                else {
                     return None;
                 };
                 Some((geometry_ref, position))
@@ -3226,8 +3251,8 @@ mod relation_geometry_tests {
         let solver_lines = entities
             .iter()
             .filter(|entity| entity.geometry_ref.is_some())
-            .filter_map(|entity| match entity.geometry {
-                SketchGeometry::Line { start, end } => Some((start, end)),
+            .filter_map(|entity| match *entity.geometry.definition() {
+                SketchGeometryDefinition::Line { start, end } => Some((start, end)),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -3250,8 +3275,8 @@ mod relation_geometry_tests {
         let fallback_lines = fallback_entities
             .iter()
             .filter(|entity| entity.geometry_ref.is_some())
-            .filter_map(|entity| match entity.geometry {
-                SketchGeometry::Line { start, end } => Some((start, end)),
+            .filter_map(|entity| match *entity.geometry.definition() {
+                SketchGeometryDefinition::Line { start, end } => Some((start, end)),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -3271,7 +3296,7 @@ mod relation_geometry_tests {
             SketchEntity::new(
                 SketchEntityId::mint(id).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Line { start, end },
+                SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
             )
             .with_construction(true)
         };
@@ -3301,14 +3326,12 @@ mod relation_geometry_tests {
             TEST_LINE_GEOMETRY_QUANTUM,
         )
         .expect("one existing line pairs with the roster solver line");
-        assert!(matches!(
-            first.geometry,
-            SketchGeometry::Line { start, end }
+        assert!(matches!(*first.geometry.definition(),
+            SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(-16.0, 3.0) && end == Point2::new(-16.0, 7.0)
         ));
-        assert!(matches!(
-            second.geometry,
-            SketchGeometry::Line { start, end }
+        assert!(matches!(*second.geometry.definition(),
+            SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(0.0, 0.0) && end == Point2::new(0.0, 13.0)
         ));
     }

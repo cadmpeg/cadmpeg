@@ -10,7 +10,7 @@ use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SketchNativeOperand,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::HashMap;
 
@@ -153,17 +153,19 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     let first_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(first.id.clone()));
     let second_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(second.id.clone()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
@@ -418,7 +420,7 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
         SketchEntity::new(
             id,
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
         .with_native_ref(native_ref.map(str::to_string))
     };
@@ -478,9 +480,10 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
     let point_entity = SketchEntity::new(
         point_id.clone(),
         SketchId::mint("synthetic:test:id#sketch").unwrap(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(point.id.clone()));
 
@@ -558,10 +561,11 @@ fn resolved_wrong_family_relation_is_inactive() {
     let entities = vec![SketchEntity::new(
         entity_id,
         SketchId::mint("synthetic:test:id#sketch").unwrap(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )];
 
     assert!(marker_relation_is_inactive(
@@ -592,7 +596,7 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
         SketchEntity::new(
             id,
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
@@ -633,16 +637,18 @@ fn horizontal_relation_requires_one_line_or_two_points() {
     };
     let point = entity(
         "synthetic:test:id#point",
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let line = entity(
         "synthetic:test:id#line",
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(marker_relation_is_inactive(
@@ -665,9 +671,10 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             point,
             entity(
                 "synthetic:test:id#second",
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
         ],
     ));

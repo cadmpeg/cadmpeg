@@ -192,11 +192,7 @@ pub(in super::super) fn transfer_sketches(
                     .get(&segment.offset)
                     .cloned()
                     .flatten()
-                    .or_else(|| {
-                        Some(SketchGeometry::Native {
-                            native_kind: "line".to_string(),
-                        })
-                    });
+                    .or_else(|| Some(SketchGeometry::native("line".to_string())));
             }
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
@@ -466,11 +462,8 @@ pub(in super::super) fn transfer_sketches(
                 SketchEntity::new(
                     id,
                     sketch_id.clone(),
-                    SketchGeometry::Native {
-                        native_kind: match solver_only_section_entity_family(
-                            definition,
-                            external_id,
-                        ) {
+                    SketchGeometry::native(
+                        match solver_only_section_entity_family(definition, external_id) {
                             Some(SectionEntityIncidenceFamily::Point) => "point",
                             Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
                             Some(SectionEntityIncidenceFamily::Line) => "line",
@@ -479,7 +472,7 @@ pub(in super::super) fn transfer_sketches(
                             None => "solver_only_section_entity",
                         }
                         .to_string(),
-                    },
+                    ),
                 )
                 .with_construction(true)
                 .with_native_ref(Some(sketch_native_ref(&sketch_id))),

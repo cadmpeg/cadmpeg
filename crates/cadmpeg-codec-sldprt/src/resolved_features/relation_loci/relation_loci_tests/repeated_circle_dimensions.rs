@@ -8,10 +8,11 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length(2.5),
-            },
+            })
+            .unwrap(),
         )
         .with_geometry_ref(Some("driver".into()))
     };
@@ -79,10 +80,11 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(radius),
-            },
+            })
+            .unwrap(),
         )
         .with_geometry_ref(Some(format!("geometry-{id}")))
     };
@@ -155,10 +157,11 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(radius),
-            },
+            })
+            .unwrap(),
         )
         .with_geometry_ref(Some("driver".into()))
     };
@@ -190,10 +193,11 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
     ));
 
     let mut mismatched = entities;
-    mismatched[1].geometry = SketchGeometry::Circle {
+    mismatched[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
         radius: Length(2.0),
-    };
+    })
+    .unwrap();
     assert!(relation_constraint_is_inactive(
         Some(&parameter),
         &definition,
