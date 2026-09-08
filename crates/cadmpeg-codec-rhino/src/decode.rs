@@ -1681,7 +1681,7 @@ impl<'a> DecodeContext<'a> {
         let (surface_geometry, surface_derived) = match construction.surface {
             crate::surfaces::DecodedSurface::Typed {
                 geometry, derived, ..
-            } => (geometry, derived),
+            } => (geometry.into_geometry(), derived),
             crate::surfaces::DecodedSurface::Procedural { geometry, .. } => {
                 (SurfaceGeometry::Nurbs(geometry), true)
             }
@@ -2778,7 +2778,7 @@ impl<'a> DecodeContext<'a> {
                             .expect("valid identity");
                     self.ir.model.surfaces.push(Surface {
                         id: surface_id.clone(),
-                        geometry,
+                        geometry: geometry.into_geometry(),
                         source_object: Some(association.clone()),
                     });
                     set_exactness(
@@ -3912,20 +3912,16 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
         );
         match decoded {
             Ok(crate::curves::DecodedGeometry::Surface {
-                surface:
-                    crate::surfaces::DecodedSurface::Typed {
-                        geometry,
-                        derived,
-                        plane_parameterization,
-                    },
+                surface: crate::surfaces::DecodedSurface::Typed { geometry, derived },
             }) => {
+                let plane_parameterization = geometry.plane_parameterization();
                 let id: cadmpeg_ir::ids::SurfaceId =
                     format!("rhino:object:surface#{key}.slot-{index}")
                         .try_into()
                         .expect("valid identity");
                 staged.draft.model_mut().surfaces.push(Surface {
                     id: id.clone(),
-                    geometry,
+                    geometry: geometry.into_geometry(),
                     source_object: Some(association.clone()),
                 });
                 staged.draft.exactness(
