@@ -1302,7 +1302,7 @@ pub enum SweepLawOrFormula {
     /// The law-driven form with two law expressions and one formula.
     Law {
         /// The first law expression.
-        first_law: EmbeddedLawExpression,
+        first_law: Box<EmbeddedLawExpression>,
         /// The mode integer of the first law.
         first_mode: i64,
         /// Two parameter bounds of the first law.
@@ -1316,7 +1316,7 @@ pub enum SweepLawOrFormula {
         /// The boolean serialized before the second law.
         second_law_flag: bool,
         /// The second law expression.
-        second_law: EmbeddedLawExpression,
+        second_law: Box<EmbeddedLawExpression>,
         /// The mode integer serialized before the formula.
         formula_mode: i64,
         /// The law formula closing the form.
@@ -2861,14 +2861,14 @@ fn sweep_spl_sur(
                     path_parameter,
                 },
                 tail: SweepTail::LawOrFormula(SweepLawOrFormula::Law {
-                    first_law,
+                    first_law: Box::new(first_law),
                     first_mode,
                     first_range,
                     law_direction,
                     path_mode,
                     path_flag,
                     second_law_flag,
-                    second_law,
+                    second_law: Box::new(second_law),
                     formula_mode,
                     formula,
                     trailing_flag,
@@ -2985,14 +2985,14 @@ fn revision_sweep_sur(
                 path_parameter,
             },
             SweepLawOrFormula::Law {
-                first_law,
+                first_law: Box::new(first_law),
                 first_mode,
                 first_range,
                 law_direction,
                 path_mode,
                 path_flag,
                 second_law_flag,
-                second_law,
+                second_law: Box::new(second_law),
                 formula_mode,
                 formula,
                 trailing_flag,
