@@ -866,10 +866,10 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
     assert!(properties.iter().any(|property| {
-        property.name == "ExpressionEngine" && property.raw_xml.contains("Second.Length")
+        property.name == "ExpressionEngine" && property.xml.text().contains("Second.Length")
     }));
     assert!(properties.iter().any(|property| {
-        property.name == "ExpressionEngine" && property.raw_xml.contains("First.Length")
+        property.name == "ExpressionEngine" && property.xml.text().contains("First.Length")
     }));
     assert_eq!(
         result
@@ -938,7 +938,7 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .expect("properties");
     assert!(properties
         .iter()
-        .any(|property| { property.name == "cells" && property.raw_xml.contains("=second") }));
+        .any(|property| { property.name == "cells" && property.xml.text().contains("=second") }));
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }

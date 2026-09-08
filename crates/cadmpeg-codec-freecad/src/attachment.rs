@@ -89,14 +89,16 @@ pub(crate) fn transfer(
             if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
                 return Ok(None);
             }
-            Ok(Some(AttachmentRecord {
-                id: crate::native::native_id("attachment", &object.name),
-                object: object.id.clone(),
-                supports: support.map(support_links).transpose()?.unwrap_or_default(),
-                map_mode: mode.map(map_mode_value).transpose()?.flatten(),
+            AttachmentRecord::try_new(
+                crate::native::native_id("attachment", &object.name),
+                object.id.clone(),
+                support.map(support_links).transpose()?.unwrap_or_default(),
+                mode.map(map_mode_value).transpose()?.flatten(),
                 placement,
                 offset,
-            }))
+            )
+            .map(Some)
+            .map_err(CodecError::Malformed)
         })
         .collect::<Result<Vec<_>, CodecError>>()
         .map(|records| records.into_iter().flatten().collect())

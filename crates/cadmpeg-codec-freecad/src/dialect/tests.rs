@@ -21,11 +21,10 @@ fn document(schema_version: &str) -> DocumentFacts {
     DocumentFacts {
         id: "document-0".into(),
         schema_version: schema_version.into(),
-        file_version: "1".into(),
+        file_version: "1".to_owned().try_into().unwrap(),
         program_version: Some("1.1R20260414 (Git shallow)".into()),
         root_name: "Document".into(),
         object_count: 0,
-        document_kind: crate::native::DocumentKind::Part,
         domains: Vec::new(),
     }
 }
