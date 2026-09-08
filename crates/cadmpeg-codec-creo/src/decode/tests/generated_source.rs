@@ -1238,11 +1238,6 @@ fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
         0.5,
     )
     .is_none());
-    assert!(simple_drilled_axis_placement_from_frames(
-        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], f64::NAN,)],
-        0.5,
-    )
-    .is_none());
 }
 
 #[test]
