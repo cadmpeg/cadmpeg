@@ -4384,3 +4384,6 @@ pub(crate) fn count_other_records(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
