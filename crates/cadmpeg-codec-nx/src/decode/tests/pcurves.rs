@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
+
 use crate::decode::blend::{
     bezier_spans, closest_nurbs_curve_parameter, closest_pcurve_parameters,
     homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
@@ -305,12 +307,15 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
-                supports: [sphere, plane],
-                endpoints: [
-                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                ],
-                tolerance: 1.0e-8,
+                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                    [sphere, plane],
+                    [
+                        Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                        Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                    ],
+                    TOLERANT_INTERSECTION_FIT,
+                )
+                .unwrap(),
                 parameterization: None,
             },
         ),
@@ -363,14 +368,16 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         &geometry_budget,
     );
     let ProceduralCurveDefinition::TolerantIntersection {
-        supports,
+        construction: intersection,
         parameterization: Some(parameterization),
         ..
     } = ir.model.procedural_curves[0].definition()
     else {
         panic!("closed intersection parameterization");
     };
-    assert_eq!(parameterization.parameter_range, range);
+    let (supports, _, _) = intersection.parts();
+
+    assert_eq!(parameterization.parameter_range(), range);
     assert_eq!(ir.model.edges[0].param_range, Some(range));
     assert!(parameterization
         .pcurves
@@ -1127,9 +1134,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     ir.model.procedural_curves.push(ProceduralCurve::new(
         procedural,
         ProceduralCurveDefinition::TolerantIntersection {
-            supports: surfaces.clone(),
-            endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-            tolerance: 0.01,
+            construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                surfaces.clone(),
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                0.01,
+            )
+            .unwrap(),
             parameterization: None,
         },
     ));
@@ -1271,7 +1281,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("serialized branch transferred");
     };
-    assert_eq!(parameterization.parameter_range, [0.0, 10.0]);
+    assert_eq!(parameterization.parameter_range(), [0.0, 10.0]);
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 10.0]));
     assert_eq!(
         cadmpeg_ir::eval::model_surface_point_by_id(
@@ -1355,14 +1365,20 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     }
     ir.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::TolerantIntersection {
-            endpoints: stored_endpoints,
+            construction: intersection,
             parameterization,
             ..
         } = definition
         else {
             unreachable!();
         };
-        *stored_endpoints = endpoints;
+        let (supports, _, tolerance) = intersection.parts();
+        *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            supports.clone(),
+            endpoints,
+            *tolerance,
+        )
+        .unwrap();
         *parameterization = None;
     });
     ir.model.edges[0].param_range = None;
@@ -1397,7 +1413,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("reversed symmetric conic branches transferred");
     };
-    assert_eq!(parameterization.parameter_range, range);
+    assert_eq!(parameterization.parameter_range(), range);
     assert!(parameterization.pcurves.iter().all(|pcurve| match pcurve {
         PcurveGeometry::Ellipse(ellipse_pcurve)
             if {
@@ -1412,14 +1428,20 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
 
     ir.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::TolerantIntersection {
-            tolerance,
+            construction: intersection,
             parameterization,
             ..
         } = definition
         else {
             unreachable!();
         };
-        *tolerance = 10.0;
+        let (supports, endpoints, _) = intersection.parts();
+        *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            supports.clone(),
+            *endpoints,
+            10.0,
+        )
+        .unwrap();
         *parameterization = None;
     });
     ir.model.edges[0].param_range = None;

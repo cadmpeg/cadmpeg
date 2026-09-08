@@ -1545,37 +1545,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::TolerantIntersection {
-            supports,
-            endpoints,
-            tolerance,
-            parameterization,
-        } = procedural.definition()
-        {
-            let point_is_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
-            let parameterization_is_valid = parameterization.as_ref().is_none_or(|value| {
-                value
-                    .parameter_range
-                    .iter()
-                    .all(|parameter| parameter.is_finite())
-                    && value.parameter_range[0] < value.parameter_range[1]
-            });
-            if supports[0] == supports[1]
-                || !endpoints.iter().all(point_is_finite)
-                || !tolerance.is_finite()
-                || *tolerance < 0.0
-                || !parameterization_is_valid
-            {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "tolerant intersection supports or endpoint bounds are invalid",
-                );
-            }
-            continue;
-        }
         if let ProceduralCurveDefinition::TwoSidedOffset { offsets, .. } = procedural.definition() {
             let finite = offsets.iter().all(|value| value.is_finite());
             if !finite {

@@ -55,14 +55,15 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             continue;
         };
         if let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
-            endpoints,
-            tolerance,
+            construction: intersection,
             parameterization: Some(parameterization),
             ..
         } = procedural.definition()
         {
+            let (_, endpoints, tolerance) = intersection.parts();
+
             let evaluated = parameterization
-                .parameter_range
+                .parameter_range()
                 .map(|parameter| model_curve_point_by_id(&index, owner, parameter));
             let [Some(start), Some(end)] = evaluated else {
                 findings.push(Finding {

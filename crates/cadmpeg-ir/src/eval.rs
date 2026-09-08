@@ -3673,12 +3673,13 @@ fn model_curve_point_by_id_inner(
                 .map(|differential| differential.point)
         }
         ProceduralCurveDefinition::TolerantIntersection {
-            supports,
-            tolerance,
+            construction: intersection,
             parameterization: Some(parameterization),
             ..
         } => {
-            let parameter_range = parameterization.parameter_range;
+            let (supports, _, tolerance) = intersection.parts();
+
+            let parameter_range = parameterization.parameter_range();
             if !parameter.is_finite()
                 || parameter < parameter_range[0]
                 || parameter > parameter_range[1]
@@ -3871,15 +3872,16 @@ fn model_curve_parameter_near_point_with_tolerance(
     let construction = curve.geometry.procedural_construction()?;
     let procedural = index.procedural_curves(construction.as_str())?;
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        supports,
-        tolerance,
+        construction: intersection,
         parameterization: Some(parameterization),
         ..
     } = procedural.definition()
     else {
         return None;
     };
-    let range = parameterization.parameter_range;
+    let (supports, _, tolerance) = intersection.parts();
+
+    let range = parameterization.parameter_range();
     if !seed.is_finite() || seed < range[0] || seed > range[1] {
         return None;
     }
