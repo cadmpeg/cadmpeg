@@ -4,12 +4,17 @@
 use crate::mesh::FaceIndexWidth;
 use std::io::{Seek, SeekFrom, Write};
 
+mod model;
 pub(crate) mod target;
+use model::{
+    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritablePcurve,
+    WritableVertex,
+};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
@@ -161,57 +166,16 @@ pub(crate) fn write_seekable(
             )?)?;
         }
     }
-    for curve in &ir.model.curves {
-        if plan.topology_curves.contains(curve.id.as_str()) {
-            continue;
-        }
-        let (class, payload) = match &curve.geometry {
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => (
-                ARC_CLASS,
-                circle_payload(*center, *axis, *ref_direction, *radius),
-            ),
-            CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
-            _ => unreachable!("representability checked before serialization"),
-        };
+    for (id, curve) in &plan.curves {
+        let (class, payload) = curve.payload();
         output.write_all(&attributed_object_record(
-            4,
-            class,
-            &payload,
-            curve.id.as_str(),
-            None,
-            None,
-            None,
+            4, class, &payload, id, None, None, None,
         )?)?;
     }
-    for surface in &ir.model.surfaces {
-        if plan.topology_surfaces.contains(surface.id.as_str()) {
-            continue;
-        }
-        let (class, payload) = match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => (
-                PLANE_SURFACE_CLASS,
-                plane_surface_payload(*origin, *normal, *u_axis),
-            ),
-            SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
-            _ => unreachable!("representability checked before serialization"),
-        };
+    for (id, surface) in &plan.surfaces {
+        let (class, payload) = surface.payload();
         output.write_all(&attributed_object_record(
-            8,
-            class,
-            &payload,
-            surface.id.as_str(),
-            None,
-            None,
-            None,
+            8, class, &payload, id, None, None, None,
         )?)?;
     }
     for mesh in &ir.model.tessellations {
@@ -292,11 +256,39 @@ struct BrepPayload {
     direct: Vec<u8>,
 }
 
-struct WritePlan {
+enum WritableObjectCurve<'a> {
+    Circle {
+        center: cadmpeg_ir::math::Point3,
+        axis: cadmpeg_ir::math::Vector3,
+        ref_direction: cadmpeg_ir::math::Vector3,
+        radius: f64,
+    },
+    Nurbs(&'a cadmpeg_ir::geometry::NurbsCurve),
+}
+
+impl WritableObjectCurve<'_> {
+    fn payload(&self) -> ([u8; 16], Vec<u8>) {
+        match self {
+            Self::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => (
+                ARC_CLASS,
+                circle_payload(*center, *axis, *ref_direction, *radius),
+            ),
+            Self::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
+        }
+    }
+}
+
+struct WritePlan<'a> {
+    curves: Vec<(&'a str, WritableObjectCurve<'a>)>,
+    surfaces: Vec<(&'a str, WritableFaceSurface<'a>)>,
     brep_records: std::fs::File,
     topology_points: std::collections::BTreeSet<String>,
-    topology_curves: std::collections::BTreeSet<String>,
-    topology_surfaces: std::collections::BTreeSet<String>,
+
     point_groups: Vec<PointGroup>,
 }
 
@@ -566,7 +558,7 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
 fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
-) -> Result<WritePlan, CodecError> {
+) -> Result<WritePlan<'_>, CodecError> {
     if !ir.tolerances.linear.is_finite() || ir.tolerances.linear <= 0.0 {
         return Err(CodecError::Malformed(
             "Rhino absolute tolerance must be positive and finite".into(),
@@ -668,6 +660,7 @@ fn prepare_write(
     for scope in &breps {
         topology_points.extend(scope.points.iter().cloned());
     }
+    let mut curves = Vec::new();
     for curve in &model.curves {
         if topology_curves.contains(curve.id.as_str()) {
             continue;
@@ -687,6 +680,7 @@ fn prepare_write(
         else {
             if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
+                curves.push((curve.id.as_str(), WritableObjectCurve::Nurbs(nurbs)));
                 continue;
             }
             return Err(CodecError::NotImplemented(format!(
@@ -713,46 +707,32 @@ fn prepare_write(
                 curve.id.as_str()
             )));
         }
+        curves.push((
+            curve.id.as_str(),
+            WritableObjectCurve::Circle {
+                center: *center,
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: *radius,
+            },
+        ));
     }
-    for surface in &model.surfaces {
-        if topology_surfaces.contains(surface.id.as_str()) {
-            continue;
-        }
-        if surface.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "surface {} source-object state is not writable",
-                surface.id.as_str()
-            )));
-        }
-        match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => {
-                check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
-            }
-            SurfaceGeometry::Nurbs(nurbs) => check_nurbs_surface(surface.id.as_str(), nurbs)?,
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "Rhino writer cannot represent surface {} as a native object",
-                    surface.id.as_str()
-                )));
-            }
-        }
-    }
+    let surfaces = model
+        .surfaces
+        .iter()
+        .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
+        .map(|surface| {
+            WritableFaceSurface::try_new(surface).map(|geometry| (surface.id.as_str(), geometry))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     for mesh in &model.tessellations {
         check_mesh(mesh)?;
     }
     let mut brep_records = tempfile::tempfile()?;
     for scope in &breps {
         let body = &scope.ir.model.bodies[0];
-        let payload = planar_sheet_brep_payload(&scope.ir, archive_version)?.ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "body {} topology is not a writable Brep",
-                body.id.as_str()
-            ))
-        })?;
+        let model = WritableModel::try_new(&scope.ir)?;
+        let payload = brep_payload(&model, archive_version)?;
         brep_records.write_all(&brep_object_record(
             &payload,
             body.id.as_str(),
@@ -764,8 +744,8 @@ fn prepare_write(
     Ok(WritePlan {
         brep_records,
         topology_points,
-        topology_curves,
-        topology_surfaces,
+        curves,
+        surfaces,
         point_groups,
     })
 }
@@ -918,1124 +898,143 @@ fn json_array_empty_or_missing(fields: &NativeFields, name: &str) -> bool {
         .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty))
 }
 
-fn planar_sheet_brep_payload(
-    ir: &CadIr,
-    archive_version: RhinoArchiveVersion,
-) -> Result<Option<BrepPayload>, CodecError> {
-    use cadmpeg_ir::topology::{BodyKind, Sense};
-
-    let model = &ir.model;
-    let Some(body) = model
-        .bodies
-        .iter()
-        .find(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
-    else {
-        return Ok(None);
-    };
-    if model.faces.len() > 1 || body.kind == BodyKind::Solid {
-        return multi_face_brep_payload(ir, body, archive_version).map(Some);
-    }
-    let edge_count = model.coedges.len();
-    if model.bodies.len() != 1
-        || model.regions.len() != 1
-        || model.shells.len() != 1
-        || model.faces.len() != 1
-        || model.loops.is_empty()
-        || edge_count < 3
-        || model.edges.len() != edge_count
-        || model.vertices.len() != edge_count
-        || model.points.len() != edge_count
-        || model.curves.len() != edge_count
-        || model.surfaces.len() != 1
-        || !model.tessellations.is_empty()
-    {
-        return Err(CodecError::NotImplemented(
-            "planar sheet writing currently requires one polygonal face with disjoint loops".into(),
-        ));
-    }
-    if body.regions.len() != 1 || body.transform.is_some() {
-        return Err(CodecError::NotImplemented(
-            "planar sheet body placement is not writable".into(),
-        ));
-    }
-    check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
-    let region = &model.regions[0];
-    let shell = &model.shells[0];
-    let face = &model.faces[0];
-    if region.id != body.regions[0]
-        || region.body != body.id
-        || region.shells != [shell.id.clone()]
-        || shell.region != region.id
-        || shell.faces != [face.id.clone()]
-        || !shell.wire_edges.is_empty()
-        || !shell.free_vertices.is_empty()
-        || face.shell != shell.id
-        || face.loops.len() != model.loops.len()
-        || face
-            .loops
-            .iter()
-            .zip(&model.loops)
-            .any(|(id, loop_)| *id != loop_.id)
-        || face.name.is_some()
-        || face.color.is_some()
-        || model.loops.iter().any(|loop_| loop_.face != face.id)
-        || model
-            .loops
-            .iter()
-            .map(|loop_| loop_.coedges().len())
-            .sum::<usize>()
-            != edge_count
-        || model.loops.iter().any(|loop_| loop_.coedges().len() < 3)
-    {
-        return Err(CodecError::Malformed(
-            "planar sheet ownership graph is inconsistent".into(),
-        ));
-    }
-    let surface = model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
-        .ok_or_else(|| CodecError::Malformed("planar triangle surface is missing".into()))?;
-    if surface.source_object.is_some() {
-        return Err(CodecError::NotImplemented(
-            "sheet surface source-object state is not writable".into(),
-        ));
-    }
-    let (plane_frame, nurbs_patch) = match &surface.geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
-            (
-                Some((*origin, *normal, *u_axis, normal.cross(*u_axis))),
-                None,
-            )
-        }
-        SurfaceGeometry::Nurbs(nurbs) => {
-            check_nurbs_surface(surface.id.as_str(), nurbs)?;
-            if nurbs.u_periodic() || nurbs.v_periodic() {
-                return Err(CodecError::NotImplemented(
-                    "rectangular Brep patch surface must be nonperiodic".into(),
-                ));
-            }
-            (None, Some(nurbs))
-        }
-        _ => {
-            return Err(CodecError::NotImplemented(
-                "single-face Brep surface is not a plane or NURBS patch".into(),
-            ));
-        }
-    };
-
-    let mut ordered_coedges = Vec::with_capacity(edge_count);
-    let mut loop_ranges = Vec::with_capacity(model.loops.len());
-    for loop_ in &model.loops {
-        let start = ordered_coedges.len();
-        for id in loop_.coedges() {
-            let coedge = model
-                .coedges
-                .iter()
-                .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("coedge {} is missing", id.as_str()))
-                })?;
-            if coedge.owner_loop != loop_.id {
-                return Err(CodecError::malformed(format_args!(
-                    "coedge {} ownership is inconsistent",
-                    coedge.id.as_str()
-                )));
-            }
-            ordered_coedges.push(coedge);
-        }
-        let end = ordered_coedges.len();
-        for current in &ordered_coedges[start..end] {
-            if current.radial_next != current.id {
-                return Err(CodecError::malformed(format_args!(
-                    "coedge {} ring is inconsistent",
-                    current.id.as_str()
-                )));
-            }
-        }
-        loop_ranges.push(start..end);
-    }
-    validate_brep_pcurve_ownership(model, &ordered_coedges)?;
-
-    let mut ordered_edges = Vec::with_capacity(edge_count);
-    let mut traversal_vertices = Vec::with_capacity(edge_count);
-    for coedge in &ordered_coedges {
-        let edge = model
-            .edges
-            .iter()
-            .find(|edge| edge.id == coedge.edge)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("edge {} is missing", coedge.edge.as_str()))
-            })?;
-        if ordered_edges
-            .iter()
-            .any(|existing: &&cadmpeg_ir::topology::Edge| existing.id == edge.id)
-        {
-            return Err(CodecError::NotImplemented(
-                "planar sheet cannot reuse an edge in one loop".into(),
-            ));
-        }
-        let from_id = if coedge.sense == Sense::Forward {
-            &edge.start
-        } else {
-            &edge.end
-        };
-        traversal_vertices.push(from_id.clone());
-        ordered_edges.push(edge);
-    }
-    for range in &loop_ranges {
-        for index in range.clone() {
-            let edge = ordered_edges[index];
-            let traversal_end = if ordered_coedges[index].sense == Sense::Forward {
-                &edge.end
-            } else {
-                &edge.start
-            };
-            let next = range.start + (index - range.start + 1) % range.len();
-            if *traversal_end != traversal_vertices[next] {
-                return Err(CodecError::Malformed(
-                    "planar coedge traversal does not close".into(),
-                ));
-            }
-        }
-    }
-
-    let mut ordered_vertices = Vec::with_capacity(edge_count);
-    let mut ordered_points = Vec::with_capacity(edge_count);
-    for id in &traversal_vertices {
-        let vertex = model
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == *id)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("vertex {} is missing", id.as_str()))
-            })?;
-        if ordered_vertices
-            .iter()
-            .any(|existing: &&cadmpeg_ir::topology::Vertex| existing.id == vertex.id)
-        {
-            return Err(CodecError::Malformed(
-                "planar loop has repeated traversal vertices".into(),
-            ));
-        }
-        let point = model
-            .points
-            .iter()
-            .find(|point| point.id == vertex.point)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("point {} is missing", vertex.point.as_str()))
-            })?;
-        ordered_vertices.push(vertex);
-        ordered_points.push(point.position);
-    }
-    for edge in &ordered_edges {
-        validate_planar_edge(model, edge, ir.tolerances.linear)?;
-    }
-    if let Some((origin, normal, _, _)) = plane_frame {
-        let plane_tolerance = face
-            .tolerance
-            .unwrap_or(ir.tolerances.linear)
-            .max(EPS_WRITE_DEGENERATE);
-        for point in &ordered_points {
-            let distance = (point.x - origin.x) * normal.x
-                + (point.y - origin.y) * normal.y
-                + (point.z - origin.z) * normal.z;
-            if distance.abs() > plane_tolerance {
-                return Err(CodecError::Malformed(
-                    "planar loop vertex is outside its face plane tolerance".into(),
-                ));
-            }
-        }
-        for edge in &ordered_edges {
-            let curve = model
-                .curves
-                .iter()
-                .find(|curve| edge.curve.as_ref() == Some(&curve.id))
-                .expect("validated edge curve");
-            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                for point in nurbs.control_points() {
-                    let distance = (point.x - origin.x) * normal.x
-                        + (point.y - origin.y) * normal.y
-                        + (point.z - origin.z) * normal.z;
-                    if distance.abs() > plane_tolerance {
-                        return Err(CodecError::malformed(format_args!(
-                            "edge curve {} is outside its face plane tolerance",
-                            curve.id.as_str()
-                        )));
-                    }
-                }
-            }
-        }
-    } else {
-        validate_nurbs_trim_loop(
-            model,
-            nurbs_patch.expect("non-plane patch"),
-            face.tolerance.unwrap_or(ir.tolerances.linear),
-            &ordered_edges,
-            &ordered_coedges,
-        )?;
-    }
-
-    let brep_version = if archive_version.uses_extended_brep_layout() {
-        0x33
-    } else {
-        0x32
-    };
-    let mut payload = vec![brep_version];
-    let mut direct = vec![brep_version];
-    let c2 = (0..edge_count)
-        .map(|index| {
-            if let Some((origin, _, u_axis, v_axis)) = plane_frame {
-                brep_c2_curve(
-                    model,
-                    ordered_edges[index],
-                    ordered_coedges[index],
-                    origin,
-                    u_axis,
-                    v_axis,
-                )
-            } else {
-                explicit_brep_c2_curve(model, ordered_edges[index], ordered_coedges[index])
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    payload.extend(polymorphic_array(&c2));
-    let c3 = ordered_edges
-        .iter()
-        .map(|edge| brep_c3_curve(model, edge))
-        .collect::<Vec<_>>();
-    payload.extend(polymorphic_array(&c3));
-    let surface_record = if let Some((origin, normal, u_axis, _)) = plane_frame {
-        (
-            PLANE_SURFACE_CLASS,
-            plane_surface_payload(origin, normal, u_axis),
-        )
-    } else {
-        (
-            NURBS_SURFACE_CLASS,
-            nurbs_surface_payload(nurbs_patch.expect("non-plane patch")),
-        )
-    };
-    payload.extend(polymorphic_array(&[surface_record]));
-
-    let edge_index = ordered_edges
-        .iter()
-        .enumerate()
-        .map(|(index, edge)| (edge.id.as_str().to_owned(), index as i32))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let vertex_index = ordered_vertices
-        .iter()
-        .enumerate()
-        .map(|(index, vertex)| (vertex.id.as_str().to_owned(), index as i32))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let vertex_records = ordered_vertices
-        .iter()
-        .enumerate()
-        .map(|(index, vertex)| {
-            let point = ordered_points[index];
-            let incident = ordered_edges
-                .iter()
-                .flat_map(|edge| {
-                    [(&edge.start, &vertex.id), (&edge.end, &vertex.id)]
-                        .into_iter()
-                        .filter(|(endpoint, vertex)| endpoint == vertex)
-                        .map(|_| edge_index[edge.id.as_str()])
-                })
-                .collect::<Vec<_>>();
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            for value in [point.x, point.y, point.z] {
-                record.extend(value.to_le_bytes());
-            }
-            record.extend(indexes(&incident));
-            record.extend(vertex.tolerance.unwrap_or(0.0).to_le_bytes());
-            record
-        })
-        .collect::<Vec<_>>();
-    payload.extend(raw_array(&vertex_records));
-    let edge_records = ordered_edges
-        .iter()
-        .enumerate()
-        .map(|(index, edge)| {
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend((index as i32).to_le_bytes());
-            record.extend(0_i32.to_le_bytes());
-            record.extend(
-                edge.param_range
-                    .expect("validated edge domain")
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
-            );
-            record.extend(vertex_index[edge.start.as_str()].to_le_bytes());
-            record.extend(vertex_index[edge.end.as_str()].to_le_bytes());
-            record.extend(indexes(&[index as i32]));
-            record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
-            record.extend(
-                edge.param_range
-                    .expect("validated edge domain")
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
-            );
-            record
-        })
-        .collect::<Vec<_>>();
-    payload.extend(raw_array(&edge_records));
-    let trim_records = ordered_coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| {
-            let edge = ordered_edges[index];
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend((index as i32).to_le_bytes());
-            record.extend(
-                edge.param_range
-                    .expect("validated edge domain")
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
-            );
-            record.extend((index as i32).to_le_bytes());
-            let (from, to) = if coedge.sense == Sense::Forward {
-                (&edge.start, &edge.end)
-            } else {
-                (&edge.end, &edge.start)
-            };
-            record.extend(vertex_index[from.as_str()].to_le_bytes());
-            record.extend(vertex_index[to.as_str()].to_le_bytes());
-            record.extend(i32::from(coedge.sense == Sense::Reversed).to_le_bytes());
-            record.extend(1_i32.to_le_bytes());
-            record.extend(0_i32.to_le_bytes());
-            let loop_index = loop_ranges
-                .iter()
-                .position(|range| range.contains(&index))
-                .expect("trim belongs to one loop");
-            record.extend((loop_index as i32).to_le_bytes());
-            record.extend(
-                [brep_pcurve_fit_tolerance(model, coedge), 0.0_f64]
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
-            );
-            record.extend(
-                edge.param_range
-                    .expect("validated edge domain")
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
-            );
-            record.push(0);
-            record.extend([0_u8; 31]);
-            record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
-            record
-        })
-        .collect::<Vec<_>>();
-    payload.extend(raw_array(&trim_records));
-    let loop_records = loop_ranges
-        .iter()
-        .enumerate()
-        .map(|(index, range)| {
-            let mut record = (index as i32).to_le_bytes().to_vec();
-            record.extend(indexes(
-                &range.clone().map(|trim| trim as i32).collect::<Vec<_>>(),
-            ));
-            record.extend(
-                brep_loop_type(
-                    model.loops[index].boundary_role_in(&model.faces),
-                    index == 0,
-                )
-                .to_le_bytes(),
-            );
-            record.extend(0_i32.to_le_bytes());
-            record
-        })
-        .collect::<Vec<_>>();
-    payload.extend(raw_array(&loop_records));
-    let mut face_record = 0_i32.to_le_bytes().to_vec();
-    face_record.extend(indexes(&(0..model.loops.len() as i32).collect::<Vec<_>>()));
-    face_record.extend(0_i32.to_le_bytes());
-    face_record.extend(i32::from(face.sense == Sense::Reversed).to_le_bytes());
-    face_record.extend(0_i32.to_le_bytes());
-    payload.extend(face_array(&[face_record], &model.faces, archive_version));
-    let min = ordered_points.iter().fold([f64::INFINITY; 3], |a, p| {
-        [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
-    });
-    let max = ordered_points.iter().fold([f64::NEG_INFINITY; 3], |a, p| {
-        [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
-    });
-    for value in min.into_iter().chain(max) {
-        let bytes = value.to_le_bytes();
-        payload.extend(bytes);
-        direct.extend(bytes);
-    }
-    let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino planar mesh presence")?;
-    payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
-    payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
-    let solid = 0_i32.to_le_bytes();
-    payload.extend(solid);
-    direct.extend(solid);
-    if archive_version.uses_extended_brep_layout() {
-        payload.extend(empty_region_wrapper());
-    }
-    Ok(Some(BrepPayload {
-        body: payload,
-        direct,
-    }))
-}
-
-#[derive(Clone, Copy)]
-enum WritableFaceSurface<'a> {
-    Plane {
-        origin: cadmpeg_ir::math::Point3,
-        normal: cadmpeg_ir::math::Vector3,
-        u_axis: cadmpeg_ir::math::Vector3,
-        v_axis: cadmpeg_ir::math::Vector3,
-    },
-    Nurbs(&'a cadmpeg_ir::geometry::NurbsSurface),
-}
-
-fn multi_face_brep_payload(
-    ir: &CadIr,
-    body: &cadmpeg_ir::topology::Body,
+fn brep_payload(
+    model: &WritableModel<'_>,
     archive_version: RhinoArchiveVersion,
 ) -> Result<BrepPayload, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
-    use std::collections::{BTreeMap, BTreeSet};
 
-    let model = &ir.model;
-    if model.bodies.len() != 1
-        || model.regions.len() != 1
-        || model.shells.len() != 1
-        || model.faces.len() < 2
-        || model.loops.len() < model.faces.len()
-        || model.coedges.len() < 3 * model.faces.len()
-        || model.edges.is_empty()
-        || model.vertices.is_empty()
-        || model.points.len() != model.vertices.len()
-        || model.curves.len() != model.edges.len()
-        || model.surfaces.len() != model.faces.len()
-        || !model.tessellations.is_empty()
-    {
-        return Err(CodecError::NotImplemented(
-            "multi-face planar sheet writing requires one connected shell with explicit line and plane carriers"
-                .into(),
-        ));
-    }
-    if body.regions.len() != 1 || body.transform.is_some() {
-        return Err(CodecError::NotImplemented(
-            "multi-face planar sheet body placement is not writable".into(),
-        ));
-    }
-    check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
-    let region = &model.regions[0];
-    let shell = &model.shells[0];
-    if region.id != body.regions[0]
-        || region.body != body.id
-        || region.shells != [shell.id.clone()]
-        || shell.region != region.id
-        || shell.faces
-            != model
-                .faces
-                .iter()
-                .map(|face| face.id.clone())
-                .collect::<Vec<_>>()
-        || !shell.wire_edges.is_empty()
-        || !shell.free_vertices.is_empty()
-    {
-        return Err(CodecError::Malformed(
-            "multi-face planar sheet ownership graph is inconsistent".into(),
-        ));
-    }
-
-    let vertex_index = model
-        .vertices
-        .iter()
-        .enumerate()
-        .map(|(index, vertex)| (vertex.id.as_str().to_owned(), index as i32))
-        .collect::<BTreeMap<_, _>>();
-    let edge_index = model
-        .edges
-        .iter()
-        .enumerate()
-        .map(|(index, edge)| (edge.id.as_str().to_owned(), index as i32))
-        .collect::<BTreeMap<_, _>>();
-    let coedge_index = model
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.as_str().to_owned(), index as i32))
-        .collect::<BTreeMap<_, _>>();
-    let loop_index = model
-        .loops
-        .iter()
-        .enumerate()
-        .map(|(index, loop_)| (loop_.id.as_str().to_owned(), index as i32))
-        .collect::<BTreeMap<_, _>>();
-    let face_index = model
-        .faces
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.id.as_str().to_owned(), index as i32))
-        .collect::<BTreeMap<_, _>>();
-    let surface_index = model
-        .surfaces
-        .iter()
-        .enumerate()
-        .map(|(index, surface)| (surface.id.as_str().to_owned(), index as i32))
-        .collect::<BTreeMap<_, _>>();
-    if vertex_index.len() != model.vertices.len()
-        || edge_index.len() != model.edges.len()
-        || coedge_index.len() != model.coedges.len()
-        || loop_index.len() != model.loops.len()
-        || face_index.len() != model.faces.len()
-        || surface_index.len() != model.surfaces.len()
-    {
-        return Err(CodecError::Malformed(
-            "multi-face planar sheet contains duplicate topology identifiers".into(),
-        ));
-    }
-
-    let mut points = Vec::with_capacity(model.vertices.len());
-    let mut used_points = BTreeSet::new();
-    for vertex in &model.vertices {
-        let point = model
-            .points
-            .iter()
-            .find(|point| point.id == vertex.point)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("point {} is missing", vertex.point.as_str()))
-            })?;
-        if !used_points.insert(point.id.as_str().to_owned())
-            || !point.position.x.is_finite()
-            || !point.position.y.is_finite()
-            || !point.position.z.is_finite()
-        {
-            return Err(CodecError::malformed(format_args!(
-                "vertex {} has a shared or invalid point",
-                vertex.id.as_str()
-            )));
-        }
-        points.push(point.position);
-    }
-    for edge in &model.edges {
-        if !vertex_index.contains_key(edge.start.as_str())
-            || !vertex_index.contains_key(edge.end.as_str())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "edge {} references a missing vertex",
-                edge.id.as_str()
-            )));
-        }
-        validate_planar_edge(model, edge, ir.tolerances.linear)?;
-    }
-    let used_curves = model
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve.as_ref().map(|id| id.as_str().to_owned()))
-        .collect::<BTreeSet<_>>();
-    if used_curves.len() != model.curves.len() {
-        return Err(CodecError::NotImplemented(
-            "multi-face planar sheet requires one distinct line curve per edge".into(),
-        ));
-    }
-
-    let mut face_surfaces = Vec::with_capacity(model.faces.len());
-    let mut used_surfaces = BTreeSet::new();
-    let mut owned_loops = BTreeSet::new();
-    for face in &model.faces {
-        if face.shell != shell.id
-            || face.loops.is_empty()
-            || face.name.is_some()
-            || face.color.is_some()
-            || !used_surfaces.insert(face.surface.as_str().to_owned())
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "face {} has unsupported ownership, attributes, or shared surface state",
-                face.id.as_str()
-            )));
-        }
-        let surface = model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("surface {} is missing", face.surface.as_str()))
-            })?;
-        if surface.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "surface {} source-object state is not writable",
-                surface.id.as_str()
-            )));
-        }
-        match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => {
-                check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
-                face_surfaces.push(WritableFaceSurface::Plane {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
-                    v_axis: normal.cross(*u_axis),
-                });
-            }
-            SurfaceGeometry::Nurbs(nurbs) => {
-                check_nurbs_surface(surface.id.as_str(), nurbs)?;
-                if nurbs.u_periodic() || nurbs.v_periodic() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "face {} does not have a nonperiodic NURBS surface",
-                        face.id.as_str()
-                    )));
-                }
-                face_surfaces.push(WritableFaceSurface::Nurbs(nurbs));
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "face {} surface is not a plane or NURBS patch",
-                    face.id.as_str()
-                )));
-            }
-        }
-        for loop_id in &face.loops {
-            if !owned_loops.insert(loop_id.as_str().to_owned()) {
-                return Err(CodecError::malformed(format_args!(
-                    "loop {} has multiple face owners",
-                    loop_id.as_str()
-                )));
-            }
-        }
-    }
-    if owned_loops.len() != model.loops.len() {
-        return Err(CodecError::NotImplemented(
-            "multi-face planar sheet contains orphan loops".into(),
-        ));
-    }
-
-    let mut owned_coedges = BTreeSet::new();
-    for loop_ in &model.loops {
-        let face = model
-            .faces
-            .iter()
-            .find(|face| face.id == loop_.face)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("face {} is missing", loop_.face.as_str()))
-            })?;
-        if !face.loops.contains(&loop_.id) || loop_.coedges().len() < 3 {
-            return Err(CodecError::malformed(format_args!(
-                "loop {} ownership or boundary is invalid",
-                loop_.id.as_str()
-            )));
-        }
-        for (offset, id) in loop_.coedges().iter().enumerate() {
-            let coedge = model
-                .coedges
-                .iter()
-                .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("coedge {} is missing", id.as_str()))
-                })?;
-            if !owned_coedges.insert(id.as_str().to_owned()) || coedge.owner_loop != loop_.id {
-                return Err(CodecError::NotImplemented(format!(
-                    "coedge {} ownership or ring is not writable",
-                    coedge.id.as_str()
-                )));
-            }
-            let edge = model
-                .edges
-                .iter()
-                .find(|edge| edge.id == coedge.edge)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("edge {} is missing", coedge.edge.as_str()))
-                })?;
-            let end = if coedge.sense == Sense::Forward {
-                &edge.end
-            } else {
-                &edge.start
-            };
-            let next_id = loop_.coedges()[(offset + 1) % loop_.coedges().len()].clone();
-            let next = model
-                .coedges
-                .iter()
-                .find(|candidate| candidate.id == next_id)
-                .expect("validated next coedge");
-            let next_edge = model
-                .edges
-                .iter()
-                .find(|candidate| candidate.id == next.edge)
-                .expect("validated next edge");
-            let next_start = if next.sense == Sense::Forward {
-                &next_edge.start
-            } else {
-                &next_edge.end
-            };
-            if end != next_start {
-                return Err(CodecError::malformed(format_args!(
-                    "loop {} coedge traversal does not close",
-                    loop_.id.as_str()
-                )));
-            }
-        }
-    }
-    if owned_coedges.len() != model.coedges.len() {
-        return Err(CodecError::NotImplemented(
-            "multi-face planar sheet contains orphan coedges".into(),
-        ));
-    }
-    validate_brep_pcurve_ownership(model, &model.coedges.iter().collect::<Vec<_>>())?;
-
-    let mut edge_uses = Vec::with_capacity(model.edges.len());
-    let mut edge_faces = Vec::with_capacity(model.edges.len());
-    for edge in &model.edges {
-        let uses = model
-            .coedges
-            .iter()
-            .enumerate()
-            .filter(|(_, coedge)| coedge.edge == edge.id)
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        if uses.is_empty() || uses.len() > 2 || body.kind == BodyKind::Solid && uses.len() != 2 {
-            return Err(CodecError::NotImplemented(format!(
-                "edge {} incidence is incompatible with the body kind",
-                edge.id.as_str()
-            )));
-        }
-        let start = uses[0];
-        let mut ordered = vec![start];
-        while ordered.len() < uses.len() {
-            let next_id = &model.coedges[*ordered.last().expect("nonempty")].radial_next;
-            let next = *coedge_index.get(next_id.as_str()).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "radial coedge {} is missing",
-                    next_id.as_str()
-                ))
-            })? as usize;
-            if !uses.contains(&next) || ordered.contains(&next) {
-                return Err(CodecError::malformed(format_args!(
-                    "edge {} radial ring is inconsistent",
-                    edge.id.as_str()
-                )));
-            }
-            ordered.push(next);
-        }
-        if model.coedges[*ordered.last().expect("nonempty")].radial_next != model.coedges[start].id
-        {
-            return Err(CodecError::malformed(format_args!(
-                "edge {} radial ring does not close",
-                edge.id.as_str()
-            )));
-        }
-        if ordered.len() == 2 && model.coedges[ordered[0]].sense == model.coedges[ordered[1]].sense
-        {
-            return Err(CodecError::malformed(format_args!(
-                "shared edge {} has equal directed uses",
-                edge.id.as_str()
-            )));
-        }
-        let faces = ordered
-            .iter()
-            .map(|coedge| {
-                let loop_id = &model.coedges[*coedge].owner_loop;
-                let loop_ =
-                    &model.loops[*loop_index.get(loop_id.as_str()).expect("owned loop") as usize];
-                *face_index.get(loop_.face.as_str()).expect("owned face") as usize
-            })
-            .collect::<Vec<_>>();
-        edge_uses.push(ordered);
-        edge_faces.push(faces);
-    }
-    let mut reached = BTreeSet::from([0_usize]);
-    loop {
-        let prior = reached.len();
-        for faces in &edge_faces {
-            if faces.iter().any(|face| reached.contains(face)) {
-                reached.extend(faces);
-            }
-        }
-        if reached.len() == prior {
-            break;
-        }
-    }
-    if reached.len() != model.faces.len() {
-        return Err(CodecError::NotImplemented(
-            "multi-face planar sheet must be edge-connected in one shell".into(),
-        ));
-    }
-
-    for (loop_position, loop_) in model.loops.iter().enumerate() {
-        let face_position = *face_index.get(loop_.face.as_str()).expect("owned face") as usize;
-        if let WritableFaceSurface::Nurbs(surface) = face_surfaces[face_position] {
-            let coedges = loop_
-                .coedges()
-                .iter()
-                .map(|id| {
-                    &model.coedges[*coedge_index.get(id.as_str()).expect("owned coedge") as usize]
-                })
-                .collect::<Vec<_>>();
-            let edges = coedges
-                .iter()
-                .map(|coedge| {
-                    &model.edges
-                        [*edge_index.get(coedge.edge.as_str()).expect("owned edge") as usize]
-                })
-                .collect::<Vec<_>>();
-            validate_nurbs_trim_loop(
-                model,
-                surface,
-                model.faces[face_position]
-                    .tolerance
-                    .unwrap_or(ir.tolerances.linear),
-                &edges,
-                &coedges,
-            )?;
-            continue;
-        }
-        let WritableFaceSurface::Plane {
-            origin,
-            normal,
-            u_axis,
-            v_axis,
-        } = face_surfaces[face_position]
-        else {
-            unreachable!("NURBS face continued")
-        };
-        let tolerance = model.faces[face_position]
-            .tolerance
-            .unwrap_or(ir.tolerances.linear)
-            .max(EPS_WRITE_DEGENERATE);
-        let mut boundary = Vec::with_capacity(loop_.coedges().len());
-        for coedge_id in loop_.coedges() {
-            let coedge = &model.coedges
-                [*coedge_index.get(coedge_id.as_str()).expect("owned coedge") as usize];
-            let edge =
-                &model.edges[*edge_index.get(coedge.edge.as_str()).expect("owned edge") as usize];
-            let curve = model
-                .curves
-                .iter()
-                .find(|curve| edge.curve.as_ref() == Some(&curve.id))
-                .expect("validated edge curve");
-            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                for point in nurbs.control_points() {
-                    let distance = (point.x - origin.x) * normal.x
-                        + (point.y - origin.y) * normal.y
-                        + (point.z - origin.z) * normal.z;
-                    if distance.abs() > tolerance {
-                        return Err(CodecError::malformed(format_args!(
-                            "edge curve {} is outside its face plane tolerance",
-                            curve.id.as_str()
-                        )));
-                    }
-                }
-            }
-            let start = if coedge.sense == Sense::Forward {
-                &edge.start
-            } else {
-                &edge.end
-            };
-            boundary.push(plane_uv(
-                points[*vertex_index.get(start.as_str()).expect("owned vertex") as usize],
-                origin,
-                u_axis,
-                v_axis,
-            ));
-            for vertex_id in [&edge.start, &edge.end] {
-                let point =
-                    points[*vertex_index.get(vertex_id.as_str()).expect("owned vertex") as usize];
-                let distance = (point.x - origin.x) * normal.x
-                    + (point.y - origin.y) * normal.y
-                    + (point.z - origin.z) * normal.z;
-                if distance.abs() > tolerance {
-                    return Err(CodecError::malformed(format_args!(
-                        "loop {} vertex is outside its face plane tolerance",
-                        model.loops[loop_position].id.as_str()
-                    )));
-                }
-            }
-        }
-        let twice_area = boundary
-            .iter()
-            .zip(boundary.iter().cycle().skip(1))
-            .take(boundary.len())
-            .map(|(from, to)| from[0] * to[1] - to[0] * from[1])
-            .sum::<f64>();
-        if !twice_area.is_finite() || twice_area.abs() <= tolerance * tolerance {
-            return Err(CodecError::malformed(format_args!(
-                "loop {} has degenerate planar area",
-                loop_.id.as_str()
-            )));
-        }
-    }
-
-    let brep_version = if archive_version.uses_extended_brep_layout() {
+    let version = if archive_version.uses_extended_brep_layout() {
         0x33
     } else {
         0x32
     };
-    let mut payload = vec![brep_version];
-    let mut direct = vec![brep_version];
-    let c2 = model
-        .coedges
-        .iter()
-        .map(|coedge| {
-            let loop_ = &model.loops[*loop_index
-                .get(coedge.owner_loop.as_str())
-                .expect("owned loop") as usize];
-            let face = *face_index.get(loop_.face.as_str()).expect("owned face") as usize;
-            let edge =
-                &model.edges[*edge_index.get(coedge.edge.as_str()).expect("owned edge") as usize];
-            match face_surfaces[face] {
-                WritableFaceSurface::Plane {
-                    origin,
-                    u_axis,
-                    v_axis,
-                    ..
-                } => brep_c2_curve(model, edge, coedge, origin, u_axis, v_axis),
-                WritableFaceSurface::Nurbs(_) => explicit_brep_c2_curve(model, edge, coedge),
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    payload.extend(polymorphic_array(&c2));
+    let mut payload = vec![version];
+    let mut direct = vec![version];
+    payload.extend(polymorphic_array(
+        model.coedges.iter().map(|coedge| &coedge.c2),
+    ));
     let c3 = model
         .edges
         .iter()
         .map(|edge| brep_c3_curve(model, edge))
         .collect::<Vec<_>>();
-    payload.extend(polymorphic_array(&c3));
+    payload.extend(polymorphic_array(c3.iter()));
     let surfaces = model
         .surfaces
         .iter()
-        .map(|surface| match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => (
-                PLANE_SURFACE_CLASS,
-                plane_surface_payload(*origin, *normal, *u_axis),
-            ),
-            SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
-            _ => unreachable!("validated writable face surface"),
-        })
+        .map(|surface| surface.payload())
         .collect::<Vec<_>>();
-    payload.extend(polymorphic_array(&surfaces));
-
-    let vertex_records = model
+    payload.extend(polymorphic_array(surfaces.iter()));
+    let vertices = model
         .vertices
         .iter()
         .enumerate()
         .map(|(index, vertex)| {
-            let point = points[index];
             let incident = model
                 .edges
                 .iter()
-                .flat_map(|edge| {
-                    [(&edge.start, &vertex.id), (&edge.end, &vertex.id)]
+                .enumerate()
+                .flat_map(|(position, edge)| {
+                    [edge.start, edge.end]
                         .into_iter()
-                        .filter(|(endpoint, vertex)| endpoint == vertex)
-                        .map(|_| edge_index[edge.id.as_str()])
+                        .filter(move |endpoint| *endpoint == index)
+                        .map(move |_| position as i32)
                 })
                 .collect::<Vec<_>>();
             let mut record = (index as i32).to_le_bytes().to_vec();
-            for value in [point.x, point.y, point.z] {
+            for value in [vertex.point.x, vertex.point.y, vertex.point.z] {
                 record.extend(value.to_le_bytes());
             }
             record.extend(indexes(&incident));
-            record.extend(vertex.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(vertex.source.tolerance.unwrap_or(0.0).to_le_bytes());
             record
         })
         .collect::<Vec<_>>();
-    payload.extend(raw_array(&vertex_records));
-    let edge_records = model
+    payload.extend(raw_array(&vertices));
+    let edges = model
         .edges
         .iter()
         .enumerate()
         .map(|(index, edge)| {
-            let domain = edge.param_range.expect("validated edge domain");
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend((index as i32).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
-            record.extend(vertex_index[edge.start.as_str()].to_le_bytes());
-            record.extend(vertex_index[edge.end.as_str()].to_le_bytes());
+            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend((edge.start as i32).to_le_bytes());
+            record.extend((edge.end as i32).to_le_bytes());
             record.extend(indexes(
-                &edge_uses[index]
+                &edge
+                    .uses
                     .iter()
-                    .map(|coedge| *coedge as i32)
+                    .map(|position| *position as i32)
                     .collect::<Vec<_>>(),
             ));
-            record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
-            record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(edge.source.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
             record
         })
         .collect::<Vec<_>>();
-    payload.extend(raw_array(&edge_records));
-    let trim_records = model
+    payload.extend(raw_array(&edges));
+    let trims = model
         .coedges
         .iter()
         .enumerate()
         .map(|(index, coedge)| {
-            let edge_position = edge_index[coedge.edge.as_str()] as usize;
-            let edge = &model.edges[edge_position];
-            let domain = edge.param_range.expect("validated edge domain");
-            let (from, to) = if coedge.sense == Sense::Forward {
-                (&edge.start, &edge.end)
-            } else {
-                (&edge.end, &edge.start)
-            };
+            let edge = &model.edges[coedge.edge];
+            let (from, to) = model.endpoints(index);
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend((index as i32).to_le_bytes());
-            record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
-            record.extend((edge_position as i32).to_le_bytes());
-            record.extend(vertex_index[from.as_str()].to_le_bytes());
-            record.extend(vertex_index[to.as_str()].to_le_bytes());
-            record.extend(i32::from(coedge.sense == Sense::Reversed).to_le_bytes());
-            let uses = &edge_uses[edge_position];
-            let same_loop = uses.len() == 2
-                && model.coedges[uses[0]].owner_loop == model.coedges[uses[1]].owner_loop;
-            record.extend(brep_trim_type(uses.len(), same_loop).to_le_bytes());
+            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend((coedge.edge as i32).to_le_bytes());
+            record.extend((from as i32).to_le_bytes());
+            record.extend((to as i32).to_le_bytes());
+            record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
+            let same_loop = edge.uses.len() == 2
+                && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
+            record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend(loop_index[coedge.owner_loop.as_str()].to_le_bytes());
+            record.extend((coedge.owner_loop as i32).to_le_bytes());
             record.extend(
-                [brep_pcurve_fit_tolerance(model, coedge), 0.0_f64]
+                [coedge.fit_tolerance, 0.0_f64]
                     .into_iter()
                     .flat_map(f64::to_le_bytes),
             );
-            record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
             record.push(0);
             record.extend([0_u8; 31]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             record
         })
         .collect::<Vec<_>>();
-    payload.extend(raw_array(&trim_records));
-    let loop_records = model
+    payload.extend(raw_array(&trims));
+    let loops = model
         .loops
         .iter()
         .enumerate()
         .map(|(index, loop_)| {
-            let face = &model.faces[face_index[loop_.face.as_str()] as usize];
+            let face = &model.faces[loop_.face];
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend(indexes(
                 &loop_
-                    .coedges()
+                    .coedges
                     .iter()
-                    .map(|coedge| coedge_index[coedge.as_str()])
+                    .map(|coedge| *coedge as i32)
                     .collect::<Vec<_>>(),
             ));
             record.extend(
                 brep_loop_type(
-                    loop_.boundary_role_in(&model.faces),
-                    face.loops.first() == Some(&loop_.id),
+                    face.source.loop_role(&loop_.source.id),
+                    face.loops.first() == Some(&index),
                 )
                 .to_le_bytes(),
             );
-            record.extend(face_index[loop_.face.as_str()].to_le_bytes());
+            record.extend((loop_.face as i32).to_le_bytes());
             record
         })
         .collect::<Vec<_>>();
-    payload.extend(raw_array(&loop_records));
-    let face_records = model
+    payload.extend(raw_array(&loops));
+    let faces = model
         .faces
         .iter()
         .enumerate()
@@ -2045,22 +1044,35 @@ fn multi_face_brep_payload(
                 &face
                     .loops
                     .iter()
-                    .map(|loop_| loop_index[loop_.as_str()])
+                    .map(|loop_| *loop_ as i32)
                     .collect::<Vec<_>>(),
             ));
-            record.extend(surface_index[face.surface.as_str()].to_le_bytes());
-            record.extend(i32::from(face.sense == Sense::Reversed).to_le_bytes());
+            record.extend((face.surface as i32).to_le_bytes());
+            record.extend(i32::from(face.source.sense == Sense::Reversed).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
             record
         })
         .collect::<Vec<_>>();
-    payload.extend(face_array(&face_records, &model.faces, archive_version));
-    let min = points.iter().fold([f64::INFINITY; 3], |a, point| {
-        [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
+    payload.extend(face_array(
+        &faces,
+        &model
+            .faces
+            .iter()
+            .map(|face| face.source)
+            .collect::<Vec<_>>(),
+        archive_version,
+    ));
+    let min = model.vertices.iter().fold([f64::INFINITY; 3], |a, vertex| {
+        let p = vertex.point;
+        [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
     });
-    let max = points.iter().fold([f64::NEG_INFINITY; 3], |a, point| {
-        [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]
-    });
+    let max = model
+        .vertices
+        .iter()
+        .fold([f64::NEG_INFINITY; 3], |a, vertex| {
+            let p = vertex.point;
+            [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
+        });
     for value in min.into_iter().chain(max) {
         let bytes = value.to_le_bytes();
         payload.extend(bytes);
@@ -2069,7 +1081,7 @@ fn multi_face_brep_payload(
     let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino Brep mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
-    let solid = if body.kind == BodyKind::Solid {
+    let solid = if model.body.kind == BodyKind::Solid {
         planar_solid_orientation(model)
     } else {
         0
@@ -2105,41 +1117,22 @@ fn brep_loop_type(role: LoopBoundaryRole, first_on_face: bool) -> i32 {
     }
 }
 
-fn planar_solid_orientation(model: &cadmpeg_ir::document::Model) -> i32 {
-    use cadmpeg_ir::topology::Sense;
-
+fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
     let mut volume6 = 0.0;
     for loop_ in &model.loops {
-        let mut ring = Vec::with_capacity(loop_.coedges().len());
-        for coedge_id in loop_.coedges() {
-            let Some(coedge) = model.coedges.iter().find(|coedge| coedge.id == *coedge_id) else {
-                return 0;
-            };
-            let Some(edge) = model.edges.iter().find(|edge| edge.id == coedge.edge) else {
-                return 0;
-            };
-            let vertex_id = if coedge.sense == Sense::Forward {
-                &edge.start
-            } else {
-                &edge.end
-            };
-            let Some(vertex) = model.vertices.iter().find(|vertex| vertex.id == *vertex_id) else {
-                return 0;
-            };
-            let Some(point) = model.points.iter().find(|point| point.id == vertex.point) else {
-                return 0;
-            };
-            ring.push(point.position);
-        }
-        let Some(origin) = ring.first() else {
-            return 0;
-        };
-        for triangle in ring[1..].windows(2) {
-            let a = triangle[0];
-            let b = triangle[1];
-            volume6 += origin.x * (a.y * b.z - a.z * b.y)
-                + origin.y * (a.z * b.x - a.x * b.z)
-                + origin.z * (a.x * b.y - a.y * b.x);
+        let ring = loop_
+            .coedges
+            .iter()
+            .map(|coedge| model.vertices[model.endpoints(*coedge).0].point)
+            .collect::<Vec<_>>();
+        if let Some(origin) = ring.first() {
+            for triangle in ring[1..].windows(2) {
+                let a = triangle[0];
+                let b = triangle[1];
+                volume6 += origin.x * (a.y * b.z - a.z * b.y)
+                    + origin.y * (a.z * b.x - a.x * b.z)
+                    + origin.z * (a.x * b.y - a.y * b.x);
+            }
         }
     }
     if volume6 > 0.0 {
@@ -2149,99 +1142,6 @@ fn planar_solid_orientation(model: &cadmpeg_ir::document::Model) -> i32 {
     } else {
         0
     }
-}
-
-fn validate_planar_edge(
-    model: &cadmpeg_ir::document::Model,
-    edge: &cadmpeg_ir::topology::Edge,
-    document_tolerance: f64,
-) -> Result<(), CodecError> {
-    let curve_id = edge.curve.as_ref().ok_or_else(|| {
-        CodecError::NotImplemented(format!("edge {} has no writable curve", edge.id.as_str()))
-    })?;
-    let curve = model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *curve_id)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("curve {} is missing", curve_id.as_str()))
-        })?;
-    if curve.source_object.is_some() {
-        return Err(CodecError::NotImplemented(format!(
-            "edge curve {} source-object state is not writable",
-            curve.id.as_str()
-        )));
-    }
-    let [start_parameter, end_parameter] = edge.param_range.ok_or_else(|| {
-        CodecError::NotImplemented(format!("edge {} has no parameter range", edge.id.as_str()))
-    })?;
-    if !start_parameter.is_finite()
-        || !end_parameter.is_finite()
-        || start_parameter >= end_parameter
-    {
-        return Err(CodecError::malformed(format_args!(
-            "edge {} has an invalid parameter range",
-            edge.id.as_str()
-        )));
-    }
-    let (expected_start, expected_end) = match &curve.geometry {
-        CurveGeometry::Line { origin, direction } => {
-            if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
-                return Err(CodecError::malformed(format_args!(
-                    "edge {} has an invalid line parameterization",
-                    edge.id.as_str()
-                )));
-            }
-            (
-                cadmpeg_ir::math::Point3::new(
-                    origin.x + direction.x * start_parameter,
-                    origin.y + direction.y * start_parameter,
-                    origin.z + direction.z * start_parameter,
-                ),
-                cadmpeg_ir::math::Point3::new(
-                    origin.x + direction.x * end_parameter,
-                    origin.y + direction.y * end_parameter,
-                    origin.z + direction.z * end_parameter,
-                ),
-            )
-        }
-        CurveGeometry::Nurbs(nurbs) => {
-            check_nurbs_curve(curve.id.as_str(), nurbs)?;
-            let count = nurbs.control_points().len();
-            let domain = [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]];
-            if nurbs.periodic() || domain != [start_parameter, end_parameter] {
-                return Err(CodecError::NotImplemented(format!(
-                    "edge {} requires a nonperiodic full-domain NURBS curve",
-                    edge.id.as_str()
-                )));
-            }
-            (nurbs.control_points()[0], nurbs.control_points()[count - 1])
-        }
-        _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "edge curve {} is not a line or NURBS curve",
-                curve.id.as_str()
-            )));
-        }
-    };
-    let start = vertex_point(model, &edge.start).ok_or_else(|| {
-        CodecError::malformed(format_args!("edge {} start is missing", edge.id.as_str()))
-    })?;
-    let end = vertex_point(model, &edge.end).ok_or_else(|| {
-        CodecError::malformed(format_args!("edge {} end is missing", edge.id.as_str()))
-    })?;
-    let tolerance = edge
-        .tolerance
-        .unwrap_or(document_tolerance)
-        .max(EPS_WRITE_DEGENERATE);
-    if !close_point(start, expected_start, tolerance) || !close_point(end, expected_end, tolerance)
-    {
-        return Err(CodecError::malformed(format_args!(
-            "edge {} endpoints disagree with its line curve",
-            edge.id.as_str()
-        )));
-    }
-    Ok(())
 }
 
 fn close_point(
@@ -2254,37 +1154,23 @@ fn close_point(
         && (left.z - right.z).abs() <= tolerance
 }
 
-fn brep_c3_curve(
-    model: &cadmpeg_ir::document::Model,
-    edge: &cadmpeg_ir::topology::Edge,
-) -> ([u8; 16], Vec<u8>) {
-    let curve = model
-        .curves
-        .iter()
-        .find(|curve| edge.curve.as_ref() == Some(&curve.id))
-        .expect("validated edge curve");
-    match &curve.geometry {
-        CurveGeometry::Line { .. } => {
-            let from = vertex_point(model, &edge.start).expect("validated edge start");
-            let to = vertex_point(model, &edge.end).expect("validated edge end");
+fn brep_c3_curve(model: &WritableModel<'_>, edge: &WritableEdge<'_>) -> ([u8; 16], Vec<u8>) {
+    match edge.curve {
+        WritableEdgeCurve::Line { .. } => {
+            let from = model.vertices[edge.start].point;
+            let to = model.vertices[edge.end].point;
             (
                 LINE_CLASS,
-                bounded_line_payload(
-                    [from.x, from.y, from.z],
-                    [to.x, to.y, to.z],
-                    edge.param_range.expect("validated edge domain"),
-                    3,
-                ),
+                bounded_line_payload([from.x, from.y, from.z], [to.x, to.y, to.z], edge.domain, 3),
             )
         }
-        CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
-        _ => unreachable!("validated writable Brep curve"),
+        WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
     }
 }
 
 fn generated_projected_brep_c2_curve(
-    model: &cadmpeg_ir::document::Model,
-    edge: &cadmpeg_ir::topology::Edge,
+    vertices: &[WritableVertex<'_>],
+    edge: &WritableEdge<'_>,
     sense: cadmpeg_ir::topology::Sense,
     origin: cadmpeg_ir::math::Point3,
     u_axis: cadmpeg_ir::math::Vector3,
@@ -2292,31 +1178,26 @@ fn generated_projected_brep_c2_curve(
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     use cadmpeg_ir::topology::Sense;
 
-    let curve = model
-        .curves
-        .iter()
-        .find(|curve| edge.curve.as_ref() == Some(&curve.id))
-        .expect("validated edge curve");
-    Ok(match &curve.geometry {
-        CurveGeometry::Line { .. } => {
+    Ok(match edge.curve {
+        WritableEdgeCurve::Line { .. } => {
             let (from, to) = if sense == Sense::Forward {
-                (&edge.start, &edge.end)
+                (edge.start, edge.end)
             } else {
-                (&edge.end, &edge.start)
+                (edge.end, edge.start)
             };
-            let from = vertex_point(model, from).expect("validated trim start");
-            let to = vertex_point(model, to).expect("validated trim end");
+            let from = vertices[from].point;
+            let to = vertices[to].point;
             (
                 LINE_CLASS,
                 bounded_line_payload(
                     plane_uv(from, origin, u_axis, v_axis),
                     plane_uv(to, origin, u_axis, v_axis),
-                    edge.param_range.expect("validated edge domain"),
+                    edge.domain,
                     2,
                 ),
             )
         }
-        CurveGeometry::Nurbs(nurbs) => {
+        WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
                 .edit_control_points(|points| {
@@ -2337,14 +1218,13 @@ fn generated_projected_brep_c2_curve(
                         }
                     })
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
-                canonicalize_native_curve_knots(&mut projected, curve.id.as_str())?;
+                canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
             (
                 NURBS_CURVE_CLASS,
                 nurbs_curve_payload_dimension(&projected, 2),
             )
         }
-        _ => unreachable!("validated writable Brep curve"),
     })
 }
 
@@ -2363,61 +1243,15 @@ fn canonicalize_native_curve_knots(
     Ok(())
 }
 
-fn brep_c2_curve(
-    model: &cadmpeg_ir::document::Model,
-    edge: &cadmpeg_ir::topology::Edge,
-    coedge: &cadmpeg_ir::topology::Coedge,
-    origin: cadmpeg_ir::math::Point3,
-    u_axis: cadmpeg_ir::math::Vector3,
-    v_axis: cadmpeg_ir::math::Vector3,
-) -> Result<([u8; 16], Vec<u8>), CodecError> {
-    let generated =
-        generated_projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis)?;
-    if coedge.pcurves.is_empty() {
-        return Ok(generated);
-    }
-    let explicit = explicit_brep_c2_curve(model, edge, coedge)?;
-    if explicit != generated {
-        let id = coedge
-            .pcurves
-            .first()
-            .map(|use_| &use_.pcurve)
-            .expect("explicit pcurve");
-        return Err(CodecError::malformed(format_args!(
-            "pcurve {} does not exactly match its directed planar C3 projection",
-            id.as_str()
-        )));
-    }
-    Ok(explicit)
-}
-
-fn explicit_brep_c2_curve(
-    model: &cadmpeg_ir::document::Model,
-    edge: &cadmpeg_ir::topology::Edge,
-    coedge: &cadmpeg_ir::topology::Coedge,
-) -> Result<([u8; 16], Vec<u8>), CodecError> {
-    let pcurve_id = coedge
-        .pcurves
-        .first()
-        .map(|use_| &use_.pcurve)
-        .ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "coedge {} has no explicit pcurve",
-                coedge.id.as_str()
-            ))
-        })?;
-    let pcurve = model
-        .pcurves
-        .iter()
-        .find(|pcurve| pcurve.id == *pcurve_id)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("pcurve {} is missing", pcurve_id.as_str()))
-        })?;
+fn admit_pcurve<'a>(
+    edge: &WritableEdge<'_>,
+    pcurve: &'a cadmpeg_ir::geometry::Pcurve,
+) -> Result<WritablePcurve<'a>, CodecError> {
     if pcurve.wrapper_reversed() == Some(true)
         || pcurve.native_tail_flags().is_some()
         || pcurve
             .parameter_range()
-            .is_some_and(|range| Some(range) != edge.param_range)
+            .is_some_and(|range| range != edge.domain)
         || pcurve
             .fit_tolerance()
             .is_some_and(|value| !value.is_finite() || value < 0.0)
@@ -2427,8 +1261,8 @@ fn explicit_brep_c2_curve(
             pcurve.id.as_str()
         )));
     }
-    let domain = edge.param_range.expect("validated edge domain");
-    match &pcurve.geometry {
+    let domain = edge.domain;
+    let (payload, hull) = match &pcurve.geometry {
         cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
             if !origin.u.is_finite()
                 || !origin.v.is_finite()
@@ -2451,7 +1285,13 @@ fn explicit_brep_c2_curve(
                 origin.v + direction.v * domain[1],
                 0.0,
             ];
-            Ok((LINE_CLASS, bounded_line_payload(from, to, domain, 2)))
+            (
+                (LINE_CLASS, bounded_line_payload(from, to, domain, 2)),
+                vec![
+                    cadmpeg_ir::math::Point2::new(from[0], from[1]),
+                    cadmpeg_ir::math::Point2::new(to[0], to[1]),
+                ],
+            )
         }
         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } => {
             let curve = cadmpeg_ir::geometry::NurbsCurve::new(
@@ -2478,73 +1318,33 @@ fn explicit_brep_c2_curve(
                     pcurve.id.as_str()
                 )));
             }
-            Ok((NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)))
+            (
+                (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)),
+                nurbs.control_points().to_vec(),
+            )
         }
-        _ => Err(CodecError::NotImplemented(format!(
-            "pcurve {} geometry is not writable as Rhino Brep trim geometry",
-            pcurve.id.as_str()
-        ))),
-    }
-}
-
-fn validate_brep_pcurve_ownership(
-    model: &cadmpeg_ir::document::Model,
-    coedges: &[&cadmpeg_ir::topology::Coedge],
-) -> Result<(), CodecError> {
-    let mut owned = std::collections::BTreeSet::new();
-    for coedge in coedges {
-        if coedge.pcurves.len() > 1 {
+        _ => {
             return Err(CodecError::NotImplemented(format!(
-                "coedge {} has {} pcurve uses; Rhino stores one trim C2 carrier",
-                coedge.id.as_str(),
-                coedge.pcurves.len()
-            )));
+                "pcurve {} geometry is not writable as Rhino Brep trim geometry",
+                pcurve.id.as_str()
+            )))
         }
-        for pcurve_use in &coedge.pcurves {
-            let id = &pcurve_use.pcurve;
-            if !owned.insert(id.as_str().to_owned()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "pcurve {} is shared by multiple coedges",
-                    id.as_str()
-                )));
-            }
-            if !model.pcurves.iter().any(|pcurve| pcurve.id == *id) {
-                return Err(CodecError::malformed(format_args!(
-                    "pcurve {} is missing",
-                    id.as_str()
-                )));
-            }
-        }
-    }
-    if owned.len() != model.pcurves.len() {
-        return Err(CodecError::NotImplemented(
-            "orphan Brep pcurves are not writable".into(),
-        ));
-    }
-    Ok(())
+    };
+    Ok(WritablePcurve {
+        source: pcurve,
+        payload,
+        hull,
+    })
 }
 
-fn brep_pcurve_fit_tolerance(
-    model: &cadmpeg_ir::document::Model,
-    coedge: &cadmpeg_ir::topology::Coedge,
-) -> f64 {
-    coedge
-        .pcurves
-        .first()
-        .map(|pcurve_use| &pcurve_use.pcurve)
-        .and_then(|id| model.pcurves.iter().find(|pcurve| pcurve.id == *id))
-        .and_then(cadmpeg_ir::geometry::Pcurve::fit_tolerance)
-        .unwrap_or(0.0)
-}
-
-fn validate_nurbs_trim_loop(
-    model: &cadmpeg_ir::document::Model,
+fn validate_nurbs_trim(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     face_tolerance: f64,
-    edges: &[&cadmpeg_ir::topology::Edge],
-    coedges: &[&cadmpeg_ir::topology::Coedge],
+    edge: &WritableEdge<'_>,
+    sense: cadmpeg_ir::topology::Sense,
+    explicit: &WritablePcurve<'_>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::eval::{curve_point, nurbs_surface_point, pcurve_uv};
+    use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
     use cadmpeg_ir::topology::Sense;
 
     let u_count = surface.u_count() as usize;
@@ -2557,164 +1357,114 @@ fn validate_nurbs_trim_loop(
         surface.v_knots()[surface.v_degree() as usize],
         surface.v_knots()[v_count],
     ];
-    for (edge, coedge) in edges.iter().zip(coedges) {
-        explicit_brep_c2_curve(model, edge, coedge)?;
-        let pcurve_id = coedge
-            .pcurves
-            .first()
-            .map(|use_| &use_.pcurve)
-            .expect("explicit NURBS-face pcurve");
-        let pcurve = model
-            .pcurves
-            .iter()
-            .find(|pcurve| pcurve.id == *pcurve_id)
-            .expect("validated NURBS-face pcurve");
-        let domain = edge.param_range.expect("validated edge domain");
-        let uv_epsilon = EPS_WRITE_DEGENERATE
-            * u_domain
-                .into_iter()
-                .chain(v_domain)
-                .map(f64::abs)
-                .fold(1.0_f64, f64::max);
-        let inside_domain = |u: f64, v: f64| {
-            u >= u_domain[0] - uv_epsilon
-                && u <= u_domain[1] + uv_epsilon
-                && v >= v_domain[0] - uv_epsilon
-                && v <= v_domain[1] + uv_epsilon
-        };
-        let control_hull_inside = match &pcurve.geometry {
-            cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
-                domain.into_iter().all(|parameter| {
-                    inside_domain(
-                        origin.u + direction.u * parameter,
-                        origin.v + direction.v * parameter,
-                    )
-                })
-            }
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } => nurbs
-                .control_points()
+    let pcurve = explicit.source;
+    let domain = edge.domain;
+    let uv_epsilon = EPS_WRITE_DEGENERATE
+        * u_domain
+            .into_iter()
+            .chain(v_domain)
+            .map(f64::abs)
+            .fold(1.0_f64, f64::max);
+    let inside_domain = |u: f64, v: f64| {
+        u >= u_domain[0] - uv_epsilon
+            && u <= u_domain[1] + uv_epsilon
+            && v >= v_domain[0] - uv_epsilon
+            && v <= v_domain[1] + uv_epsilon
+    };
+    let control_hull_inside = explicit
+        .hull
+        .iter()
+        .all(|point| inside_domain(point.u, point.v));
+    if !control_hull_inside {
+        return Err(CodecError::malformed(format_args!(
+            "pcurve {} leaves its NURBS surface parameter domain",
+            pcurve.id.as_str()
+        )));
+    }
+    let mut breaks = vec![domain[0], domain[1]];
+    if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
+        breaks.extend(
+            nurbs
+                .knots()
                 .iter()
-                .all(|point| inside_domain(point.u, point.v)),
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "pcurve {} geometry is not writable on a Rhino NURBS face",
+                .copied()
+                .filter(|value| *value > domain[0] && *value < domain[1])
+                .map(|value| {
+                    if sense == Sense::Forward {
+                        value
+                    } else {
+                        domain[0] + domain[1] - value
+                    }
+                }),
+        );
+    }
+    if let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
+        breaks.extend(
+            nurbs
+                .knots()
+                .iter()
+                .copied()
+                .filter(|value| *value > domain[0] && *value < domain[1]),
+        );
+    }
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup();
+
+    let tolerance = face_tolerance
+        .max(edge.source.tolerance.unwrap_or(0.0))
+        .max(pcurve.fit_tolerance().unwrap_or(0.0))
+        .max(EPS_WRITE_DEGENERATE);
+    for span in breaks.windows(2) {
+        for step in 0..=16 {
+            let fraction = f64::from(step) / 16.0;
+            let parameter = span[0] + (span[1] - span[0]) * fraction;
+            let uv = pcurve_uv(&pcurve.geometry, parameter).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "pcurve {} cannot be evaluated over its edge domain",
+                    pcurve.id.as_str()
+                ))
+            })?;
+            if uv.u < u_domain[0] - uv_epsilon
+                || uv.u > u_domain[1] + uv_epsilon
+                || uv.v < v_domain[0] - uv_epsilon
+                || uv.v > v_domain[1] + uv_epsilon
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "pcurve {} leaves its NURBS surface parameter domain",
                     pcurve.id.as_str()
                 )));
             }
-        };
-        if !control_hull_inside {
-            return Err(CodecError::malformed(format_args!(
-                "pcurve {} leaves its NURBS surface parameter domain",
-                pcurve.id.as_str()
-            )));
-        }
-        let curve = model
-            .curves
-            .iter()
-            .find(|curve| edge.curve.as_ref() == Some(&curve.id))
-            .expect("validated edge curve");
-
-        let mut breaks = vec![domain[0], domain[1]];
-        if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-            breaks.extend(
-                nurbs
-                    .knots()
-                    .iter()
-                    .copied()
-                    .filter(|value| *value > domain[0] && *value < domain[1])
-                    .map(|value| {
-                        if coedge.sense == Sense::Forward {
-                            value
-                        } else {
-                            domain[0] + domain[1] - value
-                        }
-                    }),
-            );
-        }
-        if let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
-            breaks.extend(
-                nurbs
-                    .knots()
-                    .iter()
-                    .copied()
-                    .filter(|value| *value > domain[0] && *value < domain[1]),
-            );
-        }
-        breaks.sort_by(f64::total_cmp);
-        breaks.dedup();
-
-        let tolerance = face_tolerance
-            .max(edge.tolerance.unwrap_or(0.0))
-            .max(pcurve.fit_tolerance().unwrap_or(0.0))
-            .max(EPS_WRITE_DEGENERATE);
-        for span in breaks.windows(2) {
-            for step in 0..=16 {
-                let fraction = f64::from(step) / 16.0;
-                let parameter = span[0] + (span[1] - span[0]) * fraction;
-                let uv = pcurve_uv(&pcurve.geometry, parameter).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "pcurve {} cannot be evaluated over its edge domain",
-                        pcurve.id.as_str()
-                    ))
-                })?;
-                if uv.u < u_domain[0] - uv_epsilon
-                    || uv.u > u_domain[1] + uv_epsilon
-                    || uv.v < v_domain[0] - uv_epsilon
-                    || uv.v > v_domain[1] + uv_epsilon
-                {
-                    return Err(CodecError::malformed(format_args!(
-                        "pcurve {} leaves its NURBS surface parameter domain",
-                        pcurve.id.as_str()
-                    )));
-                }
-                let mapped = nurbs_surface_point(surface, uv.u, uv.v).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "pcurve {} cannot be evaluated through its NURBS surface",
-                        pcurve.id.as_str()
-                    ))
-                })?;
-                let curve_parameter = if coedge.sense == Sense::Forward {
-                    parameter
-                } else {
-                    domain[0] + domain[1] - parameter
-                };
-                let edge_point =
-                    curve_point(&curve.geometry, curve_parameter).ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "edge curve {} cannot be evaluated over its edge domain",
-                            curve.id.as_str()
-                        ))
-                    })?;
-                let distance = ((mapped.x - edge_point.x).powi(2)
-                    + (mapped.y - edge_point.y).powi(2)
-                    + (mapped.z - edge_point.z).powi(2))
-                .sqrt();
-                if !distance.is_finite() || distance > tolerance {
-                    return Err(CodecError::malformed(format_args!(
-                        "pcurve {} misses directed edge curve {} by {distance}",
-                        pcurve.id.as_str(),
-                        curve.id.as_str()
-                    )));
-                }
+            let mapped = nurbs_surface_point(surface, uv.u, uv.v).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "pcurve {} cannot be evaluated through its NURBS surface",
+                    pcurve.id.as_str()
+                ))
+            })?;
+            let curve_parameter = if sense == Sense::Forward {
+                parameter
+            } else {
+                domain[0] + domain[1] - parameter
+            };
+            let edge_point = edge.curve.point(curve_parameter).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "edge curve {} cannot be evaluated over its edge domain",
+                    edge.curve_id
+                ))
+            })?;
+            let distance = ((mapped.x - edge_point.x).powi(2)
+                + (mapped.y - edge_point.y).powi(2)
+                + (mapped.z - edge_point.z).powi(2))
+            .sqrt();
+            if !distance.is_finite() || distance > tolerance {
+                return Err(CodecError::malformed(format_args!(
+                    "pcurve {} misses directed edge curve {} by {distance}",
+                    pcurve.id.as_str(),
+                    edge.curve_id
+                )));
             }
         }
     }
     Ok(())
-}
-
-fn vertex_point(
-    model: &cadmpeg_ir::document::Model,
-    vertex_id: &cadmpeg_ir::ids::VertexId,
-) -> Option<cadmpeg_ir::math::Point3> {
-    let vertex = model
-        .vertices
-        .iter()
-        .find(|vertex| vertex.id == *vertex_id)?;
-    model
-        .points
-        .iter()
-        .find(|point| point.id == vertex.point)
-        .map(|point| point.position)
 }
 
 fn plane_uv(
@@ -2740,7 +1490,9 @@ fn bounded_line_payload(from: [f64; 3], to: [f64; 3], domain: [f64; 2], dimensio
     payload
 }
 
-fn polymorphic_array(children: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+fn polymorphic_array<'a>(
+    children: impl ExactSizeIterator<Item = &'a ([u8; 16], Vec<u8>)>,
+) -> Vec<u8> {
     let mut body = vec![0x10];
     body.extend((children.len() as i32).to_le_bytes());
     let mut direct = body.clone();
@@ -2761,7 +1513,7 @@ fn raw_array(records: &[Vec<u8>]) -> Vec<u8> {
 
 fn face_array(
     records: &[Vec<u8>],
-    faces: &[cadmpeg_ir::topology::Face],
+    faces: &[&cadmpeg_ir::topology::Face],
     archive_version: RhinoArchiveVersion,
 ) -> Vec<u8> {
     let version_two = archive_version.uses_face_array_v2();
