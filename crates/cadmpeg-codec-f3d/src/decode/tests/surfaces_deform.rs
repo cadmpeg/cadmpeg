@@ -477,17 +477,13 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         panic!("expected T-spline surface")
     };
     let TSplineSubtransform::Reference {
-        index,
         resolved: Some(resolved),
+        ..
     } = &construction.subtransform
     else {
         panic!("expected resolved T-spline reference")
     };
-    assert!(*index >= 0);
-    assert!(matches!(
-        resolved.as_ref(),
-        TSplineSubtransform::Inline { program, .. } if program.contains("v 1 0 0 0")
-    ));
+    assert!(resolved.program.as_str().contains("v 1 0 0 0"));
     assert_eq!(construction.program_graph().unwrap().records.len(), 1);
     assert_eq!(
         construction.values_graph().unwrap().records[0].kind,
@@ -512,7 +508,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     };
     assert!(matches!(
         construction.subtransform,
-        TSplineSubtransform::Inline { .. }
+        TSplineSubtransform::Inline(_)
     ));
 }
 

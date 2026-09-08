@@ -3723,14 +3723,15 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                 Some(cur.take_bool()?)
             };
             let values = cur.take_str()?.to_string();
-            TSplineSubtransform::Inline {
-                program,
-                separator,
-                values,
-            }
+            TSplineSubtransform::Inline(
+                cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
+                    program, separator, values,
+                )
+                .ok()?,
+            )
         }
         "ref" => TSplineSubtransform::Reference {
-            index: cur.take_long()?,
+            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
             resolved: None,
         },
         _ => return None,
@@ -4148,14 +4149,15 @@ fn t_spline_subtransform(span: &[Token]) -> Option<cadmpeg_ir::geometry::TSpline
                 Some(cur.take_bool()?)
             };
             let values = cur.take_str()?.to_string();
-            Some(TSplineSubtransform::Inline {
-                program,
-                separator,
-                values,
-            })
+            Some(TSplineSubtransform::Inline(
+                cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
+                    program, separator, values,
+                )
+                .ok()?,
+            ))
         }
         "ref" => Some(TSplineSubtransform::Reference {
-            index: cur.take_long()?,
+            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
             resolved: None,
         }),
         _ => None,
@@ -4166,7 +4168,7 @@ fn resolve_t_spline_subtransform(
     index: usize,
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
+) -> Option<cadmpeg_ir::geometry::InlineTSplineSubtransform> {
     use cadmpeg_ir::geometry::TSplineSubtransform;
 
     if seen.contains(&index) {
@@ -4175,9 +4177,9 @@ fn resolve_t_spline_subtransform(
     seen.push(index);
     let decoded = t_spline_subtransform(table.span(index)?)?;
     match decoded {
-        inline @ TSplineSubtransform::Inline { .. } => Some(inline),
+        TSplineSubtransform::Inline(inline) => Some(inline),
         TSplineSubtransform::Reference { index, .. } => {
-            resolve_t_spline_subtransform(usize::try_from(index).ok()?, table, seen)
+            resolve_t_spline_subtransform(usize::try_from(index.get()).ok()?, table, seen)
         }
     }
 }
@@ -4225,16 +4227,10 @@ fn procedural_resolving_refs(
                 &mut construction.subtransform
             {
                 let inline = resolve_t_spline_subtransform(
-                    usize::try_from(*index).ok()?,
+                    usize::try_from(index.get()).ok()?,
                     table,
                     &mut Vec::new(),
                 )?;
-                if !matches!(
-                    inline,
-                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { .. }
-                ) {
-                    return None;
-                }
                 *resolved = Some(Box::new(inline));
             }
         }

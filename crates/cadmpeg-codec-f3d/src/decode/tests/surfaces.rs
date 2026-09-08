@@ -1000,17 +1000,12 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
     assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
     assert_eq!((native.type_code, native.trailing_value), (7, 9));
-    let TSplineSubtransform::Inline {
-        program,
-        separator,
-        values,
-    } = &native.subtransform
-    else {
+    let TSplineSubtransform::Inline(inline) = &native.subtransform else {
         panic!("expected inline T-spline subtransform")
     };
-    assert!(program.contains("v 1 0 0 0"));
-    assert_eq!(*separator, Some(false));
-    assert_eq!(values, "100verts 1 2\n");
+    assert!(inline.program.as_str().contains("v 1 0 0 0"));
+    assert_eq!(inline.separator, Some(false));
+    assert_eq!(inline.values.as_str(), "100verts 1 2\n");
     let graph = native.program_graph().expect("parsed T-spline graph");
     assert_eq!(graph.headers.len(), 2);
     assert_eq!(graph.records.len(), 3);
