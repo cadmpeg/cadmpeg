@@ -2593,6 +2593,7 @@ struct SegmentTypeWire {
 
 impl TryFrom<SegmentTypeWire> for SegmentType {
     type Error = String;
+    /// Nonempty `base_type_guid` text outside the relaxed GUID domain is not decoder-producible and is rejected deliberately.
     fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
