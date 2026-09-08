@@ -62,9 +62,17 @@ enum BinaryValue {
 #[derive(Debug)]
 struct BinaryDirectory {
     offset: u32,
-    values: Vec<BinaryValue>,
-    entity_type: i64,
-    parameter_pointer: i64,
+    values: [BinaryValue; 16],
+}
+
+impl BinaryDirectory {
+    fn entity_type(&self) -> Result<i64, CodecError> {
+        integer_value(&self.values[0], "Directory entity type")
+    }
+
+    fn parameter_pointer(&self) -> Result<i64, CodecError> {
+        pointer_value(&self.values[1], "Directory Parameter Data")
+    }
 }
 
 #[derive(Debug)]
@@ -578,19 +586,15 @@ fn read_directory(
             return Err(malformed("Binary Directory entity exceeds its section"));
         }
         let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
-        let mut values = Vec::with_capacity(16);
-        for _ in 0..16 {
-            values.push(one_value(&mut stream, "Directory")?);
+        let mut values = std::array::from_fn(|_| BinaryValue::Default);
+        for value in &mut values {
+            *value = one_value(&mut stream, "Directory")?;
         }
         stream.finish()?;
-        let entity_type = integer_value(&values[0], "Directory entity type")?;
-        let parameter_pointer = pointer_value(&values[1], "Directory Parameter Data")?;
-        records.push(BinaryDirectory {
-            offset,
-            values,
-            entity_type,
-            parameter_pointer,
-        });
+        let record = BinaryDirectory { offset, values };
+        record.entity_type()?;
+        record.parameter_pointer()?;
+        records.push(record);
         cursor = body_end;
     }
     Ok(records)
@@ -916,7 +920,7 @@ fn normalize_directory_and_parameters(
         let directory_index = *directory_by_offset
             .get(&directory_pointer)
             .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
-        if directory[directory_index].entity_type != parameter.entity_type {
+        if directory[directory_index].entity_type()? != parameter.entity_type {
             return Err(malformed(
                 "Binary Directory and Parameter entity types disagree",
             ));
@@ -940,7 +944,7 @@ fn normalize_directory_and_parameters(
     let mut parameter_counts =
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
     for (directory_index, directory_record) in directory.iter().enumerate() {
-        let pointer = directory_record.parameter_pointer;
+        let pointer = directory_record.parameter_pointer()?;
         if pointer < 0 {
             return Err(malformed(
                 "Binary Directory Parameter Data pointer is negative",
