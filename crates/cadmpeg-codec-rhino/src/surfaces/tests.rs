@@ -616,9 +616,12 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     )
     .expect("valid test curve");
     let mut end = start.clone();
-    for point in end.control_points_mut() {
-        point.z = 7.0;
-    }
+    end.edit_control_points(|points| {
+        for point in points {
+            point.z = 7.0;
+        }
+    })
+    .expect("valid test curve edit");
     let plain =
         super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0).expect("required invariant");
     assert_eq!((plain.u_degree(), plain.v_degree()), (2, 1));

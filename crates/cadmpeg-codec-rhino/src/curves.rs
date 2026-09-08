@@ -574,11 +574,19 @@ fn scale_decoded_curve(
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Nurbs(nurbs) => {
-                for point in nurbs.control_points_mut() {
-                    *point = scale_ir_point(*point, scale).ok_or_else(|| {
-                        GeometryError::malformed(offset, "scaled plane-space curve is invalid")
-                    })?;
-                }
+                let scaled = nurbs
+                    .control_points()
+                    .iter()
+                    .copied()
+                    .map(|point| {
+                        scale_ir_point(point, scale).ok_or_else(|| {
+                            GeometryError::malformed(offset, "scaled plane-space curve is invalid")
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                nurbs
+                    .edit_control_points(|points| points.copy_from_slice(&scaled))
+                    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
             CurveGeometry::Circle { center, radius, .. } => {
                 *center = scale_ir_point(*center, scale).ok_or_else(|| {
@@ -699,12 +707,21 @@ pub(crate) fn remap_nurbs_domain(
         return Err(error(offset, "curve domain is invalid"));
     }
     let factor = (target[1] - target[0]) / denominator;
-    for knot in curve.knots_mut() {
-        *knot = target[0] + (*knot - source[0]) * factor;
-        if !knot.is_finite() {
-            return Err(error(offset, "curve knot remap overflowed"));
-        }
-    }
+    let remapped = curve
+        .knots()
+        .iter()
+        .copied()
+        .map(|knot| {
+            let value = target[0] + (knot - source[0]) * factor;
+            value
+                .is_finite()
+                .then_some(value)
+                .ok_or_else(|| error(offset, "curve knot remap overflowed"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    curve
+        .edit_knots(|knots| knots.copy_from_slice(&remapped))
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     Ok(curve)
 }
 
@@ -981,7 +998,11 @@ pub(crate) fn join_nurbs_segments(
                 ));
             }
             *control_points.last_mut().expect("previous endpoint") = midpoint;
-            segment.control_points_mut()[0] = midpoint;
+            let mut adjusted = segment.control_points().to_vec();
+            adjusted[0] = midpoint;
+            segment
+                .edit_control_points(|points| points.copy_from_slice(&adjusted))
+                .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
         }
         let skip = usize::from(index > 0);
         if let Some(target) = &mut weights {

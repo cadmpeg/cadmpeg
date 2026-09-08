@@ -504,9 +504,15 @@ fn transform_nurbs(
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let mut result = curve.clone();
-    for point in result.control_points_mut() {
-        *point = transform_local(*point, origin, xaxis, yaxis, zaxis, miter, offset)?;
-    }
+    let transformed = result
+        .control_points()
+        .iter()
+        .copied()
+        .map(|point| transform_local(point, origin, xaxis, yaxis, zaxis, miter, offset))
+        .collect::<Result<Vec<_>, _>>()?;
+    result
+        .edit_control_points(|points| points.copy_from_slice(&transformed))
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     Ok(result)
 }
 
@@ -1391,7 +1397,9 @@ pub(crate) mod tests {
         else {
             unreachable!()
         };
-        curve.control_points_mut()[1].z = 1.0;
+        curve
+            .edit_control_points(|points| points[1].z = 1.0)
+            .expect("valid test curve edit");
         assert!(exact_orientation(&off_plane, 0).is_err());
     }
 

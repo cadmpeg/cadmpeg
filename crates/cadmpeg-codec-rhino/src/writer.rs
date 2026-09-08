@@ -2317,24 +2317,28 @@ fn generated_projected_brep_c2_curve(
         }
         CurveGeometry::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
-            for point in projected.control_points_mut() {
-                let uv = plane_uv(*point, origin, u_axis, v_axis);
-                *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-            }
+            let projected_points = projected
+                .control_points()
+                .iter()
+                .map(|point| {
+                    let uv = plane_uv(*point, origin, u_axis, v_axis);
+                    cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0)
+                })
+                .collect::<Vec<_>>();
+            projected
+                .edit_control_points(|points| points.copy_from_slice(&projected_points))
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
             if sense == Sense::Reversed {
-                projected.control_points_mut().reverse();
-                if let Some(weights) = projected.weights_mut() {
-                    weights.reverse();
-                }
                 let sum = projected.knots()[projected.degree() as usize]
                     + projected.knots()[projected.control_points().len()];
-                let reversed = projected
-                    .knots()
-                    .iter()
-                    .rev()
-                    .map(|knot| sum - knot)
-                    .collect::<Vec<_>>();
-                projected.knots_mut().copy_from_slice(&reversed);
+                projected.reverse_parameterization();
+                projected
+                    .edit_knots(|knots| {
+                        for knot in knots {
+                            *knot += sum;
+                        }
+                    })
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, curve.id.as_str())?;
             }
             (
@@ -2355,7 +2359,9 @@ fn canonicalize_native_curve_knots(
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
         .map_err(|error| CodecError::malformed(format_args!("curve {id}: {error}")))?;
-    curve.knots_mut().copy_from_slice(&reconstructed);
+    curve
+        .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
+        .map_err(|error| CodecError::malformed(format_args!("curve {id}: {error}")))?;
     Ok(())
 }
 
