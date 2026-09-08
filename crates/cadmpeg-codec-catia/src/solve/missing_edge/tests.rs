@@ -235,17 +235,33 @@ fn endpoint_degree_closure_retains_symmetric_face_swaps() {
 
 #[test]
 fn candidate_contexts_share_edge_row_storage() {
+    const CANDIDATES: usize = 1024;
     let bytes = crate::test_support::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
     let base = StandardMeshBoundaryContext::parse(&bytes, &faces).expect("quad boundary context");
-    for _ in 0..1024 {
-        let candidate = base
-            .with_edge_faces(&faces)
-            .expect("quad candidate context");
-        assert_eq!(
-            candidate.analysis.edge_rows.as_ptr(),
-            base.analysis.edge_rows.as_ptr()
+    let mut candidates = Vec::with_capacity(CANDIDATES);
+    assert_eq!(Arc::strong_count(&base.analysis), 1);
+    for _ in 0..CANDIDATES {
+        candidates.push(
+            base.with_edge_faces(&faces)
+                .expect("quad candidate context"),
         );
-        assert_eq!(candidate.coverage, base.coverage);
+        assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
     }
+    for candidate in &candidates {
+        let StandardMeshBoundaryContext {
+            analysis,
+            coverage,
+            edge_ports,
+            edge_runs,
+            cycle_lengths,
+        } = candidate;
+        assert!(Arc::ptr_eq(analysis, &base.analysis));
+        assert_eq!(coverage, &base.coverage);
+        assert_eq!(edge_ports, &base.edge_ports);
+        assert_eq!(edge_runs, &base.edge_runs);
+        assert_eq!(cycle_lengths, &base.cycle_lengths);
+    }
+    drop(candidates);
+    assert_eq!(Arc::strong_count(&base.analysis), 1);
 }
