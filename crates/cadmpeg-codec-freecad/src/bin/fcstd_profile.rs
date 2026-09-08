@@ -1306,7 +1306,8 @@ mod tests {
             gate("L2", vec![assertion("third", true, "yes", "yes")]),
         ];
         assert!(gates[2].assertions_passed());
-        let wire = serialize_gates(&gates, serde_json::value::Serializer).expect("serialize gate ladder");
+        let wire =
+            serialize_gates(&gates, serde_json::value::Serializer).expect("serialize gate ladder");
         assert_eq!(
             wire,
             serde_json::json!([
