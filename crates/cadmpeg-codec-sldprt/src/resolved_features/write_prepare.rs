@@ -1253,7 +1253,7 @@ fn generated_sketch_owner_record<'a>(
     let owner_record_id = owner
         .native_ref
         .clone()
-        .unwrap_or_else(|| format!("sldprt:generated:feature#{}", owner.id.as_str()));
+        .unwrap_or_else(|| crate::history::write::features::generated_feature_record_id(&owner.id));
     native
         .feature_histories
         .iter()
