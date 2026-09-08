@@ -24,7 +24,11 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
     assert_eq!(
         polygons
             .iter()
-            .map(|polygon| polygon.vertex_indices.as_slice())
+            .map(|polygon| polygon
+                .corners
+                .iter()
+                .map(|&(vertex, _)| vertex)
+                .collect::<Vec<_>>())
             .collect::<Vec<_>>(),
         vec![&[0, 1, 2], &[2, 1, 3], &[2, 3, 0], &[3, 1, 0]]
     );
@@ -36,7 +40,11 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
         vec![10, 12, 11, 13]
     );
     assert_eq!(
-        polygons[0].attribute_indices,
+        polygons[0]
+            .corners
+            .iter()
+            .map(|&(_, attribute)| attribute)
+            .collect::<Vec<_>>(),
         vec![Some(0), Some(1), Some(2)]
     );
 }

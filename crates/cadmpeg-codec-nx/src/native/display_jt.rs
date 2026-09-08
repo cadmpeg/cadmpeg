@@ -15,6 +15,7 @@ use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
 use std::num::NonZeroU64;
 
+use crate::jt_topology::Polygon;
 use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
 use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
@@ -519,14 +520,8 @@ pub struct DisplayJtPolygonMesh {
     pub topology: String,
     /// Coordinate-array header indexed by the polygons.
     pub coordinate_header: String,
-    /// Ordered polygon vertex indices.
-    polygons: Vec<Vec<u32>>,
-    /// Per-corner vertex-attribute indices parallel to `polygons`.
-    vertex_attribute_indices: Vec<Vec<Option<u32>>>,
-    /// Per-polygon group identifiers.
-    polygon_groups: Vec<i32>,
-    /// Per-polygon flag words.
-    polygon_flags: Vec<u16>,
+    /// Ordered polygons with paired coordinate and attribute indices.
+    polygons: Vec<Polygon>,
     /// Absolute source offset of the topology packet sequence.
     pub source_offset: u64,
 }
@@ -552,28 +547,53 @@ impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
         {
             return Err("polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree");
         }
+        let polygons = wire
+            .polygons
+            .into_iter()
+            .zip(wire.vertex_attribute_indices)
+            .zip(wire.polygon_groups)
+            .zip(wire.polygon_flags)
+            .map(|(((vertices, attributes), group), flags)| {
+                if vertices.len() != attributes.len() {
+                    return Err("polygon vertices and attributes: corner counts must agree");
+                }
+                Ok(Polygon {
+                    corners: vertices.into_iter().zip(attributes).collect(),
+                    group,
+                    flags,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             id: wire.id,
             topology: wire.topology,
             coordinate_header: wire.coordinate_header,
-            polygons: wire.polygons,
-            vertex_attribute_indices: wire.vertex_attribute_indices,
-            polygon_groups: wire.polygon_groups,
-            polygon_flags: wire.polygon_flags,
+            polygons,
             source_offset: wire.source_offset,
         })
     }
 }
 impl From<DisplayJtPolygonMesh> for DisplayJtPolygonMeshWire {
     fn from(value: DisplayJtPolygonMesh) -> Self {
+        let mut polygons = Vec::with_capacity(value.polygons.len());
+        let mut vertex_attribute_indices = Vec::with_capacity(value.polygons.len());
+        let mut polygon_groups = Vec::with_capacity(value.polygons.len());
+        let mut polygon_flags = Vec::with_capacity(value.polygons.len());
+        for polygon in value.polygons {
+            let (vertices, attributes) = polygon.corners.into_iter().unzip();
+            polygons.push(vertices);
+            vertex_attribute_indices.push(attributes);
+            polygon_groups.push(polygon.group);
+            polygon_flags.push(polygon.flags);
+        }
         Self {
             id: value.id,
             topology: value.topology,
             coordinate_header: value.coordinate_header,
-            polygons: value.polygons,
-            vertex_attribute_indices: value.vertex_attribute_indices,
-            polygon_groups: value.polygon_groups,
-            polygon_flags: value.polygon_flags,
+            polygons,
+            vertex_attribute_indices,
+            polygon_groups,
+            polygon_flags,
             source_offset: value.source_offset,
         }
     }
@@ -2733,29 +2753,18 @@ pub fn display_jt_polygon_meshes(
         };
         if polygons.iter().any(|polygon| {
             polygon
-                .vertex_indices
+                .corners
                 .iter()
-                .any(|&index| index >= coordinate_header.unique_vertex_count)
+                .any(|&(index, _)| index >= coordinate_header.unique_vertex_count)
         }) {
             return Vec::new();
         }
-        let Ok(mesh) = DisplayJtPolygonMesh::try_from(DisplayJtPolygonMeshWire {
+        let mesh = DisplayJtPolygonMesh {
             id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
             topology: sequence.id.clone(),
             coordinate_header: coordinate_header.id.clone(),
-            polygon_groups: polygons.iter().map(|polygon| polygon.group).collect(),
-            polygon_flags: polygons.iter().map(|polygon| polygon.flags).collect(),
-            vertex_attribute_indices: polygons
-                .iter()
-                .map(|polygon| polygon.attribute_indices.clone())
-                .collect(),
-            polygons: polygons
-                .into_iter()
-                .map(|polygon| polygon.vertex_indices)
-                .collect(),
+            polygons,
             source_offset: sequence.source_offset,
-        }) else {
-            return Vec::new();
         };
         meshes.push(mesh);
     }
@@ -4249,17 +4258,13 @@ pub(crate) fn display_jt_tessellations(
         let paths = display_jt_node_paths(&binding.scene_segment, shape_node.object_id, inputs)?;
         let mut rendered = Vec::new();
         rendered.try_reserve_exact(mesh.polygons.len()).ok()?;
-        for ((polygon, attributes), &group) in mesh
-            .polygons
-            .iter()
-            .zip(&mesh.vertex_attribute_indices)
-            .zip(&mesh.polygon_groups)
-        {
-            if group < 0 {
+        for polygon in &mesh.polygons {
+            if polygon.group < 0 {
                 continue;
             }
-            let triangle: [u32; 3] = polygon.as_slice().try_into().ok()?;
-            let attributes: [Option<u32>; 3] = attributes.as_slice().try_into().ok()?;
+            let corners: &[(u32, Option<u32>); 3] = polygon.corners.as_slice().try_into().ok()?;
+            let triangle = corners.map(|(vertex, _)| vertex);
+            let attributes = corners.map(|(_, attribute)| attribute);
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
@@ -4954,6 +4959,28 @@ mod tests {
 
         body[12..14].copy_from_slice(&3_u16.to_le_bytes());
         assert!(super::parse_jt9_tri_strip_lod_header(&body).is_none());
+    }
+
+    #[test]
+    fn polygon_mesh_wire_preserves_corner_pairs_and_rejects_unequal_rings() {
+        let wire = serde_json::json!({
+            "id": "mesh",
+            "topology": "topology",
+            "coordinate_header": "coordinates",
+            "polygons": [[0, 1, 2], [2, 1, 0, 2]],
+            "vertex_attribute_indices": [[0, null, 2], [null, null, null, null]],
+            "polygon_groups": [4, -1],
+            "polygon_flags": [0, 7],
+            "source_offset": 80
+        });
+        let mesh = serde_json::from_value::<super::DisplayJtPolygonMesh>(wire.clone())
+            .expect("matched polygon corner arrays");
+        assert_eq!(serde_json::to_value(mesh).unwrap(), wire);
+        for field in ["polygons", "vertex_attribute_indices"] {
+            let mut invalid = wire.clone();
+            invalid[field][0].as_array_mut().unwrap().pop();
+            assert!(serde_json::from_value::<super::DisplayJtPolygonMesh>(invalid).is_err());
+        }
     }
 
     #[test]

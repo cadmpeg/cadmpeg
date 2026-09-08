@@ -12,8 +12,7 @@ use face_slots::FaceSlots;
 /// Decoded polygon in topological-vertex visit order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Polygon {
-    pub(crate) vertex_indices: Vec<u32>,
-    pub(crate) attribute_indices: Vec<Option<u32>>,
+    pub(crate) corners: Vec<(u32, Option<u32>)>,
     pub(crate) group: i32,
     pub(crate) flags: u16,
 }
@@ -428,37 +427,30 @@ impl Decoder<'_> {
         let mut polygons = Vec::new();
         polygons.try_reserve_exact(self.vertices.len()).ok()?;
         for (vertex_index, vertex) in self.vertices.into_iter().enumerate() {
-            let mut attribute_indices = Vec::new();
-            attribute_indices
-                .try_reserve_exact(vertex.faces.len())
-                .ok()?;
-            for &face in &vertex.faces {
-                let face = self.faces.get(face?)?;
-                if face.attributes.is_empty() {
-                    attribute_indices.push(None);
-                    continue;
-                }
-                let vertex_slot = face
-                    .vertices
-                    .iter()
-                    .position(|&candidate| candidate == Some(vertex_index))?;
-                let mut attribute_slot = face.attributes.len() - 1;
-                for slot in 0..=vertex_slot {
-                    if face.attribute_mask[slot] {
-                        attribute_slot = (attribute_slot + 1) % face.attributes.len();
+            let mut corners = Vec::new();
+            corners.try_reserve_exact(vertex.faces.len()).ok()?;
+            for face_index in vertex.faces {
+                let face_index = face_index?;
+                let face = self.faces.get(face_index)?;
+                let attribute = if face.attributes.is_empty() {
+                    None
+                } else {
+                    let vertex_slot = face
+                        .vertices
+                        .iter()
+                        .position(|&candidate| candidate == Some(vertex_index))?;
+                    let mut attribute_slot = face.attributes.len() - 1;
+                    for slot in 0..=vertex_slot {
+                        if face.attribute_mask[slot] {
+                            attribute_slot = (attribute_slot + 1) % face.attributes.len();
+                        }
                     }
-                }
-                attribute_indices.push(Some(face.attributes[attribute_slot]));
-            }
-
-            let mut vertex_indices = Vec::new();
-            vertex_indices.try_reserve_exact(vertex.faces.len()).ok()?;
-            for face in vertex.faces {
-                vertex_indices.push(u32::try_from(face?).ok()?);
+                    Some(face.attributes[attribute_slot])
+                };
+                corners.push((u32::try_from(face_index).ok()?, attribute));
             }
             polygons.push(Polygon {
-                vertex_indices,
-                attribute_indices,
+                corners,
                 group: vertex.group,
                 flags: vertex.flags,
             });
