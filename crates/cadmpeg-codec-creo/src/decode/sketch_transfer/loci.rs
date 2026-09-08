@@ -42,7 +42,7 @@ pub(in super::super) fn section_point_locus(
         .ordinary()
         .filter(|segment| unique_entities.contains(&segment.external_id))
         .filter_map(|segment| {
-            let entity = sketch_entity_id(sketch, segment.external_id);
+            let entity = sketch_entity_id(sketch, segment.external_id)?;
             let locus = match segment.kind {
                 crate::feature::FeatureSegmentKind::Point(id) if id == point_id => {
                     SketchLocus::Entity(entity)
@@ -73,11 +73,13 @@ pub(in super::super) fn section_point_locus(
                     && matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                     && segment.center_id == Some(point_id)
             })
-            .map(|segment| {
-                (
-                    segment.offset,
-                    SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)),
-                )
+            .filter_map(|segment| {
+                Some({
+                    (
+                        segment.offset,
+                        SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)?),
+                    )
+                })
             }),
     );
     candidates.extend(
@@ -87,11 +89,13 @@ pub(in super::super) fn section_point_locus(
             .filter(|segment| {
                 unique_entities.contains(&segment.external_id) && segment.center_id == point_id
             })
-            .map(|segment| {
-                (
-                    segment.offset,
-                    SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)),
-                )
+            .filter_map(|segment| {
+                Some({
+                    (
+                        segment.offset,
+                        SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)?),
+                    )
+                })
             }),
     );
     candidates.extend(
@@ -101,11 +105,13 @@ pub(in super::super) fn section_point_locus(
             .filter(|segment| {
                 segment.point_id == point_id && segments.rows.get(segment.external_id).is_some()
             })
-            .map(|segment| {
-                (
-                    segment.offset,
-                    SketchLocus::Entity(sketch_entity_id(sketch, segment.external_id)),
-                )
+            .filter_map(|segment| {
+                Some({
+                    (
+                        segment.offset,
+                        SketchLocus::Entity(sketch_entity_id(sketch, segment.external_id)?),
+                    )
+                })
             }),
     );
     candidates.extend(
@@ -114,16 +120,19 @@ pub(in super::super) fn section_point_locus(
             .centered_lines()
             .filter(|segment| unique_entities.contains(&segment.external_id))
             .flat_map(|segment| {
-                let entity = sketch_entity_id(sketch, segment.external_id);
-                [
-                    (0, SketchLocus::Start(entity.clone())),
-                    (1, SketchLocus::End(entity)),
-                ]
-                .into_iter()
-                .filter_map(move |(candidate, locus)| {
-                    (candidate == point_id).then_some((segment.offset, locus))
+                Some({
+                    let entity = sketch_entity_id(sketch, segment.external_id)?;
+                    [
+                        (0, SketchLocus::Start(entity.clone())),
+                        (1, SketchLocus::End(entity)),
+                    ]
+                    .into_iter()
+                    .filter_map(move |(candidate, locus)| {
+                        (candidate == point_id).then_some((segment.offset, locus))
+                    })
                 })
-            }),
+            })
+            .flatten(),
     );
     candidates.extend(
         segments
@@ -131,16 +140,19 @@ pub(in super::super) fn section_point_locus(
             .reference_lines()
             .filter(|segment| unique_entities.contains(&segment.external_id))
             .flat_map(|segment| {
-                let entity = sketch_entity_id(sketch, segment.external_id);
-                [
-                    (segment.point_ids[0], SketchLocus::Start(entity.clone())),
-                    (segment.point_ids[1], SketchLocus::End(entity)),
-                ]
-                .into_iter()
-                .filter_map(move |(candidate, locus)| {
-                    (candidate == Some(point_id)).then_some((segment.offset, locus))
+                Some({
+                    let entity = sketch_entity_id(sketch, segment.external_id)?;
+                    [
+                        (segment.point_ids[0], SketchLocus::Start(entity.clone())),
+                        (segment.point_ids[1], SketchLocus::End(entity)),
+                    ]
+                    .into_iter()
+                    .filter_map(move |(candidate, locus)| {
+                        (candidate == Some(point_id)).then_some((segment.offset, locus))
+                    })
                 })
-            }),
+            })
+            .flatten(),
     );
     candidates.extend(
         segments
@@ -148,16 +160,19 @@ pub(in super::super) fn section_point_locus(
             .bounded_curves()
             .filter(|segment| unique_entities.contains(&segment.external_id))
             .flat_map(|segment| {
-                let entity = sketch_entity_id(sketch, segment.external_id);
-                [
-                    (segment.point_ids[0], SketchLocus::Start(entity.clone())),
-                    (segment.point_ids[1], SketchLocus::End(entity)),
-                ]
-                .into_iter()
-                .filter_map(move |(candidate, locus)| {
-                    (candidate == point_id).then_some((segment.offset, locus))
+                Some({
+                    let entity = sketch_entity_id(sketch, segment.external_id)?;
+                    [
+                        (segment.point_ids[0], SketchLocus::Start(entity.clone())),
+                        (segment.point_ids[1], SketchLocus::End(entity)),
+                    ]
+                    .into_iter()
+                    .filter_map(move |(candidate, locus)| {
+                        (candidate == point_id).then_some((segment.offset, locus))
+                    })
                 })
-            }),
+            })
+            .flatten(),
     );
     let [(_, locus)] = candidates.as_slice() else {
         return None;
@@ -220,7 +235,7 @@ pub(in super::super) fn section_skamp_locus(
     sketch: &SketchId,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
-    let entity = sketch_entity_id(sketch, item.entity_id);
+    let entity = sketch_entity_id(sketch, item.entity_id)?;
     if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
         return section_entity_family_locus(family, entity, item.sense);
     }
@@ -441,7 +456,7 @@ pub(in super::super) fn section_skamp_incidence_locus(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<SketchLocus> {
     section_skamp_point_locus(definition, sketch, item).or_else(|| {
-        let entity = sketch_entity_id(sketch, item.entity_id);
+        let entity = sketch_entity_id(sketch, item.entity_id)?;
         let locus = match item.sense {
             2 => SketchLocus::Start(entity.clone()),
             3 => SketchLocus::End(entity.clone()),
@@ -467,7 +482,10 @@ pub(in super::super) fn section_skamp_line_pair(
     {
         return None;
     }
-    Some([first, second].map(|item| sketch_entity_id(sketch, item.entity_id)))
+    Some([
+        sketch_entity_id(sketch, first.entity_id)?,
+        sketch_entity_id(sketch, second.entity_id)?,
+    ])
 }
 
 pub(in super::super) fn section_skamp_oriented_line(
@@ -477,7 +495,7 @@ pub(in super::super) fn section_skamp_oriented_line(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<SketchEntityId> {
     (item.sense == 0).then_some(())?;
-    let entity = sketch_entity_id(sketch, item.entity_id);
+    let entity = sketch_entity_id(sketch, item.entity_id)?;
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
@@ -721,7 +739,9 @@ pub(in super::super) fn section_skamp_curve_entity(
                         | crate::feature::FeatureSavedEntity::Spline(_)
                 )
             }));
-    is_curve.then(|| sketch_entity_id(sketch, item.entity_id))
+    is_curve
+        .then(|| sketch_entity_id(sketch, item.entity_id))
+        .flatten()
 }
 
 pub(in super::super) fn section_skamp_midpoint(
@@ -733,18 +753,19 @@ pub(in super::super) fn section_skamp_midpoint(
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::FeatureSkampItem| {
         if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
-            return Some(sketch_entity_id(sketch, item.entity_id));
+            return Some(sketch_entity_id(sketch, item.entity_id)?);
         }
         (item.sense == 0).then_some(())?;
         if section_skamp_is_arc(definition, item) {
-            return Some(sketch_entity_id(sketch, item.entity_id));
+            return Some(sketch_entity_id(sketch, item.entity_id)?);
         }
         section_skamp_oriented_line(definition, sketch, item, geometry)
     };
     let point = |item: &crate::feature::FeatureSkampItem| {
         section_skamp_point_locus(definition, sketch, item).or_else(|| {
             (item.sense == 0 && section_skamp_is_circular(definition, item))
-                .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
+                .then(|| sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center))
+                .flatten()
         })
     };
     let centered_target = |item: &crate::feature::FeatureSkampItem| {
@@ -798,7 +819,9 @@ pub(in super::super) fn section_skamp_circular_entity(
     if item.sense != 0 {
         return None;
     }
-    section_skamp_is_circular(definition, item).then(|| sketch_entity_id(sketch, item.entity_id))
+    section_skamp_is_circular(definition, item)
+        .then(|| sketch_entity_id(sketch, item.entity_id))
+        .flatten()
 }
 
 pub(in super::super) fn section_skamp_center_entity(
@@ -808,6 +831,7 @@ pub(in super::super) fn section_skamp_center_entity(
 ) -> Option<SketchEntityId> {
     (item.sense == 4 && section_skamp_is_circular(definition, item))
         .then(|| sketch_entity_id(sketch, item.entity_id))
+        .flatten()
 }
 
 pub(in super::super) fn section_skamp_is_circular(
@@ -1089,12 +1113,12 @@ mod tests {
         assert_eq!(
             section_point_locus(
                 &definition,
-                &SketchId("creo:model:sketch#917".to_string()),
+                &SketchId::mint("creo:model:sketch#917".to_string()).unwrap(),
                 7,
             ),
-            Some(SketchLocus::Entity(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:12".to_string(),
-            )))
+            Some(SketchLocus::Entity(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string(),).unwrap()
+            ))
         );
     }
 
@@ -1158,42 +1182,42 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId("creo:model:sketch#917".to_string());
+        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
         assert_eq!(
             section_point_locus(&definition, &sketch, 0),
-            Some(SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:30".to_string(),
-            )))
+            Some(SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),).unwrap()
+            ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 1),
-            Some(SketchLocus::End(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:30".to_string(),
-            )))
+            Some(SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),).unwrap()
+            ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 7),
-            Some(SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:31".to_string(),
-            )))
+            Some(SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:31".to_string(),).unwrap()
+            ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 8),
-            Some(SketchLocus::End(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:31".to_string(),
-            )))
+            Some(SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:31".to_string(),).unwrap()
+            ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 9),
-            Some(SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:32".to_string(),
-            )))
+            Some(SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:32".to_string(),).unwrap()
+            ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 10),
-            Some(SketchLocus::End(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:32".to_string(),
-            )))
+            Some(SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:32".to_string(),).unwrap()
+            ))
         );
 
         let mut ambiguous = definition;
@@ -1261,12 +1285,12 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId("creo:model:sketch#917".to_string());
+        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
         assert_eq!(
             section_point_locus(&definition, &sketch, 3),
-            Some(SketchLocus::Center(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:30".to_string(),
-            )))
+            Some(SketchLocus::Center(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),).unwrap()
+            ))
         );
     }
 
@@ -1392,7 +1416,7 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId("creo:model:sketch#917".to_string());
+        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
         let line = crate::feature::FeatureSkampItem {
             entity_id: 101,
             sense: 0,
@@ -1421,9 +1445,7 @@ mod tests {
         );
         assert_eq!(
             section_skamp_curve_entity(&definition, &sketch, &bounded_curve),
-            Some(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:103".to_string(),
-            ))
+            Some(SketchEntityId::mint("creo:featdefs:sketch_entity#917:103".to_string(),).unwrap())
         );
         assert_eq!(
             section_skamp_locus(
@@ -1434,9 +1456,9 @@ mod tests {
                     sense: 2,
                 },
             ),
-            Some(SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:102".to_string(),
-            )))
+            Some(SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:102".to_string(),).unwrap()
+            ))
         );
 
         let mut decoded_arc = definition.clone();
@@ -1591,13 +1613,13 @@ mod tests {
             entity_id: 99,
             sense: 0,
         };
-        let sketch = SketchId("creo:model:sketch#917".to_string());
+        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
         assert!(section_skamp_is_point(&definition, &item));
         assert_eq!(
             section_skamp_point_locus(&definition, &sketch, &item),
-            Some(SketchLocus::Entity(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:99".to_string(),
-            )))
+            Some(SketchLocus::Entity(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string(),).unwrap()
+            ))
         );
     }
 
@@ -1648,7 +1670,7 @@ mod tests {
             .as_ref()
             .expect("segments")
             .is_complete());
-        let sketch = SketchId("creo:model:sketch#917".to_string());
+        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
         assert_eq!(
             section_skamp_tangent_loci(
                 &definition,
@@ -1665,12 +1687,14 @@ mod tests {
                 None,
             ),
             Some([
-                SketchLocus::Start(SketchEntityId(
-                    "creo:featdefs:sketch_entity#917:10".to_string(),
-                )),
-                SketchLocus::Start(SketchEntityId(
-                    "creo:featdefs:sketch_entity#917:11".to_string(),
-                )),
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:10".to_string(),)
+                        .unwrap()
+                ),
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:11".to_string(),)
+                        .unwrap()
+                ),
             ])
         );
     }

@@ -121,12 +121,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
     };
     let profiles = resolved_profile_chains(
         &definition,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
-    assert_eq!(profiles[0][0].entity.0, "creo:featdefs:sketch_entity#40:10");
+    assert_eq!(
+        profiles[0][0].entity.as_str(),
+        "creo:featdefs:sketch_entity#40:10"
+    );
     assert!(!profiles[0][0].reversed);
     assert!(profiles[0][1].reversed);
 
@@ -141,7 +144,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     assert!(resolved_profile_chains(
         &incomplete,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     )
     .is_empty());
@@ -155,7 +158,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
     assert!(resolved_profile_chains(
         &definition,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
         &BTreeSet::from([10_u32, 11_u32, 12_u32]),
     )
     .is_empty());
@@ -193,7 +196,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .retain(|row| row.external_id != 13);
     let profiles = resolved_profile_chains(
         &incomplete_trim_graph,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
@@ -246,7 +249,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let arc_profile = resolved_profile_chains(
         &arcs,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
         &BTreeSet::from([10, 11]),
     );
     assert_eq!(arc_profile.len(), 1);
@@ -286,7 +289,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let segment_profile = resolved_profile_chains(
         &segment_graph,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).unwrap(),
         &BTreeSet::from([10, 11, 12, 13, 20]),
     );
     assert_eq!(segment_profile.len(), 1);

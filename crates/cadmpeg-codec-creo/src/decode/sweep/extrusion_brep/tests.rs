@@ -60,8 +60,8 @@ fn generated_side_table() -> crate::feature::FeatureEntityTable {
 }
 
 fn sketch() -> Sketch {
-    let sketch_id = SketchId("creo:model:sketch#7".to_string());
-    let entity = SketchEntityId("creo:featdefs:sketch_entity#7:11".to_string());
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).unwrap();
+    let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#7:11".to_string()).unwrap();
     Sketch {
         id: sketch_id,
         name: None,
@@ -158,7 +158,7 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         .extend([surface_row(32, 7, crate::surface::SurfaceKind::Plane)]);
     let mut sketch = sketch();
     sketch.profiles[0].push(SketchEntityUse {
-        entity: SketchEntityId("creo:featdefs:sketch_entity#7:13".to_string()),
+        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#7:13".to_string()).unwrap(),
         reversed: false,
     });
 

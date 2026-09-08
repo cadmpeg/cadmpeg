@@ -52,13 +52,16 @@ pub(super) fn project_endpoint_constraints(
         if distinct_entities.len() < 2 {
             continue;
         }
-        let id = SketchConstraintId(format!(
+        let id = match SketchConstraintId::mint(format!(
             "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
             constraints.len()
-        ));
+        )) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
         crate::annotations::note(
             annotations,
-            id.0.clone(),
+            id.as_str().to_owned(),
             section,
             0,
             "feature_input_shared_endpoint",

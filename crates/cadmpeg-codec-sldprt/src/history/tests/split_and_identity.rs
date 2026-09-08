@@ -59,7 +59,8 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
         tool: SplitFaceTool::Path(PathRef::Native("sketch-native".into())),
     };
     let feature_id = FeatureId::mint("sketch-feature").expect("identity grammar");
-    let sketch_id = cadmpeg_ir::sketches::SketchId("sketch-geometry".into());
+    let sketch_id =
+        cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch-geometry").unwrap();
 
     assert!(bind_definition_sketch(
         &mut definition,

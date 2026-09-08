@@ -651,7 +651,9 @@ fn transfer_sketch(
     object: &CatiaDesignObject,
     owner_record: &CatiaObjectRecord,
 ) {
-    let sketch_id = SketchId(neutral_history_id(&object.id, "sketch"));
+    let Ok(sketch_id) = SketchId::mint(neutral_history_id(&object.id, "sketch")) else {
+        return;
+    };
     let feature_id =
         FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.sketches.push(Sketch {

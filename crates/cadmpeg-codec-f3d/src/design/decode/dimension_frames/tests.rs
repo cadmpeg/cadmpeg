@@ -714,8 +714,8 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     axis_pair.loci[0].role = 14;
     axis_pair.loci[1].role = 3;
     let entity = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity#line".into()),
-        SketchId("f3d:model:sketch#axis-angle".into()),
+        SketchEntityId::mint("f3d:model:sketch-entity#line").unwrap(),
+        SketchId::mint("f3d:model:sketch#axis-angle").unwrap(),
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 1.0),
@@ -759,8 +759,8 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     .is_none());
 
     let radial_entity = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity:circle".into()),
-        SketchId("f3d:model:sketch#radial".into()),
+        SketchEntityId::mint("synthetic:test:id#f3d:model:sketch-entity:circle").unwrap(),
+        SketchId::mint("f3d:model:sketch#radial").unwrap(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length(1.000_000_014_901_161_2),

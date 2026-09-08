@@ -658,16 +658,16 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     assert!(!edge_selection_is_incomplete(&EdgeSelection::All));
     assert!(profile_ref_is_incomplete(&ProfileRef::Faces(Vec::new())));
     assert!(profile_ref_is_incomplete(&ProfileRef::SketchSelection {
-        sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+        sketch: cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
         selections: vec!["nx:sketch-selection#0".into()],
     }));
     assert!(profile_ref_is_incomplete(&ProfileRef::SketchProfiles {
-        sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+        sketch: cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
         profiles: Vec::new(),
     }));
     assert!(path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
     assert!(path_ref_is_incomplete(&PathRef::SpatialSketchSelection {
-        sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
+        sketch: cadmpeg_ir::sketches::SpatialSketchId::mint("test:test:spatial-sketch#0").unwrap(),
         selections: vec!["nx:path-selection#0".into()],
     }));
     let edge =
@@ -881,7 +881,9 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
     let definition = |direction, start, solid| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(cadmpeg_ir::sketches::SketchId("test:sketch#0".into())),
+        profile: ProfileRef::Sketch(
+            cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
+        ),
         direction,
         start,
         extent: ExtrudeExtent::OneSided {
@@ -1208,7 +1210,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let sketch_id = SketchId("test:sketch#0".into());
+    let sketch_id = SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.features.push(Feature {
         id: FeatureId::mint("test:feature#sketch").expect("identity grammar"),
         ordinal: 0,
@@ -1238,7 +1240,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         profiles: Vec::new(),
         native_ref: None,
     });
-    let entity_id = SketchEntityId("test:sketch-entity#0".into());
+    let entity_id = SketchEntityId::mint("test:test:sketch-entity#0").unwrap();
     ir.model.sketch_entities.push(SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
@@ -1247,7 +1249,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         },
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("test:sketch-constraint#0".into()),
+        id: SketchConstraintId::mint("test:test:sketch-constraint#0").unwrap(),
         sketch: sketch_id,
         definition: SketchConstraintDefinition::Native {
             native_kind: "test".into(),

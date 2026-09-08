@@ -80,7 +80,10 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        let sketch = model_sketch_id(scan, definition);
+        let sketch = match model_sketch_id(scan, definition) {
+            Some(id) => id,
+            None => continue,
+        };
         for (ordinal, _) in table.rows.iter().enumerate() {
             if let Some((_, parameter)) =
                 resolved_feature_dimension_parameter(&sketch, table, ordinal)
@@ -194,7 +197,10 @@ pub(in super::super) fn transfer_feature_dimensions(
         .collect::<BTreeSet<_>>();
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
-        let sketch = model_sketch_id(scan, definition);
+        let sketch = match model_sketch_id(scan, definition) {
+            Some(id) => id,
+            None => continue,
+        };
         let owner = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         if !feature_ids.contains(&owner) {
             continue;

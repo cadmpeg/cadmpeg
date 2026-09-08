@@ -164,7 +164,7 @@ fn patch_spatial_sketches(
             let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
                 cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} requires a retained native marker",
-                    entity.id().0
+                    entity.id().as_str()
                 ))
             })?;
             let candidates = native
@@ -191,7 +191,7 @@ fn patch_spatial_sketches(
             let [(lane_index, offset, coordinate_offset)] = candidates.as_slice() else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} does not resolve to one native marker",
-                    entity.id().0
+                    entity.id().as_str()
                 )));
             };
             if coordinate_offset.is_some() {
@@ -611,8 +611,8 @@ fn validate_generated_marker_constraint(
             cadmpeg_core::CodecError::malformed(format_args!(
                 "sketch constraint {} references entity {} outside sketch {}",
                 constraint.id.as_str(),
-                entity_id.0,
-                constraint.sketch.0
+                entity_id.as_str(),
+                constraint.sketch.as_str()
             ))
         })?;
     if matches!(
@@ -925,8 +925,8 @@ fn sketch_constraint_entity<'a>(
             cadmpeg_core::CodecError::malformed(format_args!(
                 "sketch constraint {} references entity {} outside sketch {}",
                 constraint.id.as_str(),
-                entity.0,
-                constraint.sketch.0
+                entity.as_str(),
+                constraint.sketch.as_str()
             ))
         })
 }
@@ -1184,7 +1184,7 @@ fn unique_planar_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &SketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
-    unique_sketch_owner(ir, &sketch.0, |feature| {
+    unique_sketch_owner(ir, sketch.as_str(), |feature| {
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
@@ -1198,7 +1198,7 @@ fn unique_spatial_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &SpatialSketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
-    unique_sketch_owner(ir, &sketch.0, |feature| {
+    unique_sketch_owner(ir, sketch.as_str(), |feature| {
         matches!(
             &feature.definition,
             FeatureDefinition::SpatialSketch {
@@ -1458,7 +1458,7 @@ mod source_less_lane_tests {
 
     fn generated_sketch() -> Sketch {
         Sketch {
-            id: SketchId("sketch".into()),
+            id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
             name: Some("Sketch".into()),
             configuration: None,
             visible: None,
@@ -1474,8 +1474,8 @@ mod source_less_lane_tests {
 
     fn generated_entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
             geometry,
         )
     }
@@ -1516,9 +1516,9 @@ mod source_less_lane_tests {
 
     #[test]
     fn non_endpoint_coincidences_form_pairwise_native_relations() {
-        let point = SketchLocus::Entity(SketchEntityId("point".into()));
-        let center = SketchLocus::Center(SketchEntityId("circle".into()));
-        let endpoint = SketchLocus::Start(SketchEntityId("line".into()));
+        let point = SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#point").unwrap());
+        let center = SketchLocus::Center(SketchEntityId::mint("synthetic:test:id#circle").unwrap());
+        let endpoint = SketchLocus::Start(SketchEntityId::mint("synthetic:test:id#line").unwrap());
         let definition = SketchConstraintDefinition::CoincidentLoci {
             loci: vec![point.clone(), center.clone(), endpoint.clone()],
         };
@@ -1548,8 +1548,8 @@ mod source_less_lane_tests {
     fn endpoint_only_coincidences_remain_topology_derived() {
         let definition = SketchConstraintDefinition::CoincidentLoci {
             loci: vec![
-                SketchLocus::End(SketchEntityId("first".into())),
-                SketchLocus::Start(SketchEntityId("second".into())),
+                SketchLocus::End(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
+                SketchLocus::Start(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
             ],
         };
 
@@ -1606,10 +1606,10 @@ mod source_less_lane_tests {
 
     #[test]
     fn ternary_relations_retain_their_reverse_owner() {
-        let point = SketchLocus::Entity(SketchEntityId("point".into()));
-        let first = SketchEntityId("first".into());
-        let second = SketchEntityId("second".into());
-        let axis = SketchEntityId("axis".into());
+        let point = SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#point").unwrap());
+        let first = SketchEntityId::mint("synthetic:test:id#first").unwrap();
+        let second = SketchEntityId::mint("synthetic:test:id#second").unwrap();
+        let axis = SketchEntityId::mint("synthetic:test:id#axis").unwrap();
 
         let at_intersection_definition = SketchConstraintDefinition::AtIntersection {
             point: point.clone(),
@@ -1643,24 +1643,28 @@ mod source_less_lane_tests {
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
-                "first",
+                "synthetic:test:id#first",
                 SketchGeometry::Point {
                     position: Point2::new(0.0, 0.0),
                 },
             ),
             generated_entity(
-                "second",
+                "synthetic:test:id#second",
                 SketchGeometry::Point {
                     position: Point2::new(1.0, 1.0),
                 },
             ),
         ];
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId("horizontal".into()),
+            id: SketchConstraintId::mint("synthetic:test:id#horizontal").unwrap(),
             sketch: sketch.id,
             definition: SketchConstraintDefinition::SameCoordinate {
-                first: SketchLocus::Entity(SketchEntityId("first".into())),
-                second: SketchLocus::Entity(SketchEntityId("second".into())),
+                first: SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+                ),
+                second: SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+                ),
                 axis: SketchCoordinateAxis::V,
             },
             name: None,
@@ -1690,20 +1694,20 @@ mod source_less_lane_tests {
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
-                "point",
+                "synthetic:test:id#point",
                 SketchGeometry::Point {
                     position: Point2::new(0.0, 0.0),
                 },
             ),
             generated_entity(
-                "horizontal",
+                "synthetic:test:id#horizontal",
                 SketchGeometry::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(1.0, 0.0),
                 },
             ),
             generated_entity(
-                "vertical",
+                "synthetic:test:id#vertical",
                 SketchGeometry::Line {
                     start: Point2::new(0.0, -1.0),
                     end: Point2::new(0.0, 1.0),
@@ -1711,12 +1715,14 @@ mod source_less_lane_tests {
             ),
         ];
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId("intersection".into()),
+            id: SketchConstraintId::mint("synthetic:test:id#intersection").unwrap(),
             sketch: sketch.id.clone(),
             definition: SketchConstraintDefinition::AtIntersection {
-                point: SketchLocus::Entity(SketchEntityId("point".into())),
-                first: SketchEntityId("horizontal".into()),
-                second: SketchEntityId("vertical".into()),
+                point: SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#point").unwrap(),
+                ),
+                first: SketchEntityId::mint("synthetic:test:id#horizontal").unwrap(),
+                second: SketchEntityId::mint("synthetic:test:id#vertical").unwrap(),
             },
             name: None,
             driving: None,
@@ -1748,19 +1754,19 @@ mod source_less_lane_tests {
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
-                "first",
+                "synthetic:test:id#first",
                 SketchGeometry::Point {
                     position: Point2::new(-1.0, 0.0),
                 },
             ),
             generated_entity(
-                "second",
+                "synthetic:test:id#second",
                 SketchGeometry::Point {
                     position: Point2::new(1.0, 0.0),
                 },
             ),
             generated_entity(
-                "axis",
+                "synthetic:test:id#axis",
                 SketchGeometry::Line {
                     start: Point2::new(0.0, -1.0),
                     end: Point2::new(0.0, 1.0),
@@ -1768,12 +1774,16 @@ mod source_less_lane_tests {
             ),
         ];
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId("symmetric".into()),
+            id: SketchConstraintId::mint("synthetic:test:id#symmetric").unwrap(),
             sketch: sketch.id.clone(),
             definition: SketchConstraintDefinition::Symmetric {
-                first: SketchLocus::Entity(SketchEntityId("first".into())),
-                second: SketchLocus::Entity(SketchEntityId("second".into())),
-                axis: SketchEntityId("axis".into()),
+                first: SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+                ),
+                second: SketchLocus::Entity(
+                    SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+                ),
+                axis: SketchEntityId::mint("synthetic:test:id#axis").unwrap(),
             },
             name: None,
             driving: None,
@@ -1798,9 +1808,9 @@ mod source_less_lane_tests {
         assert_eq!(marker_local_links(&payload, 568), Some(([1, 2], 0)));
 
         ir.model.sketch_constraints[0].definition = SketchConstraintDefinition::Symmetric {
-            first: SketchLocus::Entity(SketchEntityId("first".into())),
-            second: SketchLocus::Entity(SketchEntityId("first".into())),
-            axis: SketchEntityId("axis".into()),
+            first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
+            second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
+            axis: SketchEntityId::mint("synthetic:test:id#axis").unwrap(),
         };
         assert!(validate_source_less_constraints(&ir)
             .expect_err("expected error")

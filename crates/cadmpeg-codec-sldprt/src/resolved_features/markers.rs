@@ -134,11 +134,14 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
+            let sketch_id = match SpatialSketchId::mint(feature.id.as_str().replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
                 1,
-            ));
+            )) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             let mut projected = points
                 .iter()
                 .map(|(native_ref, point, offset)| {
@@ -197,14 +200,20 @@ pub(crate) fn spatial_sketches(
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             });
-            entities.extend(projected.into_iter().enumerate().map(
+            entities.extend(projected.into_iter().enumerate().filter_map(
                 |(index, (_, native_ref, geometry))| {
-                    SpatialSketchEntity::new(
-                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                        sketch_id.clone(),
-                        geometry,
+                    Some(
+                        SpatialSketchEntity::new(
+                            SpatialSketchEntityId::mint(format!(
+                                "{}:entity:{index}",
+                                sketch_id.as_str()
+                            ))
+                            .ok()?,
+                            sketch_id.clone(),
+                            geometry,
+                        )
+                        .with_native_ref(native_ref),
                     )
-                    .with_native_ref(native_ref)
                 },
             ));
             feature.definition = FeatureDefinition::SpatialSketch {
@@ -249,11 +258,14 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
+        let sketch_id = match SpatialSketchId::mint(feature.id.as_str().replacen(
             ":model:feature#",
             ":model:spatial-sketch#",
             1,
-        ));
+        )) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
         sketches.push(SpatialSketch {
             id: sketch_id.clone(),
             name: feature.name.clone(),
@@ -266,15 +278,19 @@ pub(crate) fn spatial_sketches(
             vertices
                 .chunks_exact(2)
                 .enumerate()
-                .map(|(index, vertices)| {
-                    SpatialSketchEntity::new(
-                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                .filter_map(|(index, vertices)| {
+                    Some(SpatialSketchEntity::new(
+                        SpatialSketchEntityId::mint(format!(
+                            "{}:entity:{index}",
+                            sketch_id.as_str()
+                        ))
+                        .ok()?,
                         sketch_id.clone(),
                         SpatialSketchGeometry::Line {
                             start: vertices[0],
                             end: vertices[1],
                         },
-                    )
+                    ))
                 }),
         );
         feature.definition = FeatureDefinition::SpatialSketch {

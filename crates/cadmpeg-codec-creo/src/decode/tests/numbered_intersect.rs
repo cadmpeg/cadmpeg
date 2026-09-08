@@ -1308,11 +1308,11 @@ fn closed_fallback_profile_selects_revolution_segments() {
     let segments = [segment(9), segment(10), segment(11)];
     let profiles = vec![vec![
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:9".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:9".to_string()).unwrap(),
             reversed: false,
         },
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:11".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:11".to_string()).unwrap(),
             reversed: true,
         },
     ]];

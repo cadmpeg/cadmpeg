@@ -48,7 +48,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 .iter()
                 .flat_map(|skamp| &skamp.items)
                 .map(|item| item.entity_id)
-                .filter(|entity_id| geometry.contains_key(&sketch_entity_id(sketch, *entity_id)))
+                .filter(|entity_id| {
+                    sketch_entity_id(sketch, *entity_id)
+                        .is_some_and(|id| geometry.contains_key(&id))
+                })
                 .collect()
         },
     );
@@ -80,7 +83,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     .items
                     .iter()
                     .filter(|item| available_entities.contains(&item.entity_id))
-                    .map(|item| sketch_entity_id(sketch, item.entity_id))
+                    .filter_map(|item| sketch_entity_id(sketch, item.entity_id))
                     .collect::<Vec<_>>();
                 let mut operands = skamp
                     .items
@@ -125,7 +128,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 })
             };
             let item_geometry = |item: &crate::feature::FeatureSkampItem| {
-                let entity = sketch_entity_id(sketch, item.entity_id);
+                let entity = sketch_entity_id(sketch, item.entity_id)?;
                 geometry?.get(&entity)
             };
             let inactive_curve_entity = |item: &crate::feature::FeatureSkampItem| {
@@ -144,6 +147,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     )
                 }))
                 .then(|| sketch_entity_id(sketch, item.entity_id))
+                .flatten()
             };
             let inactive_incidence_locus = |item: &crate::feature::FeatureSkampItem| {
                 section_skamp_incidence_locus(definition, sketch, item, geometry).or_else(|| {
@@ -159,13 +163,14 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                     if matches!(native_kind.as_str(), "arc" | "circle")
                             )
                         }))
-                    .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
+                    .then(|| sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center))
+                    .flatten()
                 })
             };
             let point_entity = |item: &crate::feature::FeatureSkampItem| {
                 (item.sense == 0).then_some(())?;
                 if section_skamp_is_point(definition, item) {
-                    return Some(sketch_entity_id(sketch, item.entity_id));
+                    return Some(sketch_entity_id(sketch, item.entity_id)?);
                 }
                 (!active
                     && item_geometry(item).is_some_and(|geometry| {
@@ -176,6 +181,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             )
                     }))
                 .then(|| sketch_entity_id(sketch, item.entity_id))
+                .flatten()
             };
             let inactive_point_locus = |item: &crate::feature::FeatureSkampItem| {
                 section_skamp_point_locus(definition, sketch, item)
@@ -337,14 +343,14 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         };
                         SketchConstraintDefinition::PointOnObject {
                             point: section_skamp_locus(definition, sketch, point)?,
-                            entity: sketch_entity_id(sketch, line.entity_id),
+                            entity: sketch_entity_id(sketch, line.entity_id)?,
                         }
                     }
                     (kind @ (10 | 11), [item])
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
                         SketchConstraintDefinition::ArcAngle {
-                            entity: sketch_entity_id(sketch, item.entity_id),
+                            entity: sketch_entity_id(sketch, item.entity_id)?,
                             angle: Angle(if kind == 10 {
                                 std::f64::consts::FRAC_PI_2
                             } else {
@@ -355,7 +361,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     (kind @ (12 | 13), [item])
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
-                        let entity = sketch_entity_id(sketch, item.entity_id);
+                        let entity = sketch_entity_id(sketch, item.entity_id)?;
                         let first = SketchLocus::Start(entity.clone());
                         let second = SketchLocus::End(entity);
                         let axis = if kind == 12 {
@@ -383,8 +389,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .flat_map(|table| &table.rows)
                                 .any(|row| row.external_id == result.entity_id) =>
                     {
-                        let source = sketch_entity_id(sketch, source.entity_id);
-                        let result = sketch_entity_id(sketch, result.entity_id);
+                        let source = sketch_entity_id(sketch, source.entity_id)?;
+                        let result = sketch_entity_id(sketch, result.entity_id)?;
                         let geometry_agrees = geometry.is_none_or(|geometry| {
                             geometry
                                 .get(&source)
@@ -404,7 +410,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .is_some() =>
                     {
                         SketchConstraintDefinition::Fixed {
-                            entity: sketch_entity_id(sketch, item.entity_id),
+                            entity: sketch_entity_id(sketch, item.entity_id)?,
                         }
                     }
                     (14, [axis, first, second])
@@ -416,7 +422,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         SketchConstraintDefinition::Symmetric {
                             first: section_skamp_point_locus(definition, sketch, first)?,
                             second: section_skamp_point_locus(definition, sketch, second)?,
-                            axis: sketch_entity_id(sketch, axis.entity_id),
+                            axis: sketch_entity_id(sketch, axis.entity_id)?,
                         }
                     }
                     (14, [center, first, second])
@@ -488,9 +494,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             Some((
                 SketchConstraint {
                     id: if unique_skamp_id {
-                        sketch_constraint_id(sketch, format_args!("skamp:{}", skamp.id))
+                        sketch_constraint_id(sketch, format_args!("skamp:{}", skamp.id))?
                     } else {
-                        sketch_constraint_id(sketch, format_args!("skamp:offset:{}", skamp.offset))
+                        sketch_constraint_id(sketch, format_args!("skamp:offset:{}", skamp.offset))?
                     },
                     sketch: sketch.clone(),
                     definition: constraint_definition,
@@ -653,9 +659,9 @@ mod tests {
 
     #[test]
     fn typed_entity_relations_require_every_entity_in_the_emitted_geometry() {
-        let first = SketchEntityId("synthetic:test:relation#first".into());
-        let second = SketchEntityId("synthetic:test:relation#second".into());
-        let axis = SketchEntityId("synthetic:test:relation#axis".into());
+        let first = SketchEntityId::mint("synthetic:test:relation#first").unwrap();
+        let second = SketchEntityId::mint("synthetic:test:relation#second").unwrap();
+        let axis = SketchEntityId::mint("synthetic:test:relation#axis").unwrap();
         let geometry = BTreeMap::from([
             (
                 first.clone(),

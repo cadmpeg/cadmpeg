@@ -192,7 +192,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 fn design_completeness_audits_typed_construction_families() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "test:model:entity#face",
     )
@@ -516,7 +516,7 @@ fn design_completeness_recurses_through_pattern_operands() {
 #[test]
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let mut ir = CadIr::empty();
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
     let sweep = |sections, orientation| FeatureDefinition::Sweep {
@@ -598,7 +598,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 #[test]
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let mut ir = CadIr::empty();
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(

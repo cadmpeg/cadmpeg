@@ -15,10 +15,10 @@ fn local_arrangement_budget() -> WorkBudget<'static> {
 
 #[test]
 fn empty_profile_table_arranges_face_around_open_sketch_branch() {
-    let sketch_id = SketchId("sketch-with-overhang".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch-with-overhang").unwrap();
     let line = |id: &str, start: Point2, end: Point2, construction: bool| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch_id.clone(),
             SketchGeometry::Line { start, end },
         )
@@ -26,26 +26,31 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
     };
     let entities = vec![
         line(
-            "bottom",
+            "synthetic:test:id#bottom",
             Point2::new(0.0, 0.0),
             Point2::new(37.0, 0.0),
             false,
         ),
         line(
-            "right",
+            "synthetic:test:id#right",
             Point2::new(31.0, 0.0),
             Point2::new(31.0, 19.0),
             false,
         ),
         line(
-            "top",
+            "synthetic:test:id#top",
             Point2::new(31.0, 19.0),
             Point2::new(0.0, 19.0),
             false,
         ),
-        line("left", Point2::new(0.0, 19.0), Point2::new(0.0, 0.0), false),
         line(
-            "construction",
+            "synthetic:test:id#left",
+            Point2::new(0.0, 19.0),
+            Point2::new(0.0, 0.0),
+            false,
+        ),
+        line(
+            "synthetic:test:id#construction",
             Point2::new(0.0, 0.0),
             Point2::new(0.0, 19.0),
             true,
@@ -87,7 +92,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
     assert!(hole_boundaries.is_empty());
     let mut boundary_entities = outer_boundary
         .iter()
-        .map(|use_| use_.entity.0.as_str())
+        .map(|use_| use_.entity.as_str())
         .collect::<Vec<_>>();
     boundary_entities.sort_unstable();
     assert_eq!(boundary_entities, ["bottom", "left", "right", "top"]);
@@ -95,7 +100,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
 
 #[test]
 fn historical_point_inside_unique_closed_line_profile_selects_region() {
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut entities = Vec::new();
     let mut profile = Vec::new();
     for (ordinal, (start, end)) in [
@@ -107,7 +112,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     .into_iter()
     .enumerate()
     {
-        let id = SketchEntityId(format!("line-{ordinal}"));
+        let id = SketchEntityId::mint(format!("synthetic:test:id#line-{ordinal}")).unwrap();
         profile.push(SketchEntityUse {
             entity: id.clone(),
             reversed: false,
@@ -118,7 +123,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             SketchGeometry::Line { start, end },
         ));
     }
-    let circle_id = SketchEntityId("unrelated-circle".into());
+    let circle_id = SketchEntityId::mint("synthetic:test:id#unrelated-circle").unwrap();
     let profiles = vec![
         profile,
         vec![SketchEntityUse {
@@ -161,7 +166,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     );
 
     let mut incomplete = sketch.clone();
-    let ellipse = SketchEntityId("unsupported-ellipse".into());
+    let ellipse = SketchEntityId::mint("synthetic:test:id#unsupported-ellipse").unwrap();
     incomplete.profiles.push(vec![SketchEntityUse {
         entity: ellipse.clone(),
         reversed: false,
@@ -190,7 +195,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
 
 #[test]
 fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut entities = Vec::new();
     let mut profiles = Vec::new();
     for (profile_index, (minimum, maximum)) in [
@@ -209,7 +214,10 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
         ];
         let mut profile = Vec::new();
         for edge_index in 0..corners.len() {
-            let id = SketchEntityId(format!("line-{profile_index}-{edge_index}"));
+            let id = SketchEntityId::mint(format!(
+                "synthetic:test:id#line-{profile_index}-{edge_index}"
+            ))
+            .unwrap();
             profile.push(SketchEntityUse {
                 entity: id.clone(),
                 reversed: false,
@@ -280,7 +288,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
 
 #[test]
 fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let definitions = [
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
@@ -314,7 +322,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         .into_iter()
         .enumerate()
         .map(|(index, geometry)| {
-            let id = SketchEntityId(format!("outer-{index}"));
+            let id = SketchEntityId::mint(format!("synthetic:test:id#outer-{index}")).unwrap();
             entities.push(SketchEntity::new(id.clone(), sketch_id.clone(), geometry));
             SketchEntityUse {
                 entity: id,
@@ -330,7 +338,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     ];
     let inner = (0..corners.len())
         .map(|index| {
-            let id = SketchEntityId(format!("inner-{index}"));
+            let id = SketchEntityId::mint(format!("synthetic:test:id#inner-{index}")).unwrap();
             entities.push(SketchEntity::new(
                 id.clone(),
                 sketch_id.clone(),
@@ -370,10 +378,10 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
 
 fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEntityId, SketchEntityId)
 {
-    let sketch_id = SketchId("sketch".into());
-    let line_id = SketchEntityId("diameter".into());
-    let arc_id = SketchEntityId("left-arc".into());
-    let circle_id = SketchEntityId("circle".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let line_id = SketchEntityId::mint("synthetic:test:id#diameter").unwrap();
+    let arc_id = SketchEntityId::mint("synthetic:test:id#left-arc").unwrap();
+    let circle_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let entity = |id, geometry| SketchEntity::new(id, sketch_id.clone(), geometry);
     let entities = vec![
         entity(
@@ -507,7 +515,7 @@ fn analytic_arrangement_intersections_include_hidden_second_crossing() {
 
 #[test]
 fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let corners = [
         Point2::new(-5.0, -5.0),
         Point2::new(5.0, -5.0),
@@ -517,7 +525,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     let mut entities = Vec::new();
     let mut outer = Vec::new();
     for index in 0..corners.len() {
-        let id = SketchEntityId(format!("line-{index}"));
+        let id = SketchEntityId::mint(format!("synthetic:test:id#line-{index}")).unwrap();
         outer.push(SketchEntityUse {
             entity: id.clone(),
             reversed: false,
@@ -531,7 +539,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
             },
         ));
     }
-    let circle = SketchEntityId("circle".into());
+    let circle = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     entities.push(SketchEntity::new(
         circle.clone(),
         sketch_id.clone(),
@@ -778,9 +786,14 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
 
 #[test]
 fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
-    let sketch = SketchId("sketch".into());
-    let entity =
-        |geometry| SketchEntity::new(SketchEntityId("curve".into()), sketch.clone(), geometry);
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let entity = |geometry| {
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#curve").unwrap(),
+            sketch.clone(),
+            geometry,
+        )
+    };
     let arc = entity(SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(2.0),
@@ -874,26 +887,42 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
 
 #[test]
 fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
-    let sketch = SketchId("f3d:model:sketch#profile".into());
+    let sketch = SketchId::mint("f3d:model:sketch#profile").unwrap();
     let line = |id: &str, start: Point2, end: Point2| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Line { start, end },
         )
     };
     let entities = vec![
-        line("line-a", Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)),
-        line("line-b", Point2::new(2.0, 2.0), Point2::new(2.0, 0.0)),
-        line("line-c", Point2::new(2.0, 2.0), Point2::new(0.0, 2.0)),
         line(
-            "line-d",
+            "synthetic:test:id#line-a",
+            Point2::new(0.0, 0.0),
+            Point2::new(2.0, 0.0),
+        ),
+        line(
+            "synthetic:test:id#line-b",
+            Point2::new(2.0, 2.0),
+            Point2::new(2.0, 0.0),
+        ),
+        line(
+            "synthetic:test:id#line-c",
+            Point2::new(2.0, 2.0),
+            Point2::new(0.0, 2.0),
+        ),
+        line(
+            "synthetic:test:id#line-d",
             Point2::new(0.0, 2.0 + 5.0e-7),
             Point2::new(0.0, 0.0),
         ),
-        line("open-line", Point2::new(10.0, 0.0), Point2::new(11.0, 0.0)),
+        line(
+            "synthetic:test:id#open-line",
+            Point2::new(10.0, 0.0),
+            Point2::new(11.0, 0.0),
+        ),
         SketchEntity::new(
-            SketchEntityId("circle".into()),
+            SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
             sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(20.0, 20.0),
@@ -905,11 +934,14 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
     let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].len(), 1);
-    assert_eq!(profiles[0][0].entity, SketchEntityId("circle".into()));
+    assert_eq!(
+        profiles[0][0].entity,
+        SketchEntityId::mint("synthetic:test:id#circle").unwrap()
+    );
     assert_eq!(
         profiles[1]
             .iter()
-            .map(|entity_use| (entity_use.entity.0.as_str(), entity_use.reversed))
+            .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed))
             .collect::<Vec<_>>(),
         [
             ("line-a", false),
@@ -922,10 +954,10 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
 
 #[test]
 fn branched_line_graph_projects_each_bounded_face() {
-    let sketch = SketchId("f3d:model:sketch#branched-profile".into());
+    let sketch = SketchId::mint("f3d:model:sketch#branched-profile").unwrap();
     let line = |id: &str, start: (f64, f64), end: (f64, f64)| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(start.0, start.1),
@@ -934,13 +966,13 @@ fn branched_line_graph_projects_each_bounded_face() {
         )
     };
     let entities = vec![
-        line("bottom-left", (0.0, 0.0), (1.0, 0.0)),
-        line("bottom-right", (1.0, 0.0), (2.0, 0.0)),
-        line("right", (2.0, 0.0), (2.0, 1.0)),
-        line("top-right", (2.0, 1.0), (1.0, 1.0)),
-        line("top-left", (1.0, 1.0), (0.0, 1.0)),
-        line("left", (0.0, 1.0), (0.0, 0.0)),
-        line("divider", (1.0, 0.0), (1.0, 1.0)),
+        line("synthetic:test:id#bottom-left", (0.0, 0.0), (1.0, 0.0)),
+        line("synthetic:test:id#bottom-right", (1.0, 0.0), (2.0, 0.0)),
+        line("synthetic:test:id#right", (2.0, 0.0), (2.0, 1.0)),
+        line("synthetic:test:id#top-right", (2.0, 1.0), (1.0, 1.0)),
+        line("synthetic:test:id#top-left", (1.0, 1.0), (0.0, 1.0)),
+        line("synthetic:test:id#left", (0.0, 1.0), (0.0, 0.0)),
+        line("synthetic:test:id#divider", (1.0, 0.0), (1.0, 1.0)),
     ];
 
     let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
@@ -948,15 +980,15 @@ fn branched_line_graph_projects_each_bounded_face() {
     assert!(profiles.iter().all(|profile| profile.len() == 4));
     assert!(profiles.iter().all(|profile| profile
         .iter()
-        .any(|entity_use| entity_use.entity.0 == "divider")));
+        .any(|entity_use| entity_use.entity.as_str() == "divider")));
 }
 
 #[test]
 fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
-    let sketch = SketchId("f3d:model:sketch#shared-corner-profile".into());
+    let sketch = SketchId::mint("f3d:model:sketch#shared-corner-profile").unwrap();
     let line = |id: &str, start: (f64, f64), end: (f64, f64)| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(start.0, start.1),
@@ -965,14 +997,14 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
         )
     };
     let entities = vec![
-        line("outer-bottom", (0.0, 0.0), (31.0, 0.0)),
-        line("outer-right", (31.0, 0.0), (31.0, 47.0)),
-        line("outer-top", (31.0, 47.0), (0.0, 47.0)),
-        line("outer-left", (0.0, 47.0), (0.0, 0.0)),
-        line("inner-top", (0.0, 47.0), (9.0, 47.0)),
-        line("inner-right", (9.0, 47.0), (9.0, 41.0)),
-        line("inner-bottom", (9.0, 41.0), (0.0, 41.0)),
-        line("inner-left", (0.0, 41.0), (0.0, 47.0)),
+        line("synthetic:test:id#outer-bottom", (0.0, 0.0), (31.0, 0.0)),
+        line("synthetic:test:id#outer-right", (31.0, 0.0), (31.0, 47.0)),
+        line("synthetic:test:id#outer-top", (31.0, 47.0), (0.0, 47.0)),
+        line("synthetic:test:id#outer-left", (0.0, 47.0), (0.0, 0.0)),
+        line("synthetic:test:id#inner-top", (0.0, 47.0), (9.0, 47.0)),
+        line("synthetic:test:id#inner-right", (9.0, 47.0), (9.0, 41.0)),
+        line("synthetic:test:id#inner-bottom", (9.0, 41.0), (0.0, 41.0)),
+        line("synthetic:test:id#inner-left", (0.0, 41.0), (0.0, 47.0)),
     ];
 
     let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
@@ -981,7 +1013,7 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
             .iter()
             .flat_map(|profile| profile
                 .iter()
-                .map(|entity_use| (entity_use.entity.0.as_str(), entity_use.reversed)))
+                .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed)))
             .collect::<Vec<_>>(),
         [
             ("outer-left", false),

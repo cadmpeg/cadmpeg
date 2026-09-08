@@ -894,15 +894,19 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         resolved_section_coordinates(&definition).get(&2),
         Some(&[None, Some(4.5)])
     );
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").unwrap();
     let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
         constraints[0].0.definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+            ),
+            second: SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+            ),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::V,
         }
     );
@@ -931,8 +935,12 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     assert_eq!(
         function_two_constraints[0].0.definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+            ),
+            second: SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
+            ),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
         }
     );
@@ -1042,8 +1050,8 @@ fn section_line_requires_two_solved_points() {
 
 #[test]
 fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
-    let first = SketchEntityId("first".to_string());
-    let second = SketchEntityId("second".to_string());
+    let first = SketchEntityId::mint("synthetic:test:id#first".to_string()).unwrap();
+    let second = SketchEntityId::mint("synthetic:test:id#second".to_string()).unwrap();
     let emitted = BTreeSet::from([first.clone()]);
 
     let mut horizontal = SketchConstraintDefinition::Horizontal {
@@ -1092,7 +1100,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let parameter = ParameterId::mint("distance".to_string()).expect("identity grammar");
     let parameters = BTreeSet::from([parameter.clone()]);
     let mut radius = SketchConstraintDefinition::Radius {
-        entity: SketchEntityId("first".to_string()),
+        entity: SketchEntityId::mint("synthetic:test:id#first".to_string()).unwrap(),
         parameter: parameter.clone(),
     };
     assert!(reconcile_constraint_parameter_reference(

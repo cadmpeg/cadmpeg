@@ -1479,9 +1479,9 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
 
 #[test]
 fn design_constraint_coverage_separates_typed_and_native_constraints() {
-    let sketch = SketchId("sketch".to_string());
+    let sketch = SketchId::mint("synthetic:test:id#sketch".to_string()).unwrap();
     let constraint = |id: &str, definition| SketchConstraint {
-        id: SketchConstraintId(id.to_string()),
+        id: SketchConstraintId::mint(id.to_string()).unwrap(),
         sketch: sketch.clone(),
         definition,
         name: None,
@@ -1495,7 +1495,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         metadata: None,
         native_ref: None,
     };
-    let entity = SketchEntityId("entity".to_string());
+    let entity = SketchEntityId::mint("synthetic:test:id#entity".to_string()).unwrap();
     let mut constraints = vec![
         constraint(
             "sketch:relation:1",
@@ -1559,11 +1559,12 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
 
 #[test]
 fn native_curve_families_accept_only_their_defined_loci() {
-    let point = SketchEntityId("point".to_string());
-    let bounded = SketchEntityId("bounded".to_string());
-    let line = SketchEntityId("line".to_string());
-    let reference_line = SketchEntityId("reference_line".to_string());
-    let circle = SketchEntityId("circle".to_string());
+    let point = SketchEntityId::mint("synthetic:test:id#point".to_string()).unwrap();
+    let bounded = SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap();
+    let line = SketchEntityId::mint("synthetic:test:id#line".to_string()).unwrap();
+    let reference_line =
+        SketchEntityId::mint("synthetic:test:id#reference_line".to_string()).unwrap();
+    let circle = SketchEntityId::mint("synthetic:test:id#circle".to_string()).unwrap();
     let geometry = BTreeMap::from([
         (
             point.clone(),
@@ -1609,8 +1610,10 @@ fn native_curve_families_accept_only_their_defined_loci() {
     };
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
     let centered_midpoint = SketchConstraintDefinition::Midpoint {
-        point: SketchLocus::Center(SketchEntityId("line".to_string())),
-        entity: SketchEntityId("bounded".to_string()),
+        point: SketchLocus::Center(
+            SketchEntityId::mint("synthetic:test:id#line".to_string()).unwrap(),
+        ),
+        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap(),
     };
     assert!(sketch_constraint_loci_compatible(
         &centered_midpoint,
@@ -1618,7 +1621,7 @@ fn native_curve_families_accept_only_their_defined_loci() {
     ));
     let incompatible_midpoint = SketchConstraintDefinition::Midpoint {
         point: SketchLocus::Center(reference_line),
-        entity: SketchEntityId("bounded".to_string()),
+        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap(),
     };
     assert!(!sketch_constraint_loci_compatible(
         &incompatible_midpoint,
@@ -1846,8 +1849,8 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
 
 #[test]
 fn circle_remains_a_closed_extrusion_profile() {
-    let sketch_id = SketchId("creo:model:sketch#circle".to_string());
-    let entity_id = SketchEntityId("creo:model:sketch_entity#circle".to_string());
+    let sketch_id = SketchId::mint("creo:model:sketch#circle".to_string()).unwrap();
+    let entity_id = SketchEntityId::mint("creo:model:sketch_entity#circle".to_string()).unwrap();
     let circle = SketchGeometry::Circle {
         center: Point2::new(1.0, -2.0),
         radius: Length(3.0),

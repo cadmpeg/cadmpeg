@@ -1022,8 +1022,12 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
+        let (Some(entity_id), Some(sketch_id)) = (entity_id(entity), sketch_id(sketch)) else {
+            unresolved_entities += 1;
+            continue;
+        };
         projected_entities.push(
-            SketchEntity::new(entity_id(entity), sketch_id(sketch), geometry)
+            SketchEntity::new(entity_id, sketch_id, geometry)
                 .with_construction(entity.entity_flags & 0x0408_0040 != 0)
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
@@ -1068,8 +1072,12 @@ pub(crate) fn project(
             unresolved_sketches += 1;
             continue;
         };
+        let Some(id) = sketch_id(sketch) else {
+            unresolved_sketches += 1;
+            continue;
+        };
         sketches.push(Sketch {
-            id: sketch_id(sketch),
+            id,
             name: None,
             configuration: None,
             visible: None,
@@ -1180,7 +1188,7 @@ pub(crate) fn project(
     let raw_sketch_by_id = inventory
         .sketches
         .iter()
-        .map(|sketch| (sketch_id(sketch), sketch))
+        .filter_map(|sketch| Some((sketch_id(sketch)?, sketch)))
         .collect::<HashMap<_, _>>();
     let previous_constraint_count = constraints.len();
     constraints.retain(|constraint| {
@@ -1405,10 +1413,11 @@ fn project_constraint(
         return None;
     }
     Some(SketchConstraint {
-        id: SketchConstraintId(format!(
+        id: SketchConstraintId::mint(format!(
             "inventor:design:sketch-constraint#{}-{}",
             constraint.identity.segment_token, constraint.identity.record_ordinal
-        )),
+        ))
+        .ok()?,
         sketch: members[0].sketch.clone(),
         definition,
         name: None,
@@ -1629,7 +1638,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     let source_positions = entities
         .iter()
         .enumerate()
-        .map(|(index, entity)| (entity.id().0.as_str(), index))
+        .map(|(index, entity)| (entity.id().as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut profiles = entities
         .iter()
@@ -1723,7 +1732,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     profiles.sort_by_key(|profile| {
         profile
             .iter()
-            .filter_map(|entity| source_positions.get(entity.entity.0.as_str()))
+            .filter_map(|entity| source_positions.get(entity.entity.as_str()))
             .copied()
             .min()
             .unwrap_or(usize::MAX)
@@ -1751,18 +1760,20 @@ fn line_component(
     component
 }
 
-fn sketch_id(sketch: &PmDcSketch) -> SketchId {
-    SketchId(format!(
+fn sketch_id(sketch: &PmDcSketch) -> Option<SketchId> {
+    SketchId::mint(format!(
         "inventor:design:sketch#{}-{}",
         sketch.identity.segment_token, sketch.identity.record_ordinal
     ))
+    .ok()
 }
 
-fn entity_id(entity: &PmDcSketchEntity) -> SketchEntityId {
-    SketchEntityId(format!(
+fn entity_id(entity: &PmDcSketchEntity) -> Option<SketchEntityId> {
+    SketchEntityId::mint(format!(
         "inventor:design:sketch-entity#{}-{}",
         entity.identity.segment_token, entity.identity.record_ordinal
     ))
+    .ok()
 }
 
 fn unique<'a, T>(

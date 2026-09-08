@@ -43,7 +43,7 @@ pub fn project_sketch_constraints(
     let sketches = placements
         .iter()
         .filter_map(|placement| {
-            let id = neutral_sketch_id(placement);
+            let id = neutral_sketch_id(placement)?;
             if !planar_sketches.contains(&id) {
                 return None;
             }
@@ -231,7 +231,7 @@ pub fn project_sketch_constraints(
                 .collect(),
         });
         Some(SketchConstraint {
-            id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
+            id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
             sketch,
             definition,
             name: None,
@@ -969,8 +969,8 @@ mod tests {
 
     fn point_entity(id: &str, u: f64) -> cadmpeg_ir::sketches::SketchEntity {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::Point {
                 position: Point2::new(u, 4.0),
             },
@@ -1082,9 +1082,9 @@ mod tests {
 
     #[test]
     fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
-        let seed = point_entity("generated:point#seed", 2.0);
-        let second = point_entity("generated:point#second", 17.0);
-        let third = point_entity("generated:point#third", 32.0);
+        let seed = point_entity("generated:test:point#seed", 2.0);
+        let second = point_entity("generated:test:point#second", 17.0);
+        let third = point_entity("generated:test:point#third", 32.0);
         let relation =
             rectangular_point_relation(3, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
         let parameters = rectangular_parameters(3, 1.5);
@@ -1106,9 +1106,9 @@ mod tests {
 
     #[test]
     fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
-        let seed = point_entity("generated:point#seed", 2.0);
-        let second = point_entity("generated:point#second", 17.0);
-        let third = point_entity("generated:point#third", 32.0);
+        let seed = point_entity("generated:test:point#seed", 2.0);
+        let second = point_entity("generated:test:point#second", 17.0);
+        let third = point_entity("generated:test:point#third", 32.0);
         let relation =
             rectangular_point_relation(3, 3.0, RectangularPatternDistanceForm::SeedToFinalSpan);
         let parameters = rectangular_parameters(3, 3.0);
@@ -1128,9 +1128,9 @@ mod tests {
 
     #[test]
     fn rectangular_pattern_does_not_change_distance_form_to_match_geometry() {
-        let seed = point_entity("generated:point#seed", 2.0);
-        let second = point_entity("generated:point#second", 17.0);
-        let third = point_entity("generated:point#third", 32.0);
+        let seed = point_entity("generated:test:point#seed", 2.0);
+        let second = point_entity("generated:test:point#second", 17.0);
+        let third = point_entity("generated:test:point#third", 32.0);
         for (distance_form, distance) in [
             (RectangularPatternDistanceForm::AdjacentSpacing, 3.0),
             (RectangularPatternDistanceForm::SeedToFinalSpan, 1.5),
@@ -1151,8 +1151,8 @@ mod tests {
 
     #[test]
     fn rectangular_pattern_requires_the_retained_counted_reference_count() {
-        let seed = point_entity("generated:point#seed", 2.0);
-        let second = point_entity("generated:point#second", 17.0);
+        let seed = point_entity("generated:test:point#seed", 2.0);
+        let second = point_entity("generated:test:point#second", 17.0);
         let mut relation =
             rectangular_point_relation(2, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
         relation.rectangular_counted_reference_count = None;
@@ -1166,8 +1166,8 @@ mod tests {
 
     #[test]
     fn rectangular_pattern_transfers_two_instances_in_both_distance_forms() {
-        let seed = point_entity("generated:point#seed", 2.0);
-        let second = point_entity("generated:point#second", 17.0);
+        let seed = point_entity("generated:test:point#seed", 2.0);
+        let second = point_entity("generated:test:point#second", 17.0);
         for distance_form in [
             RectangularPatternDistanceForm::AdjacentSpacing,
             RectangularPatternDistanceForm::SeedToFinalSpan,
@@ -1202,13 +1202,13 @@ mod tests {
     fn circular_pattern_resolves_full_and_partial_instance_distributions() {
         let entity = |id: &str, geometry| {
             cadmpeg_ir::sketches::SketchEntity::new(
-                SketchEntityId(id.into()),
-                SketchId("generated:sketch#0".into()),
+                SketchEntityId::mint(id).unwrap(),
+                SketchId::mint("generated:test:sketch#0").unwrap(),
                 geometry,
             )
         };
         let center = entity(
-            "generated:point#center",
+            "generated:test:point#center",
             SketchGeometry::Point {
                 position: Point2::new(2.0, -3.0),
             },
@@ -1312,13 +1312,13 @@ mod tests {
     fn circular_pattern_resolves_independently_of_relation_ordinals() {
         let entity = |id: &str, geometry| {
             cadmpeg_ir::sketches::SketchEntity::new(
-                SketchEntityId(id.into()),
-                SketchId("generated:sketch#0".into()),
+                SketchEntityId::mint(id).unwrap(),
+                SketchId::mint("generated:test:sketch#0").unwrap(),
                 geometry,
             )
         };
         let center = entity(
-            "generated:point#center",
+            "generated:test:point#center",
             SketchGeometry::Point {
                 position: Point2::new(2.0, -3.0),
             },
@@ -1395,9 +1395,9 @@ mod tests {
             SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
         };
 
-        let sketch = SketchId("sketch".into());
+        let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let path = SketchEntity::new(
-            SketchEntityId("path".into()),
+            SketchEntityId::mint("synthetic:test:id#path").unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
@@ -1405,7 +1405,7 @@ mod tests {
             },
         );
         let text = SketchEntity::new(
-            SketchEntityId("text".into()),
+            SketchEntityId::mint("synthetic:test:id#text").unwrap(),
             sketch,
             SketchGeometry::Text {
                 text: "A".into(),

@@ -188,6 +188,8 @@ macro_rules! id_type {
     };
 }
 
+pub(crate) use id_type;
+
 macro_rules! local_id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*

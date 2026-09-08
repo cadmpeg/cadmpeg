@@ -636,7 +636,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch does not resolve to its PmDc source record".into(),
-                Some(sketch.id.0.clone()),
+                Some(sketch.id.as_str().to_owned()),
             ));
         }
     }
@@ -653,7 +653,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch entity does not resolve to its PmDc source records".into(),
-                Some(entity.id().0.clone()),
+                Some(entity.id().as_str().to_owned()),
             ));
         }
     }
@@ -667,7 +667,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Check::NativeLinks,
                 "Inventor neutral sketch constraint does not resolve to its PmDc source record"
                     .into(),
-                Some(constraint.id.0.clone()),
+                Some(constraint.id.as_str().to_owned()),
             ));
         }
     }

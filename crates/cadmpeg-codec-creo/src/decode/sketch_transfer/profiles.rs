@@ -119,7 +119,10 @@ pub(in super::super) fn resolved_profile_chains(
                         && segment.arc_orientation == Some(0)
                 });
             profile.push(SketchEntityUse {
-                entity: sketch_entity_id(sketch, external_id),
+                entity: match sketch_entity_id(sketch, external_id) {
+                    Some(id) => id,
+                    None => continue,
+                },
                 reversed: row_reversed ^ arc_orientation_reversed,
             });
             vertex = if row_reversed {
@@ -228,7 +231,10 @@ pub(in super::super) fn resolved_segment_profile_chains(
                 matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                     && segment.arc_orientation == Some(0);
             profile.push(SketchEntityUse {
-                entity: sketch_entity_id(sketch, segment.external_id),
+                entity: match sketch_entity_id(sketch, segment.external_id) {
+                    Some(id) => id,
+                    None => continue,
+                },
                 reversed: traversal_reversed ^ analytic_reversed,
             });
             point = if traversal_reversed {

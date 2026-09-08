@@ -782,11 +782,13 @@ pub(crate) fn saved_profile_chains(
     let mut profiles = geometries
         .iter()
         .filter(|(_, geometry)| is_full_circle_geometry(geometry))
-        .map(|(external_id, _)| {
-            vec![SketchEntityUse {
-                entity: sketch_entity_id(sketch, external_id),
-                reversed: false,
-            }]
+        .filter_map(|(external_id, _)| {
+            Some({
+                vec![SketchEntityUse {
+                    entity: sketch_entity_id(sketch, external_id)?,
+                    reversed: false,
+                }]
+            })
         })
         .collect::<Vec<_>>();
     let rows = geometries
@@ -842,7 +844,10 @@ pub(crate) fn saved_profile_chains(
                 break;
             }
             uses.push(SketchEntityUse {
-                entity: sketch_entity_id(sketch, rows[row].0),
+                entity: match sketch_entity_id(sketch, rows[row].0) {
+                    Some(id) => id,
+                    None => continue,
+                },
                 reversed,
             });
             let outgoing = usize::from(!reversed);

@@ -9,21 +9,21 @@ use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchId};
 
 #[test]
 fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, offset: u64, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
         .with_native_ref(Some(format!("native:{offset}")))
     };
     let mut entities = vec![
-        point("start", 100, Point2::new(1.0, 0.0)),
-        point("center", 200, Point2::new(0.0, 0.0)),
-        point("end", 300, Point2::new(0.0, 1.0)),
+        point("synthetic:test:id#start", 100, Point2::new(1.0, 0.0)),
+        point("synthetic:test:id#center", 200, Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#end", 300, Point2::new(0.0, 1.0)),
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId("arc".into()),
+            SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
@@ -120,10 +120,10 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         input("slot", slot_offset as u64, SketchInputKind::Point, None),
     ];
     let markers = inputs.iter().collect::<Vec<_>>();
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(format!("model:{id}")),
+            SketchEntityId::mint(format!("model:{id}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
@@ -131,7 +131,7 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
     };
     let curve = |id: &str, geometry, endpoint_refs: &[&str]| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(format!("model:{id}")),
+            SketchEntityId::mint(format!("model:{id}")).unwrap(),
             sketch.clone(),
             geometry,
         )
@@ -139,12 +139,12 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
     let mut entities = vec![
-        point("center-left", Point2::new(0.0, 0.0)),
-        point("center-right", Point2::new(2.0, 0.0)),
-        point("left-top", Point2::new(0.0, 1.0)),
-        point("right-top", Point2::new(2.0, 1.0)),
-        point("left-bottom", Point2::new(0.0, -1.0)),
-        point("right-bottom", Point2::new(2.0, -1.0)),
+        point("synthetic:test:id#center-left", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#center-right", Point2::new(2.0, 0.0)),
+        point("synthetic:test:id#left-top", Point2::new(0.0, 1.0)),
+        point("synthetic:test:id#right-top", Point2::new(2.0, 1.0)),
+        point("synthetic:test:id#left-bottom", Point2::new(0.0, -1.0)),
+        point("synthetic:test:id#right-bottom", Point2::new(2.0, -1.0)),
         curve(
             "top",
             SketchGeometry::Line {

@@ -382,7 +382,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
-            if sketch.0 == "sldprt:model:spatial-sketch#spatial"
+            if sketch.as_str() == "sldprt:model:spatial-sketch#spatial"
     ));
 }
 
@@ -487,7 +487,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
-            if sketch.0 == "sldprt:model:spatial-sketch#spatial-indexed-profile"
+            if sketch.as_str() == "sldprt:model:spatial-sketch#spatial-indexed-profile"
     ));
 }
 

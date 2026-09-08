@@ -28,7 +28,7 @@ fn axial_profile_resolves_counterbore_roles() {
         .map(|name| crate::records::FeatureContent::Dimension(name.into()))
         .collect();
     profile.parameters.insert("display".into(), "101.6".into());
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let drill_length = 2.75 / (118_f64.to_radians() / 2.0).tan();
     let entities = [
         profile_line(&sketch, 0, Point2::new(0.0, 5.0), Point2::new(-5.7, 5.0)),
@@ -131,10 +131,10 @@ fn axial_profile_resolves_counterdrill_roles() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let profile_point = |ordinal: usize, position| {
         SketchEntity::new(
-            SketchEntityId(format!("profile-point-{ordinal}")),
+            SketchEntityId::mint(format!("synthetic:test:id#profile-point-{ordinal}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
@@ -207,7 +207,7 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
 
     let flat = profiled_hole_construction(&profile, &sketch, &[]).expect("exact flat profile");
     assert_eq!(flat.diameter, Length(14.5));
@@ -282,7 +282,7 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let entry_radius = 6.1;
     let terminal_radius = 6.833_115;
     let terminal_geometry_radius = 6.833_112_73;
@@ -336,10 +336,10 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let point = |ordinal: usize, position| {
         SketchEntity::new(
-            SketchEntityId(format!("profile-point-{ordinal}")),
+            SketchEntityId::mint(format!("synthetic:test:id#profile-point-{ordinal}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
@@ -385,10 +385,10 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let point = |ordinal: usize, position| {
         SketchEntity::new(
-            SketchEntityId(format!("profile-point-{ordinal}")),
+            SketchEntityId::mint(format!("synthetic:test:id#profile-point-{ordinal}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
@@ -482,7 +482,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let entities = |terminal, mirror_wall: bool| {
         let wall_radius = if mirror_wall { -3.2 } else { 3.2 };
         [
@@ -555,7 +555,7 @@ fn incomplete_axial_profile_does_not_assign_dimension_roles() {
     ]
     .into_iter()
     .collect();
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let entities = [
         profile_line(&sketch, 0, Point2::new(0.0, 7.5), Point2::new(-8.6, 7.5)),
         profile_line(&sketch, 1, Point2::new(-8.6, 4.5), Point2::new(-23.0, 4.5)),
@@ -598,7 +598,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         .collect();
     history.features.push(position);
 
-    let sketch = SketchId("profile".into());
+    let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let entities = [
         profile_line(&sketch, 0, Point2::new(0.0, 7.5), Point2::new(-8.6, 7.5)),
         profile_line(&sketch, 1, Point2::new(-8.6, 7.5), Point2::new(-8.6, 4.5)),
@@ -632,9 +632,9 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                "position".into(),
-            ))),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                SketchId::mint("synthetic:test:id#position").unwrap(),
+            )),
         },
         native_ref: Some("native-position".into()),
     };
@@ -766,9 +766,9 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                sketch.into(),
-            ))),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                SketchId::mint(sketch).unwrap(),
+            )),
         },
         native_ref: Some(id.into()),
     };
@@ -784,7 +784,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         model_sketch("second-profile", "second-sketch", 3),
     ];
     let axial_rectangle = |sketch: &str, radius: f64, depth: f64, first_ordinal| {
-        let sketch = SketchId(sketch.into());
+        let sketch = SketchId::mint(sketch).unwrap();
         [
             profile_line(
                 &sketch,
@@ -813,8 +813,8 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         ]
     };
     let entities = [
-        axial_rectangle("first-sketch", 2.1, 6.8, 0),
-        axial_rectangle("second-sketch", 3.0, 14.0, 4),
+        axial_rectangle("synthetic:test:id#first-sketch", 2.1, 6.8, 0),
+        axial_rectangle("synthetic:test:id#second-sketch", 3.0, 14.0, 4),
     ]
     .concat();
 

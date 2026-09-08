@@ -747,7 +747,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     ));
 
     let remaining_members = group.members.split_off(1);
-    let sketch_id = SketchId("f3d:model:sketch#172".into());
+    let sketch_id = SketchId::mint("f3d:model:sketch#172").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -759,7 +759,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
         profiles: vec![vec![SketchEntityUse {
-            entity: neutral_sketch_curve_id(&sketch_id, 586, 0),
+            entity: neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
             reversed: false,
         }]],
         native_ref: None,
@@ -801,20 +801,20 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     });
     group.members.extend(remaining_members);
     let mut sketch = sketch;
-    let second_profile_id = SketchEntityId("second-profile".into());
+    let second_profile_id = SketchEntityId::mint("synthetic:test:id#second-profile").unwrap();
     sketch.profiles.push(vec![SketchEntityUse {
         entity: second_profile_id.clone(),
         reversed: false,
     }]);
     let point_entity = SketchEntity::new(
-        neutral_sketch_point_id(&sketch_id, 587),
+        neutral_sketch_point_id(&sketch_id, 587).unwrap(),
         sketch_id.clone(),
         SketchGeometry::Point {
             position: Point2::new(0.5, 1.0),
         },
     );
     let line_entity = SketchEntity::new(
-        neutral_sketch_curve_id(&sketch_id, 586, 0),
+        neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
         sketch_id.clone(),
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),

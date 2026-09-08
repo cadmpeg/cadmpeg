@@ -48,11 +48,11 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         let expected_native_ref =
             sketch
                 .id
-                .0
+                .as_str()
                 .replacen("creo:model:sketch#", "creo:featdefs:sketch#", 1);
         let identity_scope = sketch
             .id
-            .0
+            .as_str()
             .strip_prefix("creo:model:sketch#")
             .expect("Creo sketch identity");
         assert_eq!(
@@ -75,7 +75,10 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .sketch_entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
-            .all(|entity| entity.id().0.contains(&format!("#{identity_scope}:"))));
+            .all(|entity| entity
+                .id()
+                .as_str()
+                .contains(&format!("#{identity_scope}:"))));
         let parameters = result
             .ir()
             .model

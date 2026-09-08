@@ -35,8 +35,8 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 
 #[test]
 fn profile_joins_reject_duplicate_sketch_ids() {
-    let sketch_id = SketchId("creo:model:sketch#7".to_string());
-    let entity_id = SketchEntityId("creo:featdefs:sketch_entity#7:1".to_string());
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).unwrap();
+    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string()).unwrap();
     let mut ir = CadIr::empty();
     ir.model.sketches.extend([
         sketch(&sketch_id, &entity_id),
@@ -52,8 +52,8 @@ fn profile_joins_reject_duplicate_sketch_ids() {
 
 #[test]
 fn profile_joins_reject_duplicate_sketch_entity_ids() {
-    let sketch_id = SketchId("creo:model:sketch#7".to_string());
-    let entity_id = SketchEntityId("creo:featdefs:sketch_entity#7:1".to_string());
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).unwrap();
+    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string()).unwrap();
     let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
     ir.model.sketch_entities.extend([

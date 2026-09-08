@@ -187,7 +187,7 @@ fn spatial_line(
     end: Point3,
 ) -> SpatialSketchEntity {
     SpatialSketchEntity::new(
-        neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
+        neutral_spatial_sketch_curve_id(sketch, primary_id, 0).unwrap(),
         sketch.clone(),
         SpatialSketchGeometry::Line { start, end },
     )
@@ -204,7 +204,7 @@ fn spatial_profile(
         boundary: primary_ids
             .iter()
             .map(|primary_id| SpatialSketchEntityUse {
-                entity: neutral_spatial_sketch_curve_id(sketch, *primary_id, 0),
+                entity: neutral_spatial_sketch_curve_id(sketch, *primary_id, 0).unwrap(),
                 reversed: false,
             })
             .collect(),
@@ -214,7 +214,7 @@ fn spatial_profile(
 #[test]
 fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     let sketch_id =
-        cadmpeg_ir::sketches::SpatialSketchId("f3d:model:spatial-sketch#selection".into());
+        cadmpeg_ir::sketches::SpatialSketchId::mint("f3d:model:spatial-sketch#selection").unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
         name: None,
@@ -366,7 +366,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
 #[test]
 fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
     let sketch_id =
-        cadmpeg_ir::sketches::SpatialSketchId("f3d:model:spatial-sketch#transition".into());
+        cadmpeg_ir::sketches::SpatialSketchId::mint("f3d:model:spatial-sketch#transition").unwrap();
     let entities = [
         spatial_line(
             &sketch_id,
@@ -517,7 +517,7 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
 #[test]
 fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
     let sketch_id =
-        cadmpeg_ir::sketches::SpatialSketchId("f3d:model:spatial-sketch#nonlinear".into());
+        cadmpeg_ir::sketches::SpatialSketchId::mint("f3d:model:spatial-sketch#nonlinear").unwrap();
     let mut entities = vec![
         spatial_line(
             &sketch_id,
@@ -538,7 +538,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
             Point3::new(0.0, 0.0, 0.0),
         ),
     ];
-    let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0);
+    let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0).unwrap();
     entities.push(SpatialSketchEntity::new(
         arc_id.clone(),
         sketch_id.clone(),
@@ -593,9 +593,9 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
 #[test]
 fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let placement = placement();
-    let sketch_id = neutral_spatial_sketch_id(&placement);
+    let sketch_id = neutral_spatial_sketch_id(&placement).unwrap();
     let curves = [curve(30, 100, 0), curve(31, 200, 0), curve(32, 201, 0)];
-    let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0);
+    let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0).unwrap();
     let circle = |primary, radius, normal| {
         SpatialSketchEntity::new(
             entity_id(primary),
@@ -742,11 +742,11 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
 #[test]
 fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_proof() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let sketch_entities = [
         SketchEntity::new(
-            neutral_sketch_curve_id(&sketch, 100, 101),
+            neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
@@ -754,7 +754,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
             },
         ),
         SketchEntity::new(
-            neutral_sketch_curve_id(&sketch, 200, 201),
+            neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(1.0, 0.0),
@@ -786,8 +786,8 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         Some(PathRef::SketchCurves {
             sketch: sketch.clone(),
             curves: vec![
-                neutral_sketch_curve_id(&sketch, 100, 101),
-                neutral_sketch_curve_id(&sketch, 200, 201),
+                neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
+                neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
             ],
         })
     );
@@ -816,7 +816,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
 #[test]
 fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
     let placement = placement();
-    let spatial_sketch = neutral_spatial_sketch_id(&placement);
+    let spatial_sketch = neutral_spatial_sketch_id(&placement).unwrap();
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let spatial_entities = curves
         .iter()
@@ -826,7 +826,8 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                     &spatial_sketch,
                     curve.primary_id,
                     curve.secondary_id,
-                ),
+                )
+                .unwrap(),
                 spatial_sketch.clone(),
                 SpatialSketchGeometry::Line {
                     start: Point3::new(0.0, 0.0, 0.0),
@@ -869,6 +870,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                         curve.primary_id,
                         curve.secondary_id,
                     )
+                    .unwrap()
                 })
                 .collect(),
         })
@@ -878,11 +880,13 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
 #[test]
 fn entity_selection_profile_requires_unique_profile_membership() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let curve_ids = curves
         .iter()
-        .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id))
+        .map(|curve| {
+            neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id).unwrap()
+        })
         .collect::<Vec<_>>();
     let sketch_entities = [
         SketchEntity::new(
@@ -961,9 +965,9 @@ fn entity_selection_profile_requires_unique_profile_membership() {
 #[test]
 fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let curve = curve(30, 100, 101);
-    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id).unwrap();
     let sketch_entities = [SketchEntity::new(
         entity_id.clone(),
         sketch.clone(),
@@ -1011,10 +1015,10 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
 #[test]
 fn planar_profile_regions_resolve_by_persistent_curve_members() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
-    let first_entity = neutral_sketch_curve_id(&sketch, 100, 101);
-    let second_entity = neutral_sketch_curve_id(&sketch, 200, 201);
+    let first_entity = neutral_sketch_curve_id(&sketch, 100, 101).unwrap();
+    let second_entity = neutral_sketch_curve_id(&sketch, 200, 201).unwrap();
     let sketch_entities = [
         SketchEntity::new(
             first_entity.clone(),
@@ -1124,8 +1128,8 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
 
 #[test]
 fn historical_points_on_profile_boundaries_are_ambiguous() {
-    let sketch_id = SketchId("sketch".into());
-    let entity_id = SketchEntityId("line".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
     let mut sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -1168,8 +1172,8 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     );
 
     let mut branched_sketch = sketch.clone();
-    let start_branch_id = SketchEntityId("start-branch".into());
-    let end_branch_id = SketchEntityId("end-branch".into());
+    let start_branch_id = SketchEntityId::mint("synthetic:test:id#start-branch").unwrap();
+    let end_branch_id = SketchEntityId::mint("synthetic:test:id#end-branch").unwrap();
     branched_sketch.profiles.extend([
         vec![SketchEntityUse {
             entity: start_branch_id.clone(),
@@ -1257,7 +1261,7 @@ fn historical_selection_preserves_first_member_region_order() {
 
 #[test]
 fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
-    let sketch = SketchId("f3d:model:sketch#multi-profile".into());
+    let sketch = SketchId::mint("f3d:model:sketch#multi-profile").unwrap();
     let loops = [
         ProfileRef::SketchProfiles {
             sketch: sketch.clone(),
@@ -1512,8 +1516,8 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
         AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
     };
 
-    let sketch_id = SketchId("sketch".into());
-    let circle_id = SketchEntityId("circle".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let circle_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let circle = SketchEntity::new(
         circle_id.clone(),
         sketch_id.clone(),
@@ -1736,7 +1740,7 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
 fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries() {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut profiles = Vec::new();
     let mut entities = Vec::new();
     for (profile_index, corners) in [
@@ -1750,7 +1754,10 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
     {
         let mut profile = Vec::new();
         for edge_index in 0..corners.len() {
-            let id = SketchEntityId(format!("profile-{profile_index}-edge-{edge_index}"));
+            let id = SketchEntityId::mint(format!(
+                "synthetic:test:id#profile-{profile_index}-edge-{edge_index}"
+            ))
+            .unwrap();
             profile.push(SketchEntityUse {
                 entity: id.clone(),
                 reversed: false,

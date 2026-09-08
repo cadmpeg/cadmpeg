@@ -27,8 +27,8 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     let mut ir = CadIr::empty();
     ir.model.sketch_entities.push(
         SketchEntity::new(
-            SketchEntityId("planar-entity".into()),
-            SketchId("planar-sketch".into()),
+            SketchEntityId::mint("synthetic:test:id#planar-entity").unwrap(),
+            SketchId::mint("synthetic:test:id#planar-sketch").unwrap(),
             SketchGeometry::Native {
                 native_kind: "SplineHandle".into(),
             },
@@ -37,8 +37,8 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     );
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
-            SpatialSketchEntityId("spatial-entity".into()),
-            SpatialSketchId("spatial-sketch".into()),
+            SpatialSketchEntityId::mint("synthetic:test:id#spatial-entity").unwrap(),
+            SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             SpatialSketchGeometry::Native {
                 native_kind: "ReferenceCurve".into(),
             },
@@ -70,16 +70,16 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                "sketch".into(),
-            ))),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            )),
         },
         native_ref: Some("feature".into()),
     });
     ir.model.sketch_entities.push(
         SketchEntity::new(
-            SketchEntityId("represented-geometry".into()),
-            SketchId("sketch".into()),
+            SketchEntityId::mint("synthetic:test:id#represented-geometry").unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
             SketchGeometry::Native {
                 native_kind: "UnknownGeometry".into(),
             },
@@ -194,8 +194,8 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
     let mut ir = CadIr::empty();
     let entity = |id: &str, native_ref: &str| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
             SketchGeometry::Native {
                 native_kind: "UnknownGeometry".into(),
             },
@@ -203,9 +203,9 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
         .with_native_ref(Some(native_ref.into()))
     };
     ir.model.sketch_entities = vec![
-        entity("first", "relation-marker"),
-        entity("second", "relation-marker"),
-        entity("profile", "profile-stream-record"),
+        entity("synthetic:test:id#first", "relation-marker"),
+        entity("synthetic:test:id#second", "relation-marker"),
+        entity("synthetic:test:id#profile", "profile-stream-record"),
     ];
     let native = SldprtNative {
         feature_input_lanes: vec![FeatureInputLane {

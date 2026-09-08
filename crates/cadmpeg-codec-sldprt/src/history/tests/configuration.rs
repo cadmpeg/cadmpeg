@@ -264,7 +264,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     });
     let spatial_feature_id = cadmpeg_ir::features::FeatureId::mint("sldprt:model:feature#spatial")
         .expect("identity grammar");
-    let spatial_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+    let spatial_sketch_id = SpatialSketchId::mint("sldprt:model:spatial-sketch#spatial").unwrap();
     ir.model.features.push(NeutralFeature {
         id: spatial_feature_id.clone(),
         ordinal: 1,
@@ -281,7 +281,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         },
         native_ref: Some("spatial-native".into()),
     });
-    let sketch_id = SketchId("projected-sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#projected-sketch").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("sketch-native".into()),
@@ -297,7 +297,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     });
     ir.model.sketch_entities.push(
         SketchEntity::new(
-            SketchEntityId("configuration-line".into()),
+            SketchEntityId::mint("synthetic:test:id#configuration-line").unwrap(),
             sketch_id.clone(),
             SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
@@ -408,7 +408,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             && matches!(
                 constraint.definition,
                 SketchConstraintDefinition::Horizontal { ref entity }
-                    if entity.0 == "configuration-line"
+                    if entity.as_str() == "configuration-line"
             )
     }));
 }
@@ -495,10 +495,11 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
     let feature_id = FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar");
-    let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+    let sketch_id = SpatialSketchId::mint("sldprt:model:spatial-sketch#spatial").unwrap();
     let planar_state_id =
         FeatureId::mint("sldprt:model:feature#planar-state").expect("identity grammar");
-    let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
+    let planar_sketch_id =
+        SpatialSketchId::mint("sldprt:model:spatial-sketch#planar-state").unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
@@ -619,7 +620,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 
     let feature_id =
         FeatureId::mint("sldprt:model:feature#scoped-spatial").expect("identity grammar");
-    let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
+    let sketch_id = SpatialSketchId::mint("sldprt:model:spatial-sketch#scoped-spatial").unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),

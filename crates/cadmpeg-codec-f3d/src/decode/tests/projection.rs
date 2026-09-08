@@ -1109,8 +1109,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("constraint".into()),
-        sketch: SketchId("sketch".into()),
+        id: SketchConstraintId::mint("synthetic:test:id#constraint").unwrap(),
+        sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         definition: SketchConstraintDefinition::Native {
             native_kind: "dimension".into(),
             native_state: None,
@@ -1132,7 +1132,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         native_ref: Some("native:sketch-relation".into()),
     });
     let mut native_dimension = ir.model.sketch_constraints[0].clone();
-    native_dimension.id = SketchConstraintId("dimension".into());
+    native_dimension.id = SketchConstraintId::mint("synthetic:test:id#dimension").unwrap();
     native_dimension.native_ref = Some("native:dimension-companion".into());
     ir.model.sketch_constraints.push(native_dimension);
     ir.model.features.push(
@@ -1478,7 +1478,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.sketch_curve_identities[0].owner_reference = Some(1);
 
     ir.model.sketches.push(Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -1496,8 +1496,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ] {
         ir.model.sketch_entities.push(
             SketchEntity::new(
-                SketchEntityId(id.into()),
-                SketchId("sketch".into()),
+                SketchEntityId::mint(id).unwrap(),
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
                 SketchGeometry::Point {
                     position: Point2::new(0.0, 0.0),
                 },

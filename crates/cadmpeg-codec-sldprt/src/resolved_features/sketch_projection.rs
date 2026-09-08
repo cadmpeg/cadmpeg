@@ -116,9 +116,12 @@ fn project_brep(
         else {
             continue;
         };
-        let sketch_id = SketchId(format!(
+        let sketch_id = match SketchId::mint(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
-        ));
+        )) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
@@ -141,10 +144,10 @@ fn project_brep(
                 let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
                     id.clone()
                 } else {
-                    let id = SketchEntityId(format!(
+                    let id = match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
-                    ));
+                    )) { Ok(id) => id, Err(_) => continue };
                     let Some(geometry) =
                         project_edge(edge, &vertices, &points, &curves, *origin, *u_axis, v_axis)
                     else {
@@ -158,7 +161,7 @@ fn project_brep(
                     };
                     crate::annotations::note(
                         annotations,
-                        id.0.clone(),
+                        id.as_str().to_owned(),
                         section,
                         0,
                         "feature_input_profile_edge",
@@ -199,17 +202,20 @@ fn project_brep(
             let Some(position) = points.get(&vertex.point) else {
                 continue;
             };
-            let id = SketchEntityId(format!(
+            let id = match SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                 edge_entities.len()
                     + entities
                         .iter()
                         .filter(|entity| entity.sketch == sketch_id)
                         .count()
-            ));
+            )) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             crate::annotations::note(
                 annotations,
-                id.0.clone(),
+                id.as_str().to_owned(),
                 section,
                 0,
                 "feature_input_profile_point",
@@ -232,7 +238,7 @@ fn project_brep(
         }
         crate::annotations::note(
             annotations,
-            sketch_id.0.clone(),
+            sketch_id.as_str().to_owned(),
             section,
             stream_offset as u64,
             "feature_input_profile",
@@ -316,8 +322,8 @@ mod projected_profile_orientation_tests {
 
     fn line(id: &str, start_ref: &str, end_ref: &str) -> SketchEntity {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
@@ -329,9 +335,9 @@ mod projected_profile_orientation_tests {
     #[test]
     fn orients_each_closed_profile_edge_toward_its_topological_successor() {
         let entities = [
-            line("a", "p0", "p1"),
-            line("b", "p1", "p2"),
-            line("c", "p0", "p2"),
+            line("synthetic:test:id#a", "p0", "p1"),
+            line("synthetic:test:id#b", "p1", "p2"),
+            line("synthetic:test:id#c", "p0", "p2"),
         ];
         let mut profile = entities
             .iter()
@@ -352,9 +358,9 @@ mod projected_profile_orientation_tests {
     #[test]
     fn preserves_all_orientations_when_endpoint_incidence_is_ambiguous() {
         let entities = [
-            line("a", "p0", "p1"),
-            line("b", "p1", "p2"),
-            line("c", "p3", "p4"),
+            line("synthetic:test:id#a", "p0", "p1"),
+            line("synthetic:test:id#b", "p1", "p2"),
+            line("synthetic:test:id#c", "p3", "p4"),
         ];
         let mut profile = entities
             .iter()

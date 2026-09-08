@@ -199,7 +199,7 @@ pub(in super::super) fn schema_feature_definition(
                     definition.identity.id(),
                     section.offset,
                 )?;
-                let sketch = model_sketch_id(scan, definition);
+                let sketch = model_sketch_id(scan, definition)?;
                 ir.model
                     .sketches
                     .iter()

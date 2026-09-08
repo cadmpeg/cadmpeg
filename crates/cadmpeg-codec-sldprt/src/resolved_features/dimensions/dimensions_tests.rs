@@ -1278,7 +1278,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
 #[test]
 fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -1501,7 +1501,7 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
 fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let feature_id = FeatureId::mint("feature").expect("identity grammar");
     let feature_ref = "feature";
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let marker_id = "marker";
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
@@ -1583,7 +1583,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         native_ref: Some("scalar".into()),
     };
     let center = SketchEntity::new(
-        SketchEntityId("center".into()),
+        SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch_id,
         SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
@@ -1610,7 +1610,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let mut ambiguous = entities[..1].to_vec();
     ambiguous.push(
         SketchEntity::new(
-            SketchEntityId("second-center".into()),
+            SketchEntityId::mint("synthetic:test:id#second-center").unwrap(),
             entities[0].sketch.clone(),
             SketchGeometry::Point {
                 position: Point2::new(1.0, 2.0),
@@ -1694,7 +1694,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         },
     ]);
     let mut implicit_entities = vec![SketchEntity::new(
-        SketchEntityId("implicit-center".into()),
+        SketchEntityId::mint("synthetic:test:id#implicit-center").unwrap(),
         entities[0].sketch.clone(),
         SketchGeometry::Point {
             position: Point2::new(3.0, 4.0),

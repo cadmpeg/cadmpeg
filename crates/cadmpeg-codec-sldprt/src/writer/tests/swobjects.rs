@@ -214,14 +214,16 @@ fn encoder_writes_source_less_line_sketches() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SketchId("synthetic:test:sketch#profile".into());
+    let sketch_id = SketchId::mint("synthetic:test:sketch#profile").unwrap();
     let points = [
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
         Point2::new(0.0, 10.0),
     ];
     let entity_ids = (0..3)
-        .map(|index| SketchEntityId(format!("synthetic:test:sketch-entity#line-{index}")))
+        .map(|index| {
+            SketchEntityId::mint(format!("synthetic:test:sketch-entity#line-{index}")).unwrap()
+        })
         .collect::<Vec<_>>();
     for index in 0..3 {
         ir.model.sketch_entities.push(SketchEntity::new(
@@ -235,7 +237,8 @@ fn encoder_writes_source_less_line_sketches() {
     }
     for index in 0..3 {
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!("synthetic:test:constraint#coincident-{index}")),
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#coincident-{index}"))
+                .unwrap(),
             sketch: sketch_id.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
@@ -276,7 +279,7 @@ fn encoder_writes_source_less_line_sketches() {
         ),
     ] {
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!("synthetic:test:constraint#{suffix}")),
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{suffix}")).unwrap(),
             sketch: sketch_id.clone(),
             definition,
             name: None,
@@ -292,7 +295,7 @@ fn encoder_writes_source_less_line_sketches() {
         });
     }
     ir.model.sketch_entities.push(SketchEntity::new(
-        SketchEntityId("synthetic:test:sketch-entity#point".into()),
+        SketchEntityId::mint("synthetic:test:sketch-entity#point").unwrap(),
         sketch_id.clone(),
         SketchGeometry::Point {
             position: Point2::new(4.0, 5.0),
@@ -664,8 +667,9 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#path".into());
-    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
+    let entity_id =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     let start = Point3::new(1.25, -2.5, 3.75);
     let end = Point3::new(4.5, 5.25, -6.0);
     let second_start = Point3::new(-7.0, 8.5, 9.25);
@@ -682,7 +686,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
-            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#a-point").unwrap(),
             sketch_id.clone(),
             SpatialSketchGeometry::Point { position: point },
         ));
@@ -696,7 +700,8 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
-            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#second-line")
+                .unwrap(),
             sketch_id.clone(),
             SpatialSketchGeometry::Line {
                 start: second_start,
@@ -802,8 +807,8 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let sketch_id = SketchId("synthetic:test:sketch#profile".into());
-    let entity_id = SketchEntityId("synthetic:test:sketch-entity#line".into());
+    let sketch_id = SketchId::mint("synthetic:test:sketch#profile").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#line").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
@@ -829,7 +834,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         },
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+        id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
         sketch: sketch_id,
         definition: SketchConstraintDefinition::Horizontal { entity: entity_id },
         name: None,

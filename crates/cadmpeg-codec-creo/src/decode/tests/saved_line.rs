@@ -192,7 +192,7 @@ fn saved_line_joins_through_order_table() {
     assert!(materialized_saved_section_external_ids(&incomplete).is_empty());
     let (native_entity, offset) = unresolved_saved_section_entity(
         &incomplete,
-        &SketchId("creo:model:sketch#5".into()),
+        &SketchId::mint("creo:model:sketch#5").unwrap(),
         &incomplete
             .saved_section
             .as_ref()
@@ -200,9 +200,13 @@ fn saved_line_joins_through_order_table() {
             .entities[0],
         &unique_saved_section_internal_ids(&incomplete),
         &BTreeSet::new(),
-    );
+    )
+    .unwrap();
     assert_eq!(offset, 20);
-    assert_eq!(native_entity.id().0, "creo:featdefs:sketch_entity#5:42");
+    assert_eq!(
+        native_entity.id().as_str(),
+        "creo:featdefs:sketch_entity#5:42"
+    );
     assert!(matches!(
         native_entity.geometry,
         SketchGeometry::Native { ref native_kind } if native_kind == "saved_line"
@@ -330,14 +334,16 @@ fn saved_line_joins_through_order_table() {
         }),
         offset: 28,
     });
-    let constraints =
-        section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    let constraints = section_skamp_constraints(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+    );
     assert!(matches!(
         &constraints[0].0.definition,
         SketchConstraintDefinition::Native { entities, .. }
-            if entities == &[SketchEntityId(
+            if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
-            )]
+            ).unwrap()]
     ));
     let SketchConstraintDefinition::Native { operands, .. } = &constraints[0].0.definition else {
         unreachable!();
@@ -364,7 +370,7 @@ fn saved_line_joins_through_order_table() {
         .relation_id = None;
     let equation_only_constraints = section_skamp_constraints(
         &equation_only_incidence,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
     let SketchConstraintDefinition::Native { operands, .. } =
         &equation_only_constraints[0].0.definition
@@ -387,7 +393,7 @@ fn saved_line_joins_through_order_table() {
         .equation_id = None;
     let missing_equation_constraints = section_skamp_constraints(
         &missing_equation,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
     let SketchConstraintDefinition::Native { operands, .. } =
         &missing_equation_constraints[0].0.definition
@@ -416,7 +422,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     let duplicate_equation_constraints = section_skamp_constraints(
         &duplicate_equation,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
     let SketchConstraintDefinition::Native { operands, .. } =
         &duplicate_equation_constraints[0].0.definition
@@ -429,23 +435,25 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         relation_incidence_entities(
             &constrained,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
             7,
         ),
         vec![
-            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
         ]
     );
-    let dimension_constraints =
-        section_dimension_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    let dimension_constraints = section_dimension_constraints(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+    );
     assert!(
         matches!(
             &dimension_constraints[0].0.definition,
             SketchConstraintDefinition::Distance { entities, .. }
                 if entities == &[
-                    SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-                    SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
                 ]
         ),
         "{:?}",
@@ -453,8 +461,10 @@ fn saved_line_joins_through_order_table() {
     );
     let mut native_join = constrained.clone();
     native_join.relations.as_mut().expect("relations").rows[0].relation_type = 99;
-    let native_join_constraints =
-        section_dimension_constraints(&native_join, &SketchId("creo:model:sketch#5".to_string()));
+    let native_join_constraints = section_dimension_constraints(
+        &native_join,
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+    );
     let SketchConstraintDefinition::Native { operands, .. } =
         &native_join_constraints[0].0.definition
     else {
@@ -489,8 +499,10 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("triples header")
         .declared_count = 2;
-    let ambiguous_join_constraints =
-        section_dimension_constraints(&native_join, &SketchId("creo:model:sketch#5".to_string()));
+    let ambiguous_join_constraints = section_dimension_constraints(
+        &native_join,
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+    );
     let SketchConstraintDefinition::Native { operands, .. } =
         &ambiguous_join_constraints[0].0.definition
     else {
@@ -610,7 +622,7 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::Line)
     );
     let solver_geometry = BTreeMap::from([(
-        SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+        SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
         SketchGeometry::Native {
             native_kind: "solver_only_section_entity".to_string(),
         },
@@ -618,7 +630,7 @@ fn saved_line_joins_through_order_table() {
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &solver_families,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
             Some(&solver_geometry),
         )[0]
         .0
@@ -638,7 +650,7 @@ fn saved_line_joins_through_order_table() {
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &solver_families,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
             Some(&solver_geometry),
         )[0]
         .0
@@ -682,13 +694,13 @@ fn saved_line_joins_through_order_table() {
     );
     let solver_geometry = BTreeMap::from([
         (
-            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
             SketchGeometry::Native {
                 native_kind: "line".to_string(),
             },
         ),
         (
-            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
             SketchGeometry::Native {
                 native_kind: "point".to_string(),
             },
@@ -696,7 +708,7 @@ fn saved_line_joins_through_order_table() {
     ]);
     let solver_constraints = section_skamp_constraints_for_geometry(
         &solver_families,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
         Some(&solver_geometry),
     );
     let point_item = &solver_families
@@ -713,13 +725,13 @@ fn saved_line_joins_through_order_table() {
         .items[1];
     assert!(section_skamp_point_locus(
         &solver_families,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
         point_item
     )
     .is_some());
     assert!(section_skamp_incidence_locus(
         &solver_families,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
         line_item,
         Some(&solver_geometry)
     )
@@ -885,7 +897,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     assert!(relation_incidence_entities(
         &duplicate_incidence,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
         7,
     )
     .is_empty());
@@ -900,36 +912,41 @@ fn saved_line_joins_through_order_table() {
         .status = 34;
     assert!(relation_incidence_entities(
         &constrained,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
         7,
     )
     .is_empty());
     assert_eq!(
         joined_relation_incidence_entities(
             &constrained,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
             7,
         ),
         vec![
-            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
         ]
     );
     assert_eq!(
-        section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()))[0]
-            .0
-            .active,
+        section_skamp_constraints(
+            &constrained,
+            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap()
+        )[0]
+        .0
+        .active,
         Some(false)
     );
     constrained.segments = None;
-    let constraints =
-        section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    let constraints = section_skamp_constraints(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+    );
     assert!(matches!(
         &constraints[0].0.definition,
         SketchConstraintDefinition::Native { entities, .. }
-            if entities == &[SketchEntityId(
+            if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
-            )]
+            ).unwrap()]
     ));
 
     let mut completed = definition;
@@ -1314,17 +1331,19 @@ fn generated_saved_geometry_forms_closed_profiles() {
         ),
     ];
 
-    let profiles =
-        saved_profile_chains(&SketchId("creo:model:sketch#917".to_string()), &geometries);
+    let profiles = saved_profile_chains(
+        &SketchId::mint("creo:model:sketch#917".to_string()).unwrap(),
+        &geometries,
+    );
 
     assert_eq!(profiles.len(), 2);
     assert_eq!(
-        profiles[0][0].entity.0,
+        profiles[0][0].entity.as_str(),
         "creo:featdefs:sketch_entity#917:30"
     );
     assert_eq!(profiles[1].len(), 4);
     assert_eq!(
-        profiles[1][0].entity.0,
+        profiles[1][0].entity.as_str(),
         "creo:featdefs:sketch_entity#917:10"
     );
     assert!(!profiles[1][0].reversed);
@@ -1332,7 +1351,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
     assert!(profiles
         .iter()
         .flatten()
-        .all(|entity| !entity.entity.0.ends_with(":20")));
+        .all(|entity| !entity.entity.as_str().ends_with(":20")));
 }
 
 #[test]

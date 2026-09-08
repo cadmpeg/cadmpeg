@@ -178,9 +178,10 @@ pub fn project_dimension_constraints(
         .filter(|constraint| {
             placements
                 .iter()
-                .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
+                .find(|placement| neutral_sketch_id(placement).as_ref() == Some(&constraint.sketch))
                 .is_none_or(|placement| {
-                    !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
+                    neutral_spatial_sketch_id(placement)
+                        .is_none_or(|id| !spatial_sketch_ids.contains(&id))
                 })
         })
         .collect()
@@ -206,9 +207,10 @@ pub(crate) fn project_dimension_constraints_with_presentations(
         .filter(|constraint| {
             placements
                 .iter()
-                .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
+                .find(|placement| neutral_sketch_id(placement).as_ref() == Some(&constraint.sketch))
                 .is_none_or(|placement| {
-                    !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
+                    neutral_spatial_sketch_id(placement)
+                        .is_none_or(|id| !spatial_sketch_ids.contains(&id))
                 })
         })
         .collect()
@@ -245,7 +247,7 @@ fn project_all_dimension_constraints(
             let scope = native_stream(&placement.id)?;
             u32::try_from(placement.entity_id.suffix())
                 .ok()
-                .map(|suffix| ((scope, suffix), neutral_sketch_id(placement)))
+                .and_then(|suffix| Some(((scope, suffix), neutral_sketch_id(placement)?)))
         })
         .collect::<HashMap<_, _>>();
     let sketches_by_scope = placements
@@ -253,7 +255,7 @@ fn project_all_dimension_constraints(
         .filter_map(|placement| {
             Some((
                 (native_stream(&placement.id)?, placement.scope_record_index?),
-                neutral_sketch_id(placement),
+                neutral_sketch_id(placement)?,
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -706,7 +708,7 @@ fn project_all_dimension_constraints(
                 parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair")?;
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
                     let [first_index, second_index] = indices;
@@ -792,7 +794,7 @@ fn project_all_dimension_constraints(
                     )
                 });
             Some(SketchConstraint {
-                id: neutral_sketch_constraint_id(&group.id, group.record_index),
+                id: neutral_sketch_constraint_id(&group.id, group.record_index)?,
                 sketch,
                 definition,
                 name: None,
@@ -817,7 +819,7 @@ fn project_all_dimension_constraints(
                 .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
                 .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation")?;
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
                     annotation_offset_dimension_definition(
@@ -897,7 +899,7 @@ fn project_all_dimension_constraints(
                 parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [pair.loci[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair")?;
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci[1].geometry_index())) {
                     if let Some(definition) = null_locus_dimension_definition(
@@ -1019,7 +1021,7 @@ fn project_all_dimension_constraints(
             let companion = companions_by_key.get(&(scope.clone(), companion_record_index))?;
             let owner = owners_by_companion.get(&(scope.clone(), companion_record_index))?;
             let (parameter, parameter_id) = parameter_for(&scope, companion_record_index)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group")?;
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
@@ -1267,7 +1269,7 @@ fn project_all_dimension_constraints(
             }],
         });
         Some(SketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
             sketch,
             definition,
             name: None,
@@ -2399,11 +2401,12 @@ pub fn project_spatial_dimension_constraints(
     let spatial_by_planar_id = placements
         .iter()
         .filter_map(|placement| {
-            let spatial_id = neutral_spatial_sketch_id(placement);
+            let spatial_id = neutral_spatial_sketch_id(placement)?;
             spatial_sketches
                 .iter()
                 .any(|sketch| sketch.id == spatial_id)
-                .then(|| (neutral_sketch_id(placement), spatial_id))
+                .then(|| Some((neutral_sketch_id(placement)?, spatial_id)))
+                .flatten()
         })
         .collect::<HashMap<_, _>>();
     let spatial_by_scope = placements
@@ -2412,7 +2415,7 @@ pub fn project_spatial_dimension_constraints(
             let scope = native_stream(&placement.id)?;
             let scope_record_index = placement.scope_record_index?;
             spatial_by_planar_id
-                .get(&neutral_sketch_id(placement))
+                .get(&neutral_sketch_id(placement)?)
                 .map(|sketch| ((scope, scope_record_index), sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
@@ -2672,7 +2675,7 @@ pub fn project_spatial_dimension_constraints(
             .get(&(scope, owner.scope_record_index))?
             .clone();
         Some(SpatialSketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
             sketch,
             definition: SpatialSketchConstraintDefinition::Native {
                 native_kind: parameter.source_kind().to_owned(),

@@ -214,7 +214,7 @@ pub(super) fn append_generated_sketch_markers(
                 let ids = marker_ids.get(entity).ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(format!(
                         "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
-                        entity.0
+                        entity.as_str()
                     ))
                 })?;
                 let links = match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
@@ -654,7 +654,7 @@ fn unique_generated_entity_marker(
     }
     Err(cadmpeg_core::CodecError::NotImplemented(format!(
         "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
-        entity.0
+        entity.as_str()
     )))
 }
 

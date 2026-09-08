@@ -256,7 +256,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     ));
     assert_eq!(
         entities[1].id().clone(),
-        crate::ids::neutral_sketch_record_id(&sketches[0].id, 21)
+        crate::ids::neutral_sketch_record_id(&sketches[0].id, 21).unwrap()
     );
 
     // The settled explicit frame keeps its stored origin unscaled.

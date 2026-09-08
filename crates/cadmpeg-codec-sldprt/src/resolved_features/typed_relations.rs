@@ -48,7 +48,7 @@ pub(super) fn typed_marker_relation_definition(
 ) -> Option<SketchConstraintDefinition> {
     typed_marker_relation_definition_in_sketch(
         marker,
-        &SketchId(String::new()),
+        &SketchId::mint(String::new()).unwrap(),
         &[],
         markers_by_id,
         loci_by_marker,
@@ -70,7 +70,7 @@ fn unique_entity_from_link_intersection(
     let first = links.first()?;
     let mut candidates = marker_entities(&first.entity_ref, markers_by_id, loci_by_marker);
     candidates.retain(|entity| {
-        !entity.0.contains("sketch-entity#relation-point:")
+        !entity.as_str().contains("sketch-entity#relation-point:")
             && sketch_entities
                 .iter()
                 .any(|candidate| candidate.id() == entity && candidate.sketch == *sketch)
@@ -114,7 +114,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .filter(|link| !relation_link_identifies_owner(marker, link))
             .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
             .collect::<Vec<_>>();
-        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         entities.dedup();
         let owners = relation_owner_markers(marker, markers_by_id);
         entities.extend(
@@ -122,7 +122,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 .iter()
                 .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker)),
         );
-        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         entities.dedup();
         let mut operands = marker
             .links()
@@ -354,7 +354,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 match owner_entities.as_slice() {
                     [owner]
                         if direct_entities.iter().all(|entity| {
-                            entity == owner || entity.0.contains("sketch-entity#relation-point:")
+                            entity == owner
+                                || entity.as_str().contains("sketch-entity#relation-point:")
                         }) =>
                     {
                         owner_entities
@@ -365,7 +366,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let [entity] = entities.as_slice() {
                 if matches!(kind, Horizontal | Vertical)
                     && sketch_entities.is_empty()
-                    && entity.0.contains("sketch-entity#relation-point:")
+                    && entity.as_str().contains("sketch-entity#relation-point:")
                 {
                     return Some(native());
                 }
@@ -506,7 +507,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 .iter()
                 .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
-                .filter(|entity| !entity.0.contains("sketch-entity#relation-point:"))
+                .filter(|entity| !entity.as_str().contains("sketch-entity#relation-point:"))
                 .collect::<Vec<_>>();
             let geometry_pair = if owner_entities.is_empty() && !sketch_entities.is_empty() {
                 let links = marker
@@ -1666,7 +1667,7 @@ fn relation_owner_curve_entities(
         })
         .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker))
         .collect::<Vec<_>>();
-    entities.sort_by(|left, right| left.0.cmp(&right.0));
+    entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     entities.dedup();
     entities
 }

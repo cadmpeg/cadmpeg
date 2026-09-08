@@ -479,7 +479,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     use cadmpeg_ir::sketches::SketchId;
 
     let extrude = |op| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(SketchId("sketch".into())),
+        profile: ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()),
         direction: ExtrudeDirection::ProfileNormal,
         start: ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
@@ -499,7 +499,9 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     let revolve = |op| FeatureDefinition::Revolve {
         construction: RevolveConstruction::new(
-            Some(ProfileRef::Sketch(SketchId("sketch".into()))),
+            Some(ProfileRef::Sketch(
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            )),
             Some(RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),

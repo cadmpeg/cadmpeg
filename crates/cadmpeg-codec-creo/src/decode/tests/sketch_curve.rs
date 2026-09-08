@@ -34,7 +34,7 @@ fn sketch_curve_references_require_a_materialized_curve() {
         normal: [1.0, 0.0, 0.0],
         offset: 7,
     };
-    let sketch = SketchId("creo:model:sketch#5".to_string());
+    let sketch = SketchId::mint("creo:model:sketch#5".to_string()).unwrap();
     let line = SketchGeometry::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(2.0, 0.0),
@@ -127,8 +127,8 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         body: Vec::new(),
         offset: 40,
     };
-    let entity = SketchEntityId("entity".into());
-    let sketch = SketchId("sketch".into());
+    let entity = SketchEntityId::mint("synthetic:test:id#entity").unwrap();
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone()),
         Some(SketchConstraintDefinition::Vertical {
@@ -168,7 +168,11 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     ));
     segment.vertical_horizontal = None;
     assert_eq!(
-        section_segment_verhor_definition(&segment, &sketch, SketchEntityId("entity".into())),
+        section_segment_verhor_definition(
+            &segment,
+            &sketch,
+            SketchEntityId::mint("synthetic:test:id#entity").unwrap()
+        ),
         None
     );
 }
@@ -185,9 +189,9 @@ fn skamp_status_low_bit_controls_constraint_activity() {
 
 #[test]
 fn dimension_identity_includes_its_feature_definition() {
-    let sketch_917 = SketchId("creo:model:sketch#917".to_string());
-    let sketch_1104 = SketchId("creo:model:sketch#1104".to_string());
-    let sketch_1200 = SketchId("creo:model:sketch#1200".to_string());
+    let sketch_917 = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+    let sketch_1104 = SketchId::mint("creo:model:sketch#1104".to_string()).unwrap();
+    let sketch_1200 = SketchId::mint("creo:model:sketch#1200".to_string()).unwrap();
     assert_ne!(
         feature_dimension_parameter_id(&sketch_917, 3),
         feature_dimension_parameter_id(&sketch_1104, 3)
@@ -299,7 +303,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         radius[0].0.definition,
         SketchConstraintDefinition::Radius {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
         }
@@ -334,7 +338,8 @@ fn dimension_identity_includes_its_feature_definition() {
         Some("radius")
     );
     assert_eq!(operands[1].object_index, 0);
-    let circle_entity = SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string());
+    let circle_entity =
+        SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap();
     let retained_without_parameter = section_segment_radius_constraints_for_emitted(
         &definition,
         &sketch_917,
@@ -364,7 +369,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         diameter[0].0.definition,
         SketchConstraintDefinition::Diameter {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
         }
@@ -404,7 +409,7 @@ fn dimension_identity_includes_its_feature_definition() {
             .0
             .definition,
         SketchConstraintDefinition::Diameter {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap(),
             parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar"),
         }
@@ -465,9 +470,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(native_properties["dimension_ordinal"], "7");
     assert_eq!(
         entities,
-        &[SketchEntityId(
-            "creo:featdefs:sketch_entity#917:42".to_string()
-        )]
+        &[SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string()).unwrap()]
     );
     assert_eq!(
         operands[0].field.as_ref().map(|field| field.name.as_str()),

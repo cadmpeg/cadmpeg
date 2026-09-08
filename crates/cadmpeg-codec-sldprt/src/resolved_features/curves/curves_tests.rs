@@ -14,10 +14,10 @@ use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchI
 
 #[test]
 fn shared_endpoint_block_cycles_remain_profile_chains() {
-    let sketch = SketchId("block-sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
     let line = |id: &str, start: &str, end: &str| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
@@ -28,11 +28,11 @@ fn shared_endpoint_block_cycles_remain_profile_chains() {
         .with_endpoint_refs(vec![start.into(), end.into()])
     };
     let entities = vec![
-        line("bottom", "p0", "p1"),
-        line("right", "p1", "p2"),
-        line("top", "p2", "p3"),
-        line("left", "p3", "p0"),
-        line("diagonal", "p0", "p2"),
+        line("synthetic:test:id#bottom", "p0", "p1"),
+        line("synthetic:test:id#right", "p1", "p2"),
+        line("synthetic:test:id#top", "p2", "p3"),
+        line("synthetic:test:id#left", "p3", "p0"),
+        line("synthetic:test:id#diagonal", "p0", "p2"),
     ];
 
     assert!(super::closed_marker_profiles(&entities).is_empty());
@@ -753,28 +753,28 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
     let point = |u, v| Point2::new(u, v);
     let lines = vec![
         (
-            SketchEntityId("top".into()),
+            SketchEntityId::mint("synthetic:test:id#top").unwrap(),
             &marker,
             &marker,
             point(0.0, 1.0),
             point(1.0, 1.0),
         ),
         (
-            SketchEntityId("bottom".into()),
+            SketchEntityId::mint("synthetic:test:id#bottom").unwrap(),
             &marker,
             &marker,
             point(0.0, 0.0),
             point(1.0, 0.0),
         ),
         (
-            SketchEntityId("right".into()),
+            SketchEntityId::mint("synthetic:test:id#right").unwrap(),
             &marker,
             &marker,
             point(1.0, 0.0),
             point(1.0, 1.0),
         ),
         (
-            SketchEntityId("left".into()),
+            SketchEntityId::mint("synthetic:test:id#left").unwrap(),
             &marker,
             &marker,
             point(0.0, 1.0),
@@ -786,7 +786,7 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
     assert_eq!(
         profile
             .iter()
-            .map(|use_| (use_.entity.0.as_str(), use_.reversed))
+            .map(|use_| (use_.entity.as_str(), use_.reversed))
             .collect::<Vec<_>>(),
         [
             ("top", false),
@@ -847,10 +847,10 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         marker("curve-b", 112, "center-b"),
     ];
     let markers = records.iter().collect::<Vec<_>>();
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(format!("entity-{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
@@ -858,7 +858,7 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     };
     let curve = |id: &str| {
         SketchEntity::new(
-            SketchEntityId(format!("entity-{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:1".into(),
@@ -867,12 +867,12 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         .with_native_ref(Some(id.into()))
     };
     let mut entities = vec![
-        point("center-a", Point2::new(0.0, 0.0)),
-        point("a-plus", Point2::new(0.0, 2.0)),
-        point("a-minus", Point2::new(0.0, -2.0)),
-        point("center-b", Point2::new(3.0, 0.0)),
-        point("b-plus", Point2::new(3.0, 2.0)),
-        point("b-minus", Point2::new(3.0, -2.0)),
+        point("synthetic:test:id#center-a", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#a-plus", Point2::new(0.0, 2.0)),
+        point("synthetic:test:id#a-minus", Point2::new(0.0, -2.0)),
+        point("synthetic:test:id#center-b", Point2::new(3.0, 0.0)),
+        point("synthetic:test:id#b-plus", Point2::new(3.0, 2.0)),
+        point("synthetic:test:id#b-minus", Point2::new(3.0, -2.0)),
         curve("curve-a"),
         curve("curve-b"),
     ];
@@ -976,29 +976,33 @@ fn bounded_arc_normalization_uses_angular_tolerance() {
 
 #[test]
 fn unresolved_fillet_without_tangent_record_remains_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry, endpoint_refs: &[&str]| {
-        cadmpeg_ir::sketches::SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
-            .with_native_ref(Some(id.into()))
-            .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            geometry,
+        )
+        .with_native_ref(Some(id.into()))
+        .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
     let mut entities = vec![
         entity(
-            "start",
+            "synthetic:test:id#start",
             SketchGeometry::Point {
                 position: Point2::new(1.0, 0.0),
             },
             &[],
         ),
         entity(
-            "end",
+            "synthetic:test:id#end",
             SketchGeometry::Point {
                 position: Point2::new(0.0, 1.0),
             },
             &[],
         ),
         entity(
-            "start-line",
+            "synthetic:test:id#start-line",
             SketchGeometry::Line {
                 start: Point2::new(1.0, -1.0),
                 end: Point2::new(1.0, 0.0),
@@ -1006,7 +1010,7 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
             &["start-line-other", "start"],
         ),
         entity(
-            "end-line",
+            "synthetic:test:id#end-line",
             SketchGeometry::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(-1.0, 1.0),
@@ -1014,7 +1018,7 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
             &["end", "end-line-other"],
         ),
         entity(
-            "fillet",
+            "synthetic:test:id#fillet",
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
             },
@@ -1032,29 +1036,29 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
 
 #[test]
 fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry, endpoint_refs: &[&str]| {
-        SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
             .with_native_ref(Some(id.into()))
             .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
     let mut entities = vec![
         entity(
-            "start",
+            "synthetic:test:id#start",
             SketchGeometry::Point {
                 position: Point2::new(1.0, 0.0),
             },
             &[],
         ),
         entity(
-            "end",
+            "synthetic:test:id#end",
             SketchGeometry::Point {
                 position: Point2::new(0.0, 1.0),
             },
             &[],
         ),
         entity(
-            "start-arc",
+            "synthetic:test:id#start-arc",
             SketchGeometry::Arc {
                 center: Point2::new(2.0, 0.0),
                 radius: Length(1.0),
@@ -1064,7 +1068,7 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
             &["start", "start-other"],
         ),
         entity(
-            "end-arc",
+            "synthetic:test:id#end-arc",
             SketchGeometry::Arc {
                 center: Point2::new(0.0, 2.0),
                 radius: Length(1.0),
@@ -1074,7 +1078,7 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
             &["end", "end-other"],
         ),
         entity(
-            "fillet",
+            "synthetic:test:id#fillet",
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
             },
@@ -1092,9 +1096,9 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
 
 #[test]
 fn connected_marker_arc_uses_unique_equidistant_point_witness() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry, native_ref: &str, endpoint_refs: &[&str]| {
-        SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
             .with_native_ref(Some(native_ref.into()))
             .with_endpoint_refs(
                 endpoint_refs
@@ -1105,7 +1109,7 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
     };
     let mut entities = vec![
         entity(
-            "center",
+            "synthetic:test:id#center",
             SketchGeometry::Point {
                 position: Point2::new(0.0, 0.0),
             },
@@ -1113,7 +1117,7 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
             &[],
         ),
         entity(
-            "start",
+            "synthetic:test:id#start",
             SketchGeometry::Point {
                 position: Point2::new(1.0, 0.0),
             },
@@ -1121,7 +1125,7 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
             &[],
         ),
         entity(
-            "end",
+            "synthetic:test:id#end",
             SketchGeometry::Point {
                 position: Point2::new(0.0, 1.0),
             },
@@ -1129,7 +1133,7 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
             &[],
         ),
         entity(
-            "arc",
+            "synthetic:test:id#arc",
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
             },
@@ -1152,22 +1156,34 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
 
 #[test]
 fn connected_marker_arc_with_mirror_centers_remains_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, native_ref: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
         .with_native_ref(Some(native_ref.into()))
     };
     let mut entities = vec![
-        point("start", "point:100", Point2::new(1.0, 0.0)),
-        point("between-center", "point:200", Point2::new(0.0, 0.0)),
-        point("end", "point:300", Point2::new(0.0, 1.0)),
-        point("outside-center", "point:400", Point2::new(1.0, 1.0)),
+        point(
+            "synthetic:test:id#start",
+            "point:100",
+            Point2::new(1.0, 0.0),
+        ),
+        point(
+            "synthetic:test:id#between-center",
+            "point:200",
+            Point2::new(0.0, 0.0),
+        ),
+        point("synthetic:test:id#end", "point:300", Point2::new(0.0, 1.0)),
+        point(
+            "synthetic:test:id#outside-center",
+            "point:400",
+            Point2::new(1.0, 1.0),
+        ),
         SketchEntity::new(
-            SketchEntityId("arc".into()),
+            SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
@@ -1188,10 +1204,10 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
 
 #[test]
 fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Point { position },
         )
@@ -1199,7 +1215,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     };
     let line = |id: &str, start: &str, end: &str, start_position, end_position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: start_position,
@@ -1212,26 +1228,26 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     let center = Point2::new(9.5, 0.0);
     let radius = (9.5_f64.powi(2) + 2.0_f64.powi(2)).sqrt();
     let mut entities = vec![
-        point("left-top", Point2::new(0.0, 2.0)),
-        point("left-bottom", Point2::new(0.0, -2.0)),
-        point("right-top", Point2::new(19.0, 2.0)),
-        point("right-bottom", Point2::new(19.0, -2.0)),
+        point("synthetic:test:id#left-top", Point2::new(0.0, 2.0)),
+        point("synthetic:test:id#left-bottom", Point2::new(0.0, -2.0)),
+        point("synthetic:test:id#right-top", Point2::new(19.0, 2.0)),
+        point("synthetic:test:id#right-bottom", Point2::new(19.0, -2.0)),
         line(
-            "top",
+            "synthetic:test:id#top",
             "left-top",
             "right-top",
             Point2::new(0.0, 2.0),
             Point2::new(19.0, 2.0),
         ),
         line(
-            "bottom",
+            "synthetic:test:id#bottom",
             "right-bottom",
             "left-bottom",
             Point2::new(19.0, -2.0),
             Point2::new(0.0, -2.0),
         ),
         SketchEntity::new(
-            SketchEntityId("left-arc".into()),
+            SketchEntityId::mint("synthetic:test:id#left-arc").unwrap(),
             sketch.clone(),
             SketchGeometry::Arc {
                 center,
@@ -1243,7 +1259,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
         .with_native_ref(Some("left-arc".into()))
         .with_endpoint_refs(vec!["left-top".into(), "left-bottom".into()]),
         SketchEntity::new(
-            SketchEntityId("right-arc".into()),
+            SketchEntityId::mint("synthetic:test:id#right-arc").unwrap(),
             sketch,
             SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
@@ -1256,7 +1272,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     let mut ambiguous_entities = entities.clone();
     let witness = &ambiguous_entities[6];
     let duplicate_witness = SketchEntity::new(
-        SketchEntityId("left-arc-duplicate".into()),
+        SketchEntityId::mint("synthetic:test:id#left-arc-duplicate").unwrap(),
         witness.sketch.clone(),
         witness.geometry.clone(),
     )
