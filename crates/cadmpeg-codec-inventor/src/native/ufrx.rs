@@ -805,9 +805,16 @@ mod tests {
             wire["document_id"] = serde_json::json!(document_id);
             let record = serde_json::from_value::<ExternalReferenceRecord>(wire.clone());
             if accepted {
-                assert_eq!(serde_json::to_value(record.unwrap()).unwrap(), wire);
+                assert_eq!(
+                    serde_json::to_value(record.expect("valid native record fixture"))
+                        .expect("valid native record fixture"),
+                    wire
+                );
             } else {
-                assert!(record.unwrap_err().to_string().contains("document_id"));
+                assert!(record
+                    .expect_err("invalid native record fixture")
+                    .to_string()
+                    .contains("document_id"));
             }
         }
     }
