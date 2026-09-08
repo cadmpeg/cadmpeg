@@ -19,9 +19,9 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
         .with_native_ref(Some(format!("native:{offset}")))
     };
     let mut entities = vec![
-        point("start", 100, Point2::new(1.0, 0.0)),
-        point("center", 200, Point2::new(0.0, 0.0)),
-        point("end", 300, Point2::new(0.0, 1.0)),
+        point("synthetic:test:id#start", 100, Point2::new(1.0, 0.0)),
+        point("synthetic:test:id#center", 200, Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#end", 300, Point2::new(0.0, 1.0)),
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
