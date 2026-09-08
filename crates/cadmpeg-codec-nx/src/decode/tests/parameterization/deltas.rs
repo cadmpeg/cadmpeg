@@ -7,7 +7,7 @@ use crate::framing::node_kind::NodeKind;
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
     assert_eq!(
-        crate::deltas::walk(&stream).bytes_decoded,
+        crate::deltas::walk(&stream).bytes_decoded(),
         stream.len() - DELTAS_PREAMBLE.len()
     );
     let mut cur = Cursor::new(prt_with_partition(&stream));
