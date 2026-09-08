@@ -18,7 +18,7 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
     let container = container::scan_bytes(file).unwrap();
     let (_, index) = container.segment_index().expect("segment index");
-    assert_eq!(index.byte_len, 28);
+    assert_eq!(index.rows.len() * 12 + index.padding.len(), 28);
     assert_eq!(index.rows.len(), 2);
     assert_eq!(index.rows[0].type_code, 7);
     assert_eq!(index.rows[0].subtype_code, 9);

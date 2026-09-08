@@ -157,8 +157,6 @@ pub struct SegmentIndex<'a> {
     pub rows: Vec<SegmentIndexRow>,
     /// Zero to eleven trailing bytes after the last complete row.
     pub padding: &'a [u8],
-    /// Declared payload-relative end of the index.
-    pub byte_len: usize,
 }
 
 /// One segment-index word whose target frames a compressed stream.
@@ -279,7 +277,6 @@ impl<'a> Container<'a> {
             SegmentIndex {
                 rows,
                 padding: &payload[complete_len..byte_len],
-                byte_len,
             },
         ))
     }
