@@ -36,8 +36,6 @@ pub struct KernelHeader {
     pub width: RefWidth,
     /// ACIS save-format version, encoded as `100 * major + minor`.
     pub save_format_version: Option<u32>,
-    /// Record-count word when the header carries one.
-    pub record_count: Option<u32>,
     /// Entity-count word.
     pub entity_count: Option<u64>,
     /// Kernel flags word.

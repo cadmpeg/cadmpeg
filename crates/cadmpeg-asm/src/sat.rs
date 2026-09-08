@@ -70,7 +70,6 @@ impl TextHeader {
         KernelHeader {
             width: RefWidth::Eight,
             save_format_version: Some(self.save_format_version),
-            record_count: Some(self.record_count),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
             product_family: Some(self.product_family.clone()),

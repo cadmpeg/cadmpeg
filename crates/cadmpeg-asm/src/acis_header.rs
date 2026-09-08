@@ -29,7 +29,6 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     let mut header = KernelHeader {
         width: RefWidth::Four,
         save_format_version: View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION),
-        record_count: View::u32_le_at(bytes, acis_bf4::RECORD_COUNT),
         entity_count: View::u32_le_at(bytes, acis_bf4::ENTITY_COUNT).map(u64::from),
         flags: View::u32_le_at(bytes, acis_bf4::FLAGS).map(u64::from),
         product_family: None,
