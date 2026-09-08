@@ -1267,7 +1267,7 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
         &mut BTreeSet::new(),
         None,
     )
-    .map(|transform| transform.body_transform());
+    .map(super::Affine::body_transform);
     assert!(result.is_err());
 }
 
