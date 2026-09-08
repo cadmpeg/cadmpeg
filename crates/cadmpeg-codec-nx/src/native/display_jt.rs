@@ -283,7 +283,7 @@ pub struct DisplayJtSegment {
     into = "DisplayJtCompressionWire"
 )]
 pub struct DisplayJtCompression {
-    compressed_byte_len: u32,
+    envelope: JtCompressionEnvelope,
     /// SHA-256 of the completely inflated payload.
     pub inflated_sha256: String,
 }
@@ -297,23 +297,46 @@ struct DisplayJtCompressionWire {
     inflated_sha256: String,
 }
 
-impl TryFrom<DisplayJtCompressionWire> for DisplayJtCompression {
-    type Error = &'static str;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct JtCompressionEnvelope {
+    compressed_byte_len: u32,
+}
 
-    fn try_from(wire: DisplayJtCompressionWire) -> Result<Self, Self::Error> {
-        if wire.flag != 2 {
+impl JtCompressionEnvelope {
+    fn try_new(
+        flag: u32,
+        compressed_data_byte_len: u32,
+        algorithm: u8,
+        compressed_byte_len: u32,
+    ) -> Result<Self, &'static str> {
+        if flag != 2 {
             return Err("DisplayJtCompression.flag must be 2");
         }
-        if wire.algorithm != 2 {
+        if algorithm != 2 {
             return Err("DisplayJtCompression.algorithm must be 2");
         }
-        if wire.compressed_byte_len.checked_add(1) != Some(wire.compressed_data_byte_len) {
+        if compressed_byte_len.checked_add(1) != Some(compressed_data_byte_len) {
             return Err(
                 "DisplayJtCompression.compressed_data_byte_len disagrees with compressed_byte_len",
             );
         }
         Ok(Self {
-            compressed_byte_len: wire.compressed_byte_len,
+            compressed_byte_len,
+        })
+    }
+}
+
+impl TryFrom<DisplayJtCompressionWire> for DisplayJtCompression {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtCompressionWire) -> Result<Self, Self::Error> {
+        let envelope = JtCompressionEnvelope::try_new(
+            wire.flag,
+            wire.compressed_data_byte_len,
+            wire.algorithm,
+            wire.compressed_byte_len,
+        )?;
+        Ok(Self {
+            envelope,
             inflated_sha256: wire.inflated_sha256,
         })
     }
@@ -323,9 +346,9 @@ impl From<DisplayJtCompression> for DisplayJtCompressionWire {
     fn from(value: DisplayJtCompression) -> Self {
         Self {
             flag: 2,
-            compressed_data_byte_len: value.compressed_byte_len + 1,
+            compressed_data_byte_len: value.envelope.compressed_byte_len + 1,
             algorithm: 2,
-            compressed_byte_len: value.compressed_byte_len,
+            compressed_byte_len: value.envelope.compressed_byte_len,
             inflated_sha256: value.inflated_sha256,
         }
     }
@@ -2178,22 +2201,24 @@ pub fn display_jt_segments(
                     return Vec::new();
                 };
                 let compressed = &payload[9..];
-                let Some(inflated) = inflate_display_jt(budget, compressed) else {
-                    return Vec::new();
-                };
                 let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
                     return Vec::new();
                 };
-                let Ok(compression) = DisplayJtCompression::try_from(DisplayJtCompressionWire {
-                    flag: 2,
+                let Ok(envelope) = JtCompressionEnvelope::try_new(
+                    2,
                     compressed_data_byte_len,
                     algorithm,
                     compressed_byte_len,
-                    inflated_sha256: sha256_hex(&inflated),
-                }) else {
+                ) else {
                     return Vec::new();
                 };
-                Some(compression)
+                let Some(inflated) = inflate_display_jt(budget, compressed) else {
+                    return Vec::new();
+                };
+                Some(DisplayJtCompression {
+                    envelope,
+                    inflated_sha256: sha256_hex(&inflated),
+                })
             } else {
                 None
             };
@@ -4671,7 +4696,10 @@ mod tests {
             super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
             compressed.len() as u32 + 1
         );
-        assert_eq!(compression.compressed_byte_len, compressed.len() as u32);
+        assert_eq!(
+            compression.envelope.compressed_byte_len,
+            compressed.len() as u32
+        );
         assert_eq!(
             compression.inflated_sha256,
             cadmpeg_ir::hash::sha256_hex(&inflated)
