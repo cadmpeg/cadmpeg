@@ -468,12 +468,12 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             PmDcSketchEntityKind::Point {
                 endpoint_of,
                 center_of,
-                associations,
+                tail,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
-                if let Some(associations) = associations {
+                if let Some((_, associations)) = tail {
                     add_list(associations);
                 }
             }
