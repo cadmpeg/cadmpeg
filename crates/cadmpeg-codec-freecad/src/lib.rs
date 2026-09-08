@@ -984,9 +984,7 @@ impl CodecBackend for FcstdCodec {
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
                 document_bytes,
-                scan.document.file_version.parse::<usize>().map_err(|_| {
-                    CodecError::Malformed("Document.xml FileVersion is invalid".into())
-                })?,
+                scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,
             )?;

@@ -122,7 +122,8 @@ pub(crate) fn write_seekable(
     let notes = vec![
         format!(
             "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-            document.schema_version, document.file_version
+            document.schema_version,
+            document.file_version.as_str()
         ),
         "unsupported retained entries and unedited XML records were preserved".into(),
     ];
