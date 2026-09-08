@@ -435,7 +435,10 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     along_parameter.id = "generated:parameter#83".into();
     along_parameter.record_index = 83;
 
-    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame()).expect("taper owner");
+    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame())
+        .expect("taper owner")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
     taper_owner.id = "generated:owner#80".into();
     taper_owner.record_index = 80;
     taper_owner.scope_record_index = scope_record_index;

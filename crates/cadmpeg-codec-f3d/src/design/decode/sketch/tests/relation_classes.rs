@@ -364,9 +364,9 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
     assert!(matches!(
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: Some(1),
+            clauses: Some(clauses),
             ..
-        }
+        } if clauses.as_slice() == &parsed.auxiliary_references[1..5]
     ));
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
@@ -420,9 +420,9 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     assert!(matches!(
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: Some(0),
+            clauses: Some(clauses),
             ..
-        }
+        } if clauses.as_slice() == &parsed.auxiliary_references[0..4]
     ));
     assert_eq!(parsed.parsed_end, record.len());
     let Some(SketchPatternDefinition::Rectangular { directions }) =
@@ -464,9 +464,9 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
     assert!(matches!(
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: Some(0),
+            clauses: Some(clauses),
             ..
-        }
+        } if clauses.as_slice() == &parsed.auxiliary_references[0..4]
     ));
     assert!(matches!(
         decode_pattern_definition(&record, &parsed),
@@ -520,10 +520,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     ));
     assert!(matches!(
         parsed.class_members,
-        super::super::RelationClassMembers::Rectangular {
-            clause_ordinal: None,
-            ..
-        }
+        super::super::RelationClassMembers::Rectangular { clauses: None, .. }
     ));
     assert_eq!(decode_pattern_definition(&record, &parsed), None);
 }
