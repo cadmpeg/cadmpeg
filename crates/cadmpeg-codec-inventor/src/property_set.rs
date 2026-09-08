@@ -471,6 +471,79 @@ fn parse_vector<'a>(
     })
 }
 
+enum ScalarType {
+    Empty,
+    I2,
+    I4,
+    R4,
+    R8,
+    I8,
+    Bool,
+    I1,
+    Ui1,
+    Ui2,
+    Ui4,
+    Ui8,
+    CodePageString,
+    UnicodeString,
+    Filetime,
+    Binary,
+    Clipboard,
+    Guid,
+    Unknown,
+}
+
+impl ScalarType {
+    fn from_code(type_code: u16) -> Self {
+        match type_code {
+            0x0000 | 0x0001 => Self::Empty,
+            0x0002 => Self::I2,
+            0x0003 | 0x0016 | 0x000a => Self::I4,
+            0x0004 => Self::R4,
+            0x0005 | 0x0007 => Self::R8,
+            0x0006 | 0x0014 => Self::I8,
+            0x000b => Self::Bool,
+            0x0010 => Self::I1,
+            0x0011 => Self::Ui1,
+            0x0012 => Self::Ui2,
+            0x0013 | 0x0017 => Self::Ui4,
+            0x0015 => Self::Ui8,
+            0x001e | 0x0008 => Self::CodePageString,
+            0x001f => Self::UnicodeString,
+            0x0040 => Self::Filetime,
+            0x0041 | 0x0046 => Self::Binary,
+            0x0047 => Self::Clipboard,
+            0x0048 => Self::Guid,
+            _ => Self::Unknown,
+        }
+    }
+
+    fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::I2 | Self::I4 | Self::I8 | Self::I1 => "signed",
+            Self::R4 | Self::R8 => "float",
+            Self::Bool => "bool",
+            Self::Ui1 | Self::Ui2 | Self::Ui4 | Self::Ui8 => "unsigned",
+            Self::CodePageString | Self::UnicodeString => "string",
+            Self::Filetime => "filetime",
+            Self::Binary => "binary",
+            Self::Clipboard => "clipboard",
+            Self::Guid => "guid",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// The property kind selected by the OLE type code.
+pub(crate) fn property_kind_name(type_code: u16) -> &'static str {
+    if type_code & VT_VECTOR != 0 {
+        "vector"
+    } else {
+        ScalarType::from_code(type_code).kind_name()
+    }
+}
+
 fn parse_scalar<'a>(
     ctx: &DecodeContext<'_>,
     raw: View<'a>,
@@ -479,29 +552,29 @@ fn parse_scalar<'a>(
     code_page: Option<u16>,
     padded: bool,
 ) -> Result<PropertyValue<'a>, CodecError> {
-    let value = match type_code {
-        0x0000 | 0x0001 => PropertyValue::Empty { type_code },
-        0x0002 => PropertyValue::Signed {
+    let value = match ScalarType::from_code(type_code) {
+        ScalarType::Empty => PropertyValue::Empty { type_code },
+        ScalarType::I2 => PropertyValue::Signed {
             type_code,
             value: cursor.i16("VT_I2")? as i64,
         },
-        0x0003 | 0x0016 | 0x000a => PropertyValue::Signed {
+        ScalarType::I4 => PropertyValue::Signed {
             type_code,
             value: cursor.i32("VT_I4")? as i64,
         },
-        0x0004 => PropertyValue::Float {
+        ScalarType::R4 => PropertyValue::Float {
             type_code,
             value: f32::from_bits(cursor.u32("VT_R4")?) as f64,
         },
-        0x0005 | 0x0007 => PropertyValue::Float {
+        ScalarType::R8 => PropertyValue::Float {
             type_code,
             value: f64::from_bits(cursor.u64("VT_R8")?),
         },
-        0x0006 | 0x0014 => PropertyValue::Signed {
+        ScalarType::I8 => PropertyValue::Signed {
             type_code,
             value: cursor.i64("VT_I8")?,
         },
-        0x000b => {
+        ScalarType::Bool => {
             let value = cursor.i16("VT_BOOL")?;
             if !matches!(value, 0 | -1) {
                 return Err(CodecError::Malformed(
@@ -513,43 +586,43 @@ fn parse_scalar<'a>(
                 value: value != 0,
             }
         }
-        0x0010 => PropertyValue::Signed {
+        ScalarType::I1 => PropertyValue::Signed {
             type_code,
             value: cursor.u8("VT_I1")? as i8 as i64,
         },
-        0x0011 => PropertyValue::Unsigned {
+        ScalarType::Ui1 => PropertyValue::Unsigned {
             type_code,
             value: cursor.u8("VT_UI1")? as u64,
         },
-        0x0012 => PropertyValue::Unsigned {
+        ScalarType::Ui2 => PropertyValue::Unsigned {
             type_code,
             value: cursor.u16("VT_UI2")? as u64,
         },
-        0x0013 | 0x0017 => PropertyValue::Unsigned {
+        ScalarType::Ui4 => PropertyValue::Unsigned {
             type_code,
             value: cursor.u32("VT_UI4")? as u64,
         },
-        0x0015 => PropertyValue::Unsigned {
+        ScalarType::Ui8 => PropertyValue::Unsigned {
             type_code,
             value: cursor.u64("VT_UI8")?,
         },
-        0x001e | 0x0008 => {
+        ScalarType::CodePageString => {
             let size = cursor.count("code-page string size", MAX_STREAM_SIZE)?;
             let value = cursor.code_page_string(ctx, size, code_page, "string")?;
             cursor.align4("string padding")?;
             PropertyValue::String { type_code, value }
         }
-        0x001f => {
+        ScalarType::UnicodeString => {
             let count = cursor.count("Unicode string length", MAX_STREAM_SIZE / 2)?;
             let value = cursor.unicode_string(ctx, count, "Unicode string")?;
             cursor.align4("Unicode string padding")?;
             PropertyValue::String { type_code, value }
         }
-        0x0040 => PropertyValue::Filetime {
+        ScalarType::Filetime => PropertyValue::Filetime {
             type_code,
             value: cursor.u64("FILETIME")?,
         },
-        0x0041 | 0x0046 => {
+        ScalarType::Binary => {
             let size = cursor.count("BLOB size", MAX_STREAM_SIZE)?;
             let start = cursor.position();
             cursor.take(size, "BLOB")?;
@@ -560,7 +633,7 @@ fn parse_scalar<'a>(
             cursor.align4("BLOB padding")?;
             value
         }
-        0x0047 => {
+        ScalarType::Clipboard => {
             let size = cursor.count("clipboard size", MAX_STREAM_SIZE)?;
             if size < 4 {
                 return Err(CodecError::Malformed(
@@ -578,11 +651,11 @@ fn parse_scalar<'a>(
             cursor.align4("clipboard padding")?;
             value
         }
-        0x0048 => PropertyValue::Guid {
+        ScalarType::Guid => PropertyValue::Guid {
             type_code,
             value: cursor.array("CLSID")?,
         },
-        _ => {
+        ScalarType::Unknown => {
             cursor.skip_to_end();
             PropertyValue::Unknown { type_code }
         }
