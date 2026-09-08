@@ -507,17 +507,21 @@ fn is_finite_nonzero_vector(vector: Vector3) -> bool {
         && (vector.x != 0.0 || vector.y != 0.0 || vector.z != 0.0)
 }
 
+/// The normalized finite vector, when its length is nonzero and finite.
+pub(super) fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+}
+
 pub(crate) fn declared_unit_vector(
     record: &ParameterRecord,
     start: usize,
     vector: Vector3,
     precision: RealPrecision,
-) -> bool {
+) -> Option<Vector3> {
     // CADIR admission for an IGES unit-vector field uses its declared-real
     // interval; IGES defines no separate receiver epsilon.
-    if !is_finite_nonzero_vector(vector) {
-        return false;
-    }
+    let normalized = unit_vector(vector)?;
     let values = [vector.x, vector.y, vector.z];
     let components = std::array::from_fn::<_, 3, _>(|offset| {
         DeclaredInterval::around(
@@ -525,7 +529,9 @@ pub(crate) fn declared_unit_vector(
             record.number_uncertainty(start + offset, values[offset], precision),
         )
     });
-    interval_squared_norm(components).contains(1.0)
+    interval_squared_norm(components)
+        .contains(1.0)
+        .then_some(normalized)
 }
 
 pub(crate) fn declared_orthogonal_vectors(
@@ -613,42 +619,49 @@ fn validate_declared_transform_frame(
 
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
-    pub(crate) rows: [[f64; 4]; 3],
+    transform: cadmpeg_ir::transform::Transform,
 }
 
 impl Affine {
-    pub(crate) const IDENTITY: Self = Self {
-        rows: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ],
-    };
+    pub(crate) fn identity() -> Self {
+        Self {
+            transform: cadmpeg_ir::transform::Transform::identity(),
+        }
+    }
 
-    pub(crate) fn compose(self, local: Self) -> Self {
+    pub(crate) fn new(rows: [[f64; 4]; 3]) -> Option<Self> {
+        cadmpeg_ir::transform::Transform::affine(rows).map(|transform| Self { transform })
+    }
+
+    pub(crate) fn rows(self) -> [[f64; 4]; 3] {
+        let rows = self.transform.rows();
+        [rows[0], rows[1], rows[2]]
+    }
+
+    pub(crate) fn compose(self, local: Self) -> Option<Self> {
         let mut rows = [[0.0; 4]; 3];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate().take(3) {
                 *value = (0..3)
-                    .map(|index| self.rows[row][index] * local.rows[index][column])
+                    .map(|index| self.rows()[row][index] * local.rows()[index][column])
                     .sum();
             }
-            values[3] = self.rows[row][3]
+            values[3] = self.rows()[row][3]
                 + (0..3)
-                    .map(|index| self.rows[row][index] * local.rows[index][3])
+                    .map(|index| self.rows()[row][index] * local.rows()[index][3])
                     .sum::<f64>();
         }
-        Self { rows }
+        Self::new(rows)
     }
 
     pub(super) fn point(self, point: Point3) -> Point3 {
         let values = [point.x, point.y, point.z];
         let coordinate = |row: usize| {
-            self.rows[row][3]
+            self.rows()[row][3]
                 + values
                     .iter()
                     .enumerate()
-                    .map(|(column, value)| self.rows[row][column] * value)
+                    .map(|(column, value)| self.rows()[row][column] * value)
                     .sum::<f64>()
         };
         Point3::new(coordinate(0), coordinate(1), coordinate(2))
@@ -660,20 +673,14 @@ impl Affine {
             values
                 .iter()
                 .enumerate()
-                .map(|(column, value)| self.rows[row][column] * value)
+                .map(|(column, value)| self.rows()[row][column] * value)
                 .sum::<f64>()
         };
         Vector3::new(coordinate(0), coordinate(1), coordinate(2))
     }
 
     pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
-        cadmpeg_ir::transform::Transform::from_rows([
-            self.rows[0],
-            self.rows[1],
-            self.rows[2],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform")
+        self.transform
     }
 }
 
@@ -687,7 +694,7 @@ pub(crate) fn resolve_transform(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Affine, String> {
     if sequence == 0 {
-        return Ok(Affine::IDENTITY);
+        return Ok(Affine::identity());
     }
     let sequence = u32::try_from(sequence)
         .map_err(|_| "transformation pointer is not a positive sequence".to_string())?;
@@ -788,13 +795,14 @@ pub(crate) fn resolve_transform(
         .ok_or_else(|| format!("transformation D{sequence} second axis cannot be normalized"))?;
         let perpendicular = first.cross(second);
         let third = perpendicular.scale(expected_determinant);
-        let local = Affine {
-            rows: [
-                [first.x, second.x, third.x, values[3]],
-                [first.y, second.y, third.y, values[7]],
-                [first.z, second.z, third.z, values[11]],
-            ],
-        };
+        let local = Affine::new([
+            [first.x, second.x, third.x, values[3]],
+            [first.y, second.y, third.y, values[7]],
+            [first.z, second.z, third.z, values[11]],
+        ])
+        .ok_or_else(|| {
+            format!("transformation D{sequence} has non-finite coefficients after length scaling")
+        })?;
         let parent = resolve_transform(
             entry.transform,
             entries,
@@ -804,7 +812,9 @@ pub(crate) fn resolve_transform(
             path,
             ctx,
         )?;
-        Ok(parent.compose(local))
+        parent.compose(local).ok_or_else(|| {
+            format!("transformation D{sequence} has non-finite coefficients after composition")
+        })
     })();
     path.remove(&sequence);
     result
@@ -1198,7 +1208,7 @@ pub(crate) fn project_geometry(
 ) -> Result<Projection, CodecError> {
     let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
-        entry.status.use_flag().is_some_and(|use_flag| {
+        entry.status.use_flag(global_table).is_some_and(|use_flag| {
             base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table)
         }) && base_geometry_line_font_valid(
             entry.entity_type,
@@ -1209,7 +1219,7 @@ pub(crate) fn project_geometry(
     };
     let mut losses = Vec::new();
     for entry in directory {
-        let Some(use_flag) = entry.status.use_flag() else {
+        let Some(use_flag) = entry.status.use_flag(global_table) else {
             losses.push(entity_loss(
                 entry,
                 format!(
@@ -1944,7 +1954,7 @@ pub(crate) fn project_geometry(
             };
             let normal_definition =
                 Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
-            if !declared_unit_vector(record, normal_start, normal_definition, precision) {
+            if declared_unit_vector(record, normal_start, normal_definition, precision).is_none() {
                 losses.push(entity_loss(
                     entry,
                     "planar spline normal is not a declared unit vector",

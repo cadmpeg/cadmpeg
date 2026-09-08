@@ -230,14 +230,18 @@ impl RevolutionBoundary {
 
 pub(in super::super) fn revolution_profile_boundary_pcurve(
     transform: &crate::placement::FeatureSectionTransform,
-    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    segment: &super::profiles::ProfileEntity,
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
     section_point: [f64; 2],
     boundary: RevolutionBoundary,
 ) -> Option<PcurveGeometry> {
-    if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
-        let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+    if matches!(
+        segment.geometry(),
+        super::profiles::ProfileGeometry::Nurbs { .. }
+    ) {
+        let nurbs =
+            oriented_sketch_nurbs_curve(&segment.geometry().to_sketch(), segment.reversed())?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
         let parameter = match boundary {
             RevolutionBoundary::Start => lower,
@@ -257,14 +261,18 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
 
 pub(in super::super) fn revolution_face_sense(
     transform: &crate::placement::FeatureSectionTransform,
-    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    segment: &super::profiles::ProfileEntity,
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
     profile_area: f64,
 ) -> Option<Sense> {
-    let is_nurbs = matches!(segment.0, SketchGeometry::Nurbs { .. });
+    let is_nurbs = matches!(
+        segment.geometry(),
+        super::profiles::ProfileGeometry::Nurbs { .. }
+    );
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+        let nurbs =
+            oriented_sketch_nurbs_curve(&segment.geometry().to_sketch(), segment.reversed())?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
         let parameter = lower + (upper - lower) * 0.5;
         let carrier = CurveGeometry::Nurbs(nurbs);
@@ -290,10 +298,13 @@ pub(in super::super) fn revolution_face_sense(
     } else {
         (
             [
-                0.5 * (segment.2[0] + segment.3[0]),
-                0.5 * (segment.2[1] + segment.3[1]),
+                0.5 * (segment.start()[0] + segment.end()[0]),
+                0.5 * (segment.start()[1] + segment.end()[1]),
             ],
-            [segment.3[0] - segment.2[0], segment.3[1] - segment.2[1]],
+            [
+                segment.end()[0] - segment.start()[0],
+                segment.end()[1] - segment.start()[1],
+            ],
             0.0,
             EPS_SURFACE_DIFFERENCE_STEP,
         )
@@ -308,7 +319,8 @@ pub(in super::super) fn revolution_face_sense(
     }))?;
     let model_point = section_point_in_model(transform, point);
     let pcurve = if is_nurbs {
-        let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+        let nurbs =
+            oriented_sketch_nurbs_curve(&segment.geometry().to_sketch(), segment.reversed())?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
         let parameter = lower + (upper - lower) * 0.5;
         line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])

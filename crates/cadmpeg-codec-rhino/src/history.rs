@@ -1110,7 +1110,7 @@ fn structured_value_properties(
                             }
                             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                                 crate::surfaces::DecodedSurface::Typed { geometry, .. } => {
-                                    serde_json::to_string(&geometry)
+                                    serde_json::to_string(&geometry.into_geometry())
                                 }
                                 crate::surfaces::DecodedSurface::Procedural {
                                     geometry, ..

@@ -792,27 +792,26 @@ impl<'a> Cursor<'a> {
         Ok(self.take(1, field)?[0])
     }
 
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(View::u16_le_at(self.take(2, field)?, 0).expect("two-byte field"))
+    fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
+        Ok(self.view.req_u16_le()?)
     }
 
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(View::u32_le_at(self.take(4, field)?, 0).expect("four-byte field"))
+    fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
+        Ok(self.view.req_u32_le()?)
     }
 
-    fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        Ok(View::i32_le_at(self.take(4, field)?, 0).expect("four-byte field"))
+    fn i32(&mut self, _field: &str) -> Result<i32, CodecError> {
+        Ok(self.view.req_i32_le()?)
     }
 
-    fn u64(&mut self, field: &str) -> Result<u64, CodecError> {
-        Ok(View::u64_le_at(self.take(8, field)?, 0).expect("eight-byte field"))
+    fn u64(&mut self, _field: &str) -> Result<u64, CodecError> {
+        Ok(self.view.req_u64_le()?)
     }
 
     fn array<const N: usize>(&mut self, field: &str) -> Result<[u8; N], CodecError> {
-        Ok(self
-            .take(N, field)?
-            .try_into()
-            .expect("cursor returned requested fixed length"))
+        self.view
+            .array()
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
     }
 
     fn peek_u32(&self, field: &str) -> Result<u32, CodecError> {

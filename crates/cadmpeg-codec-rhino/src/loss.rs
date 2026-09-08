@@ -29,7 +29,6 @@ pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNo
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`RhinoLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RhinoLossCode {
     /// Container or table scan surfaced a structural diagnostic.

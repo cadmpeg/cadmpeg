@@ -6020,7 +6020,7 @@ pub struct DesignSurfaceTrimOperation {
     /// Byte offset of the record immediately following the entity-selection frame.
     pub selection_next_byte_offset: u64,
     /// Two indexed records between the entity selection and the cell table.
-    pub chain_records: Vec<DesignSurfaceTrimChainRecord>,
+    pub chain_records: [DesignSurfaceTrimChainRecord; 2],
     /// Indexed record carrying the counted BRep-cell table.
     pub cell_table_record_index: u32,
     /// Byte offset of the cell-table primary header.

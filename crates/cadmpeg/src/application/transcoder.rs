@@ -12,7 +12,7 @@ use clap::ValueEnum;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
-use crate::application::artifact_store::{self, SidecarPersistOutcome};
+use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal};
 use crate::application::validators::validate_ir;
@@ -185,12 +185,7 @@ pub enum DestinationPolicy {
         allow_binary: bool,
     },
     /// Write to a file.
-    File {
-        /// Output path.
-        path: PathBuf,
-        /// Replace an existing output.
-        overwrite: bool,
-    },
+    File(FileDestination),
 }
 
 impl DestinationPolicy {
@@ -198,7 +193,7 @@ impl DestinationPolicy {
     #[must_use]
     pub fn new(destination: Option<PathBuf>, overwrite: bool, binary_stdout: bool) -> Self {
         match destination {
-            Some(path) => Self::File { path, overwrite },
+            Some(path) => Self::File(FileDestination { path, overwrite }),
             None => Self::Stdout {
                 allow_binary: binary_stdout,
             },
@@ -210,7 +205,7 @@ impl DestinationPolicy {
     pub(crate) fn path(&self) -> Option<&Path> {
         match self {
             Self::Stdout { .. } => None,
-            Self::File { path, .. } => Some(path),
+            Self::File(destination) => Some(&destination.path),
         }
     }
 
@@ -228,7 +223,7 @@ impl DestinationPolicy {
                 ),
             }
             .into()),
-            Self::Stdout { .. } | Self::File { .. } => Ok(()),
+            Self::Stdout { .. } | Self::File(..) => Ok(()),
         }
     }
 
@@ -238,9 +233,9 @@ impl DestinationPolicy {
     pub(crate) fn resolve(&self, source: &Path) -> AnyResult<ResolvedDestination> {
         match self {
             Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
-            Self::File { path, overwrite } => {
-                artifact_store::check_output_path(source, path, *overwrite)?;
-                Ok(ResolvedDestination::File(path.clone()))
+            Self::File(destination) => {
+                destination.check(source)?;
+                Ok(ResolvedDestination::File(destination.path.clone()))
             }
         }
     }

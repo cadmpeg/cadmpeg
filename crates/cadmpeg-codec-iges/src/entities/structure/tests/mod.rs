@@ -58,7 +58,7 @@ fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, use_flag, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, use_flag, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -68,10 +68,22 @@ fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
         subscript: 0,
     };
 
-    assert!(flow_join_target_valid(&target(110, 0)));
-    assert!(flow_join_target_valid(&target(408, 2)));
-    assert!(!flow_join_target_valid(&target(410, 1)));
-    assert!(!flow_join_target_valid(&target(406, 0)));
+    assert!(flow_join_target_valid(
+        &target(110, 0),
+        crate::global::GlobalTable::V5Later
+    ));
+    assert!(flow_join_target_valid(
+        &target(408, 2),
+        crate::global::GlobalTable::V5Later
+    ));
+    assert!(!flow_join_target_valid(
+        &target(410, 1),
+        crate::global::GlobalTable::V5Later
+    ));
+    assert!(!flow_join_target_valid(
+        &target(406, 0),
+        crate::global::GlobalTable::V5Later
+    ));
 }
 
 #[test]
