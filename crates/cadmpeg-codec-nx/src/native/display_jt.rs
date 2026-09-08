@@ -7,6 +7,7 @@ use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
+use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
@@ -1627,7 +1628,9 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     let color_quantization_bits = family[jt_family::COLOR_QUANTIZATION_BITS];
     let vertex_version = match vertex_version {
         1 => JtVertexVersion::One,
-        2 => JtVertexVersion::Two(View::u64_le_at(family, jt_family::LEN)?),
+        2 => JtVertexVersion::Two(assemble_u64_le(
+            View::over_retained(family.get(jt_family::LEN..)?).array::<8>()?,
+        )),
         _ => return None,
     };
     if vertex_quantization_bits > 24
@@ -2072,10 +2075,15 @@ pub fn display_jt_documents(
         }
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
-            let bytes = &document[offset..offset + jt_toc::LEN];
-            let segment_offset = View::u32_le_at(bytes, jt_toc::SEGMENT_OFFSET).expect("fixed row");
-            let segment_byte_len =
-                View::u32_le_at(bytes, jt_toc::SEGMENT_BYTE_LEN).expect("fixed row");
+            let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
+                .array::<{ jt_toc::LEN }>()
+            else {
+                return Vec::new();
+            };
+            let [segment_id @ .., o0, o1, o2, o3, l0, l1, l2, l3, a0, a1, a2, a3] = bytes;
+            let segment_offset = assemble_u32_le([o0, o1, o2, o3]);
+            let segment_byte_len = assemble_u32_le([l0, l1, l2, l3]);
+            let attributes = [a0, a1, a2, a3];
             let Some(segment_end) = usize::try_from(segment_offset)
                 .ok()
                 .and_then(|start| start.checked_add(segment_byte_len as usize))
@@ -2088,12 +2096,6 @@ pub fn display_jt_documents(
             {
                 return Vec::new();
             }
-            let (Ok(segment_id), Ok(attributes)) = (
-                bytes[jt_toc::SEGMENT_ID..jt_toc::SEGMENT_OFFSET].try_into(),
-                bytes[jt_toc::ATTRIBUTES..jt_toc::LEN].try_into(),
-            ) else {
-                return Vec::new();
-            };
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
                 ordinal: ordinal as u32,
@@ -2459,11 +2461,15 @@ pub fn display_jt_topology_packet_sequences(
         let Some(required_header_end) = cursor.checked_add(16) else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let Some(required_header) = representation.get(cursor..required_header_end) else {
+        let Some(required_header) = representation
+            .get(cursor..required_header_end)
+            .and_then(|bytes| View::over_retained(bytes).array::<16>())
+        else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let vertex_bindings = View::u64_le_at(required_header, 0).expect("fixed");
-        let quantization = &required_header[8..12];
+        let [bindings @ .., q0, q1, q2, q3, n0, n1, n2, n3] = required_header;
+        let vertex_bindings = assemble_u64_le(bindings);
+        let quantization = [q0, q1, q2, q3];
         if quantization[0] > 24
             || quantization[1] > 13
             || quantization[2] > 24
@@ -2474,17 +2480,20 @@ pub fn display_jt_topology_packet_sequences(
         if vertex_bindings != lod_vertex_bindings {
             return (Vec::new(), Vec::new(), Vec::new());
         }
-        let topological_vertex_count = View::u32_le_at(required_header, 12).expect("fixed");
+        let topological_vertex_count = assemble_u32_le([n0, n1, n2, n3]);
         let (vertex_attribute_count, vertex_header_byte_len) = if topological_vertex_count == 0 {
             (0, 16)
         } else {
             let Some(attribute_end) = cursor.checked_add(20) else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            let Some(attribute_bytes) = representation.get(cursor + 16..attribute_end) else {
+            let Some(attribute_bytes) = representation
+                .get(cursor + 16..attribute_end)
+                .and_then(|bytes| View::over_retained(bytes).array::<4>())
+            else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            (View::u32_le_at(attribute_bytes, 0).expect("fixed"), 20)
+            (assemble_u32_le(attribute_bytes), 20)
         };
         if i32::try_from(topological_vertex_count).is_err()
             || i32::try_from(vertex_attribute_count).is_err()
@@ -2499,21 +2508,21 @@ pub fn display_jt_topology_packet_sequences(
         };
         let representation_source_offset = element.source_offset + 45;
         if topological_vertex_count != 0 {
-            let Some(coordinate_header) = arrays.get(..32) else {
+            let Some(coordinate_header) = View::over_retained(arrays).array::<32>() else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            let unique_vertex_count = View::u32_le_at(coordinate_header, 0).expect("fixed");
-            let component_count = coordinate_header[4];
+            let [n0, n1, n2, n3, component_count, ranges @ ..] = coordinate_header;
+            let unique_vertex_count = assemble_u32_le([n0, n1, n2, n3]);
             if unique_vertex_count != topological_vertex_count || component_count != 3 {
                 return (Vec::new(), Vec::new(), Vec::new());
             }
             let mut component_ranges = [[0.0; 2]; 3];
             let mut component_quantization_bits = [0; 3];
-            for component in 0..3 {
-                let offset = 5 + component * 9;
-                let minimum = View::f32_le_at(coordinate_header, offset).expect("fixed");
-                let maximum = View::f32_le_at(coordinate_header, offset + 4).expect("fixed");
-                let bits = coordinate_header[offset + 8];
+            for (component, &[m0, m1, m2, m3, x0, x1, x2, x3, bits]) in
+                ranges.as_chunks::<9>().0.iter().enumerate()
+            {
+                let minimum = assemble_f32_le([m0, m1, m2, m3]);
+                let maximum = assemble_f32_le([x0, x1, x2, x3]);
                 if !minimum.is_finite()
                     || !maximum.is_finite()
                     || minimum > maximum
