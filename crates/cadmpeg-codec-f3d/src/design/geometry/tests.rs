@@ -97,7 +97,15 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         .map(|use_| use_.entity.as_str())
         .collect::<Vec<_>>();
     boundary_entities.sort_unstable();
-    assert_eq!(boundary_entities, ["synthetic:test:id#bottom", "synthetic:test:id#left", "synthetic:test:id#right", "synthetic:test:id#top"]);
+    assert_eq!(
+        boundary_entities,
+        [
+            "synthetic:test:id#bottom",
+            "synthetic:test:id#left",
+            "synthetic:test:id#right",
+            "synthetic:test:id#top"
+        ]
+    );
 }
 
 #[test]
