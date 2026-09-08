@@ -455,7 +455,8 @@ mod literal_tests {
     fn solidworks_sign_function_is_three_way() {
         for (argument, expected) in [(-2, -1), (0, 0), (2, 1)] {
             assert_eq!(
-                apply_parameter_function("sgn", &ParameterValue::Integer(argument)),
+                parameters::eval::ParameterFunction::Sgn
+                    .apply(&[ParameterValue::Integer(argument)]),
                 Some(ParameterValue::Integer(expected))
             );
         }
@@ -465,12 +466,12 @@ mod literal_tests {
     fn integer_function_preserves_discrete_integer_values() {
         for value in [i64::MIN, -(1_i64 << 53) - 1, (1_i64 << 53) + 1, i64::MAX] {
             assert_eq!(
-                apply_parameter_function("int", &ParameterValue::Integer(value)),
+                parameters::eval::ParameterFunction::Int.apply(&[ParameterValue::Integer(value)]),
                 Some(ParameterValue::Integer(value))
             );
         }
         assert_eq!(
-            apply_parameter_function("int", &ParameterValue::Real(-3.75)),
+            parameters::eval::ParameterFunction::Int.apply(&[ParameterValue::Real(-3.75)]),
             Some(ParameterValue::Integer(-3))
         );
     }

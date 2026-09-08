@@ -25,7 +25,7 @@ use crate::history::project::{
 
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
 
-mod eval;
+pub(crate) mod eval;
 pub(crate) use eval::*;
 
 pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
@@ -754,28 +754,7 @@ pub(crate) fn expression_identifier_is_syntax(
     {
         return true;
     }
-    let is_function = matches!(
-        identifier.value.to_ascii_lowercase().as_str(),
-        "iif"
-            | "abs"
-            | "sin"
-            | "cos"
-            | "tan"
-            | "sec"
-            | "cosec"
-            | "cotan"
-            | "arcsin"
-            | "arccos"
-            | "atn"
-            | "arcsec"
-            | "arccosec"
-            | "arccotan"
-            | "exp"
-            | "log"
-            | "sqr"
-            | "int"
-            | "sgn"
-    );
+    let is_function = eval::ParameterFunction::parse(&identifier.value).is_some();
     is_function && expression[identifier.end..].trim_start().starts_with('(')
 }
 
