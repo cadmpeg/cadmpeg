@@ -29,7 +29,7 @@ const CHECK_REPORT: &str = r#"{
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
       {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "units", "severity": "warning", "message": "non-canonical unit"}
+      {"check": "bounds", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
@@ -351,7 +351,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .stdout(
             "severity\tcheck\tentity\tmessage\n\
              error\tidentity\te1\tduplicate id\n\
-             warning\tunits\t\tnon-canonical unit\n",
+             warning\tbounds\t\tnegative radius\n",
         );
 
     cadmpeg()
