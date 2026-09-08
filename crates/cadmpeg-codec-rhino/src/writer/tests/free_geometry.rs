@@ -91,28 +91,19 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 
 #[test]
 fn invalid_archive_tolerances_are_rejected_before_output() {
-    for (linear, angular) in [
-        (0.0, 1.0e-10),
-        (f64::INFINITY, 1.0e-10),
-        (1.0e-6, 0.0),
-        (1.0e-6, std::f64::consts::PI.next_up()),
-    ] {
-        let mut ir = CadIr::empty();
-        ir.tolerances.linear =
-            cadmpeg_ir::units::PositiveScalar::new(linear).expect("positive finite tolerance");
-        ir.tolerances.angular =
-            cadmpeg_ir::units::PositiveScalar::new(angular).expect("positive finite tolerance");
-        let mut output = vec![0xaa];
-        let error = RhinoCodec
-            .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-            )
-            .and_then(|plan| plan.write_to(&mut output))
-            .expect_err("invalid tolerance must not be serialized");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
-        assert_eq!(output, [0xaa]);
-    }
+    let mut ir = CadIr::empty();
+    ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(std::f64::consts::PI.next_up())
+        .expect("positive finite tolerance");
+    let mut output = vec![0xaa];
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("invalid tolerance must not be serialized");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert_eq!(output, [0xaa]);
 }
 
 #[test]
