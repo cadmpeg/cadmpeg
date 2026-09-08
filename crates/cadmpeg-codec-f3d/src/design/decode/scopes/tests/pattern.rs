@@ -832,7 +832,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.reference_members = crate::records::ReferenceRun::unlocated(
         placement_and_alignment_owners
             .iter()
-            .map(|owner| owner.record_index())
+            .map(crate::records::DesignParameterOwner::record_index)
             .collect(),
     );
     if let crate::records::feature::DesignScopePayload::Assemble(slot)
