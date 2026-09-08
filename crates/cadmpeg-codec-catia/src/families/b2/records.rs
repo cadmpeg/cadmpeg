@@ -1890,10 +1890,15 @@ pub struct B2Circle {
     pub radius: f64,
     /// Arc-length parameter interval.
     pub range: [f64; 2],
-    /// Whether the interval spans one complete circumference.
-    pub full_circle: bool,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
+}
+
+impl B2Circle {
+    /// Whether the interval spans one complete circumference.
+    pub fn full_circle(&self) -> bool {
+        circle_range_is_full_turn(self.radius, self.range)
+    }
 }
 
 /// One clamped rational NURBS curve stored in a `b2 03 16` record.
@@ -3124,7 +3129,6 @@ pub(crate) fn b2_circles_from_records(
                 center_pair: [c1, c2],
                 radius,
                 range: [lo, hi],
-                full_circle: circle_range_is_full_turn(radius, [lo, hi]),
                 chart_shift,
             });
         }

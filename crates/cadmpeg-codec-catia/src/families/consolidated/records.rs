@@ -1843,7 +1843,6 @@ mod tests {
             center_pair: [0.0; 2],
             radius: span,
             range: [0.0, span],
-            full_circle: false,
             chart_shift: 0.0,
         };
         let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {

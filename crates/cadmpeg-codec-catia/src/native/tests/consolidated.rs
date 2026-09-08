@@ -355,7 +355,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert_eq!(circle.center_pair, [4.0, -2.0]);
     assert_eq!(circle.radius, 3.0);
     assert_eq!(circle.range, [0.0, std::f64::consts::TAU * circle.radius]);
-    assert!(circle.full_circle);
+    assert!(circle.full_circle());
     assert_eq!(circle.chart_shift, 0.0);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -364,14 +364,6 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA circle"),
         native
     );
-
-    let mut invalid = native;
-    invalid.consolidated_circles[0].full_circle = false;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA circle for load validation");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]

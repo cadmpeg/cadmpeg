@@ -1580,7 +1580,7 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     assert_eq!(circles[0].center_pair, [4.0, -2.0]);
     assert_eq!(circles[0].radius, 3.0);
     assert_eq!(circles[0].chart_shift, 0.0);
-    assert!(circles[0].full_circle);
+    assert!(circles[0].full_circle());
 
     let mut malformed = b2_circle_stream();
     malformed[49..57].copy_from_slice(&f64::NAN.to_le_bytes());
@@ -1603,10 +1603,10 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     let mut tiny_full = b2_circle_stream();
     tiny_full[24..32].copy_from_slice(&tiny.to_le_bytes());
     tiny_full[40..48].copy_from_slice(&(std::f64::consts::TAU * tiny).to_le_bytes());
-    assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle);
+    assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
 
     tiny_full[40..48].copy_from_slice(&1e-10_f64.to_le_bytes());
-    assert!(!crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle);
+    assert!(!crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
 }
 
 #[test]
