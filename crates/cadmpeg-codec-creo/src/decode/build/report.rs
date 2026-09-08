@@ -9,7 +9,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use crate::container::{self, ContainerScan};
 use crate::loss::CreoLossCode;
@@ -56,10 +56,12 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
                 ProceduralCurveDefinition::Unknown { .. }
             )
         })
-        || model
-            .sketch_entities
-            .iter()
-            .any(|entity| !matches!(&entity.geometry, SketchGeometry::Native { .. }))
+        || model.sketch_entities.iter().any(|entity| {
+            !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        })
         || !model.tessellations.is_empty()
 }
 

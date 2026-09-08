@@ -32,7 +32,9 @@ use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -97,10 +99,13 @@ fn saved_line_joins_through_order_table() {
 
     assert_eq!(
         saved_section_line_geometry(&definition, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .unwrap()
+        )
     );
     assert!(resolved_section_segment_geometry(
         &definition,
@@ -207,9 +212,8 @@ fn saved_line_joins_through_order_table() {
         native_entity.id().as_str(),
         "creo:featdefs:sketch_entity#5:42"
     );
-    assert!(matches!(
-        native_entity.geometry,
-        SketchGeometry::Native { ref native_kind } if native_kind == "saved_line"
+    assert!(matches!(*native_entity.geometry.definition(),
+        SketchGeometryDefinition::Native { ref native_kind } if native_kind == "saved_line"
     ));
     let mut duplicate_order_row = definition.clone();
     duplicate_order_row
@@ -623,9 +627,7 @@ fn saved_line_joins_through_order_table() {
     );
     let solver_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
-        SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".to_string(),
-        },
+        SketchGeometry::native("solver_only_section_entity".to_string()),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -695,15 +697,11 @@ fn saved_line_joins_through_order_table() {
     let solver_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "line".to_string(),
-            },
+            SketchGeometry::native("line".to_string()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "point".to_string(),
-            },
+            SketchGeometry::native("point".to_string()),
         ),
     ]);
     let solver_constraints = section_skamp_constraints_for_geometry(
@@ -988,10 +986,13 @@ fn saved_line_joins_through_order_table() {
     });
     assert_eq!(
         saved_section_line_geometry(&completed, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .unwrap()
+        )
     );
     let mut replay_mismatched = completed.clone();
     replay_mismatched
@@ -1013,10 +1014,13 @@ fn saved_line_joins_through_order_table() {
     );
     assert_eq!(
         saved_section_line_geometry(&replay_mismatched, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .unwrap()
+        )
     );
     let mut incomplete_order = completed.clone();
     incomplete_order
@@ -1109,18 +1113,22 @@ fn saved_line_joins_through_order_table() {
         saved_section_missing_line_geometry(&missing_line),
         Some((
             omitted_segment.offset,
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-            },
+            })
+            .unwrap(),
         ))
     );
     assert_eq!(
         resolved_section_segment_geometry(&missing_line, &BTreeMap::new(), &omitted_segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .unwrap()
+        )
     );
 
     omitted_segment.vertical_horizontal = Some(0);
@@ -1177,10 +1185,11 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         saved_section_entity_geometry(&entity),
         Some((
             7,
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(2.0, -3.0),
                 radius: Length(4.5),
-            },
+            })
+            .unwrap(),
             19,
         ))
     );
@@ -1296,17 +1305,18 @@ fn generated_saved_geometry_forms_closed_profiles() {
     let line = |external_id: u32, start: (f64, f64), end: (f64, f64)| {
         (
             external_id,
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start.0, start.1),
                 end: Point2::new(end.0, end.1),
-            },
+            })
+            .unwrap(),
         )
     };
     let geometries = vec![
         line(12, (0.0, 1.0), (1.0, 1.0)),
         (
             10,
-            SketchGeometry::Nurbs {
+            SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
                 curve: cadmpeg_ir::geometry::PcurveNurbs::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1315,19 +1325,21 @@ fn generated_saved_geometry_forms_closed_profiles() {
                     false,
                 )
                 .expect("valid test pcurve"),
-            },
+            })
+            .unwrap(),
         ),
         line(13, (0.0, 0.0), (0.0, 1.0)),
         line(11, (1.0, 1.0), (1.0, 0.0)),
         line(20, (5.0, 5.0), (6.0, 5.0)),
         (
             30,
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(8.0, 8.0),
                 radius: Length(2.0),
                 start_angle: Angle(0.0),
                 end_angle: Angle(std::f64::consts::TAU),
-            },
+            })
+            .unwrap(),
         ),
     ];
 
@@ -1417,12 +1429,15 @@ fn saved_arc_joins_through_order_table() {
 
     assert_eq!(
         saved_section_arc_geometry(&definition, &segment),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(std::f64::consts::PI),
-            end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(std::f64::consts::PI),
+                end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+            })
+            .unwrap()
+        )
     );
     assert_eq!(
         saved_section_segment_point_coordinates(&definition, &segment),
@@ -1710,12 +1725,15 @@ fn saved_arc_joins_through_order_table() {
             &BTreeMap::new(),
             segment,
         ),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::TAU),
+            })
+            .unwrap()
+        )
     );
 }
 

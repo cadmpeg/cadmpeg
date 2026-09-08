@@ -219,11 +219,170 @@ impl SketchEntity {
     }
 }
 
-/// Solved two-dimensional sketch geometry.
+/// Solved two-dimensional sketch geometry with finite numeric coordinates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchGeometryDefinition")]
+pub struct SketchGeometry(SketchGeometryDefinition);
+
+impl SketchGeometry {
+    /// Retain source-native geometry without solved numeric fields.
+    #[must_use]
+    pub fn native(native_kind: String) -> Self {
+        Self(SketchGeometryDefinition::Native { native_kind })
+    }
+
+    /// Admit an already checked planar NURBS curve.
+    #[must_use]
+    pub fn nurbs(curve: crate::geometry::PcurveNurbs) -> Self {
+        Self(SketchGeometryDefinition::Nurbs { curve })
+    }
+
+    /// Borrow the admitted geometry definition.
+    #[must_use]
+    pub fn definition(&self) -> &SketchGeometryDefinition {
+        &self.0
+    }
+
+    /// Extract the admitted definition.
+    #[must_use]
+    pub fn into_definition(self) -> SketchGeometryDefinition {
+        self.0
+    }
+
+    /// Replace the definition only after its numeric invariants pass.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut SketchGeometryDefinition),
+    ) -> Result<(), &'static str> {
+        let mut definition = self.0.clone();
+        edit(&mut definition);
+        *self = definition.try_into()?;
+        Ok(())
+    }
+}
+
+impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
+    type Error = &'static str;
+
+    fn try_from(definition: SketchGeometryDefinition) -> Result<Self, Self::Error> {
+        let finite_point = |point: &Point2| point.u.is_finite() && point.v.is_finite();
+        let positive = |length: &Length| length.0.is_finite() && length.0 > 0.0;
+        match &definition {
+            SketchGeometryDefinition::Point { position } if !finite_point(position) => {
+                return Err("sketch point position must be finite");
+            }
+            SketchGeometryDefinition::Line { start, end }
+                if !finite_point(start) || !finite_point(end) =>
+            {
+                return Err("sketch line endpoints must be finite");
+            }
+            SketchGeometryDefinition::ReferenceLine { origin, direction }
+                if !finite_point(origin)
+                    || !finite_point(direction)
+                    || direction.u.hypot(direction.v) <= f64::EPSILON =>
+            {
+                return Err(
+                    "sketch reference line requires finite origin and nonzero finite direction",
+                );
+            }
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. }
+                if !finite_point(center) || !positive(radius) =>
+            {
+                return Err(
+                    "sketch circular geometry requires finite center and positive finite radius",
+                );
+            }
+            SketchGeometryDefinition::Arc {
+                start_angle,
+                end_angle,
+                ..
+            } if !start_angle.0.is_finite() || !end_angle.0.is_finite() => {
+                return Err("sketch arc angles must be finite");
+            }
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => {
+                if !finite_point(center) || !major_angle.0.is_finite() {
+                    return Err("sketch ellipse center and major_angle must be finite");
+                }
+                if !positive(major_radius) || !positive(minor_radius) {
+                    return Err("sketch ellipse radii must be positive and finite");
+                }
+                if major_radius.0 < minor_radius.0 {
+                    return Err("sketch ellipse major_radius must be at least minor_radius");
+                }
+                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
+                    return Err("sketch ellipse bounds must be finite");
+                }
+            }
+            SketchGeometryDefinition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => {
+                if !finite_point(center) || !major_angle.0.is_finite() {
+                    return Err("sketch hyperbola center and major_angle must be finite");
+                }
+                if !positive(major_radius) || !positive(minor_radius) {
+                    return Err("sketch hyperbola radii must be positive and finite");
+                }
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
+                    return Err("sketch hyperbola bounds must be finite");
+                }
+            }
+            SketchGeometryDefinition::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            } => {
+                if !finite_point(vertex) || !axis_angle.0.is_finite() {
+                    return Err("sketch parabola vertex and axis_angle must be finite");
+                }
+                if !positive(focal_length) {
+                    return Err("sketch parabola focal_length must be positive and finite");
+                }
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
+                    return Err("sketch parabola bounds must be finite");
+                }
+            }
+            SketchGeometryDefinition::Text {
+                height,
+                width_factor,
+                placement,
+                ..
+            } => {
+                if !positive(height) {
+                    return Err("sketch text height must be positive and finite");
+                }
+                if width_factor.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+                    return Err("sketch text width_factor must be positive and finite");
+                }
+                if placement.is_some_and(|placement| {
+                    !finite_point(&placement.anchor) || !placement.rotation.0.is_finite()
+                }) {
+                    return Err("sketch text anchor and rotation must be finite");
+                }
+            }
+            _ => {}
+        }
+        Ok(Self(definition))
+    }
+}
+
+/// Definition admitted by a solved two-dimensional sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SketchGeometry {
+pub enum SketchGeometryDefinition {
     /// Isolated point.
     Point {
         /// Solved point position.

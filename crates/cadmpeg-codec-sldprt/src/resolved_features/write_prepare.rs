@@ -20,7 +20,8 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity,
-    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SpatialSketchGeometry, SpatialSketchId,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    SpatialSketchGeometry, SpatialSketchId,
 };
 
 #[cfg(test)]
@@ -617,8 +618,10 @@ fn validate_generated_marker_constraint(
     if matches!(
         &constraint.definition,
         SketchConstraintDefinition::ArcAngle { .. }
-    ) && !matches!(&entity.geometry, SketchGeometry::Arc { .. })
-    {
+    ) && !matches!(
+        entity.geometry.definition(),
+        SketchGeometryDefinition::Arc { .. }
+    ) {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(
             "sketch constraint {} applies an arc-angle relation to a non-arc entity",
             constraint.id.as_str()
@@ -627,8 +630,10 @@ fn validate_generated_marker_constraint(
     if matches!(
         &constraint.definition,
         SketchConstraintDefinition::EllipseAngle { .. }
-    ) && !matches!(&entity.geometry, SketchGeometry::Ellipse { .. })
-    {
+    ) && !matches!(
+        entity.geometry.definition(),
+        SketchGeometryDefinition::Ellipse { .. }
+    ) {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(
             "sketch constraint {} applies an ellipse-angle relation to a non-ellipse entity",
             constraint.id.as_str()
@@ -637,7 +642,7 @@ fn validate_generated_marker_constraint(
     let Some(axis) = axis else {
         return Ok(());
     };
-    let SketchGeometry::Line { start, end } = entity.geometry else {
+    let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(
             "sketch constraint {} applies an axis relation to a non-line entity",
             constraint.id.as_str()
@@ -753,10 +758,9 @@ fn validate_solved_dimension(
         SketchConstraintDefinition::Radius { entity, .. }
         | SketchConstraintDefinition::Diameter { entity, .. } => {
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
-            let radius = match &entity.geometry {
-                SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-                    radius.0
-                }
+            let radius = match entity.geometry.definition() {
+                SketchGeometryDefinition::Circle { radius, .. }
+                | SketchGeometryDefinition::Arc { radius, .. } => radius.0,
                 _ => {
                     return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                         "source-less SLDPRT radial dimension {} requires circular geometry",
@@ -999,8 +1003,8 @@ fn validate_solved_binary_relation(
             }
         },
         Coradial => match (
-            circular_center_radius(&first.geometry),
-            circular_center_radius(&second.geometry),
+            circular_center_radius(first.geometry.definition()),
+            circular_center_radius(second.geometry.definition()),
         ) {
             (Some((first_center, first_radius)), Some((second_center, second_radius))) => {
                 same_point2(first_center, second_center)
@@ -1039,9 +1043,9 @@ fn validate_solved_binary_relation(
 }
 
 pub(super) fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<bool> {
-    match (first, second) {
-        (SketchGeometry::Line { start, end }, circular)
-        | (circular, SketchGeometry::Line { start, end }) => {
+    match (first.definition(), second.definition()) {
+        (SketchGeometryDefinition::Line { start, end }, circular)
+        | (circular, SketchGeometryDefinition::Line { start, end }) => {
             let (center, radius) = circular_center_radius(circular)?;
             let direction = [end.u - start.u, end.v - start.v];
             let length = vector2_length(direction);
@@ -1070,27 +1074,26 @@ pub(super) fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) ->
     }
 }
 
-fn circular_center_radius(geometry: &SketchGeometry) -> Option<(Point2, f64)> {
+fn circular_center_radius(geometry: &SketchGeometryDefinition) -> Option<(Point2, f64)> {
     match geometry {
-        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            Some((*center, radius.0))
-        }
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => Some((*center, radius.0)),
         _ => None,
     }
 }
 
 fn sketch_line(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
-    match geometry {
-        SketchGeometry::Line { start, end } => Some((*start, *end)),
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some((*start, *end)),
         _ => None,
     }
 }
 
 fn sketch_center(geometry: &SketchGeometry) -> Option<Point2> {
-    match geometry {
-        SketchGeometry::Circle { center, .. }
-        | SketchGeometry::Arc { center, .. }
-        | SketchGeometry::Ellipse { center, .. } => Some(*center),
+    match geometry.definition() {
+        SketchGeometryDefinition::Circle { center, .. }
+        | SketchGeometryDefinition::Arc { center, .. }
+        | SketchGeometryDefinition::Ellipse { center, .. } => Some(*center),
         _ => None,
     }
 }
@@ -1099,13 +1102,13 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
     let close = |left: f64, right: f64| {
         (left - right).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + left.abs().max(right.abs()))
     };
-    Some(match (first, second) {
+    Some(match (first.definition(), second.definition()) {
         (
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: first_start,
                 end: first_end,
             },
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: second_start,
                 end: second_end,
             },
@@ -1114,18 +1117,18 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
             vector2_length([second_end.u - second_start.u, second_end.v - second_start.v]),
         ),
         (
-            SketchGeometry::Circle { radius: first, .. }
-            | SketchGeometry::Arc { radius: first, .. },
-            SketchGeometry::Circle { radius: second, .. }
-            | SketchGeometry::Arc { radius: second, .. },
+            SketchGeometryDefinition::Circle { radius: first, .. }
+            | SketchGeometryDefinition::Arc { radius: first, .. },
+            SketchGeometryDefinition::Circle { radius: second, .. }
+            | SketchGeometryDefinition::Arc { radius: second, .. },
         ) => close(first.0, second.0),
         (
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 major_radius: first_major,
                 minor_radius: first_minor,
                 ..
             },
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 major_radius: second_major,
                 minor_radius: second_minor,
                 ..
@@ -1450,7 +1453,7 @@ mod source_less_lane_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+        SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     };
 
     use super::*;
@@ -1644,15 +1647,17 @@ mod source_less_lane_tests {
         ir.model.sketch_entities = vec![
             generated_entity(
                 "synthetic:test:id#first",
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             generated_entity(
                 "synthetic:test:id#second",
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 1.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         ir.model.sketch_constraints.push(SketchConstraint {
@@ -1694,23 +1699,26 @@ mod source_less_lane_tests {
         ir.model.sketch_entities = vec![
             generated_entity(
                 "synthetic:test:id#point",
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             generated_entity(
                 "synthetic:test:id#horizontal",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             generated_entity(
                 "synthetic:test:id#vertical",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, -1.0),
                     end: Point2::new(0.0, 1.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         ir.model.sketch_constraints.push(SketchConstraint {
@@ -1754,22 +1762,25 @@ mod source_less_lane_tests {
         ir.model.sketch_entities = vec![
             generated_entity(
                 "synthetic:test:id#first",
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(-1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             generated_entity(
                 "synthetic:test:id#second",
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
             generated_entity(
                 "synthetic:test:id#axis",
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, -1.0),
                     end: Point2::new(0.0, 1.0),
-                },
+                })
+                .unwrap(),
             ),
         ];
         ir.model.sketch_constraints.push(SketchConstraint {

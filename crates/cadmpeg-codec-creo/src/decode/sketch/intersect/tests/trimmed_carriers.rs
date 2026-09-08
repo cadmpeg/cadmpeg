@@ -4,7 +4,7 @@ use super::super::trimmed_section_segment_geometry_with_missing_line;
 use crate::decode::sketch::{resolved_section_points, saved_section_missing_line_geometry};
 use crate::decode::tests::declared_solver_rows;
 use cadmpeg_ir::features::{Angle, Length};
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
 
 fn trimmed_section_segment_geometry(
@@ -132,10 +132,13 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
 
     assert_eq!(
         trimmed_section_segment_geometry(&definition, &BTreeMap::new(), &trim_vertices, &segment,),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-2.0, 3.0),
-            end: cadmpeg_ir::math::Point2::new(4.0, 3.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-2.0, 3.0),
+                end: cadmpeg_ir::math::Point2::new(4.0, 3.0),
+            })
+            .unwrap()
+        )
     );
     let mut disabled_parallel = definition.clone();
     disabled_parallel
@@ -278,12 +281,15 @@ fn arc_carriers_use_trim_vertices() {
 
     assert_eq!(
         trimmed_section_segment_geometry(&definition, &points, &trim_vertices, &segment),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(-std::f64::consts::FRAC_PI_2),
+                end_angle: Angle(std::f64::consts::PI),
+            })
+            .unwrap()
+        )
     );
 
     let mut var_segment = segment.clone();
@@ -333,11 +339,14 @@ fn arc_carriers_use_trim_vertices() {
             &trim_vertices,
             &var_segment,
         ),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(-std::f64::consts::FRAC_PI_2),
+                end_angle: Angle(std::f64::consts::PI),
+            })
+            .unwrap()
+        )
     );
 }

@@ -30,7 +30,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry};
+use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometryDefinition};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
@@ -144,7 +144,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         if profiles.iter().flatten().any(|(geometry, _, start, end)| {
-            matches!(geometry, SketchGeometry::Line { .. }) && start == end
+            matches!(geometry.definition(), SketchGeometryDefinition::Line { .. }) && start == end
         }) {
             continue;
         }
@@ -257,8 +257,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     let edge_id =
                         EdgeId::mint(format!("{prefix}:edge:{profile_index}:{index}:{side}"))
                             .expect("identity grammar");
-                    let curve = match geometry {
-                        SketchGeometry::Line { .. } => {
+                    let curve = match geometry.definition() {
+                        SketchGeometryDefinition::Line { .. } => {
                             let placed_start = section_point_in_model(transform, *start);
                             let placed_end = section_point_in_model(transform, *end);
                             let Some(direction) = normalized(std::array::from_fn(|axis| {
@@ -275,8 +275,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 direction: Vector3::new(direction[0], direction[1], direction[2]),
                             }
                         }
-                        SketchGeometry::Arc { center, radius, .. }
-                        | SketchGeometry::Circle { center, radius } => {
+                        SketchGeometryDefinition::Arc { center, radius, .. }
+                        | SketchGeometryDefinition::Circle { center, radius } => {
                             let center = section_point_in_model(transform, [center.u, center.v]);
                             let (axis_sign, _) = oriented_arc_parameterization(*reversed, 0.0, 0.0);
                             CurveGeometry::Circle {
@@ -298,7 +298,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 radius: radius.0,
                             }
                         }
-                        SketchGeometry::Nurbs { .. } => {
+                        SketchGeometryDefinition::Nurbs { .. } => {
                             let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, *reversed)
                             else {
                                 continue;
@@ -325,21 +325,21 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         geometry: curve,
                         source_object: None,
                     });
-                    let param_range = match geometry {
-                        SketchGeometry::Line { .. } => {
+                    let param_range = match geometry.definition() {
+                        SketchGeometryDefinition::Line { .. } => {
                             Some([0.0, (end[0] - start[0]).hypot(end[1] - start[1])])
                         }
-                        SketchGeometry::Arc {
+                        SketchGeometryDefinition::Arc {
                             start_angle,
                             end_angle,
                             ..
                         } => Some(
                             oriented_arc_parameterization(*reversed, start_angle.0, end_angle.0).1,
                         ),
-                        SketchGeometry::Circle { .. } => Some(
+                        SketchGeometryDefinition::Circle { .. } => Some(
                             oriented_arc_parameterization(*reversed, 0.0, std::f64::consts::TAU).1,
                         ),
-                        SketchGeometry::Nurbs { .. } => {
+                        SketchGeometryDefinition::Nurbs { .. } => {
                             oriented_sketch_nurbs_curve(geometry, *reversed)
                                 .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
                         }

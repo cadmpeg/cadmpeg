@@ -134,7 +134,7 @@ pub(crate) fn transfer_native_sketch_entities(
                 SketchEntity::new(
                     entity_id,
                     sketch_id.clone(),
-                    SketchGeometry::Native { native_kind },
+                    SketchGeometry::native(native_kind),
                 )
                 .with_native_ref(Some(geometry_field.id.clone())),
             );
@@ -1448,9 +1448,8 @@ mod tests {
             "catia:outer:sketch-entity#geometry-field"
         );
         assert!(entity.geometry_ref.is_none());
-        assert!(matches!(
-            &entity.geometry,
-            SketchGeometry::Native { native_kind } if native_kind == "2DPoint"
+        assert!(matches!(entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind == "2DPoint"
         ));
     }
 
@@ -1751,9 +1750,7 @@ mod tests {
             SketchEntity::new(
                 entity_id.clone(),
                 SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
-                SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
-                },
+                SketchGeometry::native("2DPoint".to_string()),
             )
             .with_native_ref(Some("source-record".to_string())),
         );
@@ -1775,9 +1772,7 @@ mod tests {
                 SketchEntity::new(
                     SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}")).unwrap(),
                     SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
-                    SketchGeometry::Native {
-                        native_kind: "2DPoint".to_string(),
-                    },
+                    SketchGeometry::native("2DPoint".to_string()),
                 )
                 .with_native_ref(Some("source-record".to_string())),
             );
@@ -1800,9 +1795,7 @@ mod tests {
                 SketchEntityId::mint("synthetic:test:other-sketch-entity#source".to_string())
                     .unwrap(),
                 SketchId::mint("synthetic:test:other-sketch#0".to_string()).unwrap(),
-                SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
-                },
+                SketchGeometry::native("2DPoint".to_string()),
             )
             .with_native_ref(Some("source-record".to_string())),
         );

@@ -19,7 +19,9 @@ use cadmpeg_ir::features::{DimensionDisplay, Length, ParameterId};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_ir::topology::{Body, BodyKind};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,13 +37,15 @@ fn sketch_curve_references_require_a_materialized_curve() {
         offset: 7,
     };
     let sketch = SketchId::mint("creo:model:sketch#5".to_string()).unwrap();
-    let line = SketchGeometry::Line {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(2.0, 0.0),
-    };
-    let point = SketchGeometry::Point {
+    })
+    .unwrap();
+    let point = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 2.0),
-    };
+    })
+    .unwrap();
 
     assert_eq!(
         placed_sketch_curve_ref(Some(&transform), &sketch, 3, &line),
@@ -99,10 +103,11 @@ fn placed_extrusion_arc_defines_cylinder() {
     assert_eq!(
         placed_section_geometry_curve(
             &transform,
-            &SketchGeometry::Circle {
+            &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(3.0, -4.0),
                 radius: Length(2.0),
-            },
+            })
+            .unwrap(),
         ),
         Some(CurveGeometry::Circle {
             center: Point3::new(10.0, 23.0, 26.0),
@@ -558,10 +563,13 @@ fn dimension_identity_includes_its_feature_definition() {
                 .cloned()
                 .collect::<Vec<_>>()[0],
         ),
-        Some(SketchGeometry::Circle {
-            center: Point2::new(1.0, 2.0),
-            radius: Length(2.5),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length(2.5),
+            })
+            .unwrap()
+        )
     );
     let unresolved_dimension = crate::feature::FeatureDimension {
         value: crate::feature::definitions::DimensionValue::Undefined,

@@ -2000,13 +2000,15 @@ pub fn fitted_nurbs_offset_frame_distance(
     result: &crate::sketches::SketchGeometry,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    use crate::sketches::SketchGeometry;
+    use crate::sketches::SketchGeometryDefinition;
 
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
         return None;
     }
-    let (SketchGeometry::Nurbs { curve: source }, SketchGeometry::Nurbs { curve: result }) =
-        (source, result)
+    let (
+        SketchGeometryDefinition::Nurbs { curve: source },
+        SketchGeometryDefinition::Nurbs { curve: result },
+    ) = (source.definition(), result.definition())
     else {
         return None;
     };

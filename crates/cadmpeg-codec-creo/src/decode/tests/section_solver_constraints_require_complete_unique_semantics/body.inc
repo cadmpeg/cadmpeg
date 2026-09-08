@@ -1,4 +1,5 @@
 {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
     use crate::feature::definitions::test_support::{with_points, append_points, replace_points};
     use crate::feature::definitions::{VariableType, ScalarLane};
     let segment = crate::feature::FeatureSegment {
@@ -523,15 +524,11 @@ offset: 30,
     let mismatched_projected_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "line".into(),
-            },
+            SketchGeometry::native("line".into()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "arc".into(),
-            },
+            SketchGeometry::native("arc".into()),
         ),
     ]);
     assert!(matches!(
@@ -796,9 +793,7 @@ offset: 30,
     ));
     let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:18".to_string()).unwrap(),
-        SketchGeometry::Native {
-            native_kind: "bounded_curve".into(),
-        },
+        SketchGeometry::native("bounded_curve".into()),
     )]);
     let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
         &type_33_bounded_curve,
@@ -1050,15 +1045,11 @@ offset: 30,
     let point_pair_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "point".into(),
-            },
+            SketchGeometry::native("point".into()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "point".into(),
-            },
+            SketchGeometry::native("point".into()),
         ),
     ]);
     assert_eq!(
@@ -1078,9 +1069,7 @@ offset: 30,
     );
     let missing_point_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string()).unwrap(),
-        SketchGeometry::Native {
-            native_kind: "point".into(),
-        },
+        SketchGeometry::native("point".into()),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&missing_point_geometry))
@@ -1205,25 +1194,23 @@ offset: 30,
     let incidence_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string()).unwrap(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            }).unwrap(),
         ),
         (
             native_endpoint.clone(),
-            SketchGeometry::Native {
-                native_kind: "solver_only_section_entity".into(),
-            },
+            SketchGeometry::native("solver_only_section_entity".into()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).unwrap(),
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(1.0),
                 start_angle: Angle(0.0),
                 end_angle: Angle(std::f64::consts::FRAC_PI_2),
-            },
+            }).unwrap(),
         ),
     ]);
     assert!(matches!(
@@ -1292,9 +1279,7 @@ offset: 30,
     let mut unresolved_arc_geometry = incidence_geometry.clone();
     unresolved_arc_geometry.insert(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).unwrap(),
-        SketchGeometry::Native {
-            native_kind: "arc".into(),
-        },
+        SketchGeometry::native("arc".into()),
     );
     let inactive = section_skamp_constraints_for_geometry(
         &point_coincidence_definition,
@@ -1327,9 +1312,7 @@ offset: 30,
     ];
     unresolved_arc_geometry.insert(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).unwrap(),
-        SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".into(),
-        },
+        SketchGeometry::native("solver_only_section_entity".into()),
     );
     assert_eq!(
         section_skamp_constraints_for_geometry(
@@ -1468,15 +1451,11 @@ offset: 30,
     let unresolved_curve_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "line".into(),
-            },
+            SketchGeometry::native("line".into()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "circle".into(),
-            },
+            SketchGeometry::native("circle".into()),
         ),
     ]);
     assert_eq!(
@@ -1537,21 +1516,15 @@ offset: 30,
     let unresolved_point_symmetry_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:97".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "point".into(),
-            },
+            SketchGeometry::native("point".into()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:98".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "circle".into(),
-            },
+            SketchGeometry::native("circle".into()),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).unwrap(),
-            SketchGeometry::Native {
-                native_kind: "circle".into(),
-            },
+            SketchGeometry::native("circle".into()),
         ),
     ]);
     assert_eq!(
@@ -2059,16 +2032,16 @@ offset: 30,
     let midpoint_geometry = BTreeMap::from([
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string()).unwrap(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(2.0, 0.0),
-            },
+            }).unwrap(),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string()).unwrap(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(1.0, 0.0),
-            },
+            }).unwrap(),
         ),
     ]);
     assert!(matches!(
@@ -2083,10 +2056,10 @@ offset: 30,
     ));
     let unresolved_midpoint_geometry = BTreeMap::from([(
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string()).unwrap(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
-        },
+        }).unwrap(),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -2512,9 +2485,9 @@ offset: 30,
             &resolved_section_points(&opaque_point),
             &opaque_point.segments.as_ref().expect("segments").rows.points().cloned().collect::<Vec<_>>()[0],
         ),
-        Some(SketchGeometry::Point {
+        Some(SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 2.0),
-        })
+        }).unwrap())
     );
     assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
     assert!(matches!(
@@ -2553,9 +2526,9 @@ offset: 30,
             },
             Some(&BTreeMap::from([(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).unwrap(),
-                SketchGeometry::Native {
+                SketchGeometry::try_from(SketchGeometryDefinition::Native {
                     native_kind: "point".into(),
-                },
+                }).unwrap(),
             )])),
         ),
         None
@@ -2570,10 +2543,10 @@ offset: 30,
             &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
             &centered_line,
         ),
-        Some(SketchGeometry::Line {
+        Some(SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(3.0, -1.0),
             end: Point2::new(3.0, 5.0),
-        })
+        }).unwrap())
     );
     assert_eq!(
         section_centered_line_geometry(
@@ -2597,10 +2570,10 @@ offset: 30,
             &BTreeMap::from([(7, [-4.0, 2.0]), (8, [6.0, 2.0])]),
             &reference_line,
         ),
-        Some(SketchGeometry::ReferenceLine {
+        Some(SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
             origin: Point2::new(-4.0, 2.0),
             direction: Point2::new(10.0, 0.0),
-        })
+        }).unwrap())
     );
     assert_eq!(
         section_reference_line_geometry(
@@ -2636,10 +2609,10 @@ offset: 30,
             &BTreeMap::new(),
             &axis_reference_line,
         ),
-        Some(SketchGeometry::ReferenceLine {
+        Some(SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
             origin: Point2::new(0.0, 2.0),
             direction: Point2::new(1.0, 0.0),
-        })
+        }).unwrap())
     );
     assert_eq!(
         resolved_section_reference_line_geometry(
@@ -2864,16 +2837,16 @@ offset: 30,
             Some(&BTreeMap::from([
                 (
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:100".to_string()).unwrap(),
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(3.0, -1.0),
                         end: Point2::new(3.0, 5.0),
-                    },
+                    }).unwrap(),
                 ),
                 (
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string()).unwrap(),
-                    SketchGeometry::Native {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
                         native_kind: "point".into(),
-                    },
+                    }).unwrap(),
                 ),
             ])),
         )[0]
@@ -2930,9 +2903,9 @@ offset: 30,
             &SketchId::mint("creo:model:sketch#917").unwrap(),
             Some(&BTreeMap::from([(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string()).unwrap(),
-                SketchGeometry::Native {
+                SketchGeometry::try_from(SketchGeometryDefinition::Native {
                     native_kind: "line".into(),
-                },
+                }).unwrap(),
             )])),
         )[0]
         .0
@@ -2946,16 +2919,16 @@ offset: 30,
             Some(&BTreeMap::from([
                 (
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:100".to_string()).unwrap(),
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(3.0, -1.0),
                         end: Point2::new(3.0, 5.0),
-                    },
+                    }).unwrap(),
                 ),
                 (
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string()).unwrap(),
-                    SketchGeometry::Native {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
                         native_kind: "line".into(),
-                    },
+                    }).unwrap(),
                 ),
             ])),
         )[1]

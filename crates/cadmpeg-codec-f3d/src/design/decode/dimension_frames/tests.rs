@@ -23,7 +23,8 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+    SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -716,10 +717,11 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let entity = SketchEntity::new(
         SketchEntityId::mint("f3d:model:sketch-entity#line").unwrap(),
         SketchId::mint("f3d:model:sketch#axis-angle").unwrap(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
         .expect("identity grammar");
@@ -761,10 +763,11 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let radial_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#f3d:model:sketch-entity:circle").unwrap(),
         SketchId::mint("f3d:model:sketch#radial").unwrap(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length(1.000_000_014_901_161_2),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         null_locus_dimension_definition(

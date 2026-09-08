@@ -5,7 +5,8 @@ use crate::records::{
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use std::collections::HashMap;
 
@@ -13,7 +14,7 @@ fn point_entity(id: &str, sketch: &SketchId, native_ref: &str, position: Point2)
     let mut entity = SketchEntity::new(
         SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
-        SketchGeometry::Point { position },
+        SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
     );
     entity.native_ref = Some(native_ref.into());
     entity
@@ -180,9 +181,10 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     let mut qualified_proxy = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#qualified-proxy").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 100.0),
-        },
+        })
+        .unwrap(),
     );
     qualified_proxy.geometry_ref = Some(arc_marker_id.clone());
     let markers = [

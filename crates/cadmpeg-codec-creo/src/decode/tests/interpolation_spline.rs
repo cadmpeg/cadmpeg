@@ -41,7 +41,7 @@ use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchLocus,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
@@ -58,8 +58,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         SketchEntityId::mint("creo:model:sketch_entity#first-line".to_string()).unwrap();
     let second_line_id =
         SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
-    let spline = SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    let spline = SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::new(
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -72,15 +72,17 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             false,
         )
         .unwrap(),
-    };
-    let first_line = SketchGeometry::Line {
+    );
+    let first_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 1.0),
         end: Point2::new(0.0, 0.0),
-    };
-    let second_line = SketchGeometry::Line {
+    })
+    .unwrap();
+    let second_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .unwrap();
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
@@ -123,8 +125,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert!(profile_strictly_contains(&profiles[0], [0.2, 0.2]));
     assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
     let diagonal = (
-        SketchGeometry::Nurbs {
-            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+        SketchGeometry::nurbs(
+            cadmpeg_ir::geometry::PcurveNurbs::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
@@ -132,16 +134,17 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 false,
             )
             .unwrap(),
-        },
+        ),
         false,
         [0.0, 0.0],
         [1.0, 1.0],
     );
     let crossing_line = (
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
         false,
         [0.0, 1.0],
         [1.0, 0.0],
@@ -240,10 +243,11 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                 let start = points[index];
                 let end = points[(index + 1) % 4];
                 (
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(start[0], start[1]),
                         end: Point2::new(end[0], end[1]),
-                    },
+                    })
+                    .unwrap(),
                     false,
                     start,
                     end,
@@ -282,12 +286,13 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     .into_iter()
     .map(|(end_angle, start_angle, start, end)| {
         (
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(0.5),
                 start_angle: Angle(start_angle),
                 end_angle: Angle(end_angle),
-            },
+            })
+            .unwrap(),
             true,
             start,
             end,
@@ -299,7 +304,10 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         rectangle([-2.0, -2.0], [2.0, 2.0], false),
     ])
     .expect("arc-bounded hole");
-    assert!(matches!(profiles[1][0].0, SketchGeometry::Arc { .. }));
+    assert!(matches!(
+        profiles[1][0].0.definition(),
+        SketchGeometryDefinition::Arc { .. }
+    ));
 }
 
 #[test]
@@ -1706,26 +1714,14 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
     };
     let unresolved = BTreeMap::from([(
         entity.clone(),
-        SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".into(),
-        },
+        SketchGeometry::native("solver_only_section_entity".into()),
     )]);
     assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
 
-    let native_arc = BTreeMap::from([(
-        entity.clone(),
-        SketchGeometry::Native {
-            native_kind: "arc".into(),
-        },
-    )]);
+    let native_arc = BTreeMap::from([(entity.clone(), SketchGeometry::native("arc".into()))]);
     assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
 
-    let native_line = BTreeMap::from([(
-        entity.clone(),
-        SketchGeometry::Native {
-            native_kind: "line".into(),
-        },
-    )]);
+    let native_line = BTreeMap::from([(entity.clone(), SketchGeometry::native("line".into()))]);
     assert!(!sketch_constraint_loci_compatible(
         &definition,
         &native_line
@@ -1733,10 +1729,11 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 
     let resolved = BTreeMap::from([(
         entity,
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
-        },
+        })
+        .unwrap(),
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &resolved));
 }
@@ -1806,18 +1803,20 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         SketchEntity::new(
             entity_id(1),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
             entity_id(2),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(1.0, 1.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
     ]);
 
@@ -1826,21 +1825,31 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
-    if let SketchGeometry::Line { start, .. } = &mut ir.model.sketch_entities[1].geometry {
-        *start = Point2::new(0.0, 0.0);
-    } else {
-        unreachable!();
-    }
+    ir.model.sketch_entities[1]
+        .geometry
+        .edit(|definition| {
+            if let SketchGeometryDefinition::Line { start, .. } = definition {
+                *start = Point2::new(0.0, 0.0);
+            } else {
+                unreachable!();
+            }
+        })
+        .unwrap();
     assert_eq!(
         connected_sketch_profile_vertices(&ir, &sketch_id),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
-    if let SketchGeometry::Line { end, .. } = &mut ir.model.sketch_entities[1].geometry {
-        *end = Point2::new(2.0, 0.0);
-    } else {
-        unreachable!();
-    }
+    ir.model.sketch_entities[1]
+        .geometry
+        .edit(|definition| {
+            if let SketchGeometryDefinition::Line { end, .. } = definition {
+                *end = Point2::new(2.0, 0.0);
+            } else {
+                unreachable!();
+            }
+        })
+        .unwrap();
     assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
 }
 

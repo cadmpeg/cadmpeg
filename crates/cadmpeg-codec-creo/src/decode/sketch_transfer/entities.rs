@@ -27,7 +27,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::sketches::{
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,11 +63,7 @@ pub(super) fn transfer_section_entities(
                 .get(&segment.offset)
                 .cloned()
                 .flatten()
-                .or_else(|| {
-                    Some(SketchGeometry::Native {
-                        native_kind: "line".to_string(),
-                    })
-                });
+                .or_else(|| Some(SketchGeometry::native("line".to_string())));
         }
         segment_geometries.get(&segment.offset).cloned().flatten()
     };
@@ -81,31 +78,38 @@ pub(super) fn transfer_section_entities(
                 id.as_str(),
                 "FeatDefs",
                 segment.offset as u64,
-                match (&geometry, segment.kind) {
-                    (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                match (geometry.definition(), segment.kind) {
+                    (SketchGeometryDefinition::Native { native_kind }, _)
+                        if native_kind == "line" =>
+                    {
                         "section_degenerate_axis_line"
                     }
-                    (SketchGeometry::ReferenceLine { .. }, _) => {
+                    (SketchGeometryDefinition::ReferenceLine { .. }, _) => {
                         "solved_section_axis_reference_line"
                     }
                     (_, crate::feature::FeatureSegmentKind::Line(_)) => "solved_section_line",
                     (_, crate::feature::FeatureSegmentKind::Arc(_)) => "solved_section_arc",
                     (_, crate::feature::FeatureSegmentKind::Point(_)) => "solved_section_point",
                 },
-                if matches!(&geometry, SketchGeometry::Native { .. }) {
+                if matches!(
+                    geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                ) {
                     Exactness::ByteExact
                 } else {
                     Exactness::Derived
                 },
             );
-            let construction = matches!(geometry, SketchGeometry::ReferenceLine { .. })
-                || !unique_segment_ids.contains(&segment.external_id)
+            let construction = matches!(
+                geometry.definition(),
+                SketchGeometryDefinition::ReferenceLine { .. }
+            ) || !unique_segment_ids.contains(&segment.external_id)
                 || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
-            let endpoint_refs = match (&geometry, segment.kind) {
-                (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+            let endpoint_refs = match (geometry.definition(), segment.kind) {
+                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
                     vec![segment.point_ids()[0]]
                 }
-                (SketchGeometry::ReferenceLine { .. }, _)
+                (SketchGeometryDefinition::ReferenceLine { .. }, _)
                     if section_degenerate_axis_line(definition, segment) =>
                 {
                     vec![segment.point_ids()[0]]
@@ -164,14 +168,14 @@ pub(super) fn transfer_section_entities(
             SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: match segment.kind {
+                SketchGeometry::native(
+                    match segment.kind {
                         crate::feature::FeatureSegmentKind::Line(_) => "line",
                         crate::feature::FeatureSegmentKind::Arc(_) => "arc",
                         crate::feature::FeatureSegmentKind::Point(_) => "point",
                     }
                     .to_string(),
-                },
+                ),
             )
             .with_construction(true)
             .with_native_ref(Some(sketch_native_ref(sketch_id)))
@@ -201,10 +205,11 @@ pub(super) fn transfer_section_entities(
         let geometry = circle_geometries
             .get(&segment.offset)
             .cloned()
-            .unwrap_or_else(|| SketchGeometry::Native {
-                native_kind: "circle".to_string(),
-            });
-        let solved_geometry = matches!(geometry, SketchGeometry::Circle { .. });
+            .unwrap_or_else(|| SketchGeometry::native("circle".to_string()));
+        let solved_geometry = matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+        );
         annotate(
             annotations,
             id.as_str(),
@@ -253,10 +258,11 @@ pub(super) fn transfer_section_entities(
         let geometry = point_geometries
             .get(&segment.offset)
             .cloned()
-            .unwrap_or_else(|| SketchGeometry::Native {
-                native_kind: "point".to_string(),
-            });
-        let solved_geometry = matches!(geometry, SketchGeometry::Point { .. });
+            .unwrap_or_else(|| SketchGeometry::native("point".to_string()));
+        let solved_geometry = matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Point { .. }
+        );
         annotate(
             annotations,
             id.as_str(),
@@ -304,10 +310,9 @@ pub(super) fn transfer_section_entities(
         let geometry = centered_line_geometries
             .get(&segment.offset)
             .cloned()
-            .unwrap_or_else(|| SketchGeometry::Native {
-                native_kind: "line".to_string(),
-            });
-        let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
+            .unwrap_or_else(|| SketchGeometry::native("line".to_string()));
+        let solved_geometry =
+            matches!(geometry.definition(), SketchGeometryDefinition::Line { .. });
         annotate(
             annotations,
             id.as_str(),
@@ -360,10 +365,11 @@ pub(super) fn transfer_section_entities(
         let geometry = reference_line_geometries
             .get(&segment.offset)
             .cloned()
-            .unwrap_or_else(|| SketchGeometry::Native {
-                native_kind: "reference_line".to_string(),
-            });
-        let solved_geometry = matches!(geometry, SketchGeometry::ReferenceLine { .. });
+            .unwrap_or_else(|| SketchGeometry::native("reference_line".to_string()));
+        let solved_geometry = matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::ReferenceLine { .. }
+        );
         annotate(
             annotations,
             id.as_str(),
@@ -433,9 +439,7 @@ pub(super) fn transfer_section_entities(
             SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: "bounded_curve".to_string(),
-                },
+                SketchGeometry::native("bounded_curve".to_string()),
             )
             .with_construction(construction)
             .with_native_ref(Some(sketch_native_ref(sketch_id)))
@@ -474,9 +478,7 @@ pub(super) fn transfer_section_entities(
             SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: "conic".to_string(),
-                },
+                SketchGeometry::native("conic".to_string()),
             )
             .with_construction(true)
             .with_native_ref(Some(sketch_native_ref(sketch_id))),
@@ -508,11 +510,9 @@ pub(super) fn transfer_section_entities(
                     Some(SectionEntityIncidenceFamily::Circular) => "circle".to_string(),
                     _ => format!("segment_type:{}", segment.kind),
                 };
-            SketchGeometry::Native { native_kind }
+            SketchGeometry::native(native_kind)
         } else {
-            SketchGeometry::Native {
-                native_kind: format!("segment_type:{}", segment.kind),
-            }
+            SketchGeometry::native(format!("segment_type:{}", segment.kind))
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
@@ -730,7 +730,12 @@ pub(super) fn transfer_section_entities(
                         .get(&segment.offset)
                         .cloned()
                         .flatten()
-                        .filter(|geometry| matches!(geometry, SketchGeometry::ReferenceLine { .. }))
+                        .filter(|geometry| {
+                            matches!(
+                                geometry.definition(),
+                                SketchGeometryDefinition::ReferenceLine { .. }
+                            )
+                        })
                 })
             else {
                 continue;

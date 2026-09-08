@@ -203,9 +203,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
         SketchEntity::new(
             id,
             sketch.clone(),
-            SketchGeometry::Native {
-                native_kind: format!("saved_{}", kind.name()),
-            },
+            SketchGeometry::native(format!("saved_{}", kind.name())),
         )
         .with_construction(true)
         .with_native_ref(Some(sketch_native_ref(sketch))),

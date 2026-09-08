@@ -72,9 +72,8 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         ir.model.sketch_entities[0].native_ref.as_deref(),
         Some(pair.id.as_str())
     );
-    assert!(matches!(
-        &ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Native { native_kind } if native_kind == "nx-coordinate-pair"
+    assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-coordinate-pair"
     ));
 }
 
@@ -132,8 +131,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         ir.model.sketch_entities[0].native_ref.as_deref(),
         Some(point.id.as_str())
     );
-    assert!(matches!(
-        &ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Native { native_kind } if native_kind == "nx-fixed-point"
+    assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point"
     ));
 }

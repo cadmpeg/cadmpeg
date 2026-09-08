@@ -17,17 +17,15 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         .expect("application-saved conic fixture");
     let entities = &result.ir().model.sketch_entities;
     assert_eq!(entities.len(), 7);
-    assert!(matches!(
-        entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Arc {
+    assert!(matches!(*entities[0].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
             start_angle: cadmpeg_ir::features::Angle(start),
             end_angle: cadmpeg_ir::features::Angle(end),
             ..
         } if (start - 0.65).abs() < 1.0e-12 && (end - 1.83).abs() < 1.0e-12
     ));
-    assert!(matches!(
-        entities[3].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+    assert!(matches!(*entities[3].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
             major_angle: cadmpeg_ir::features::Angle(angle),
             bounds: Some([
                 cadmpeg_ir::features::Angle(start),
@@ -38,17 +36,15 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
             && (start - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
             && (end - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
     ));
-    assert!(matches!(
-        entities[4].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+    assert!(matches!(*entities[4].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
             major_angle: cadmpeg_ir::features::Angle(angle),
             bounds: None,
             ..
         } if (angle - 0.71).abs() < 1.0e-12
     ));
-    assert!(matches!(
-        entities[5].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
+    assert!(matches!(*entities[5].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Hyperbola {
             major_angle: cadmpeg_ir::features::Angle(angle),
             bounds: Some([start, end]),
             ..
@@ -56,9 +52,8 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
             && (start + 0.63).abs() < 1.0e-12
             && (end - 0.88).abs() < 1.0e-12
     ));
-    assert!(matches!(
-        entities[6].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+    assert!(matches!(*entities[6].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
             axis_angle: cadmpeg_ir::features::Angle(angle),
             bounds: Some([start, end]),
             ..
@@ -157,20 +152,20 @@ fn associates_external_carriers_by_ref_and_retains_link_groups() {
     let first_edge2 = entity(":external:0");
     assert_eq!(first_edge2.endpoint_refs, ["Edge2"]);
     assert!(matches!(
-        first_edge2.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Circle { .. }
+        *first_edge2.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
     ));
     let second_edge2 = entity(":external:1");
     assert_eq!(second_edge2.endpoint_refs, ["Edge2"]);
     assert!(matches!(
-        second_edge2.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Line { .. }
+        *second_edge2.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
     ));
     let edge1 = entity(":external:2");
     assert_eq!(edge1.endpoint_refs, ["Edge1"]);
     assert!(matches!(
-        edge1.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Point { .. }
+        *edge1.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
     ));
 }
 
@@ -195,8 +190,8 @@ fn retains_missing_external_carrier_without_a_link() {
     let entity = &result.ir().model.sketch_entities[0];
     assert!(entity.endpoint_refs.is_empty());
     assert!(matches!(
-        entity.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Point { .. }
+        *entity.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
     ));
 }
 
@@ -293,11 +288,12 @@ fn transfers_geom_point_carrier() {
             &DecodeOptions::default(),
         )
         .expect("point carrier");
-    assert!(matches!(
-        result.ir().model.sketch_entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Point { position }
-            if position == cadmpeg_ir::math::Point2::new(1.25, -2.5)
-    ));
+    assert!(
+        matches!(*result.ir().model.sketch_entities[0].geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position }
+                if position == cadmpeg_ir::math::Point2::new(1.25, -2.5)
+        )
+    );
 }
 
 #[test]
@@ -518,14 +514,12 @@ fn retains_unknown_and_ambiguous_sketch_carriers_as_native() {
         .expect("unknown and ambiguous carriers");
     let entities = &result.ir().model.sketch_entities;
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Native { native_kind }
+    assert!(matches!(entities[0].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind }
             if native_kind == "Vendor::GeomLineSegment"
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Native { native_kind }
+    assert!(matches!(entities[1].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind }
             if native_kind == "Part::GeomLineSegment"
     ));
     assert_valid_document(result.ir());
@@ -552,22 +546,20 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
         )
         .expect("sketch geometry");
     let entities = &result.ir().model.sketch_entities;
-    assert!(matches!(
-        entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+    assert!(matches!(*entities[0].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position }
             if position == cadmpeg_ir::math::Point2::new(1.0, 2.0)
     ));
-    assert!(matches!(
-        entities[1].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+    assert!(matches!(*entities[1].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
             major_angle: cadmpeg_ir::features::Angle(angle),
             bounds: None,
             ..
         } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
-        entities[2].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+        *entities[2].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
             bounds: Some([
                 cadmpeg_ir::features::Angle(0.5),
                 cadmpeg_ir::features::Angle(1.5),
@@ -576,17 +568,15 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
         }
     ));
     assert!(matches!(
-        entities[3].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+        *entities[3].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
     ));
-    assert!(matches!(
-        entities[4].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+    assert!(matches!(*entities[4].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position }
             if position == cadmpeg_ir::math::Point2::new(7.0, 8.0)
     ));
-    assert!(matches!(
-        entities[5].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Line { start, end }
+    assert!(matches!(*entities[5].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end }
             if start == cadmpeg_ir::math::Point2::new(1.0, 3.0)
                 && end == cadmpeg_ir::math::Point2::new(2.0, 4.0)
     ));
@@ -614,50 +604,49 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
     let entities = &result.ir().model.sketch_entities;
     assert_eq!(entities.len(), 6);
     assert!(matches!(
-        entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Hyperbola { bounds: None, .. }
+        *entities[0].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Hyperbola { bounds: None, .. }
     ));
     assert!(matches!(
-        entities[1].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
+        *entities[1].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Hyperbola {
             bounds: Some([-1.0, 1.5]),
             ..
         }
     ));
     assert!(matches!(
-        entities[2].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+        *entities[2].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
             focal_length: cadmpeg_ir::features::Length(2.0),
             bounds: None,
             ..
         }
     ));
     assert!(matches!(
-        entities[3].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+        *entities[3].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
             focal_length: cadmpeg_ir::features::Length(2.5),
             bounds: Some([-2.0, 3.0]),
             ..
         }
     ));
-    assert!(matches!(
-        entities[4].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Arc {
+    assert!(matches!(*entities[4].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
             start_angle: cadmpeg_ir::features::Angle(start),
             end_angle: cadmpeg_ir::features::Angle(end),
             ..
         } if (start - 0.8).abs() < 1.0e-12 && (end - 1.8).abs() < 1.0e-12
     ));
     assert!(matches!(
-        entities[5].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+        *entities[5].geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
             bounds: Some(_),
             ..
         }
     ));
     assert!(entities.iter().all(|entity| !matches!(
-        entity.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+        *entity.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
     )));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -684,14 +673,15 @@ pub(crate) fn transfers_bounded_rational_sketch_nurbs() {
             &DecodeOptions::default(),
         )
         .expect("sketch NURBS");
-    assert!(matches!(
-        &result.ir().model.sketch_entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Nurbs { curve }
-            if curve.degree() == 2 && !curve.periodic()
-            && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-            && curve.control_points().len() == 3
-            && curve.weights() == Some(&[1.0, 0.5, 1.0])
-    ));
+    assert!(
+        matches!((&result.ir().model.sketch_entities[0].geometry).definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { curve }
+                if curve.degree() == 2 && !curve.periodic()
+                && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                && curve.control_points().len() == 3
+                && curve.weights() == Some(&[1.0, 0.5, 1.0])
+        )
+    );
 }
 
 #[test]
@@ -881,8 +871,8 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
     assert!(result.ir().model.sketch_entities.iter().any(|entity| {
         entity.id().as_str().ends_with(":reference-horizontal-axis")
             && matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::ReferenceLine { .. }
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::ReferenceLine { .. }
             )
     }));
     assert!(result
@@ -899,8 +889,8 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         .find(|entity| entity.id().as_str().ends_with(":external:0"))
         .expect("external geometry");
     assert!(matches!(
-        external.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Circle { .. }
+        *external.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
     ));
     assert!(external
         .geometry_ref
@@ -914,9 +904,8 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         .iter()
         .find(|entity| entity.id().as_str().ends_with(":external:1"))
         .expect("link-only external geometry");
-    assert!(matches!(
-        &unresolved_external.geometry,
-        cadmpeg_ir::sketches::SketchGeometry::ExternalReference {
+    assert!(matches!(unresolved_external.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::ExternalReference {
             document: None,
             object,
             subelements,

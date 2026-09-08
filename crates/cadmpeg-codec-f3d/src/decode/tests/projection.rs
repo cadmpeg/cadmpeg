@@ -1112,7 +1112,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
+        SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1506,9 +1506,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             SketchEntity::new(
                 SketchEntityId::mint(id).unwrap(),
                 SketchId::mint("synthetic:test:id#sketch").unwrap(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(native_ref.into())),
         );

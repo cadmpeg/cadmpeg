@@ -740,8 +740,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     .expect("one exact point use projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
-        ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Point {
+        *ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Point {
             position: Point2 { u: 12.5, v: -3.0 }
         }
     ));
@@ -841,8 +841,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
         Some("point-group")
     );
     assert!(matches!(
-        ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Point {
+        *ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Point {
             position: Point2 { u: 12.5, v: -3.0 }
         }
     ));

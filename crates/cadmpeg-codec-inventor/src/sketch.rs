@@ -9,8 +9,8 @@ use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
-    SketchNativeOperand, SketchPlacement,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+    SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1474,9 +1474,12 @@ fn project_geometry(
     entities: &HashMap<(String, u32), &PmDcSketchEntity>,
 ) -> Option<SketchGeometry> {
     match &entity.kind {
-        PmDcSketchEntityKind::Point { position, .. } => Some(SketchGeometry::Point {
-            position: neutral_point(*position),
-        }),
+        PmDcSketchEntityKind::Point { position, .. } => Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: neutral_point(*position),
+            })
+            .ok()?,
+        ),
         PmDcSketchEntityKind::Line {
             points,
             origin,
@@ -1491,17 +1494,23 @@ fn project_geometry(
             if !line_carrier_matches(*origin, *direction, start, end) {
                 return None;
             }
-            Some(SketchGeometry::Line {
-                start: neutral_point(start),
-                end: neutral_point(end),
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: neutral_point(start),
+                    end: neutral_point(end),
+                })
+                .ok()?,
+            )
         }
         PmDcSketchEntityKind::Circle { center, radius, .. } => {
             let center = resolve_point(&entity.identity.segment_token, center.index, entities)?;
-            Some(SketchGeometry::Circle {
-                center: neutral_point(center),
-                radius: Length(radius * 10.0),
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center: neutral_point(center),
+                    radius: Length(radius * 10.0),
+                })
+                .ok()?,
+            )
         }
         PmDcSketchEntityKind::Ellipse {
             center,
@@ -1515,13 +1524,16 @@ fn project_geometry(
             if !norm.is_finite() || norm <= f64::EPSILON {
                 return None;
             }
-            Some(SketchGeometry::Ellipse {
-                center: neutral_point(center),
-                major_angle: Angle(major_direction[1].atan2(major_direction[0])),
-                major_radius: Length(major_radius * 10.0),
-                minor_radius: Length(minor_radius * 10.0),
-                bounds: None,
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+                    center: neutral_point(center),
+                    major_angle: Angle(major_direction[1].atan2(major_direction[0])),
+                    major_radius: Length(major_radius * 10.0),
+                    minor_radius: Length(minor_radius * 10.0),
+                    bounds: None,
+                })
+                .ok()?,
+            )
         }
     }
 }
@@ -1645,8 +1657,8 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         .filter(|entity| !entity.construction)
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                SketchGeometry::Circle { .. } | SketchGeometry::Ellipse { .. }
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Ellipse { .. }
             )
         })
         .map(|entity| {
@@ -1660,7 +1672,12 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         .iter()
         .copied()
         .filter(|entity| !entity.construction)
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .filter(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .filter(|entity| entity.endpoint_refs.len() == 2)
         .collect::<Vec<_>>();
     let mut adjacency = HashMap::<&str, Vec<usize>>::new();

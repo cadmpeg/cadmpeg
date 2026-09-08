@@ -6,7 +6,7 @@ use crate::examples::unit_cube;
 use crate::features::{Angle, ExtrudeDirection, Length};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
-use crate::sketches::SketchGeometry;
+use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
@@ -14,11 +14,14 @@ const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn trimmed_concentric_arcs_validate_as_offsets() {
-    let arc = |radius, start, end| SketchGeometry::Arc {
-        center: Point2::new(3.0, -4.0),
-        radius: Length(radius),
-        start_angle: Angle(start),
-        end_angle: Angle(end),
+    let arc = |radius, start, end| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+            start_angle: Angle(start),
+            end_angle: Angle(end),
+        })
+        .unwrap()
     };
     let source = arc(2.0, 0.0, std::f64::consts::FRAC_PI_2);
     let trimmed_result = arc(5.0, 0.1, 1.4);
@@ -40,16 +43,20 @@ fn trimmed_concentric_arcs_validate_as_offsets() {
 
 #[test]
 fn full_concentric_circles_validate_as_offsets() {
-    let circle = |radius| SketchGeometry::Circle {
-        center: Point2::new(3.0, -4.0),
-        radius: Length(radius),
+    let circle = |radius| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+        })
+        .unwrap()
     };
     let source = circle(5.0);
     let result = circle(3.5);
-    let displaced = SketchGeometry::Circle {
+    let displaced = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, -3.9),
         radius: Length(3.5),
-    };
+    })
+    .unwrap();
 
     assert!(sketch_curve_offset_matches(
         &source,
@@ -73,22 +80,25 @@ fn full_concentric_circles_validate_as_offsets() {
 
 #[test]
 fn mixed_full_circle_arc_validate_as_offsets() {
-    let circle = SketchGeometry::Circle {
+    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, -4.0),
         radius: Length(5.0),
-    };
-    let arc = SketchGeometry::Arc {
+    })
+    .unwrap();
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, -4.0),
         radius: Length(3.5),
         start_angle: Angle(0.1),
         end_angle: Angle(1.4),
-    };
-    let displaced = SketchGeometry::Arc {
+    })
+    .unwrap();
+    let displaced = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.1, -4.0),
         radius: Length(3.5),
         start_angle: Angle(0.1),
         end_angle: Angle(1.4),
-    };
+    })
+    .unwrap();
 
     assert!(sketch_curve_offset_matches(
         &circle,
@@ -116,7 +126,7 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = unit_cube();
@@ -141,10 +151,11 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
     ir.model.sketch_entities.push(SketchEntity::new(
         circle_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(-1.0),
-        },
+        })
+        .unwrap(),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:sketch-constraint#0").unwrap(),
@@ -186,7 +197,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId, SketchOffsetPair,
+        SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchOffsetPair,
     };
 
     let mut ir = CadIr::empty();
@@ -212,8 +223,8 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         SketchEntity::new(
             source.clone(),
             sketch.clone(),
-            SketchGeometry::Nurbs {
-                curve: crate::geometry::PcurveNurbs::new(
+            SketchGeometry::nurbs(
+                crate::geometry::PcurveNurbs::new(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -225,13 +236,13 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     false,
                 )
                 .unwrap(),
-            },
+            ),
         ),
         SketchEntity::new(
             result.clone(),
             sketch.clone(),
-            SketchGeometry::Nurbs {
-                curve: crate::geometry::PcurveNurbs::new(
+            SketchGeometry::nurbs(
+                crate::geometry::PcurveNurbs::new(
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
@@ -244,7 +255,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     false,
                 )
                 .unwrap(),
-            },
+            ),
         ),
     ]);
     let constraint = SketchConstraintId::mint("synthetic:test:constraint#nurbs-offset").unwrap();
@@ -294,14 +305,15 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     };
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
 
-    {
-        let SketchGeometry::Nurbs { curve } =
-            &mut ir.model.sketch_entities[result_ordinal].geometry
-        else {
-            unreachable!("test result is a NURBS")
-        };
-        curve.reverse_parameterization();
-    }
+    ir.model.sketch_entities[result_ordinal]
+        .geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Nurbs { curve } = definition else {
+                unreachable!("test result is a NURBS")
+            };
+            curve.reverse_parameterization();
+        })
+        .unwrap();
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
         &ir.model.sketch_entities[source_ordinal].geometry,
         &ir.model.sketch_entities[result_ordinal].geometry,
@@ -313,13 +325,17 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         "reversed fitted offset distance {reversed_distance}"
     );
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
-    let SketchGeometry::Nurbs { curve } = &mut ir.model.sketch_entities[result_ordinal].geometry
-    else {
-        unreachable!("test result is a NURBS")
-    };
-    curve.reverse_parameterization();
-    curve
-        .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+    ir.model.sketch_entities[result_ordinal]
+        .geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Nurbs { curve } = definition else {
+                unreachable!("test result is a NURBS")
+            };
+            curve.reverse_parameterization();
+            curve
+                .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+                .unwrap();
+        })
         .unwrap();
     assert!(offset_mismatch(&validate_neutral(&ir, Vec::new())));
 }
@@ -329,7 +345,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = unit_cube();
@@ -367,8 +383,13 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         ),
         plane(second_sketch.clone(), Vec::new()),
     ]);
-    let line =
-        |id, sketch, start, end| SketchEntity::new(id, sketch, SketchGeometry::Line { start, end });
+    let line = |id, sketch, start, end| {
+        SketchEntity::new(
+            id,
+            sketch,
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
+        )
+    };
     ir.model.sketch_entities.extend([
         line(
             first.clone(),
@@ -426,10 +447,14 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         .find(|entity| entity.id() == &disconnected)
         .expect("disconnected entity remains present")
         .geometry;
-    let SketchGeometry::Line { start, .. } = disconnected_geometry else {
-        unreachable!("second entity is a line")
-    };
-    *start = Point2::new(1.0 + ir.tolerances.linear * 0.5, 0.0);
+    disconnected_geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Line { start, .. } = definition else {
+                unreachable!("second entity is a line")
+            };
+            *start = Point2::new(1.0 + ir.tolerances.linear * 0.5, 0.0);
+        })
+        .unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.as_str())

@@ -8,6 +8,7 @@
 )]
 use super::prelude::*;
 use crate::records::topology::DesignOperandRole;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
@@ -809,25 +810,28 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let point_entity = SketchEntity::new(
         neutral_sketch_point_id(&sketch_id, 587).unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.5, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let line_entity = SketchEntity::new(
         neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let second_profile_entity = SketchEntity::new(
         second_profile_id,
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let profile_entities = [line_entity, second_profile_entity, point_entity];
     assert!(matches!(

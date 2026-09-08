@@ -14,7 +14,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
-    SketchLocus,
+    SketchGeometryDefinition, SketchLocus,
 };
 use std::collections::HashMap;
 
@@ -575,7 +575,12 @@ pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEn
         .sketch_entities
         .iter()
         .find(|candidate| candidate.id() == entity)
-        .is_some_and(|candidate| matches!(candidate.geometry, SketchGeometry::Point { .. }))
+        .is_some_and(|candidate| {
+            matches!(
+                *candidate.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
 }
 
 fn append_generated_scalar(
@@ -735,19 +740,19 @@ fn unique_generated_locus_marker(
 }
 
 fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
-    match geometry {
-        SketchGeometry::Point { .. } => SketchInputKind::Point,
-        SketchGeometry::Arc { .. } => SketchInputKind::Arc,
-        SketchGeometry::Line { .. }
-        | SketchGeometry::ReferenceLine { .. }
-        | SketchGeometry::Circle { .. }
-        | SketchGeometry::Ellipse { .. }
-        | SketchGeometry::Hyperbola { .. }
-        | SketchGeometry::Parabola { .. }
-        | SketchGeometry::Nurbs { .. }
-        | SketchGeometry::ExternalReference { .. }
-        | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
-        SketchGeometry::Text { .. } => unreachable!("sketch text has no marker loci"),
+    match geometry.definition() {
+        SketchGeometryDefinition::Point { .. } => SketchInputKind::Point,
+        SketchGeometryDefinition::Arc { .. } => SketchInputKind::Arc,
+        SketchGeometryDefinition::Line { .. }
+        | SketchGeometryDefinition::ReferenceLine { .. }
+        | SketchGeometryDefinition::Circle { .. }
+        | SketchGeometryDefinition::Ellipse { .. }
+        | SketchGeometryDefinition::Hyperbola { .. }
+        | SketchGeometryDefinition::Parabola { .. }
+        | SketchGeometryDefinition::Nurbs { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => SketchInputKind::LineOrCircle,
+        SketchGeometryDefinition::Text { .. } => unreachable!("sketch text has no marker loci"),
     }
 }
 

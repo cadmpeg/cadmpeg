@@ -7,7 +7,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchId,
+    SketchGeometryDefinition, SketchId,
 };
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
@@ -213,6 +213,11 @@ fn project_brep(
                 Ok(id) => id,
                 Err(_) => continue,
             };
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: project_point(*position, *origin, *u_axis, v_axis),
+            }) else {
+                continue;
+            };
             crate::annotations::note(
                 annotations,
                 id.as_str().to_owned(),
@@ -222,15 +227,12 @@ fn project_brep(
                 Exactness::Derived,
             );
             entities.push(
-                SketchEntity::new(
-                    id,
-                    sketch_id.clone(),
-                    SketchGeometry::Point {
-                        position: project_point(*position, *origin, *u_axis, v_axis),
-                    },
-                )
-                .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
-                .with_endpoint_refs(vec![format!("{stream_ordinal}:{}", vertex.point.as_str())]),
+                SketchEntity::new(id, sketch_id.clone(), geometry)
+                    .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
+                    .with_endpoint_refs(vec![format!(
+                        "{stream_ordinal}:{}",
+                        vertex.point.as_str()
+                    )]),
             );
         }
         if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
@@ -317,17 +319,21 @@ mod projected_profile_orientation_tests {
     use super::{circle_contains_point, ellipse_contains_point, orient_closed_profile_by_topology};
     use cadmpeg_ir::{
         math::Point2,
-        sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId},
+        sketches::{
+            SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+            SketchGeometryDefinition, SketchId,
+        },
     };
 
     fn line(id: &str, start_ref: &str, end_ref: &str) -> SketchEntity {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_endpoint_refs(vec![start_ref.into(), end_ref.into()])
     }

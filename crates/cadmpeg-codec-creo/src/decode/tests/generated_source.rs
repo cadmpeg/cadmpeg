@@ -49,7 +49,8 @@ use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchLocus,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, BTreeSet};
@@ -231,10 +232,13 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         BTreeMap::from([(9, 43)])
     );
     assert_eq!(
-        section_generated_profile_surface_kinds(&SketchGeometry::Circle {
-            center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
-        }),
+        section_generated_profile_surface_kinds(
+            &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length(3.0),
+            })
+            .unwrap()
+        ),
         Some(&[crate::surface::SurfaceKind::Cylinder][..])
     );
     assert!(section_entity_is_generated_profile(
@@ -1566,36 +1570,17 @@ fn native_curve_families_accept_only_their_defined_loci() {
         SketchEntityId::mint("synthetic:test:id#reference_line".to_string()).unwrap();
     let circle = SketchEntityId::mint("synthetic:test:id#circle".to_string()).unwrap();
     let geometry = BTreeMap::from([
-        (
-            point.clone(),
-            SketchGeometry::Native {
-                native_kind: "point".to_string(),
-            },
-        ),
+        (point.clone(), SketchGeometry::native("point".to_string())),
         (
             bounded.clone(),
-            SketchGeometry::Native {
-                native_kind: "bounded_curve".to_string(),
-            },
+            SketchGeometry::native("bounded_curve".to_string()),
         ),
-        (
-            line.clone(),
-            SketchGeometry::Native {
-                native_kind: "line".to_string(),
-            },
-        ),
+        (line.clone(), SketchGeometry::native("line".to_string())),
         (
             reference_line.clone(),
-            SketchGeometry::Native {
-                native_kind: "reference_line".to_string(),
-            },
+            SketchGeometry::native("reference_line".to_string()),
         ),
-        (
-            circle.clone(),
-            SketchGeometry::Native {
-                native_kind: "circle".to_string(),
-            },
-        ),
+        (circle.clone(), SketchGeometry::native("circle".to_string())),
     ]);
     let compatible = SketchConstraintDefinition::CoincidentLoci {
         loci: vec![
@@ -1788,16 +1773,18 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
 
 #[test]
 fn extrusion_profile_area_includes_oriented_arc_sector() {
-    let arc = SketchGeometry::Arc {
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(1.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
-    let line = SketchGeometry::Line {
+    })
+    .unwrap();
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(-1.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .unwrap();
     let counterclockwise = vec![
         (arc.clone(), false, [1.0, 0.0], [-1.0, 0.0]),
         (line.clone(), false, [-1.0, 0.0], [1.0, 0.0]),
@@ -1823,12 +1810,13 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
 #[test]
 fn full_turn_arc_remains_a_closed_extrusion_profile() {
     let profile = vec![(
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
-        },
+        })
+        .unwrap(),
         false,
         [2.0, 0.0],
         [2.0, 0.0],
@@ -1851,10 +1839,11 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
 fn circle_remains_a_closed_extrusion_profile() {
     let sketch_id = SketchId::mint("creo:model:sketch#circle".to_string()).unwrap();
     let entity_id = SketchEntityId::mint("creo:model:sketch_entity#circle".to_string()).unwrap();
-    let circle = SketchGeometry::Circle {
+    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(1.0, -2.0),
         radius: Length(3.0),
-    };
+    })
+    .unwrap();
     let seam = [4.0, -2.0];
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {

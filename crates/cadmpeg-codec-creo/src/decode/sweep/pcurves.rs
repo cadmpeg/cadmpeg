@@ -13,7 +13,7 @@ use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -193,7 +193,10 @@ pub(in super::super) fn revolved_brep_surface(
     reversed: bool,
     axis: &RevolutionAxis,
 ) -> Option<SurfaceGeometry> {
-    if matches!(geometry, SketchGeometry::Nurbs { .. }) {
+    if matches!(
+        geometry.definition(),
+        SketchGeometryDefinition::Nurbs { .. }
+    ) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
         return Some(SurfaceGeometry::Nurbs(revolved_nurbs_surface(
             &placed_section_nurbs(transform, &directrix)?,
@@ -236,7 +239,10 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
     section_point: [f64; 2],
     boundary: RevolutionBoundary,
 ) -> Option<PcurveGeometry> {
-    if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
+    if matches!(
+        segment.0.definition(),
+        SketchGeometryDefinition::Nurbs { .. }
+    ) {
         let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
         let parameter = match boundary {
@@ -262,7 +268,10 @@ pub(in super::super) fn revolution_face_sense(
     axis: &RevolutionAxis,
     profile_area: f64,
 ) -> Option<Sense> {
-    let is_nurbs = matches!(segment.0, SketchGeometry::Nurbs { .. });
+    let is_nurbs = matches!(
+        segment.0.definition(),
+        SketchGeometryDefinition::Nurbs { .. }
+    );
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
         let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;

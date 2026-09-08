@@ -14,7 +14,8 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -62,9 +63,10 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             SketchEntity::new(
                 SketchEntityId::mint(format!("synthetic:test:id#point-{index}")).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u, v),
-                },
+                })
+                .unwrap(),
             )
         })
         .collect::<Vec<_>>();
@@ -376,31 +378,29 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("relation-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(6.0, 5.0)
             )
     }));
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("self-linked-curve")
             && entity.endpoint_refs == ["endpoint-b", "self-linked-curve"]
-            && matches!(entity.geometry, SketchGeometry::Line { start, end }
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(4.0, 7.0) && end == Point2::new(5.0, 6.0))
     }));
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("forward-linked-curve")
             && entity.endpoint_refs == ["endpoint-a", "endpoint-b"]
-            && matches!(entity.geometry, SketchGeometry::Line { start, end }
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 7.0))
     }));
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("coincident-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(1.0, 2.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(1.0, 2.0)
             )
     }));
     assert!(entities.iter().any(|entity| {
@@ -408,9 +408,8 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             && entity.native_ref.is_none()
             && entity.geometry_ref.as_deref()
                 == Some("sldprt:feature-input:sketch-entity#qualified-curve")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(2.5, 4.5)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(2.5, 4.5)
             )
     }));
     assert!(entities.iter().any(|entity| {
@@ -421,7 +420,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     "endpoint-a",
                     "sldprt:feature-input:sketch-entity#qualified-curve",
                 ]
-            && matches!(entity.geometry, SketchGeometry::Line { start, end }
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(2.5, 4.5))
     }));
     let loci = profile_loci_by_marker(
@@ -479,9 +478,10 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             SketchEntity::new(
                 SketchEntityId::mint(format!("synthetic:test:id#anchor-{index}")).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u, v),
-                },
+                })
+                .unwrap(),
             )
         })
         .collect::<Vec<_>>();
@@ -501,10 +501,11 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(5.0, 6.0),
                 radius: Length(10.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some(point_marker.id.clone())),
@@ -556,13 +557,15 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some(point_marker.id.as_str())
-            && matches!(entity.geometry, SketchGeometry::Circle { .. })
+            && matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+            )
     }));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some(point_marker.id.as_str())
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(6.0, 5.0)
             )
     }));
     let loci = profile_loci_by_marker(
@@ -576,7 +579,10 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .find(|entity| {
             entity.construction
                 && entity.native_ref.as_deref() == Some(point_marker.id.as_str())
-                && matches!(entity.geometry, SketchGeometry::Point { .. })
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
         .expect("relation point");
     assert_eq!(
@@ -699,16 +705,14 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
     assert_eq!(entities.len(), 2);
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("first-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(-5.0, 2.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(-5.0, 2.0)
             )
     }));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("second-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(5.0, 2.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(5.0, 2.0)
             )
     }));
 }
@@ -885,10 +889,11 @@ fn circular_profile_binds_by_unique_diameter_signature() {
     let entities = [SketchEntity::new(
         entity_id,
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     )];
 
     bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);

@@ -15,7 +15,9 @@ use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement, SpatialSketchGeometry};
+use cadmpeg_ir::sketches::{
+    SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
+};
 use cadmpeg_ir::transform::{Transform, Transform2};
 
 /// Scale all neutral model lengths from the source unit into millimeters.
@@ -1455,28 +1457,29 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
 }
 
 fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<(), CodecError> {
-    match geometry {
-        SketchGeometry::Point { position } => scale_point2(position, scale),
-        SketchGeometry::Line { start, end } => {
+    let mut definition = geometry.definition().clone();
+    match &mut definition {
+        SketchGeometryDefinition::Point { position } => scale_point2(position, scale),
+        SketchGeometryDefinition::Line { start, end } => {
             scale_point2(start, scale);
             scale_point2(end, scale);
         }
-        SketchGeometry::ReferenceLine { origin, .. } => scale_point2(origin, scale),
-        SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::ReferenceLine { origin, .. } => scale_point2(origin, scale),
+        SketchGeometryDefinition::Circle { center, radius } => {
             scale_point2(center, scale);
             radius.0 *= scale;
         }
-        SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometryDefinition::Arc { center, radius, .. } => {
             scale_point2(center, scale);
             radius.0 *= scale;
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_radius,
             minor_radius,
             ..
         }
-        | SketchGeometry::Hyperbola {
+        | SketchGeometryDefinition::Hyperbola {
             center,
             major_radius,
             minor_radius,
@@ -1486,7 +1489,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
             major_radius.0 *= scale;
             minor_radius.0 *= scale;
         }
-        SketchGeometry::Parabola {
+        SketchGeometryDefinition::Parabola {
             vertex,
             focal_length,
             ..
@@ -1494,7 +1497,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
             scale_point2(vertex, scale);
             focal_length.0 *= scale;
         }
-        SketchGeometry::Nurbs { curve } => {
+        SketchGeometryDefinition::Nurbs { curve } => {
             curve
                 .edit_control_points(|points| {
                     for point in points {
@@ -1507,7 +1510,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
                     ))
                 })?;
         }
-        SketchGeometry::Text {
+        SketchGeometryDefinition::Text {
             height, placement, ..
         } => {
             height.0 *= scale;
@@ -1515,8 +1518,10 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
                 scale_point2(&mut placement.anchor, scale);
             }
         }
-        SketchGeometry::ExternalReference { .. } | SketchGeometry::Native { .. } => {}
+        SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => {}
     }
+    *geometry = definition.try_into().map_err(CodecError::malformed)?;
     Ok(())
 }
 

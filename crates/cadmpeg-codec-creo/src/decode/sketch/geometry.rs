@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 use super::super::sketch_ids::sketch_entity_id;
 use super::radii::trim_segment_id;
@@ -43,10 +43,13 @@ pub(crate) fn section_line_geometry(
         .fold(1.0, f64::max);
     (((end[0] - start[0]) / scale).hypot((end[1] - start[1]) / scale) > EPS_POINT_NONZERO)
         .then_some(())?;
-    Some(SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_point_geometry(
@@ -57,9 +60,12 @@ pub(crate) fn section_point_geometry(
         return None;
     };
     let position = points.get(&point)?;
-    Some(SketchGeometry::Point {
-        position: cadmpeg_ir::math::Point2::new(position[0], position[1]),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: cadmpeg_ir::math::Point2::new(position[0], position[1]),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_arc_geometry(
@@ -88,12 +94,15 @@ pub(crate) fn section_arc_geometry(
     while end <= start {
         end += std::f64::consts::TAU;
     }
-    Some(SketchGeometry::Arc {
-        center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
-        radius: Length(first_radius),
-        start_angle: Angle(start),
-        end_angle: Angle(end),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
+            radius: Length(first_radius),
+            start_angle: Angle(start),
+            end_angle: Angle(end),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_circle_geometry(
@@ -103,10 +112,13 @@ pub(crate) fn section_circle_geometry(
 ) -> Option<SketchGeometry> {
     let center = points.get(&segment.center_id)?;
     let radius = *radii.get(&segment.radius_ref)?;
-    Some(SketchGeometry::Circle {
-        center: Point2::new(center[0], center[1]),
-        radius: Length(radius),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(center[0], center[1]),
+            radius: Length(radius),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_point_row_geometry(
@@ -114,9 +126,12 @@ pub(crate) fn section_point_row_geometry(
     segment: &crate::feature::FeaturePointSegment,
 ) -> Option<SketchGeometry> {
     let point = points.get(&segment.point_id)?;
-    Some(SketchGeometry::Point {
-        position: Point2::new(point[0], point[1]),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(point[0], point[1]),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_centered_line_geometry(
@@ -136,10 +151,13 @@ pub(crate) fn section_centered_line_geometry(
     ((start[0] + end[0] - 2.0 * center[0]).hypot(start[1] + end[1] - 2.0 * center[1])
         <= EPS_RADIUS_AGREEMENT * scale)
         .then_some(())?;
-    Some(SketchGeometry::Line {
-        start: Point2::new(start[0], start[1]),
-        end: Point2::new(end[0], end[1]),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start[0], start[1]),
+            end: Point2::new(end[0], end[1]),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn section_reference_line_geometry(
@@ -158,10 +176,13 @@ pub(crate) fn section_reference_line_geometry(
         .fold(1.0, f64::max);
     let direction = [end[0] - start[0], end[1] - start[1]];
     (direction[0].hypot(direction[1]) > EPS_POINT_NONZERO * scale).then_some(())?;
-    Some(SketchGeometry::ReferenceLine {
-        origin: Point2::new(start[0], start[1]),
-        direction: Point2::new(direction[0], direction[1]),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+            origin: Point2::new(start[0], start[1]),
+            direction: Point2::new(direction[0], direction[1]),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn resolved_section_reference_line_geometry(
@@ -183,19 +204,23 @@ pub(crate) fn resolved_section_reference_line_geometry(
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale).then(|| {
-        if fixed_coordinate == SectionAxis::U {
-            SketchGeometry::ReferenceLine {
-                origin: Point2::new(first, 0.0),
-                direction: Point2::new(0.0, 1.0),
+    ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+        .then(|| {
+            if fixed_coordinate == SectionAxis::U {
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: Point2::new(first, 0.0),
+                    direction: Point2::new(0.0, 1.0),
+                })
+                .ok()
+            } else {
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: Point2::new(0.0, first),
+                    direction: Point2::new(1.0, 0.0),
+                })
+                .ok()
             }
-        } else {
-            SketchGeometry::ReferenceLine {
-                origin: Point2::new(0.0, first),
-                direction: Point2::new(1.0, 0.0),
-            }
-        }
-    })
+        })
+        .flatten()
 }
 
 pub(crate) fn section_segment_geometry(
@@ -297,10 +322,13 @@ pub(crate) fn saved_section_line_geometry(
     let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
         return None;
     };
-    Some(SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start_u, start_v),
-        end: cadmpeg_ir::math::Point2::new(end_u, end_v),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start_u, start_v),
+            end: cadmpeg_ir::math::Point2::new(end_u, end_v),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn saved_section_arc_record<'a>(
@@ -410,12 +438,15 @@ pub(crate) fn saved_section_arc_geometry(
     while end <= start {
         end += std::f64::consts::TAU;
     }
-    Some(SketchGeometry::Arc {
-        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-        radius: Length(radius),
-        start_angle: Angle(start),
-        end_angle: Angle(end),
-    })
+    Some(
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+            radius: Length(radius),
+            start_angle: Angle(start),
+            end_angle: Angle(end),
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn saved_section_segment_point_coordinates(
@@ -432,8 +463,8 @@ pub(crate) fn saved_section_segment_point_coordinates(
             ])
         }
         crate::feature::FeatureSegmentKind::Arc(_) => {
-            let SketchGeometry::Arc { center, .. } =
-                saved_section_arc_geometry(definition, segment)?
+            let SketchGeometryDefinition::Arc { center, .. } =
+                (saved_section_arc_geometry(definition, segment)?).into_definition()
             else {
                 unreachable!();
             };
@@ -461,7 +492,7 @@ pub(crate) fn saved_section_circle_values(
     segments.rows.get(segment.external_id)?;
     let entity = section_saved_entity(definition, segment.external_id)?;
     let (_, geometry, _) = saved_section_entity_geometry(entity)?;
-    let SketchGeometry::Circle { center, radius } = geometry else {
+    let SketchGeometryDefinition::Circle { center, radius } = geometry.definition() else {
         return None;
     };
     Some(([center.u, center.v], radius.0))
@@ -478,10 +509,11 @@ pub(crate) fn saved_section_entity_geometry(
             };
             Some((
                 line.entity_id,
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(start_u, start_v),
                     end: Point2::new(end_u, end_v),
-                },
+                })
+                .ok()?,
                 line.offset,
             ))
         }
@@ -515,12 +547,13 @@ pub(crate) fn saved_section_entity_geometry(
             }
             Some((
                 arc.entity_id,
-                SketchGeometry::Arc {
+                SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                     center: Point2::new(center_u, center_v),
                     radius: Length(radius),
                     start_angle: Angle(start_angle),
                     end_angle: Angle(end_angle),
-                },
+                })
+                .ok()?,
                 arc.offset,
             ))
         }
@@ -533,10 +566,11 @@ pub(crate) fn saved_section_entity_geometry(
             };
             Some((
                 circle.entity_id,
-                SketchGeometry::Circle {
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(center_u, center_v),
                     radius: Length(radius),
-                },
+                })
+                .ok()?,
                 circle.offset,
             ))
         }
@@ -614,13 +648,14 @@ pub(crate) fn saved_section_entity_geometry(
             };
             Some((
                 conic.entity_id,
-                SketchGeometry::Ellipse {
+                SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center: Point2::new(frame[9], frame[10]),
                     major_angle: Angle(major_axis[1].atan2(major_axis[0])),
                     major_radius: Length(major_radius),
                     minor_radius: Length(minor_radius),
                     bounds,
-                },
+                })
+                .ok()?,
                 conic.offset,
             ))
         }
@@ -630,22 +665,24 @@ pub(crate) fn saved_section_entity_geometry(
 }
 
 pub(crate) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
-    matches!(geometry, SketchGeometry::Circle { .. })
-        || matches!(
-            geometry,
-            SketchGeometry::Arc {
-                start_angle,
-                end_angle,
-                ..
-                } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs()
-                    <= EPS_ANGLE_FULL_TURN
-        )
+    matches!(
+        geometry.definition(),
+        SketchGeometryDefinition::Circle { .. }
+    ) || matches!((
+        geometry).definition(),
+        SketchGeometryDefinition::Arc {
+            start_angle,
+            end_angle,
+            ..
+            } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs()
+                <= EPS_ANGLE_FULL_TURN
+    )
 }
 
 pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
-    match geometry {
-        SketchGeometry::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
-        SketchGeometry::Arc {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -660,7 +697,7 @@ pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f6
                 center.v + radius.0 * end_angle.0.sin(),
             ],
         ]),
-        SketchGeometry::Nurbs { curve } => {
+        SketchGeometryDefinition::Nurbs { curve } => {
             let control_points = curve.control_points();
             let first = control_points[0];
             let last = control_points[control_points.len() - 1];
@@ -756,10 +793,11 @@ pub(crate) fn saved_section_missing_line_geometry(
         .then_some(())?;
     Some((
         missing.offset,
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(start[0], start[1]),
             end: Point2::new(end[0], end[1]),
-        },
+        })
+        .ok()?,
     ))
 }
 
@@ -898,13 +936,13 @@ pub(crate) fn resolved_section_segment_geometry_with_missing_line(
         });
     match (stored, saved) {
         (Some(stored), Some(saved)) => {
-            let agree = match (&stored, &saved) {
+            let agree = match (stored.definition(), saved.definition()) {
                 (
-                    SketchGeometry::Line {
+                    SketchGeometryDefinition::Line {
                         start: stored_start,
                         end: stored_end,
                     },
-                    SketchGeometry::Line {
+                    SketchGeometryDefinition::Line {
                         start: saved_start,
                         end: saved_end,
                     },
@@ -918,12 +956,12 @@ pub(crate) fn resolved_section_segment_geometry_with_missing_line(
                     )
                 }
                 (
-                    SketchGeometry::Arc {
+                    SketchGeometryDefinition::Arc {
                         center: stored_center,
                         radius: stored_radius,
                         ..
                     },
-                    SketchGeometry::Arc {
+                    SketchGeometryDefinition::Arc {
                         center: saved_center,
                         radius: saved_radius,
                         ..

@@ -11,16 +11,17 @@ use crate::CadIr;
 fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     use crate::math::{Point2, Point3};
     use crate::sketches::{
-        SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
-        SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
     };
 
     let planar = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:sketch-entity#0").unwrap(),
         SketchId::mint("synthetic:test:sketch#0").unwrap(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("native-planar".into()))
@@ -83,7 +84,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
+        SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = unit_cube();
@@ -112,9 +113,10 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
             SketchEntity::new(
                 id.clone(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(ordinal as f64, 0.0),
-                },
+                })
+                .unwrap(),
             )
         }));
     let constraint = SketchConstraintId::mint("synthetic:test:polygon-constraint#0").unwrap();
@@ -151,7 +153,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::sketches::{
         OffsetParameter, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
         SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityId,
-        SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
+        SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchOffsetPair,
     };
 
     let entity = SketchEntityId::mint("synthetic:test:entity#0").unwrap();
@@ -323,10 +325,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     ir.model.sketch_entities.push(SketchEntity::new(
         entity.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     ));
     let constraint_id = SketchConstraintId::mint("synthetic:test:constraint#locus").unwrap();
     ir.model.sketch_constraints.push(SketchConstraint {
@@ -355,9 +358,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
     }));
-    ir.model.sketch_entities[0].geometry = SketchGeometry::Native {
-        native_kind: "center-bearing-curve".into(),
-    };
+    ir.model.sketch_entities[0].geometry = SketchGeometry::native("center-bearing-curve".into());
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
@@ -371,7 +372,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+        SketchGeometryDefinition, SketchId, SketchLocus,
     };
 
     let sketch = SketchId::mint("synthetic:test:sketch#coordinate-equations").unwrap();
@@ -427,7 +429,11 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         ]
         .into_iter()
         .map(|(id, position)| {
-            SketchEntity::new(id, sketch.clone(), SketchGeometry::Point { position })
+            SketchEntity::new(
+                id,
+                sketch.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
+            )
         }),
     );
     ir.model
@@ -467,9 +473,10 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         .iter_mut()
         .find(|entity| entity.id() == &midpoint)
         .unwrap();
-    midpoint_entity.geometry = SketchGeometry::Point {
+    midpoint_entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(3.0, 1.0),
-    };
+    })
+    .unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some("synthetic:test:constraint#point-coordinates")
@@ -1151,39 +1158,48 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
 fn conic_bounds_keep_the_paired_wire_fields() {
     use crate::features::{Angle, Length};
     use crate::math::Point2;
-    use crate::sketches::SketchGeometry;
+    use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
     let cases = [
-        SketchGeometry::Ellipse {
+        SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, 2.0),
             major_angle: Angle(0.25),
             major_radius: Length(4.0),
             minor_radius: Length(2.0),
             bounds: Some([Angle(-0.5), Angle(1.5)]),
-        },
-        SketchGeometry::Hyperbola {
+        })
+        .unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Hyperbola {
             center: Point2::new(1.0, 2.0),
             major_angle: Angle(0.25),
             major_radius: Length(4.0),
             minor_radius: Length(2.0),
             bounds: Some([-0.5, 1.5]),
-        },
-        SketchGeometry::Parabola {
+        })
+        .unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
             vertex: Point2::new(1.0, 2.0),
             axis_angle: Angle(0.25),
             focal_length: Length(2.0),
             bounds: Some([-0.5, 1.5]),
-        },
+        })
+        .unwrap(),
     ];
 
     for geometry in cases {
         let wire = serde_json::to_value(&geometry).unwrap();
-        let start_field = if matches!(&geometry, SketchGeometry::Ellipse { .. }) {
+        let start_field = if matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Ellipse { .. }
+        ) {
             "start_angle"
         } else {
             "start_parameter"
         };
-        let end_field = if matches!(&geometry, SketchGeometry::Ellipse { .. }) {
+        let end_field = if matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Ellipse { .. }
+        ) {
             "end_angle"
         } else {
             "end_parameter"
@@ -1205,9 +1221,9 @@ fn conic_bounds_keep_the_paired_wire_fields() {
 fn text_placement_keeps_the_paired_wire_fields() {
     use crate::features::{Angle, Length};
     use crate::math::Point2;
-    use crate::sketches::{SketchGeometry, TextPlacement};
+    use crate::sketches::{SketchGeometry, SketchGeometryDefinition, TextPlacement};
 
-    let geometry = SketchGeometry::Text {
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Text {
         text: "cadmpeg".into(),
         font_family: "sans".into(),
         font_weight: 400,
@@ -1219,7 +1235,8 @@ fn text_placement_keeps_the_paired_wire_fields() {
         }),
         horizontal_alignment: None,
         vertical_alignment: None,
-    };
+    })
+    .unwrap();
     let wire = serde_json::to_value(&geometry).unwrap();
     assert_eq!(wire["anchor"], serde_json::json!({ "u": 1.0, "v": 2.0 }));
     assert_eq!(wire["rotation"], 0.5);
@@ -1390,7 +1407,7 @@ fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
 
 #[test]
 fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
-    use crate::sketches::SketchGeometry;
+    use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
     let wire = serde_json::json!({
         "kind": "nurbs", "degree": 1,
@@ -1417,7 +1434,8 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     let mut nonrational = wire;
     nonrational.as_object_mut().unwrap().remove("weights");
     nonrational.as_object_mut().unwrap().remove("periodic");
-    let SketchGeometry::Nurbs { curve } = serde_json::from_value(nonrational).unwrap() else {
+    let geometry = serde_json::from_value::<SketchGeometry>(nonrational).unwrap();
+    let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         panic!("NURBS geometry");
     };
     assert!(curve.weights().is_none());
@@ -1617,5 +1635,145 @@ fn coordinate_locus_distinctness_is_checked_at_admission() {
             serde_json::from_value::<SketchConstraintDefinition>(wire).unwrap(),
             definition
         );
+    }
+}
+
+#[test]
+fn planar_geometry_admission_checks_each_numeric_family() {
+    use crate::features::{Angle, Length};
+    use crate::math::Point2;
+    use crate::sketches::{SketchGeometry, SketchGeometryDefinition as Definition};
+
+    let point = Point2::new(0.0, 0.0);
+    let bad_point = Point2::new(f64::INFINITY, 0.0);
+    for definition in [
+        Definition::Point {
+            position: bad_point,
+        },
+        Definition::Line {
+            start: point,
+            end: bad_point,
+        },
+        Definition::ReferenceLine {
+            origin: point,
+            direction: Point2::new(f64::EPSILON, 0.0),
+        },
+        Definition::Circle {
+            center: point,
+            radius: Length(0.0),
+        },
+        Definition::Arc {
+            center: point,
+            radius: Length(1.0),
+            start_angle: Angle(f64::NAN),
+            end_angle: Angle(0.0),
+        },
+        Definition::Ellipse {
+            center: point,
+            major_angle: Angle(0.0),
+            major_radius: Length(1.0),
+            minor_radius: Length(2.0),
+            bounds: None,
+        },
+        Definition::Hyperbola {
+            center: point,
+            major_angle: Angle(0.0),
+            major_radius: Length(1.0),
+            minor_radius: Length(2.0),
+            bounds: Some([0.0, f64::INFINITY]),
+        },
+        Definition::Parabola {
+            vertex: point,
+            axis_angle: Angle(0.0),
+            focal_length: Length(-1.0),
+            bounds: None,
+        },
+    ] {
+        assert!(SketchGeometry::try_from(definition).is_err());
+    }
+    for wire in [
+        serde_json::json!({"kind":"point","position":{"u":null,"v":0.0}}),
+        serde_json::json!({"kind":"line","start":{"u":0.0,"v":0.0},"end":{"u":0.0,"v":null}}),
+        serde_json::json!({"kind":"reference_line","origin":{"u":0.0,"v":0.0},"direction":{"u":0.0,"v":0.0}}),
+        serde_json::json!({"kind":"circle","center":{"u":0.0,"v":0.0},"radius":-1.0}),
+        serde_json::json!({"kind":"arc","center":{"u":0.0,"v":0.0},"radius":0.0,"start_angle":0.0,"end_angle":0.0}),
+        serde_json::json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},"major_angle":0.0,"major_radius":1.0,"minor_radius":2.0}),
+        serde_json::json!({"kind":"hyperbola","center":{"u":0.0,"v":0.0},"major_angle":0.0,"major_radius":0.0,"minor_radius":2.0}),
+        serde_json::json!({"kind":"parabola","vertex":{"u":0.0,"v":0.0},"axis_angle":0.0,"focal_length":-1.0}),
+    ] {
+        assert!(serde_json::from_value::<SketchGeometry>(wire).is_err());
+    }
+}
+
+#[test]
+fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
+    use crate::features::Length;
+    use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
+
+    let wire = serde_json::json!({
+        "kind": "arc", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0,
+        "start_angle": -2.0, "end_angle": -2.0
+    });
+    let mut geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let original = geometry.clone();
+    assert!(geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Arc { radius, .. } = definition else {
+                panic!("arc")
+            };
+            *radius = Length(-1.0);
+        })
+        .is_err());
+    assert_eq!(geometry, original);
+    geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Arc { radius, .. } = definition else {
+                panic!("arc")
+            };
+            *radius = Length(2.0);
+        })
+        .unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap()["radius"], 2.0);
+}
+
+#[test]
+fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
+    use crate::features::Length;
+    use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
+
+    let wire = serde_json::json!({
+        "kind": "text", "text": "A", "font_family": "Arial", "font_weight": 400,
+        "height": 2.0, "width_factor": 1.0, "anchor": {"u": 0.0, "v": 0.0}, "rotation": -1.0
+    });
+    let geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for field in ["height", "width_factor", "rotation"] {
+        let mut invalid = wire.clone();
+        invalid[field] = if field == "rotation" {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!(0.0)
+        };
+        assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
+    }
+    for field in 0..4 {
+        let mut definition = geometry.clone().into_definition();
+        let SketchGeometryDefinition::Text {
+            height,
+            width_factor,
+            placement: Some(placement),
+            ..
+        } = &mut definition
+        else {
+            panic!("placed text")
+        };
+        match field {
+            0 => *height = Length(f64::INFINITY),
+            1 => *width_factor = Some(f64::NAN),
+            2 => placement.anchor.u = f64::INFINITY,
+            _ => placement.rotation.0 = f64::NAN,
+        }
+        assert!(SketchGeometry::try_from(definition).is_err());
     }
 }

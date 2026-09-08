@@ -13,8 +13,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SketchLocus, SketchPlacement,
+    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -949,9 +949,10 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
             SketchEntity::new(
                 SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id)).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(marker.id.clone()))
         })
@@ -1129,9 +1130,10 @@ fn roster_point_line_distance_materializes_one_solver_line() {
             SketchEntity::new(
                 SketchEntityId::mint(format!("synthetic:test:id#bound-point-{index}")).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
-                },
+                })
+                .unwrap(),
             )
             .with_construction(true)
             .with_native_ref(Some(format!("point-{index}")))
@@ -1208,9 +1210,8 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:2"))
         .expect("point-line solver line");
-    assert!(matches!(
-        solver_line.geometry,
-        SketchGeometry::Line { start, end }
+    assert!(matches!(*solver_line.geometry.definition(),
+        SketchGeometryDefinition::Line { start, end }
             if start == Point2::new(36.0, -5.0) && end == Point2::new(36.0, -150.0)
     ));
     let solver_line_id = solver_line.id().clone();
@@ -1279,10 +1280,11 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),
-            },
+            })
+            .unwrap(),
         )
     };
     let mut entities = vec![
@@ -1301,9 +1303,10 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#resolved-point").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(85.0, -10.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some("point-4".into())),
@@ -1403,9 +1406,8 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:1"))
         .expect("resolved point selects one solver line");
-    assert!(matches!(
-        solver_line.geometry,
-        SketchGeometry::Line { start, end }
+    assert!(matches!(*solver_line.geometry.definition(),
+        SketchGeometryDefinition::Line { start, end }
             if start == Point2::new(70.0, -20.0) && end == Point2::new(70.0, 0.0)
     ));
     let mut constraints = Vec::new();
@@ -1451,9 +1453,10 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(marker.map(str::to_owned))
     };
@@ -1568,17 +1571,14 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         .filter(|entity| entity.id().as_str().contains("dimension-point:"))
         .collect::<Vec<_>>();
     assert_eq!(solved.len(), 3);
-    assert!(matches!(
-        solved[0].geometry,
-        SketchGeometry::Point { position } if position == Point2::new(5.0, 0.0)
+    assert!(matches!(*solved[0].geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position == Point2::new(5.0, 0.0)
     ));
-    assert!(matches!(
-        solved[1].geometry,
-        SketchGeometry::Point { position } if position == Point2::new(12.0, 0.0)
+    assert!(matches!(*solved[1].geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position == Point2::new(12.0, 0.0)
     ));
-    assert!(matches!(
-        solved[2].geometry,
-        SketchGeometry::Point { position } if position == Point2::new(12.0, 0.0)
+    assert!(matches!(*solved[2].geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position == Point2::new(12.0, 0.0)
     ));
     assert_ne!(solved[0].geometry_ref, solved[1].geometry_ref);
     assert_ne!(solved[1].geometry_ref, solved[2].geometry_ref);

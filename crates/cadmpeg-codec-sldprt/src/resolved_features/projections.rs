@@ -33,7 +33,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
+use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometryDefinition};
 use cadmpeg_ir::topology::Face;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -60,7 +60,8 @@ pub(super) fn bind_circular_profile_by_dimension(
             let [entity] = profile.as_slice() else {
                 return None;
             };
-            let SketchGeometry::Circle { radius, .. } = geometry_by_entity.get(&entity.entity)?
+            let SketchGeometryDefinition::Circle { radius, .. } =
+                (geometry_by_entity.get(&entity.entity)?).definition()
             else {
                 return None;
             };

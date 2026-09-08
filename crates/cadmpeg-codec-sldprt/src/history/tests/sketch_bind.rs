@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_nested_feature_input_profile_as_a_sketch() {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SketchLocus};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometryDefinition, SketchLocus};
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
     let decoded = SldprtCodec
@@ -35,7 +35,10 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
         .model
         .sketch_entities
         .iter()
-        .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. })));
+        .all(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        )));
     assert!(decoded.ir().model.sketch_entities.iter().all(|entity| {
         entity
             .native_ref
@@ -555,7 +558,7 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
 #[test]
 fn decode_distinguishes_full_circle_sketch_geometry() {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -565,8 +568,8 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
         .unwrap();
     assert_eq!(decoded.ir().model.sketches[0].profiles[0].len(), 1);
     assert!(matches!(
-        decoded.ir().model.sketch_entities[0].geometry,
-        SketchGeometry::Circle {
+        (decoded.ir().model.sketch_entities[0].geometry).definition(),
+        SketchGeometryDefinition::Circle {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
             radius: Length(1000.0),
         }
@@ -576,7 +579,7 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
 #[test]
 fn decode_projects_full_ellipse_sketch_geometry() {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -584,21 +587,22 @@ fn decode_projects_full_ellipse_sketch_geometry() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(matches!(
-        decoded.ir().model.sketch_entities[0].geometry,
-        SketchGeometry::Ellipse {
-            center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
-            major_angle: Angle(value),
-            major_radius: Length(2000.0),
-            minor_radius: Length(1000.0),
-            bounds: None,
-        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!((decoded.ir().model.sketch_entities[0].geometry).definition(),
+            SketchGeometryDefinition::Ellipse {
+                center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
+                major_angle: Angle(value),
+                major_radius: Length(2000.0),
+                minor_radius: Length(1000.0),
+                bounds: None,
+            } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        )
+    );
 }
 
 #[test]
 fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -611,8 +615,8 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
         .model
         .sketch_entities
         .iter()
-        .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Nurbs { curve } => Some(curve),
+        .filter_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Nurbs { curve } => Some(curve),
             _ => None,
         })
         .collect::<Vec<_>>();

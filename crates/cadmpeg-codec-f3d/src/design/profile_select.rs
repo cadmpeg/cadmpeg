@@ -1035,7 +1035,7 @@ pub(crate) fn inserted_cylindrical_profile_selection(
     linear_tolerance: f64,
     angular_tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut carriers = topology
         .face_surfaces
@@ -1088,10 +1088,10 @@ pub(crate) fn inserted_cylindrical_profile_selection(
             let entity = entities
                 .iter()
                 .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
-            let SketchGeometry::Circle {
+            let SketchGeometryDefinition::Circle {
                 center: candidate_center,
                 radius: candidate_radius,
-            } = entity.geometry
+            } = *entity.geometry.definition()
             else {
                 return None;
             };
@@ -1696,7 +1696,7 @@ fn resolved_selection_member_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<Point3>> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let SketchRelationOperand::Point {
         record_index,
@@ -1709,10 +1709,11 @@ fn resolved_selection_member_points(
         || neutral_sketch_record_id(&sketch.id, *record_index),
         |persistent_id| neutral_sketch_point_id(&sketch.id, persistent_id),
     )?;
-    let SketchGeometry::Point { position } = &entities
+    let SketchGeometryDefinition::Point { position } = (&entities
         .iter()
         .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
-        .geometry
+        .geometry)
+        .definition()
     else {
         return None;
     };
@@ -1841,7 +1842,7 @@ fn resolve_entity_selection_path(
     resolution: &EntitySelectionPathResolution<'_>,
 ) -> Option<cadmpeg_ir::features::PathRef> {
     use cadmpeg_ir::features::PathRef;
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if group.members.is_empty() {
         return None;
@@ -1973,7 +1974,10 @@ fn resolve_entity_selection_path(
         !resolution.sketch_entities.iter().any(|entity| {
             entity.sketch == sketch
                 && entity.id() == curve
-                && !matches!(entity.geometry, SketchGeometry::Point { .. })
+                && !matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
     }) {
         return None;

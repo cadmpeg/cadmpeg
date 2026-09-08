@@ -3,8 +3,8 @@
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
-    SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchPlacement,
 };
 
 fn sketch(id: &SketchId, entity: &SketchEntityId) -> Sketch {
@@ -26,10 +26,11 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
     SketchEntity::new(
         id.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(end[0], end[1]),
-        },
+        })
+        .unwrap(),
     )
 }
 

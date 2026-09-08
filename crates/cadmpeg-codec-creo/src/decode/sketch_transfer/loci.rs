@@ -21,7 +21,8 @@ use crate::decode::sketch_transfer::profiles::{
 use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{
-    SketchCoordinateAxis, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    SketchCoordinateAxis, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchLocus,
 };
 use std::collections::BTreeMap;
 
@@ -464,7 +465,12 @@ pub(in super::super) fn section_skamp_incidence_locus(
         };
         geometry?
             .get(&entity)
-            .is_some_and(|geometry| matches!(geometry, SketchGeometry::Native { .. }))
+            .is_some_and(|geometry| {
+                matches!(
+                    geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
+            })
             .then_some(locus)
     })
 }
@@ -525,9 +531,12 @@ pub(in super::super) fn section_skamp_oriented_line(
         }
     });
     (line_role_evidence
-        && geometry?
-            .get(&entity)
-            .is_some_and(|geometry| matches!(geometry, SketchGeometry::Native { .. })))
+        && geometry?.get(&entity).is_some_and(|geometry| {
+            matches!(
+                geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        }))
     .then_some(entity)
 }
 

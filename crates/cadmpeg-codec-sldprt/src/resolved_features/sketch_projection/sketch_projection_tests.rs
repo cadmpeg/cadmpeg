@@ -5,7 +5,7 @@ use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 #[test]
 fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
@@ -14,7 +14,7 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(format!("native:{offset}")))
     };
@@ -25,9 +25,10 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
-            SketchGeometry::Native {
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("native:400".into()))
         .with_endpoint_refs(vec!["native:100".into(), "native:300".into()]),
@@ -37,12 +38,13 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
 
     assert_eq!(
         entities[3].geometry,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        }
+        })
+        .unwrap()
     );
 }
 
@@ -125,7 +127,7 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(format!("model:{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
@@ -147,35 +149,39 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         point("synthetic:test:id#right-bottom", Point2::new(2.0, -1.0)),
         curve(
             "top",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(2.0, 1.0),
-            },
+            })
+            .unwrap(),
             &["left-top", "right-top"],
         ),
         curve(
             "bottom",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, -1.0),
                 end: Point2::new(2.0, -1.0),
-            },
+            })
+            .unwrap(),
             &["left-bottom", "right-bottom"],
         ),
         curve(
             "right",
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(2.0, 0.0),
                 radius: Length(1.0),
                 start_angle: Angle(std::f64::consts::FRAC_PI_2),
                 end_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            },
+            })
+            .unwrap(),
             &["right-top", "right-bottom"],
         ),
         curve(
             "left",
-            SketchGeometry::Native {
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            })
+            .unwrap(),
             &[],
         ),
     ];
@@ -186,9 +192,8 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         entities[9].endpoint_refs,
         ["left-top".to_string(), "left-bottom".to_string()]
     );
-    assert!(matches!(
-        entities[9].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[9].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center,
             radius: Length(radius),
             ..

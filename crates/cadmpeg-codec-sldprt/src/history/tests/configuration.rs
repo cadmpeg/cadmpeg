@@ -230,8 +230,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         FeatureDefinition,
     };
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-        SpatialSketch, SpatialSketchId,
+        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+        SketchGeometryDefinition, SketchId, SpatialSketch, SpatialSketchId,
     };
 
     let native_feature = feature("sketch-native", Some("7"), 0);
@@ -300,10 +300,11 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#configuration-line").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
                 end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("line-marker".into())),
     );
