@@ -39,14 +39,12 @@ fn pcurve_endpoint_slots_must_be_finite() {
         value: f64::NAN,
         raw: nan.to_vec(),
         offset: 0,
-        length: nan.len(),
     });
     for offset in nan.len()..record.body.len() {
         record.scalar_tokens.push(CurveParameterScalar {
             value: 0.0,
             raw: vec![0x0f],
             offset,
-            length: 1,
         });
     }
     let topology = CurveTopologyRow {
@@ -158,12 +156,7 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     for (value, raw) in token_specs {
         let offset = body.len();
         body.extend_from_slice(&raw);
-        scalar_tokens.push(CurveParameterScalar {
-            value,
-            raw,
-            offset,
-            length: body.len() - offset,
-        });
+        scalar_tokens.push(CurveParameterScalar { value, raw, offset });
     }
     body.extend_from_slice(&[0x34, 0xb0, 0x00]);
     let record = CurveParameterRecord {
@@ -173,12 +166,10 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
             CurveParameterOpaqueSpan {
                 raw: vec![0xfc, 0x02],
                 offset: 0,
-                length: 2,
             },
             CurveParameterOpaqueSpan {
                 raw: vec![0x34, 0xb0, 0x00],
                 offset: body.len() - 3,
-                length: 3,
             },
         ],
         body,

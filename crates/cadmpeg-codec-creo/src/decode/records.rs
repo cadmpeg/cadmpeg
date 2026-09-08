@@ -1832,7 +1832,7 @@ pub(super) fn curve_parameter_records(
                     value: token.value,
                     raw: token.raw.clone(),
                     offset: token.offset,
-                    length: token.length,
+                    length: token.raw.len(),
                 })
                 .collect(),
             skipped_references: record.skipped_references(),
@@ -1851,7 +1851,7 @@ pub(super) fn curve_parameter_records(
                 .map(|span| CreoCurveParameterOpaqueSpan {
                     raw: span.raw.clone(),
                     offset: span.offset,
-                    length: span.length,
+                    length: span.raw.len(),
                 })
                 .collect(),
             reference_geometry: record.reference_geometry,
@@ -1897,7 +1897,7 @@ pub(super) fn cross_section_curve_row_records(
                     value: token.value,
                     raw: token.raw.clone(),
                     offset: token.offset,
-                    length: token.length,
+                    length: token.raw.len(),
                 })
                 .collect(),
             references: row
@@ -1915,7 +1915,7 @@ pub(super) fn cross_section_curve_row_records(
                 .map(|span| CreoCurveParameterOpaqueSpan {
                     raw: span.raw.clone(),
                     offset: span.offset,
-                    length: span.length,
+                    length: span.raw.len(),
                 })
                 .collect(),
             offset: row.offset,
