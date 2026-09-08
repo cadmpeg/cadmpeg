@@ -1,11 +1,23 @@
 //! Checked trim-handle partitions and primitive expansion.
 
-#[derive(Debug, Clone, PartialEq)]
+use std::sync::OnceLock;
+
+#[derive(Debug, Clone)]
 pub(crate) struct TrimPacket {
     independent_count: usize,
     strip_lengths: Vec<usize>,
     fan_lengths: Vec<usize>,
     handles: Vec<u32>,
+    triangles: OnceLock<Vec<[u32; 3]>>,
+}
+
+impl PartialEq for TrimPacket {
+    fn eq(&self, other: &Self) -> bool {
+        self.independent_count == other.independent_count
+            && self.strip_lengths == other.strip_lengths
+            && self.fan_lengths == other.fan_lengths
+            && self.handles == other.handles
+    }
 }
 
 impl TryFrom<(usize, Vec<usize>, Vec<usize>, Vec<u32>)> for TrimPacket {
@@ -33,6 +45,7 @@ impl TryFrom<(usize, Vec<usize>, Vec<usize>, Vec<u32>)> for TrimPacket {
             strip_lengths,
             fan_lengths,
             handles,
+            triangles: OnceLock::new(),
         })
     }
 }
@@ -57,7 +70,11 @@ impl TrimPacket {
         &self.fan_lengths
     }
 
-    pub(crate) fn triangles(&self) -> Vec<[u32; 3]> {
+    pub(crate) fn triangles(&self) -> &[[u32; 3]] {
+        self.triangles.get_or_init(|| self.expand_triangles())
+    }
+
+    fn expand_triangles(&self) -> Vec<[u32; 3]> {
         let mut triangles = Vec::new();
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
         for triple in independent.chunks_exact(3) {
@@ -95,6 +112,21 @@ mod tests {
         assert!(TrimPacket::try_from((0, vec![usize::MAX], vec![1], vec![])).is_err());
         assert!(TrimPacket::try_from((1, vec![], vec![], vec![0, 1])).is_err());
         assert!(TrimPacket::try_from((0, vec![1], vec![], vec![0, 1])).is_err());
+    }
+
+    #[test]
+    fn packet_reuses_expansion_without_changing_equality() {
+        let packet = TrimPacket::try_from((1, vec![4], vec![4], (0..11).collect()))
+            .expect("complete trim handle partition");
+        let cold = packet.clone();
+        assert!(packet.triangles.get().is_none());
+        let first = packet.triangles();
+        assert_eq!(first.len(), 5);
+        assert!(std::ptr::eq(first, packet.triangles()));
+        assert!(std::ptr::eq(first, packet.triangles()));
+        assert!(packet.triangles.get().is_some());
+        assert!(cold.triangles.get().is_none());
+        assert_eq!(packet, cold);
     }
 
     #[test]

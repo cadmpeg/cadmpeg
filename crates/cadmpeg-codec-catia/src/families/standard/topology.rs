@@ -1007,7 +1007,7 @@ pub(crate) fn reconstruct(
     let mut union = UnionFind::new(edge_rows.len() * 2);
     let mut faces = Vec::with_capacity(trims.len());
     for trim in trims {
-        let cycles = boundary_cycles(&trim.packet.triangles())?;
+        let cycles = boundary_cycles(trim.packet.triangles())?;
         let mut boundaries = Vec::with_capacity(cycles.len());
         for cycle in cycles {
             boundaries.push(cover_cycle(&cycle, &edge_rows, &mut union)?);
