@@ -1811,7 +1811,7 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         findings,
         data.protein_assets
             .iter()
-            .map(|record| (record.entry_name.as_str(), record.ordinal)),
+            .map(|record| (record.entry_name.as_str(), record.ordinal())),
         "Protein decoded-record position",
     );
     let entry_names = data
@@ -1821,10 +1821,7 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
     for asset in &data.protein_assets {
-        if asset.ordinal != asset.asset.ordinal
-            || !asset.entry_name.ends_with("InstanceProperties.bin")
-            || !entry_names.contains(asset.entry_name.as_str())
-        {
+        if !entry_names.contains(asset.entry_name.as_str()) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor Protein asset position is inconsistent or does not resolve to a package entry"
@@ -1859,12 +1856,10 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
     let accepted_positions = data
         .protein_assets
         .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .map(|record| (record.entry_name.as_str(), record.ordinal()))
         .collect::<HashSet<_>>();
     for rejection in &data.protein_rejections {
-        if rejection.detail.is_empty()
-            || !rejection.entry_name.ends_with("InstanceProperties.bin")
-            || !entry_names.contains(rejection.entry_name.as_str())
+        if !entry_names.contains(rejection.entry_name.as_str())
             || accepted_positions.contains(&(rejection.entry_name.as_str(), rejection.ordinal))
         {
             findings.push(finding(
@@ -1882,7 +1877,7 @@ fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Findin
     for (entry_name, ordinal) in data
         .protein_assets
         .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .map(|record| (record.entry_name.as_str(), record.ordinal()))
         .chain(
             data.protein_rejections
                 .iter()
