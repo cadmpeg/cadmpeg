@@ -6486,12 +6486,12 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
         return None;
     }
     let byte_1 = prefix.wrapping_sub(0x8b);
-    let mut raw = [0; 8];
-    raw[0] = if byte_1 >= 0x80 { 0x3f } else { 0x40 };
-    raw[1] = byte_1;
-    raw[2..].copy_from_slice(&body[offset + 1..offset + 7]);
-    // Computed IEEE bytes 0..1 plus six file bytes; not a contiguous window.
-    Some((f64::from_be_bytes(raw), offset + 7))
+    scalar::ieee7_with_prefix(
+        body,
+        offset,
+        if byte_1 >= 0x80 { 0x3f } else { 0x40 },
+        byte_1,
+    )
 }
 
 /// Validate FC05 point lanes against their exact circle identity.

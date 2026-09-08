@@ -17,7 +17,7 @@ header both marker lines carry the ``//! `` prefix.
 either the current render or it is stale. This retires the honour-system proof
 criterion "This document matches the code and tests" for the score tables.
 
-Run ``--self-test`` to execute ``scripts/test_render_format_support.py``.
+Run ``python3 -m unittest discover -q -s scripts -p test_render_format_support.py`` for checker tests.
 
 Exit codes: 0 clean, 1 a committed file is stale (``--check``), 2 a structural
 error in the registries, the target map, or a target file.
@@ -44,7 +44,6 @@ IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
 LADDER_REL = Path("docs") / "format-support.md"
 README_REL = Path("README.md")
-SELF_TEST_REL = Path("scripts") / "test_render_format_support.py"
 
 # Where the ladder document lives for a reader outside the repository. The
 # crate READMEs and the rustdoc headers ship to crates.io and docs.rs, so their
@@ -367,17 +366,6 @@ def write(root: Path) -> list[Path]:
     return written
 
 
-def self_test() -> int:
-    import unittest
-
-    suite = unittest.defaultTestLoader.discover(
-        start_dir=str(ROOT / "scripts"),
-        pattern=SELF_TEST_REL.name,
-        top_level_dir=str(ROOT / "scripts"),
-    )
-    return 0 if unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful() else 1
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -392,14 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="compare every committed target to a fresh render, byte for byte",
     )
-    parser.add_argument(
-        "--self-test",
-        action="store_true",
-        help="run the renderer's own suite instead of rendering",
-    )
     args = parser.parse_args(argv)
-    if args.self_test:
-        return self_test()
 
     root = args.root.resolve()
     try:

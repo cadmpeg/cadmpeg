@@ -1,5 +1,0 @@
-# Public API baseline header. Snapshots under docs/api-baseline/ are the change
-# record; this file carries no per-change rows.
-baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
-api_baseline_dir = "docs/api-baseline"
-measured_at = "5bc6b3e0f516317462923cc515ce52672ecc8d7a"

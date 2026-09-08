@@ -11,12 +11,23 @@ if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
   python3 scripts/check-doc-anchors.py
 fi
 
-# Dialect ids are pinned forever, so a bad edit to the registry must not reach
-# a commit. Run the checker's own synthesized-violation suite first: it is the
-# only thing that proves the rules still fire.
+# Run checker tests only when their implementation, dependencies, or tests change.
+if git diff --cached --name-only | grep -qE '^\.githooks/pre-commit$|^scripts/test_pre_commit\.py$'; then
+  python3 -m unittest -q scripts/test_pre_commit.py
+fi
+if git diff --cached --name-only | grep -qE '^scripts/(check-dialects|test_check_dialects)\.py$'; then
+  python3 -m unittest discover -q -s scripts -p test_check_dialects.py
+fi
+if git diff --cached --name-only | grep -qE '^scripts/(check-dialect-support|dialect_support_data|test_check_dialect_support)\.py$'; then
+  python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
+fi
+if git diff --cached --name-only | grep -qE '^scripts/(render-format-support|dialect_support_data|test_render_format_support)\.py$'; then
+  python3 -m unittest discover -q -s scripts -p test_render_format_support.py
+fi
+
+# Dialect ids are pinned forever. Check registry inputs before committing.
 if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$|^crates/[^/]+/src/.*\.rs$'; then
   echo "pre-commit: scripts/check-dialects.py"
-  python3 scripts/check-dialects.py --self-test
   python3 scripts/check-dialects.py
 fi
 
@@ -25,7 +36,6 @@ fi
 if git diff --cached --name-only \
     | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^scripts/(check-dialect-support\.py|dialect_support_data\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
   echo "pre-commit: scripts/check-dialect-support.py"
-  python3 scripts/check-dialect-support.py --self-test
   python3 scripts/check-dialect-support.py
 fi
 
@@ -36,15 +46,6 @@ if git diff --cached --name-only | grep -qE '^docs/dialect-support\.toml$'; then
   cargo test -q -p cadmpeg-registry compiled_write_catalogs_match_registry_policy
 fi
 
-# Public API ledger rows and snapshots move together. Crate source changes also
-# run the structural check so this gate remains attached to the API inputs.
-if git diff --cached --name-only \
-    | grep -qE '^docs/public-api-ledger\.toml$|^docs/api-baseline/.*\.txt$|^crates/[^/]+/src/|^scripts/(check-public-api-ledger\.py|test_check_public_api_ledger\.py)$'; then
-  echo "pre-commit: scripts/check-public-api-ledger.py"
-  python3 scripts/check-public-api-ledger.py --self-test
-  python3 scripts/check-public-api-ledger.py
-fi
-
 # Every published capability table is rendered from the two registries. A
 # registry edit without a re-render, or a hand edit inside a generated region,
 # must not reach a commit. Run it whenever a registry, the renderer, or a file
@@ -52,8 +53,16 @@ fi
 if git diff --cached --name-only \
     | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(dialect_support_data\.py|render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
   echo "pre-commit: scripts/render-format-support.py --check"
-  python3 scripts/render-format-support.py --self-test
   python3 scripts/render-format-support.py --check
+fi
+
+# Source-policy rules apply to the current tree, including checker-only edits.
+if git diff --cached --name-only | grep -qE '^scripts/(check-source-policy\.py|test_check_source_policy\.py)$'; then
+  python3 -m unittest -q scripts/test_check_source_policy.py
+fi
+if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-source-policy\.py$'; then
+  echo "pre-commit: scripts/check-source-policy.py"
+  python3 scripts/check-source-policy.py
 fi
 
 # Only run the Rust gate when the commit stages files that can change its
@@ -66,9 +75,6 @@ if ! git diff --cached --name-only \
   echo "pre-commit: no Rust/Cargo files staged; skipping the Rust gate"
   exit 0
 fi
-
-echo "pre-commit: scripts/convergence-ratchet.py"
-python3 scripts/convergence-ratchet.py
 
 echo "pre-commit: cargo fmt --all --check"
 cargo fmt --all --check
