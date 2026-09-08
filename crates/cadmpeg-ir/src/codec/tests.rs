@@ -16,7 +16,7 @@ use super::*;
 fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
-        body: DecodeBody::new(true),
+        body: DecodeBody::new(crate::report::DecodeTransfer::full(true)),
         source_fidelity: SourceFidelity::default(),
     }
 }
@@ -241,7 +241,7 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 
 #[test]
 fn a_decode_result_keeps_the_body_it_was_given() {
-    let mut body = DecodeBody::new(false);
+    let mut body = DecodeBody::new(crate::report::DecodeTransfer::full(false));
     body.notes.push("kept".into());
     body.coverage.record(crate::CoverageKey::new("entities"), 3);
     let result = DecodeResult::new(
@@ -261,4 +261,24 @@ fn a_decode_result_keeps_the_body_it_was_given() {
 
 fn dialect_layer(id: &'static str) -> DialectMatch {
     DialectMatch::admitted(DialectId::pinned(id))
+}
+
+#[test]
+fn wrapper_stamps_request_scope_for_each_backend_transfer() {
+    for transfer in [
+        crate::report::DecodeTransfer::ContainerOnly,
+        crate::report::DecodeTransfer::full(false),
+        crate::report::DecodeTransfer::full(true),
+    ] {
+        for container_only in [false, true] {
+            let mut decoded = decoded(unit_cube());
+            decoded.body.transfer = transfer;
+            let result = DecodeResult::new(decoded, FormatId::new("test"), container_only);
+            assert_eq!(result.report().container_only(), container_only);
+            assert_eq!(
+                result.report().geometry_transferred(),
+                !container_only && transfer.geometry_transferred()
+            );
+        }
+    }
 }

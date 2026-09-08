@@ -2189,8 +2189,11 @@ impl<'a> F3dDecodeSession<'a> {
             mut admitted_entities,
             report_scope,
         } = session_state;
-        let mut report =
-            crate::report::build_decode_report(scan, false, true, geometry_losses(&brep));
+        let mut report = crate::report::build_decode_report(
+            scan,
+            cadmpeg_ir::report::DecodeTransfer::full(true),
+            geometry_losses(&brep),
+        );
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2264,7 +2267,11 @@ impl<'a> F3dDecodeSession<'a> {
             native: F3dNative::default(),
             ir,
             source_attributes,
-            report: crate::report::build_decode_report(scan, false, false, container_losses(scan)),
+            report: crate::report::build_decode_report(
+                scan,
+                cadmpeg_ir::report::DecodeTransfer::full(false),
+                container_losses(scan),
+            ),
             report_scope,
             unknowns,
             admitted_entities,
@@ -3028,8 +3035,11 @@ fn decode_scanned_document<'a>(
         annotate_docstruct(&mut source_attributes, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(scan);
-        let mut report =
-            crate::report::build_decode_report(scan, true, false, container_losses(scan));
+        let mut report = crate::report::build_decode_report(
+            scan,
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly,
+            container_losses(scan),
+        );
         if let Ok(Some(table)) = crate::xref::decode(scan) {
             apply_assembly_classification(&mut report, scan, &table);
         }
@@ -3653,7 +3663,7 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan,
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.geometry_transferred = true;
+    report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
     report
         .losses
         .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
@@ -3689,7 +3699,7 @@ pub(crate) fn apply_bodyless_design_classification(
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.geometry_transferred = true;
+    report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
     let message = match (sketch_entities, reference_images) {
         (0, reference_images) => format!(
             "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"

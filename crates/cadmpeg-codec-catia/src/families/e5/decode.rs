@@ -263,7 +263,7 @@ pub(crate) fn try_decode_e5(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            geometry_transferred: true,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage: cadmpeg_ir::Coverage::default(),
             losses,
             notes: Vec::new(),

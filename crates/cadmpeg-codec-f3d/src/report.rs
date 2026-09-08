@@ -24,17 +24,16 @@ pub(crate) enum ReportScope {
 /// the document, by [`classify_document`].
 pub(crate) fn build_decode_report(
     scan: &ContainerScan<'_>,
-    container_only: bool,
-    geometry_transferred: bool,
+    transfer: cadmpeg_ir::report::DecodeTransfer,
     losses: Vec<LossNote>,
 ) -> DecodeBody {
     DecodeBody {
-        geometry_transferred,
+        transfer,
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: crate::container::summary_notes(
             scan,
-            if container_only {
+            if transfer.container_only() {
                 crate::container::SummaryScope::ContainerOnly
             } else {
                 crate::container::SummaryScope::FullDecode
@@ -96,7 +95,11 @@ mod tests {
         let mut scan = crate::container::scan(&ctx, root).unwrap();
         scan.breps.push(scan.breps[0].clone());
 
-        let mut report = build_decode_report(&scan, false, true, Vec::new());
+        let mut report = build_decode_report(
+            &scan,
+            cadmpeg_ir::report::DecodeTransfer::full(true),
+            Vec::new(),
+        );
         let source =
             classify_document(&scan, ReportScope::Standalone, BTreeMap::new(), &mut report);
         assert!(source.dialects().is_some());
