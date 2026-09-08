@@ -1554,7 +1554,7 @@ impl ValueKind<NumericPayload<Real>> {
         token: "real",
         payload: std::marker::PhantomData,
     };
-    /// Identity token for type_6 values.
+    /// Identity token for `type_6` values.
     pub const TYPE6: Self = Self {
         token: "type_6",
         payload: std::marker::PhantomData,
@@ -1562,22 +1562,22 @@ impl ValueKind<NumericPayload<Real>> {
 }
 
 impl ValueKind<NumericPayload<u32>> {
-    /// Identity token for type_5 values.
+    /// Identity token for `type_5` values.
     pub const TYPE5: Self = Self {
         token: "type_5",
         payload: std::marker::PhantomData,
     };
-    /// Identity token for type_7 values.
+    /// Identity token for `type_7` values.
     pub const TYPE7: Self = Self {
         token: "type_7",
         payload: std::marker::PhantomData,
     };
-    /// Identity token for type_9 values.
+    /// Identity token for `type_9` values.
     pub const TYPE9: Self = Self {
         token: "type_9",
         payload: std::marker::PhantomData,
     };
-    /// Identity token for type_11 values.
+    /// Identity token for `type_11` values.
     pub const TYPE11: Self = Self {
         token: "type_11",
         payload: std::marker::PhantomData,
@@ -1593,12 +1593,12 @@ impl ValueKind<StringPayload> {
 }
 
 impl ValueKind<StringValue> {
-    /// Identity token for type_3 values.
+    /// Identity token for `type_3` values.
     pub const TYPE3: Self = Self {
         token: "type_3",
         payload: std::marker::PhantomData,
     };
-    /// Identity token for type_4 values.
+    /// Identity token for `type_4` values.
     pub const TYPE4: Self = Self {
         token: "type_4",
         payload: std::marker::PhantomData,
