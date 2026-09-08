@@ -7905,14 +7905,13 @@ pub fn feature_block_dimensions(
                 .collect::<Option<Vec<_>>>()?
                 .try_into()
                 .ok()?;
-            if resolved[0].0.source_table.is_empty()
-                || resolved
-                    .iter()
-                    .zip(run)
-                    .any(|((expression, _), declaration)| {
-                        expression.source_entry != declaration.source_entry
-                            || expression.source_table != resolved[0].0.source_table
-                    })
+            if resolved
+                .iter()
+                .zip(run)
+                .any(|((expression, _), declaration)| {
+                    expression.source_entry != declaration.source_entry
+                        || expression.source_table != resolved[0].0.source_table
+                })
             {
                 return None;
             }

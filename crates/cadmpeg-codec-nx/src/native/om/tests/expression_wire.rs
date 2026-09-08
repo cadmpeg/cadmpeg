@@ -56,3 +56,18 @@ fn expression_owner_requires_record_for_persistent_identity() {
     assert!(expression.owner.is_none());
     assert_eq!(serde_json::to_value(expression).unwrap(), wire);
 }
+
+#[test]
+fn expression_requires_nonempty_source_table() {
+    let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
+    wire["source_table"] = "".into();
+    assert!(serde_json::from_value::<Expression>(wire.clone())
+        .unwrap_err()
+        .to_string()
+        .contains("source_table"));
+    wire.as_object_mut().unwrap().remove("source_table");
+    assert!(serde_json::from_value::<Expression>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("source_table"));
+}

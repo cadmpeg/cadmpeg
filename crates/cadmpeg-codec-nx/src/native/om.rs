@@ -662,8 +662,7 @@ pub struct Expression {
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Self-contained expression table selected by the nearest preceding table marker.
-    #[serde(default)]
-    pub source_table: String,
+    pub source_table: cadmpeg_ir::NonEmptyString,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
 }
@@ -724,7 +723,7 @@ impl From<Expression> for ExpressionWire {
             expression: value.expression,
             value: value.value,
             source_entry: value.source_entry,
-            source_table: value.source_table,
+            source_table: value.source_table.as_str().to_owned(),
             source_offset: value.source_offset,
         }
     }
@@ -751,7 +750,8 @@ impl TryFrom<ExpressionWire> for Expression {
             expression: wire.expression,
             value: wire.value,
             source_entry: wire.source_entry,
-            source_table: wire.source_table,
+            source_table: cadmpeg_ir::NonEmptyString::new(wire.source_table)
+                .ok_or("source_table must not be empty")?,
             source_offset: wire.source_offset,
         })
     }
@@ -3976,6 +3976,11 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     Some(declaration.id.clone())
                 });
             let value = expression.constant_value();
+            let Some(source_table) = cadmpeg_ir::NonEmptyString::new(format!(
+                "nx:om-entry-{entry_index}:expression-table#{table_offset}"
+            )) else {
+                continue;
+            };
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
                 owner: indexed_record
@@ -3991,7 +3996,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 expression: expression.expression.to_string(),
                 value,
                 source_entry: entry.name.clone(),
-                source_table: format!("nx:om-entry-{entry_index}:expression-table#{table_offset}"),
+                source_table,
                 source_offset: entry_offset + expression.offset as u64,
             });
         }
@@ -4000,20 +4005,12 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
     expressions
 }
 
-fn expression_scope(expression: &Expression) -> &str {
-    if expression.source_table.is_empty() {
-        &expression.source_entry
-    } else {
-        &expression.source_table
-    }
-}
-
 pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts
             .entry((
-                expression_scope(expression).to_string(),
+                expression.source_table.as_str().to_string(),
                 expression.name.as_str().to_string(),
                 expression.unit.clone(),
             ))
@@ -4022,7 +4019,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     let mut values = BTreeMap::<(String, String, ExpressionUnit), f64>::new();
     for expression in expressions.iter_mut() {
         let key = (
-            expression_scope(expression).to_string(),
+            expression.source_table.as_str().to_string(),
             expression.name.as_str().to_string(),
             expression.unit.clone(),
         );
@@ -4042,7 +4039,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             .filter(|expression| expression.value.is_none())
         {
             let expression_key = (
-                expression_scope(expression).to_string(),
+                expression.source_table.as_str().to_string(),
                 expression.name.as_str().to_string(),
                 expression.unit.clone(),
             );
@@ -4051,7 +4048,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             }
             let evaluated = evaluate_parameterized_expression(&expression.expression, |name| {
                 let key = (
-                    expression_scope(expression).to_string(),
+                    expression.source_table.as_str().to_string(),
                     name.to_string(),
                     expression.unit.clone(),
                 );
@@ -4137,7 +4134,7 @@ mod tests {
             expression: formula.into(),
             value,
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4163,7 +4160,7 @@ mod tests {
             expression: formula.into(),
             value,
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4190,7 +4187,7 @@ mod tests {
             expression: formula.into(),
             value,
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4217,7 +4214,7 @@ mod tests {
                 expression: formula.into(),
                 value,
                 source_entry: "part".into(),
-                source_table: table.into(),
+                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset: 0,
             };
         let mut expressions = vec![
@@ -4245,7 +4242,7 @@ mod tests {
                 expression: formula.into(),
                 value,
                 source_entry: "part".into(),
-                source_table: table.into(),
+                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset: 0,
             };
         let mut expressions = vec![
@@ -4278,7 +4275,7 @@ mod tests {
                     expression: formula.into(),
                     value,
                     source_entry: "part".into(),
-                    source_table: "table".into(),
+                    source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
                     source_offset: 0,
                 }
             };
@@ -4332,7 +4329,7 @@ mod tests {
             expression: text.into(),
             value,
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: u64::from(key),
         };
         let expressions = [
@@ -4368,7 +4365,7 @@ mod tests {
             expression: text.into(),
             value: None,
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: u64::from(key),
         };
         let expressions = [
@@ -4401,7 +4398,7 @@ mod tests {
                 expression: text.into(),
                 value,
                 source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: "table".into(),
+                source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
                 source_offset: u64::from(key),
             }
         };
@@ -4483,7 +4480,7 @@ mod tests {
                 expression: text.into(),
                 value: None,
                 source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: table.into(),
+                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset,
             };
         let expressions = [
@@ -4589,7 +4586,7 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset,
         };
         let expressions = [
@@ -4638,7 +4635,7 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset,
         };
         let expressions = [
@@ -4733,7 +4730,7 @@ mod tests {
             expression: "5".to_string(),
             value: Some(5.0),
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 20,
         };
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -4766,7 +4763,7 @@ mod tests {
             expression: "5".to_string(),
             value: Some(5.0),
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 10,
         };
         let parameter_use = |id: &str, operation: &str, source_offset| {
@@ -4815,7 +4812,7 @@ mod tests {
             expression: "5".to_string(),
             value: Some(5.0),
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 20,
         };
         let parameter_use = crate::native::features::FeatureParameterUse {
@@ -4900,7 +4897,7 @@ mod tests {
             expression: "12".to_string(),
             value: Some(12.0),
             source_entry: "/Root/UG_PART/UG_PART".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
             source_offset: 900,
         };
         let bindings = crate::native::features::feature_parameter_bindings(
@@ -5209,6 +5206,7 @@ mod tests {
         assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
         assert!(expressions[0]
             .source_table
+            .as_str()
             .starts_with("nx:om-entry-0:expression-table#"));
         let declarations = result
             .ir()
