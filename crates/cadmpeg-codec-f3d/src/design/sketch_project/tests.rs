@@ -1050,49 +1050,38 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &entities,
     );
     assert!(matches!(
-        constraints.first(),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities },
-            ..
-        }) if entities == &[
+        constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0).unwrap(),
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0).unwrap(),
         ]
     ));
     assert!(matches!(
-        constraints.get(1),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Midpoint { .. },
-            ..
-        })
+        constraints
+            .get(1)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
-        constraints.get(2),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident { .. },
-            ..
-        })
+        constraints
+            .get(2)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        constraints.get(3),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelToDirection {
+        constraints.get(3).map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelToDirection {
                 entity,
                 direction,
-            },
-            ..
-        }) if entity == &crate::ids::neutral_spatial_sketch_curve_id(
+            }) if entity == &crate::ids::neutral_spatial_sketch_curve_id(
             &sketches[0].id,
             7,
             0,
         ).unwrap() && direction == &Vector3::new(0.0, 1.0, 0.0)
     ));
     assert!(matches!(
-        constraints.get(4),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface { .. },
-            ..
-        })
+        constraints
+            .get(4)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointOnSurface { .. })
     ));
     assert!(entities
         .iter()

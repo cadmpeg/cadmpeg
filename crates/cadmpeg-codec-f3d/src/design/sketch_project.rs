@@ -705,7 +705,7 @@ pub fn project_spatial_sketch_constraints(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraint, SpatialSketchConstraintDefinition as Definition,
+        SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput as Definition,
         SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
@@ -936,7 +936,10 @@ pub fn project_spatial_sketch_constraints(
             Some(SpatialSketchConstraint {
                 id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
                 sketch: sketch.clone(),
-                definition,
+                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                    definition,
+                )
+                .ok()?,
                 native_ref: Some(relation.id.clone()),
             })
         })

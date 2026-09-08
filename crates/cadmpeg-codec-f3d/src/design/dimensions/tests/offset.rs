@@ -498,7 +498,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .expect("counted spatial offset");
     assert!(matches!(
         definition,
-        SpatialSketchConstraintDefinition::Offset {
+        SpatialSketchConstraintDefinitionInput::Offset {
             sources: actual_sources,
             results: actual_results,
             normal,

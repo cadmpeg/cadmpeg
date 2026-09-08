@@ -6,8 +6,9 @@ use super::*;
 use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchGeometry,
-    SketchGeometryDefinition, SketchLocus, SpatialSketchConstraintDefinition as SpatialConstraint,
-    SpatialSketchGeometry, SpatialSketchGeometryDefinition,
+    SketchGeometryDefinition, SketchLocus,
+    SpatialSketchConstraintDefinitionInput as SpatialConstraint, SpatialSketchGeometry,
+    SpatialSketchGeometryDefinition,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -691,7 +692,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "spatial constraint references a missing spatial sketch",
             );
         }
-        let entities = match &constraint.definition {
+        let entities = match constraint.definition.kind() {
             SpatialConstraint::Native { .. } => Vec::new(),
             SpatialConstraint::SplineGroup { entities } => entities.clone(),
             SpatialConstraint::Coincident { first, second }
@@ -728,39 +729,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SpatialConstraint::ParallelToDirection { entity, .. } => vec![entity.clone()],
         };
-        let distinct = entities.iter().collect::<HashSet<_>>();
-        let valid_arity = match &constraint.definition {
-            SpatialConstraint::Native { .. } => true,
-            SpatialConstraint::ParallelToDirection { .. }
-            | SpatialConstraint::LineLength { .. } => entities.len() == 1,
-            SpatialConstraint::RepeatedLineLength { .. } => entities.len() >= 2,
-            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs.len() >= 2,
-            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
-                !first.is_empty() && !second.is_empty() && (first.len() > 1 || second.len() > 1)
-            }
-            SpatialConstraint::Offset {
-                sources,
-                results,
-                normal,
-                distance,
-                parameter: _,
-            } => {
-                !sources.is_empty()
-                    && !results.is_empty()
-                    && (normal.norm() - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
-                    && distance.0.is_finite()
-                    && distance.0 > 0.0
-            }
-            _ => entities.len() >= 2,
-        };
-        if !valid_arity || distinct.len() != entities.len() {
-            finding(
-                findings,
-                Check::Counts,
-                constraint.id.as_str(),
-                "invalid spatial constraint arity",
-            );
-        }
         for entity in &entities {
             if spatial_entities.get(entity) != Some(&constraint.sketch) {
                 finding(
@@ -771,7 +739,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        match &constraint.definition {
+        match constraint.definition.kind() {
             SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
                 if !matches!(
@@ -1158,7 +1126,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SpatialConstraint::ParallelToDirection { entity, direction } => {
-                let direction_norm = direction.norm();
                 let Some(SpatialSketchGeometryDefinition::Line { start, end }) = spatial_geometry
                     .get(entity)
                     .map(|geometry| geometry.definition())
@@ -1179,9 +1146,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     line.z * direction.x - line.x * direction.z,
                     line.x * direction.y - line.y * direction.x,
                 );
-                if !direction_norm.is_finite()
-                    || (direction_norm - 1.0).abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
-                    || !line_norm.is_finite()
+                if !line_norm.is_finite()
                     || line_norm <= EPS_SKETCHES_CHECK_SKETCHES_E12
                     || cross.norm() > EPS_SKETCHES_CHECK_SKETCHES_E9 * line_norm
                 {

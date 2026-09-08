@@ -270,8 +270,9 @@ pub(super) fn check_native_links(
                 });
             }
         }
-        if let crate::sketches::SpatialSketchConstraintDefinition::Native { operands, .. } =
-            &constraint.definition
+        if let crate::sketches::SpatialSketchConstraintDefinitionInput::Native {
+            operands, ..
+        } = constraint.definition.kind()
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {

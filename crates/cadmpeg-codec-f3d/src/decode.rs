@@ -1181,40 +1181,40 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             })
             .chain(
                 ir.model.spatial_sketch_constraints.iter().filter_map(
-                    |constraint| match &constraint.definition {
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native {
+                    |constraint| match constraint.definition.kind() {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
                             parameter,
                             ..
                         } => parameter.as_ref(),
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointDistance {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::LineLength {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::LineLength {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::RepeatedLineLength {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::RepeatedLineLength {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineSetDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelLineSetDistance {
                             parameter,
                             ..
                         } => Some(parameter),
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Offset {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Offset {
                             parameter,
                             ..
                         } => parameter.as_ref().map(|parameter| &parameter.id),
@@ -1251,8 +1251,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if !matches!(
-            constraint.definition,
-            cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native { .. }
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native { .. }
         ) {
             continue;
         }
