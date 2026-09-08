@@ -109,7 +109,7 @@ fn rows_construct_absolute_offsets_from_the_stream_origin() {
     assert_eq!(decoded[0].stream_offset, 200);
     assert_eq!(decoded[0].offset, 200 + b"#AllFeatur\n".len());
     assert_eq!(decoded[0].body_offset, 201 + b"#AllFeatur\n".len());
-    assert_eq!(decoded[0].body, payload[b"#AllFeatur\n".len() + 1..]);
+    assert_eq!(*decoded[0].body, payload[b"#AllFeatur\n".len() + 1..]);
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
             feature_id: 17,
             root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
             stream_offset: 300,
-            body: body.clone(),
+            body: body.clone().try_into().expect("row body"),
             body_offset: 400,
             offset: 398,
         },
@@ -157,7 +157,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
             feature_id: 18,
             root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 300,
-            body: body.clone(),
+            body: body.clone().try_into().expect("row body"),
             body_offset: 500,
             offset: 498,
         },
@@ -165,7 +165,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
             feature_id: 19,
             root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
             stream_offset: 300,
-            body: incomplete.to_vec(),
+            body: incomplete.to_vec().try_into().expect("row body"),
             body_offset: 600,
             offset: 598,
         },
@@ -305,7 +305,7 @@ fn final_procedural_choice_ends_before_post_choice_fields() {
         feature_id: 7,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 10,
-        body,
+        body: body.try_into().expect("row body"),
         body_offset: 100,
         offset: 98,
     }];
@@ -325,7 +325,7 @@ fn positional_datum_table_replays_the_named_stream_schema() {
         feature_id,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset,
-        body,
+        body: body.try_into().expect("row body"),
         body_offset: feature_id as usize * 100,
         offset: feature_id as usize * 100 - 2,
     };
@@ -383,7 +383,7 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
         feature_id: 7,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 10,
-        body,
+        body: body.try_into().expect("row body"),
         body_offset: 1_000,
         offset: 998,
     }];
@@ -458,7 +458,7 @@ fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
         feature_id: 7,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 10,
-        body,
+        body: body.try_into().expect("row body"),
         body_offset: 1_000,
         offset: 998,
     }];
@@ -504,7 +504,7 @@ fn replay_row(feature_id: u32, operands: &[u8]) -> FeatureRow {
         feature_id,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 100,
-        body,
+        body: body.try_into().expect("row body"),
         body_offset: 200,
         offset: 190,
     }
@@ -517,22 +517,20 @@ fn unanchored_replay_row(
     operands: &[u8],
 ) -> FeatureRow {
     let mut row = replay_row(feature_id, operands);
-    row.body.clear();
-    row.body.push(psb::token::COMPOUND_CLOSE);
-    row.body.extend_from_slice(operands);
-    row.body
-        .extend_from_slice(&[0xe1, 0xe1, row_id, psb::token::COMPOUND_CLOSE]);
+    let mut body = vec![psb::token::COMPOUND_CLOSE];
+    body.extend_from_slice(operands);
+    body.extend_from_slice(&[0xe1, 0xe1, row_id, psb::token::COMPOUND_CLOSE]);
     if let Some(reference) = suffix_reference {
-        row.body.extend_from_slice(&[
+        body.extend_from_slice(&[
             psb::token::ENTITY_REF,
             reference,
             psb::token::COMPOUND_CLOSE,
         ]);
     } else {
-        row.body.push(psb::token::COMPOUND_CLOSE);
+        body.push(psb::token::COMPOUND_CLOSE);
     }
-    row.body
-        .extend_from_slice(&[3, row_id, 0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE]);
+    body.extend_from_slice(&[3, row_id, 0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE]);
+    row.body = body.try_into().expect("row body");
     row
 }
 
@@ -566,7 +564,7 @@ fn surface_merge_row(feature_id: u32, row_id: u8, operands: &[u8]) -> FeatureRow
         feature_id,
         root_schema_class: Some(crate::feature::schema::SchemaClass::SurfaceMerge),
         stream_offset: 100,
-        body,
+        body: body.try_into().expect("row body"),
         body_offset: 200,
         offset: 190,
     }
@@ -645,7 +643,9 @@ fn positional_round_replay_inherits_each_array_extent() {
         replay_row(2, &[12, 13, 23, 24, 25]),
         replay_row(3, &[0xf8, 1, 14, 26, 27, 28]),
     ];
-    rows[0].body[3] = 0xc8;
+    let mut body = rows[0].body.to_vec();
+    body[3] = 0xc8;
+    rows[0].body = body.try_into().expect("row body");
 
     let decoded = replay_affected_ids(&rows);
 
@@ -703,7 +703,9 @@ fn positional_round_replay_uses_final_explicit_arrays_before_row_suffix() {
             0xf7, 56,
         ],
     );
-    row.body.splice(1..1, [0xf8, 4, 30, 31, 32, 33]);
+    let mut body = row.body.to_vec();
+    body.splice(1..1, [0xf8, 4, 30, 31, 32, 33]);
+    row.body = body.try_into().expect("row body");
 
     let decoded = replay_affected_ids(&[row]);
 
@@ -729,7 +731,9 @@ fn positional_round_replay_accepts_null_row_tail() {
         Some(74),
         &[0xf8, 2, 10, 11, 0xf0, 0xf7, 75, 0xf8, 2, 20, 21],
     );
-    *row.body.last_mut().expect("suffix tail") = 0xe1;
+    let mut body = row.body.to_vec();
+    *body.last_mut().expect("suffix tail") = 0xe1;
+    row.body = body.try_into().expect("row body");
 
     let decoded = replay_affected_ids(&[row]);
 
@@ -741,4 +745,17 @@ fn positional_round_replay_accepts_null_row_tail() {
 #[test]
 fn radius_dimension_type_uses_model_length_units() {
     assert_eq!(dimension_unit(0x03), DimensionUnit::Millimeters);
+}
+
+#[test]
+fn row_body_admission_requires_both_header_bytes() {
+    for bytes in [Vec::new(), vec![0xe3]] {
+        assert_eq!(
+            FeatureRowBody::try_from(bytes).unwrap_err(),
+            "FeatureRow.body requires two header bytes"
+        );
+    }
+    let body = FeatureRowBody::try_from(vec![0xeb, 0x04]).unwrap();
+    assert_eq!(body.header(), [0xeb, 0x04]);
+    assert_eq!(&*body, &[0xeb, 0x04]);
 }

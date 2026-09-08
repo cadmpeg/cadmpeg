@@ -173,7 +173,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });

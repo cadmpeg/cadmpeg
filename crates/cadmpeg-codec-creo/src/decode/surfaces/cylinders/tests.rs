@@ -90,7 +90,7 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -347,7 +347,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
         feature_id: 916,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -406,7 +406,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -477,7 +477,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -540,7 +540,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
         feature_id: 917,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -697,7 +697,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         feature_id: 42,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -906,7 +906,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
