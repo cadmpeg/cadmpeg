@@ -4261,28 +4261,178 @@ pub struct HelixSurfaceConstruction {
     pub profile: HelixSurfaceProfile,
 }
 
-/// Native T-spline subtransform storage form.
+/// A non-negative native subtype-table index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "i64", into = "i64")]
+pub struct SubtypeTableIndex(i64);
+
+impl SubtypeTableIndex {
+    /// Admit a non-negative native subtype-table index.
+    pub fn try_new(index: i64) -> Result<Self, &'static str> {
+        if index >= 0 {
+            Ok(Self(index))
+        } else {
+            Err("subtype table index must be non-negative")
+        }
+    }
+
+    /// Native subtype-table index.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+impl TryFrom<i64> for SubtypeTableIndex {
+    type Error = &'static str;
+    fn try_from(index: i64) -> Result<Self, Self::Error> {
+        Self::try_new(index)
+    }
+}
+
+impl From<SubtypeTableIndex> for i64 {
+    fn from(index: SubtypeTableIndex) -> Self {
+        index.get()
+    }
+}
+
+/// An inline T-spline program and its non-empty companion values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    rename = "inline",
+    try_from = "InlineTSplineSubtransformWire"
+)]
+pub struct InlineTSplineSubtransform {
+    /// Line-oriented topology and geometry program.
+    pub program: crate::products::NonEmptyString,
+    /// Optional native separator boolean.
+    pub separator: Option<bool>,
+    /// Companion values program.
+    pub values: crate::products::NonEmptyString,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TSplineSubtransform {
-    /// Inline line-oriented T-spline program and companion values.
+enum InlineTSplineSubtransformWire {
     Inline {
-        /// Line-oriented topology and geometry program.
         program: String,
-        /// Optional native separator boolean.
         separator: Option<bool>,
-        /// Companion values program.
         values: String,
     },
+}
+
+impl TryFrom<InlineTSplineSubtransformWire> for InlineTSplineSubtransform {
+    type Error = &'static str;
+    fn try_from(wire: InlineTSplineSubtransformWire) -> Result<Self, Self::Error> {
+        let InlineTSplineSubtransformWire::Inline {
+            program,
+            separator,
+            values,
+        } = wire;
+        Self::try_new(program, separator, values)
+    }
+}
+
+impl InlineTSplineSubtransform {
+    /// Admit a non-empty T-spline program and companion values.
+    pub fn try_new(
+        program: impl Into<String>,
+        separator: Option<bool>,
+        values: impl Into<String>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            program: crate::products::NonEmptyString::new(program)
+                .ok_or("T-spline program must not be empty")?,
+            separator,
+            values: crate::products::NonEmptyString::new(values)
+                .ok_or("T-spline values must not be empty")?,
+        })
+    }
+}
+
+/// Native T-spline subtransform storage form.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TSplineSubtransformWire")]
+pub enum TSplineSubtransform {
+    /// Inline line-oriented T-spline program and companion values.
+    Inline(InlineTSplineSubtransform),
     /// Reference to an earlier subtype-table entry.
     Reference {
         /// Native subtype-table index.
-        index: i64,
+        index: SubtypeTableIndex,
         /// Resolved shared program when the table target is available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        resolved: Option<Box<TSplineSubtransform>>,
+        resolved: Option<Box<InlineTSplineSubtransform>>,
     },
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TSplineSubtransformWire {
+    Inline {
+        program: String,
+        separator: Option<bool>,
+        values: String,
+    },
+    Reference {
+        index: SubtypeTableIndex,
+        #[serde(default)]
+        resolved: Option<Box<InlineTSplineSubtransform>>,
+    },
+}
+
+impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
+    type Error = &'static str;
+    fn try_from(wire: TSplineSubtransformWire) -> Result<Self, Self::Error> {
+        match wire {
+            TSplineSubtransformWire::Inline {
+                program,
+                separator,
+                values,
+            } => InlineTSplineSubtransform::try_new(program, separator, values).map(Self::Inline),
+            TSplineSubtransformWire::Reference { index, resolved } => {
+                Ok(Self::Reference { index, resolved })
+            }
+        }
+    }
+}
+
+impl Serialize for TSplineSubtransform {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Wire<'a> {
+            Reference {
+                index: SubtypeTableIndex,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                resolved: Option<&'a InlineTSplineSubtransform>,
+            },
+        }
+        match self {
+            Self::Inline(inline) => inline.serialize(serializer),
+            Self::Reference { index, resolved } => Wire::Reference {
+                index: *index,
+                resolved: resolved.as_deref(),
+            }
+            .serialize(serializer),
+        }
+    }
+}
+
+impl TSplineSubtransform {
+    /// Effective inline program when present or resolved.
+    #[must_use]
+    pub fn inline(&self) -> Option<&InlineTSplineSubtransform> {
+        match self {
+            Self::Inline(inline) => Some(inline),
+            Self::Reference { resolved, .. } => resolved.as_deref(),
+        }
+    }
 }
 
 /// Complete native `t_spl_sur` wrapper.
@@ -4308,35 +4458,20 @@ pub struct TSplineSurfaceConstruction {
 }
 
 impl TSplineSurfaceConstruction {
-    fn inline_programs(&self) -> Option<(&str, &str)> {
-        let subtransform = match &self.subtransform {
-            TSplineSubtransform::Inline { .. } => &self.subtransform,
-            TSplineSubtransform::Reference {
-                resolved: Some(resolved),
-                ..
-            } => resolved,
-            TSplineSubtransform::Reference { resolved: None, .. } => return None,
-        };
-        match subtransform {
-            TSplineSubtransform::Inline {
-                program, values, ..
-            } => Some((program, values)),
-            TSplineSubtransform::Reference { .. } => None,
-        }
-    }
-
     /// Parse the semantic index of the effective topology program.
     #[must_use]
     pub fn program_graph(&self) -> Option<TSplineProgram> {
-        self.inline_programs()
-            .map(|(program, _)| TSplineProgram::parse(program))
+        self.subtransform
+            .inline()
+            .map(|inline| TSplineProgram::parse(inline.program.as_str()))
     }
 
     /// Parse the semantic index of the effective values program.
     #[must_use]
     pub fn values_graph(&self) -> Option<TSplineProgram> {
-        self.inline_programs()
-            .map(|(_, values)| TSplineProgram::parse(values))
+        self.subtransform
+            .inline()
+            .map(|inline| TSplineProgram::parse(inline.values.as_str()))
     }
 }
 

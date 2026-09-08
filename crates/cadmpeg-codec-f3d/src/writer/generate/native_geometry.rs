@@ -418,7 +418,6 @@ fn native_procedural_surface_definition(
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::TSpline { construction } => {
-            use cadmpeg_ir::geometry::TSplineSubtransform;
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "t_spl_sur")?;
@@ -453,47 +452,17 @@ fn native_procedural_surface_definition(
                 native_i64(bytes, construction.type_code);
             }
             bytes.push(0x0f);
-            match &construction.subtransform {
-                TSplineSubtransform::Inline {
-                    program,
-                    separator,
-                    values,
-                } => {
-                    native_ident(bytes, "t_spl_subtrans_object")?;
-                    native_u16_string(bytes, program)?;
-                    if let Some(separator) = separator {
-                        bytes.push(native_bool(*separator));
-                    }
-                    native_u16_string(bytes, values)?;
-                }
-                TSplineSubtransform::Reference {
-                    resolved: Some(resolved),
-                    ..
-                } => {
-                    let TSplineSubtransform::Inline {
-                        program,
-                        separator,
-                        values,
-                    } = resolved.as_ref()
-                    else {
-                        return Err(CodecError::Malformed(
-                            "resolved T-spline subtransform must be inline".into(),
-                        ));
-                    };
-                    native_ident(bytes, "t_spl_subtrans_object")?;
-                    native_u16_string(bytes, program)?;
-                    if let Some(separator) = separator {
-                        bytes.push(native_bool(*separator));
-                    }
-                    native_u16_string(bytes, values)?;
-                }
-                TSplineSubtransform::Reference { resolved: None, .. } => {
-                    return Err(CodecError::NotImplemented(
-                        "source-less referenced t_spl_subtrans_object has no resolved target"
-                            .into(),
-                    ));
-                }
+            let inline = construction.subtransform.inline().ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less referenced t_spl_subtrans_object has no resolved target".into(),
+                )
+            })?;
+            native_ident(bytes, "t_spl_subtrans_object")?;
+            native_u16_string(bytes, inline.program.as_str())?;
+            if let Some(separator) = inline.separator {
+                bytes.push(native_bool(separator));
             }
+            native_u16_string(bytes, inline.values.as_str())?;
             bytes.push(0x10);
             native_i64(bytes, construction.trailing_value);
             bytes.push(0x10);

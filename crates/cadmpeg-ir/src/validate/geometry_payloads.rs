@@ -913,18 +913,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .flatten()
                 .chain(construction.discontinuities.iter().flatten())
                 .all(|value| value.is_finite());
-            let source_valid = match &construction.subtransform {
-                crate::geometry::TSplineSubtransform::Inline {
-                    program, values, ..
-                } => !program.is_empty() && !values.is_empty(),
-                crate::geometry::TSplineSubtransform::Reference { index, resolved } => {
-                    *index >= 0
-                        && matches!(
-                            resolved.as_deref(),
-                            Some(crate::geometry::TSplineSubtransform::Inline { .. })
-                        )
-                }
-            };
+            let source_valid = construction.subtransform.inline().is_some();
             if !ranges_valid || !source_valid {
                 bounds_err(
                     findings,

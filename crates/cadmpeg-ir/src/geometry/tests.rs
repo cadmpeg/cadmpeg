@@ -767,6 +767,8 @@ mod fit_tolerance;
 mod nurbs_invariants;
 mod pcurve_metadata;
 
+mod tspline_subtransform;
+
 mod vertex_blend_twists;
 
 mod variable_blend_cache;
