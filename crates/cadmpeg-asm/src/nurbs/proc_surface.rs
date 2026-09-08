@@ -1189,7 +1189,7 @@ pub struct SweepProfile {
 /// The layout-discriminated body of an embedded sweep surface.
 // Keep typed source payloads inline without an allocation for each admitted record.
 #[allow(clippy::large_enum_variant)]
-pub enum EmbeddedSweepSurfaceLayout {
+pub enum LegacySweepLayout {
     /// The profile-first form: profile, spine, and a formula triple.
     ProfileFirst {
         /// The embedded profile curve.
@@ -1218,17 +1218,8 @@ pub enum EmbeddedSweepSurfaceLayout {
 
 /// Form-specific fields following the shared sweep profile.
 pub enum SweepTail {
-    /// The explicit form closed by one law formula.
-    Formula {
-        /// The boolean serialized before the path.
-        trajectory_flag: bool,
-        /// The boolean serialized before the formula.
-        formula_flag: bool,
-        /// The law formula closing the form.
-        formula: EmbeddedLawFormula,
-        /// The boolean closing the form.
-        trailing_flag: bool,
-    },
+    /// A formula or law tail shared with revision sweeps.
+    LawOrFormula(SweepLawOrFormula),
     /// The explicit form closed by a guide curve.
     Guide {
         /// The boolean serialized before the path.
@@ -1261,6 +1252,21 @@ pub enum SweepTail {
         /// The legacy boolean closing the form, when serialized.
         legacy_flag: Option<bool>,
     },
+}
+
+/// The tails admitted by both legacy and revision sweeps.
+pub enum SweepLawOrFormula {
+    /// The explicit form closed by one law formula.
+    Formula {
+        /// The boolean serialized before the path.
+        trajectory_flag: bool,
+        /// The boolean serialized before the formula.
+        formula_flag: bool,
+        /// The law formula closing the form.
+        formula: EmbeddedLawFormula,
+        /// The boolean closing the form.
+        trailing_flag: bool,
+    },
     /// The law-driven form with two law expressions and one formula.
     Law {
         /// The first law expression.
@@ -1288,13 +1294,29 @@ pub enum SweepTail {
     },
 }
 
+/// The legacy and revision sweep layouts.
+pub enum EmbeddedSweepSurfaceLayout {
+    /// A legacy sweep with its native kind.
+    Legacy {
+        /// The primary kind integer.
+        primary_kind: i64,
+        /// The legacy construction fields.
+        layout: LegacySweepLayout,
+    },
+    /// A revision sweep with a profile and a law or formula tail.
+    Revision {
+        /// The revision form fields.
+        form: cadmpeg_ir::geometry::SweepRevisionForm,
+        /// The profile and path fields.
+        profile: SweepProfile,
+        /// The law or formula tail.
+        tail: SweepLawOrFormula,
+    },
+}
+
 /// Embedded native sweep surface before stable IR ids are assigned.
 pub struct EmbeddedSweepSurface {
-    /// The primary kind integer of the record.
-    pub primary_kind: i64,
-    /// The revision-gated form of the layout, when serialized.
-    pub revision_form: Option<cadmpeg_ir::geometry::SweepRevisionForm>,
-    /// The layout-discriminated body.
+    /// The native construction layout.
     pub layout: EmbeddedSweepSurfaceLayout,
     /// Six discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
@@ -2658,7 +2680,7 @@ fn sweep_spl_sur(
             law_formula(&mut cur)?,
             law_formula(&mut cur)?,
         ];
-        EmbeddedSweepSurfaceLayout::ProfileFirst {
+        LegacySweepLayout::ProfileFirst {
             profile,
             spine,
             secondary_kind,
@@ -2724,12 +2746,12 @@ fn sweep_spl_sur(
                     let formula_flag = cur.take_bool()?;
                     let formula = law_formula(&mut cur)?;
                     let trailing_flag = cur.take_bool()?;
-                    SweepTail::Formula {
+                    SweepTail::LawOrFormula(SweepLawOrFormula::Formula {
                         trajectory_flag,
                         formula_flag,
                         formula,
                         trailing_flag,
-                    }
+                    })
                 }
                 2 => {
                     let guide_flags = [cur.take_bool()?, cur.take_bool()?];
@@ -2777,7 +2799,7 @@ fn sweep_spl_sur(
                 }
                 _ => return None,
             };
-            EmbeddedSweepSurfaceLayout::Sweep { profile, tail }
+            LegacySweepLayout::Sweep { profile, tail }
         } else {
             let first_law = sweep_law_expression(&mut cur)?;
             let first_mode = cur.take_long()?;
@@ -2795,7 +2817,7 @@ fn sweep_spl_sur(
             let formula_mode = cur.take_long()?;
             let formula = law_formula(&mut cur)?;
             let trailing_flag = cur.take_bool()?;
-            EmbeddedSweepSurfaceLayout::Sweep {
+            LegacySweepLayout::Sweep {
                 profile: SweepProfile {
                     profile,
                     mode,
@@ -2807,7 +2829,7 @@ fn sweep_spl_sur(
                     path_range,
                     path_parameter,
                 },
-                tail: SweepTail::Law {
+                tail: SweepTail::LawOrFormula(SweepLawOrFormula::Law {
                     first_law,
                     first_mode,
                     first_range,
@@ -2819,7 +2841,7 @@ fn sweep_spl_sur(
                     formula_mode,
                     formula,
                     trailing_flag,
-                },
+                }),
             }
         }
     };
@@ -2837,9 +2859,10 @@ fn sweep_spl_sur(
     let discontinuity_flag = cur.take_bool()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
-            primary_kind,
-            revision_form: None,
-            layout,
+            layout: EmbeddedSweepSurfaceLayout::Legacy {
+                primary_kind,
+                layout,
+            },
             discontinuities,
             discontinuity_flag,
         })),
@@ -2892,7 +2915,7 @@ fn revision_sweep_sur(
         let value = cur.take_vector3()?;
         *direction = Vector3::new(value[0], value[1], value[2]);
     }
-    let (layout, path_endpoints) = if matches!(cur.peek(), Some(Token::Str(_))) {
+    let (profile, tail, path_endpoints) = if matches!(cur.peek(), Some(Token::Str(_))) {
         let first_law = sweep_law_expression(&mut cur)?;
         let first_mode = cur.take_long()?;
         let first_range = [
@@ -2919,31 +2942,29 @@ fn revision_sweep_sur(
         let trailing_flag = cur.take_bool()?;
         let law_direction = Vector3::new(law_direction[0], law_direction[1], law_direction[2]);
         (
-            EmbeddedSweepSurfaceLayout::Sweep {
-                profile: SweepProfile {
-                    profile,
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path,
-                    path_range,
-                    path_parameter,
-                },
-                tail: SweepTail::Law {
-                    first_law,
-                    first_mode,
-                    first_range,
-                    law_direction,
-                    path_mode,
-                    path_flag,
-                    second_law_flag,
-                    second_law,
-                    formula_mode,
-                    formula,
-                    trailing_flag,
-                },
+            SweepProfile {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                path,
+                path_range,
+                path_parameter,
+            },
+            SweepLawOrFormula::Law {
+                first_law,
+                first_mode,
+                first_range,
+                law_direction,
+                path_mode,
+                path_flag,
+                second_law_flag,
+                second_law,
+                formula_mode,
+                formula,
+                trailing_flag,
             },
             path_endpoints,
         )
@@ -2964,24 +2985,22 @@ fn revision_sweep_sur(
         let formula = law_formula_resolving(&mut cur, Some(table))?;
         let trailing_flag = cur.take_bool()?;
         (
-            EmbeddedSweepSurfaceLayout::Sweep {
-                profile: SweepProfile {
-                    profile,
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path,
-                    path_range,
-                    path_parameter,
-                },
-                tail: SweepTail::Formula {
-                    trajectory_flag,
-                    formula_flag,
-                    formula,
-                    trailing_flag,
-                },
+            SweepProfile {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                path,
+                path_range,
+                path_parameter,
+            },
+            SweepLawOrFormula::Formula {
+                trajectory_flag,
+                formula_flag,
+                formula,
+                trailing_flag,
             },
             path_endpoints,
         )
@@ -2995,15 +3014,17 @@ fn revision_sweep_sur(
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
-            primary_kind: 0,
-            revision_form: Some(cadmpeg_ir::geometry::SweepRevisionForm {
-                revision,
-                primary_flag,
-                profile_endpoints,
-                path_endpoints,
-                cache: cache.into_form(),
-            }),
-            layout,
+            layout: EmbeddedSweepSurfaceLayout::Revision {
+                form: cadmpeg_ir::geometry::SweepRevisionForm {
+                    revision,
+                    primary_flag,
+                    profile_endpoints,
+                    path_endpoints,
+                    cache: cache.into_form(),
+                },
+                profile,
+                tail,
+            },
             discontinuities,
             discontinuity_flag,
         })),

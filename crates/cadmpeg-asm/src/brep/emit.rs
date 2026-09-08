@@ -25,7 +25,7 @@ use crate::nurbs::proc_surface::{
     EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape, EmbeddedSkinSurface,
     EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface, EmbeddedSweepSurfaceLayout,
     EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundaryGeometry,
-    LoftProfileData,
+    LegacySweepLayout, LoftProfileData, SweepLawOrFormula,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -1651,8 +1651,26 @@ fn emit_sweep_surface(
         }
     }
     let embedded = *embedded;
-    let (profile_geometry, spine_geometry, layout) = match embedded.layout {
-        EmbeddedSweepSurfaceLayout::ProfileFirst {
+    let (primary_kind, revision_form, layout) = match embedded.layout {
+        EmbeddedSweepSurfaceLayout::Legacy {
+            primary_kind,
+            layout,
+        } => (primary_kind, None, layout),
+        EmbeddedSweepSurfaceLayout::Revision {
+            form,
+            profile,
+            tail,
+        } => (
+            0,
+            Some(form),
+            LegacySweepLayout::Sweep {
+                profile,
+                tail: crate::nurbs::proc_surface::SweepTail::LawOrFormula(tail),
+            },
+        ),
+    };
+    let (profile_geometry, spine_geometry, layout) = match layout {
+        LegacySweepLayout::ProfileFirst {
             profile,
             spine,
             secondary_kind,
@@ -1687,7 +1705,7 @@ fn emit_sweep_surface(
                 },
             )
         }
-        EmbeddedSweepSurfaceLayout::Sweep {
+        LegacySweepLayout::Sweep {
             profile:
                 crate::nurbs::proc_surface::SweepProfile {
                     profile,
@@ -1703,12 +1721,14 @@ fn emit_sweep_surface(
             tail,
         } => {
             let layout = match tail {
-                crate::nurbs::proc_surface::SweepTail::Formula {
-                    trajectory_flag,
-                    formula_flag,
-                    formula,
-                    trailing_flag,
-                } => {
+                crate::nurbs::proc_surface::SweepTail::LawOrFormula(
+                    SweepLawOrFormula::Formula {
+                        trajectory_flag,
+                        formula_flag,
+                        formula,
+                        trailing_flag,
+                    },
+                ) => {
                     let formula = map_law_formula(formula, |index, variable| {
                         map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
                     });
@@ -1805,7 +1825,7 @@ fn emit_sweep_surface(
                         legacy_flag,
                     }
                 }
-                crate::nurbs::proc_surface::SweepTail::Law {
+                crate::nurbs::proc_surface::SweepTail::LawOrFormula(SweepLawOrFormula::Law {
                     first_law,
                     first_mode,
                     first_range,
@@ -1817,7 +1837,7 @@ fn emit_sweep_surface(
                     formula_mode,
                     formula,
                     trailing_flag,
-                } => {
+                }) => {
                     let first_law = map_sweep_law(&mut *out, i, "law:first", first_law, format);
                     let second_law = map_sweep_law(&mut *out, i, "law:second", second_law, format);
                     let formula = map_law_formula(formula, |index, variable| {
@@ -1874,8 +1894,8 @@ fn emit_sweep_surface(
         profile,
         spine,
         native: Some(Box::new(cadmpeg_ir::geometry::SweepSurfaceConstruction {
-            primary_kind: embedded.primary_kind,
-            revision_form: embedded.revision_form,
+            primary_kind,
+            revision_form,
             layout,
             discontinuities: embedded.discontinuities,
             discontinuity_flag: embedded.discontinuity_flag,
