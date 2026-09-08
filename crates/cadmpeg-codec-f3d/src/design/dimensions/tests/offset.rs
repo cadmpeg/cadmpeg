@@ -800,22 +800,25 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         paired_byte_offset: 100,
     };
-    let point = |stream: &str, record_index| SketchPoint {
-        id: format!("f3d:{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: None,
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 89,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
+    let point = |stream: &str, record_index| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("f3d:{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: None,
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+                None,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
     };
     let mut points = vec![
         point("A", 20),

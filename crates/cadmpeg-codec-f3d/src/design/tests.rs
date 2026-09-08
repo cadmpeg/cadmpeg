@@ -264,22 +264,25 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         )
         .expect("valid module registration"),
     };
-    let point = |stream: &str| SketchPoint {
-        id: format!("f3d:{stream}:sketch-point#0"),
-        record_index: 20,
-        owner_reference: None,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 89,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            20,
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(1.0, 2.0),
+    let point = |stream: &str| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("f3d:{stream}:sketch-point#0"),
+            record_index: 20,
+            owner_reference: None,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            record_form: crate::records::SketchPointRecordForm::version11(
+                20,
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+                None,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(1.0, 2.0),
+        })
+        .unwrap()
     };
     let relation = |stream: &str| SketchRelation {
         id: format!("f3d:{stream}:sketch-relation#30"),

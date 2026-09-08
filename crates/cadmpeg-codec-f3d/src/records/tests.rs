@@ -1801,3 +1801,52 @@ fn sketch_identity_sidecar_rejects_zero() {
         "u_knots": [], "v_knots": [], "control_points": []});
     assert!(serde_json::from_value::<super::SketchSurface>(surface).is_err());
 }
+
+#[test]
+fn sketch_point_admission_and_edits_keep_finite_coordinates() {
+    let draft = super::SketchPointDraft {
+        id: "point".into(),
+        record_index: 1,
+        owner_reference: None,
+        class_tag: "000".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+        coordinate_offset: 0,
+        record_form: super::SketchPointRecordForm::version11(
+            1,
+            super::SketchPointClosure::Selector0State0,
+            None,
+            -2.0,
+            None,
+        ),
+        paired_reference: 2,
+        coordinates: cadmpeg_ir::math::Point2::new(1.0, -1.0),
+    };
+    let original = super::SketchPoint::try_from(draft.clone()).unwrap();
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for coordinates in [
+            cadmpeg_ir::math::Point2::new(value, 0.0),
+            cadmpeg_ir::math::Point2::new(0.0, value),
+        ] {
+            let mut invalid = draft.clone();
+            invalid.coordinates = coordinates;
+            assert!(super::SketchPoint::try_from(invalid).is_err());
+            let mut point = original.clone();
+            assert!(point.try_set_coordinates(coordinates).is_err());
+            assert_eq!(point, original);
+        }
+        let mut form = draft.record_form.clone();
+        let super::SketchPointRecordForm::Version11 { depth, .. } = &mut form else {
+            panic!("version 11");
+        };
+        *depth = value;
+        let mut invalid = draft.clone();
+        invalid.record_form = form.clone();
+        assert!(super::SketchPoint::try_from(invalid).is_err());
+        let mut point = original.clone();
+        assert!(point.try_set_record_form(form).is_err());
+        assert_eq!(point, original);
+        let mut wire = super::SketchPointSerde::from(original.clone());
+        wire.depth = value;
+        assert!(super::SketchPoint::try_from(wire).is_err());
+    }
+}

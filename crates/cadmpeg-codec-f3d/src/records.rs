@@ -7084,14 +7084,84 @@ pub struct SketchPoint {
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
+    record_form: SketchPointRecordForm,
+    /// Record index of the paired reverse curve-incidence companion.
+    pub paired_reference: u32,
+    /// First two sketch coordinates in millimetres.
+    coordinates: Point2,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SketchPointDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Index of this point record within the `BulkStream` tree.
+    pub record_index: u32,
+    /// Resolved owning-sketch reference from a direct backlink, typed relation,
+    /// or sketch-container member run.
+    pub owner_reference: Option<u32>,
+    /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the first coordinate relative to the record start.
+    pub coordinate_offset: u32,
+    /// Serialized point-record member sequence, identity, flags, and closure.
     pub record_form: SketchPointRecordForm,
     /// Record index of the paired reverse curve-incidence companion.
     pub paired_reference: u32,
     /// First two sketch coordinates in millimetres.
     pub coordinates: Point2,
 }
+impl TryFrom<SketchPointDraft> for SketchPoint {
+    type Error = String;
+    fn try_from(draft: SketchPointDraft) -> Result<Self, Self::Error> {
+        if !draft.coordinates.u.is_finite() || !draft.coordinates.v.is_finite() {
+            return Err("sketch point coordinates must be finite".into());
+        }
+        if !draft.record_form.depth().is_finite() {
+            return Err("sketch point depth must be finite".into());
+        }
+        Ok(Self {
+            id: draft.id,
+            record_index: draft.record_index,
+            owner_reference: draft.owner_reference,
+            class_tag: draft.class_tag,
+            byte_offset: draft.byte_offset,
+            coordinate_offset: draft.coordinate_offset,
+            record_form: draft.record_form,
+            paired_reference: draft.paired_reference,
+            coordinates: draft.coordinates,
+        })
+    }
+}
 
 impl SketchPoint {
+    pub(crate) fn coordinates(&self) -> Point2 {
+        self.coordinates
+    }
+    pub(crate) fn record_form(&self) -> &SketchPointRecordForm {
+        &self.record_form
+    }
+    pub(crate) fn try_set_coordinates(&mut self, coordinates: Point2) -> Result<(), String> {
+        if !coordinates.u.is_finite() || !coordinates.v.is_finite() {
+            return Err("sketch point coordinates must be finite".into());
+        }
+        self.coordinates = coordinates;
+        Ok(())
+    }
+    #[cfg(test)]
+    pub(crate) fn try_set_record_form(
+        &mut self,
+        record_form: SketchPointRecordForm,
+    ) -> Result<(), String> {
+        if !record_form.depth().is_finite() {
+            return Err("sketch point depth must be finite".into());
+        }
+        self.record_form = record_form;
+        Ok(())
+    }
+
     pub(crate) fn companion(&self) -> Option<SketchPointCompanionRef<'_>> {
         match &self.record_form {
             SketchPointRecordForm::Version0 { companion, .. }
@@ -7315,7 +7385,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 incident_curves: companion.incident_curves,
             })?;
         }
-        Ok(Self {
+        Self::try_from(SketchPointDraft {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,

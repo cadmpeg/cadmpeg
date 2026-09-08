@@ -210,7 +210,7 @@ pub fn project_sketch_design(
                     ),
                     sketch,
                     SketchGeometry::Point {
-                        position: point.coordinates,
+                        position: point.coordinates(),
                     },
                 )
                 .with_native_ref(Some(point.id.clone())),
@@ -605,7 +605,7 @@ pub fn project_spatial_sketch_design(
                 SpatialSketchGeometry::Point {
                     position: transform_point(
                         placement,
-                        &Point3::new(point.coordinates.u, point.coordinates.v, depth),
+                        &Point3::new(point.coordinates().u, point.coordinates().v, depth),
                     ),
                 },
             )

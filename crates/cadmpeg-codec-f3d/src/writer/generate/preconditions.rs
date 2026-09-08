@@ -329,9 +329,9 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 point.id
             )));
         }
-        if point.record_form.class_version() != point_type.version
+        if point.record_form().class_version() != point_type.version
             || !matches!(
-                point.record_form,
+                point.record_form(),
                 crate::records::SketchPointRecordForm::Version11 { .. }
             )
         {

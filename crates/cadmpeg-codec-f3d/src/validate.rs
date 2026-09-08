@@ -8324,17 +8324,6 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
     // when the owning sketch reference is known.
     for point in &native.sketch_points {
-        if !point.coordinates.u.is_finite()
-            || !point.coordinates.v.is_finite()
-            || !point.depth().is_finite()
-        {
-            findings.push(Finding {
-                check: Check::Bounds,
-                severity: Severity::Error,
-                message: "Fusion sketch point contains a non-finite coordinate".into(),
-                entity: Some(point.id.clone()),
-            });
-        }
         let companion_curves_unique = point.companion().is_none_or(|companion| {
             companion
                 .incident_curves

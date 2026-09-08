@@ -922,7 +922,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         next_record_index: 31,
         next_byte_offset: 100,
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: format!("{stream}:sketch-point#40"),
         record_index: 40,
         owner_reference: Some(100),
@@ -938,7 +938,8 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-    };
+    })
+    .unwrap();
     let curve = |record_index: u32, start: Point2, end: Point2| {
         let delta_u = end.u - start.u;
         let delta_v = end.v - start.v;
@@ -968,7 +969,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         SketchEntityId("generated:point#40".into()),
         sketch.clone(),
         SketchGeometry::Point {
-            position: point.coordinates,
+            position: point.coordinates(),
         },
     )
     .with_native_ref(Some(point.id.clone()));

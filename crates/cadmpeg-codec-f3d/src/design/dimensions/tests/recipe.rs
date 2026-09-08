@@ -214,7 +214,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     ));
 
-    let annotation_point = SketchPoint {
+    let annotation_point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: format!("{stream}:sketch-point#50"),
         record_index: 50,
         owner_reference: Some(100),
@@ -230,7 +230,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         ),
         paired_reference: 0,
         coordinates: Point2::new(4.5, 0.0),
-    };
+    })
+    .unwrap();
     let annotation_curve = SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#51"),
         record_index: 51,
@@ -247,7 +248,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         SketchEntityId("radial-extension-point".into()),
         sketch.clone(),
         SketchGeometry::Point {
-            position: annotation_point.coordinates,
+            position: annotation_point.coordinates(),
         },
     )
     .with_construction(true)

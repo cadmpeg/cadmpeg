@@ -130,7 +130,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         curve(12, 12, (10.0, 10.0), (0.0, 10.0)),
         curve(13, 13, (0.0, 10.0), (0.0, 0.0)),
     ];
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#14".into(),
         record_index: 14,
         owner_reference: Some(42),
@@ -146,7 +146,8 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         ),
         paired_reference: 15,
         coordinates: Point2::new(0.0, 0.0),
-    };
+    })
+    .unwrap();
     let text = SketchText {
         id: "f3d:BulkStream.dat:text#20".into(),
         record_index: 20,
@@ -265,7 +266,7 @@ fn point_closure_does_not_mark_construction_geometry() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#10".into(),
         record_index: 10,
         owner_reference: Some(42),
@@ -281,8 +282,9 @@ fn point_closure_does_not_mark_construction_geometry() {
         ),
         paired_reference: 11,
         coordinates: Point2::new(0.0, 0.0),
-    };
-    let standalone_point = SketchPoint {
+    })
+    .unwrap();
+    let standalone_point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#11".into(),
         record_index: 11,
         owner_reference: Some(42),
@@ -298,7 +300,8 @@ fn point_closure_does_not_mark_construction_geometry() {
         ),
         paired_reference: 12,
         coordinates: Point2::new(2.0, 0.0),
-    };
+    })
+    .unwrap();
     let curve = SketchCurveIdentity {
         id: "f3d:BulkStream.dat:curve#20".into(),
         record_index: 20,
@@ -360,7 +363,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:native:point#175".into(),
         record_index: 175,
         owner_reference: Some(172),
@@ -376,7 +379,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 4.0),
-    };
+    })
+    .unwrap();
     let line = SketchCurveIdentity {
         id: "f3d:native:curve#217".into(),
         record_index: 217,
@@ -869,7 +873,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:Design/BulkStream.dat:point#106".into(),
         record_index: 106,
         owner_reference: Some(42),
@@ -885,7 +889,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 3.5),
-    };
+    })
+    .unwrap();
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
     midpoint_relation.record_index = 106;
@@ -910,12 +915,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
     coincident_point.byte_offset = 107;
-    let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } =
-        &mut coincident_point.record_form
-    else {
+    let mut form = coincident_point.record_form().clone();
+    let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form else {
         panic!("point fixture has a version-11 record form");
     };
     *persistent_id = std::num::NonZeroU64::new(6).unwrap();
+    coincident_point.try_set_record_form(form).unwrap();
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;

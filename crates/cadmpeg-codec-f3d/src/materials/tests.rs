@@ -1148,15 +1148,15 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|point| point.persistent_id() == Some(500))
         .cloned()
         .expect("point 500");
-    assert_eq!(point_500.coordinates.u, 12.5);
-    assert_eq!(point_500.coordinates.v, -25.0);
+    assert_eq!(point_500.coordinates().u, 12.5);
+    assert_eq!(point_500.coordinates().v, -25.0);
     let point_600 = f3d_native(result.ir())
         .sketch_points
         .iter()
         .find(|point| point.persistent_id() == Some(600))
         .cloned()
         .expect("point 600");
-    assert_eq!(point_600.coordinates.u, -40.0);
+    assert_eq!(point_600.coordinates().u, -40.0);
     assert_eq!(point_600.entity_genesis(), Some(9));
     assert_eq!(f3d_native(result.ir()).sketch_curve_identities.len(), 2);
     assert_eq!(

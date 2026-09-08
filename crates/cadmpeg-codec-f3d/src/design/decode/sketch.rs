@@ -1462,16 +1462,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                     frame.design_type.version
                 ))
             })?;
-        let (u, v, depth) = (
-            decoded.coordinates[0] * 10.0,
-            decoded.coordinates[1] * 10.0,
-            decoded.record_form.depth(),
-        );
-        if !u.is_finite() || !v.is_finite() || !depth.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {record_index} has a non-finite coordinate"
-            )));
-        }
+        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
         if !point_target_has_guid(
             &types_by_entity,
             decoded.trailing_reference(),
@@ -1519,17 +1510,20 @@ pub(crate) fn decode_sketch_points_from_stream(
             .record_form
             .set_companion(companion)
             .map_err(CodecError::Malformed)?;
-        out.push(SketchPoint {
-            id: ids::native_sketch_point_id(stream, frame.start),
-            record_index,
-            owner_reference: decoded.owner_reference,
-            class_tag: frame.class_tag.clone(),
-            byte_offset: frame.start as u64,
-            coordinate_offset: decoded.coordinate_offset,
-            record_form: decoded.record_form,
-            paired_reference: decoded.paired_reference,
-            coordinates: Point2::new(u, v),
-        });
+        out.push(
+            SketchPoint::try_from(crate::records::SketchPointDraft {
+                id: ids::native_sketch_point_id(stream, frame.start),
+                record_index,
+                owner_reference: decoded.owner_reference,
+                class_tag: frame.class_tag.clone(),
+                byte_offset: frame.start as u64,
+                coordinate_offset: decoded.coordinate_offset,
+                record_form: decoded.record_form,
+                paired_reference: decoded.paired_reference,
+                coordinates: Point2::new(u, v),
+            })
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(out)
 }

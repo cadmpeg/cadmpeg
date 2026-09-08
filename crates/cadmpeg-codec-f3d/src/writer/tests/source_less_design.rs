@@ -618,7 +618,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         )
         .expect("valid module registration"),
     }];
-    native.sketch_points = vec![SketchPoint {
+    native.sketch_points = vec![SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:generated:sketch-point#0".into(),
         record_index: 100,
         owner_reference: Some(277),
@@ -637,7 +637,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ),
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
-    }];
+    })
+    .unwrap()];
     native.sketch_curve_identities = vec![
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#0".into(),
@@ -890,7 +891,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
     );
     assert_eq!(
-        native.sketch_points[0].coordinates,
+        native.sketch_points[0].coordinates(),
         Point2::new(12.5, -25.0)
     );
     assert_eq!(native.sketch_curve_identities.len(), 3);
@@ -961,18 +962,20 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     {
         let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
         let persistent_id = std::num::NonZeroU64::new(point.persistent_id().unwrap()).unwrap();
-        point.record_form = crate::records::SketchPointRecordForm::Version11 {
-            depth: 7.5,
-            entity_genesis: point.entity_genesis(),
-            padded_paired_reference: true,
-            persistent_id,
-            flags: [true, false, false, true, false, true, false, true],
-            closure: crate::records::SketchPointClosure::Selector4State0,
-            companion: Some(crate::records::SketchPointCompanion {
-                prefix_present_zero: true,
-                incident_curves: vec![600],
-            }),
-        };
+        point
+            .try_set_record_form(crate::records::SketchPointRecordForm::Version11 {
+                depth: 7.5,
+                entity_genesis: point.entity_genesis(),
+                padded_paired_reference: true,
+                persistent_id,
+                flags: [true, false, false, true, false, true, false, true],
+                closure: crate::records::SketchPointClosure::Selector4State0,
+                companion: Some(crate::records::SketchPointCompanion {
+                    prefix_present_zero: true,
+                    incident_curves: vec![600],
+                }),
+            })
+            .unwrap();
     }
     let mut extended_encoded = Vec::new();
     F3dCodec

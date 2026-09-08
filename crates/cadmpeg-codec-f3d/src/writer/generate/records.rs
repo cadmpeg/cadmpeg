@@ -486,14 +486,6 @@ fn encode_sketch_point(
     out: &mut Vec<u8>,
     point: &crate::records::SketchPoint,
 ) -> Result<(), CodecError> {
-    if !point.coordinates.u.is_finite()
-        || !point.coordinates.v.is_finite()
-        || !point.depth().is_finite()
-    {
-        return Err(CodecError::Malformed(
-            "source-less sketch point coordinates must be finite".into(),
-        ));
-    }
     let owner_reference = point.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "source-less sketch point {} has no direct owner",
@@ -508,7 +500,7 @@ fn encode_sketch_point(
         persistent_id,
         flags,
         closure,
-    } = &point.record_form
+    } = point.record_form()
     else {
         return Err(CodecError::NotImplemented(format!(
             "source-less sketch point {} requires the version-11 member sequence",
@@ -532,9 +524,9 @@ fn encode_sketch_point(
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
     record[81 + shift..89 + shift].copy_from_slice(&flags.map(u8::from));
     record[89 + shift..97 + shift]
-        .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
+        .copy_from_slice(&(point.coordinates().u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
-        .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
+        .copy_from_slice(&(point.coordinates().v / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&(depth / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&closure.selector().to_le_bytes());
     record.push(closure.state());
