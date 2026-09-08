@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded framing for text and binary exact-shape side entries.
 
+pub(crate) mod triangulation;
+
+use triangulation::TextTriangulation;
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{bounded_len, View};
@@ -1171,21 +1175,6 @@ pub struct TextPolygonOnTriangulation {
     pub parameters: Option<Vec<f64>>,
 }
 
-/// One indexed display triangulation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextTriangulation {
-    /// Chordal deflection.
-    pub deflection: f64,
-    /// Ordered model-space vertices.
-    pub nodes: Vec<Point3>,
-    /// Optional UV coordinates parallel to `nodes`.
-    pub uv_nodes: Option<Vec<Point2>>,
-    /// One-based source triangle indices.
-    pub triangles: Vec<[u32; 3]>,
-    /// Optional normals parallel to `nodes`.
-    pub normals: Option<Vec<Vector3>>,
-}
-
 /// A rational or non-rational 2D B-spline curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NurbsCurve2d {
@@ -1991,13 +1980,10 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> 
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
-        triangulations.push(TextTriangulation {
-            deflection,
-            nodes,
-            uv_nodes,
-            triangles,
-            normals,
-        });
+        triangulations.push(
+            TextTriangulation::try_new(deflection, nodes, uv_nodes, triangles, normals)
+                .map_err(CodecError::Malformed)?,
+        );
     }
     let tshape_count = cursor.section_count("TShapes")?;
     // Each TShape consumes at least its 1-byte kind discriminant.
@@ -3548,13 +3534,10 @@ fn parse_triangulations(
         } else {
             None
         };
-        triangulations.push(TextTriangulation {
-            deflection,
-            nodes,
-            uv_nodes,
-            triangles,
-            normals,
-        });
+        triangulations.push(
+            TextTriangulation::try_new(deflection, nodes, uv_nodes, triangles, normals)
+                .map_err(CodecError::Malformed)?,
+        );
     }
     ensure_section_consumed(&cursor, "Triangulations")?;
     Ok(triangulations)
@@ -5699,10 +5682,10 @@ pub(crate) mod tests {
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         let triangulation = &facts.triangulations[0];
-        assert_eq!(triangulation.nodes.len(), 3);
+        assert_eq!(triangulation.nodes().len(), 3);
         assert_eq!(triangulation.triangles, [[1, 2, 3]]);
-        assert_eq!(triangulation.uv_nodes.as_ref().map(Vec::len), Some(3));
-        assert_eq!(triangulation.normals.as_ref().map(Vec::len), Some(3));
+        assert_eq!(triangulation.uv_nodes().map(<[_]>::len), Some(3));
+        assert_eq!(triangulation.normals().map(<[_]>::len), Some(3));
     }
 
     #[test]
