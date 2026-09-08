@@ -481,6 +481,12 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_presentation(&mut self, context: Ref) {
+        enum StyleKind {
+            Surface,
+            Curve,
+            Point,
+        }
+
         let ir = self.ir;
         let appearances: HashMap<&str, &Appearance> = ir
             .model
@@ -690,11 +696,6 @@ impl<'a> Builder<'a> {
             let Some(color) = appearance.base_color else {
                 continue;
             };
-            enum StyleKind {
-                Surface,
-                Curve,
-                Point,
-            }
             let (target, style_kind) = match &binding.target {
                 AppearanceTarget::Face(id) => (
                     self.face_step_refs.get(id.as_str()).copied(),
