@@ -148,7 +148,7 @@ defaulting to the scalar width.
 Common alternative spellings are accepted: `--length` for `--len`, `--min-len`
 and `--min-length` for `--min`, `--start` for `--offset`, `--step` for
 `--stride`, `-n` for `--count`, and `--input FILE` for the positional file on
-single-input tools except `find`. `cadmpeg inspect bytes <tool>` runs the same tool as
+single-input tools. `cadmpeg inspect bytes <tool>` runs the same tool as
 `cadmpeg inspect <tool>`. `find FILE NEEDLE --encoding hex|ascii|utf16le`
 selects the encoding of the positional pattern. Text or hex values on
 `read --type` produce an error that names the corresponding tool. `find` stops at `--max` hits and says so,

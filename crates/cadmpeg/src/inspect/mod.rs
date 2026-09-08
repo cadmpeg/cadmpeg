@@ -241,13 +241,11 @@ pub struct ReadArgs {
 /// Arguments for `cadmpeg inspect find`.
 #[derive(Debug, Args)]
 pub struct FindArgs {
-    /// File to search.
-    pub file: PathBuf,
+    #[command(flatten)]
+    pub input: FindInput,
     /// Pattern encoding.
     #[arg(long, value_enum)]
     pub encoding: FindEncoding,
-    /// Pattern to search for; hexadecimal patterns accept `??` byte wildcards.
-    pub needle: String,
     /// Stop after this many hits; 0 reports every hit.
     #[arg(long, default_value_t = 100)]
     pub max: usize,
@@ -257,6 +255,85 @@ pub struct FindArgs {
     /// Print the hits as JSON instead of the table.
     #[arg(long, conflicts_with = "context")]
     pub json: bool,
+}
+
+/// A resolved search file and pattern.
+#[derive(Debug)]
+pub struct FindInput {
+    file: PathBuf,
+    needle: String,
+}
+
+impl clap::Args for FindInput {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(clap::Arg::new("search_operands")
+                .value_name("FILE NEEDLE")
+                .help("File and pattern, or just the pattern with --input; hex accepts ?? wildcards")
+                .num_args(1..=2)
+                .action(clap::ArgAction::Append)
+                .required(true)
+                .value_parser(clap::value_parser!(std::ffi::OsString)))
+            .arg(clap::Arg::new("input_flag")
+                .long("input")
+                .value_name("FILE")
+                .hide(true)
+                .value_parser(clap::value_parser!(PathBuf)))
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for FindInput {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let operands: Vec<_> = matches
+            .get_many::<std::ffi::OsString>("search_operands")
+            .into_iter()
+            .flatten()
+            .collect();
+        let (file, needle) = match (
+            matches.get_one::<PathBuf>("input_flag"),
+            operands.as_slice(),
+        ) {
+            (None, [file, needle]) => (PathBuf::from(file), *needle),
+            (Some(file), [needle]) => (file.clone(), *needle),
+            (Some(_), [_, _, ..]) => {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::ArgumentConflict,
+                    "--input cannot be used with a positional file",
+                ))
+            }
+            (None, [_, _, _, ..]) => {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::TooManyValues,
+                    "expected only FILE and NEEDLE",
+                ))
+            }
+            _ => {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::MissingRequiredArgument,
+                    "required arguments: FILE and NEEDLE",
+                ))
+            }
+        };
+        let needle = needle
+            .to_str()
+            .ok_or_else(|| {
+                clap::Error::raw(
+                    clap::error::ErrorKind::InvalidUtf8,
+                    "NEEDLE must be valid UTF-8",
+                )
+            })?
+            .to_owned();
+        Ok(Self { file, needle })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
 }
 
 /// Encoding of a search pattern.
@@ -484,8 +561,8 @@ fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
 }
 
 fn find(args: &FindArgs) -> Result<()> {
-    let file = &args.file;
-    let text = &args.needle;
+    let file = &args.input.file;
+    let text = &args.input.needle;
     let (pattern, described) = match args.encoding {
         FindEncoding::Hex => (search::parse_pattern(text), format!("hex {text}")),
         FindEncoding::Ascii => (search::ascii_pattern(text), format!("ascii {text:?}")),

@@ -890,9 +890,12 @@ fn input_flag_reaches_the_same_file_as_the_positional() {
         vec!["inspect", "hex", "--len", "0x10"],
         vec!["inspect", "read", "--type", "u8", "-n", "2"],
         vec!["inspect", "strings", "--min", "1"],
+        vec!["inspect", "find", "--encoding", "hex", "00"],
         vec!["inspect", "struct", "--layout", "u8:a"],
     ] {
-        let positional = cadmpeg().args(&args).arg(path).output().unwrap();
+        let mut positional_args = args.clone();
+        positional_args.insert(2, path);
+        let positional = cadmpeg().args(&positional_args).output().unwrap();
         let mut flagged = args.clone();
         flagged.push("--input");
         flagged.push(path);
@@ -908,28 +911,34 @@ fn input_flag_and_positional_together_conflict() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "some.bin", b"x");
     let path = file.to_str().unwrap();
-    cadmpeg()
-        .args(["inspect", "hex", path, "--input", path])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("cannot be used with"));
+    for args in [
+        vec!["inspect", "hex", path, "--input", path],
+        vec![
+            "inspect",
+            "find",
+            path,
+            "--encoding",
+            "ascii",
+            "x",
+            "--input",
+            path,
+        ],
+    ] {
+        cadmpeg()
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("cannot be used with"));
+    }
 }
 
 #[test]
-fn find_requires_a_positional_file() {
+fn find_requires_a_file() {
     cadmpeg()
-        .args([
-            "inspect",
-            "find",
-            "--input",
-            "some.bin",
-            "--encoding",
-            "ascii",
-            "document",
-        ])
+        .args(["inspect", "find", "--encoding", "ascii", "document"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("unexpected argument '--input'"));
+        .stderr(predicate::str::contains("required arguments"));
 }
 
 #[test]
