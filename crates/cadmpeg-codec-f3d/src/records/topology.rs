@@ -710,16 +710,19 @@ impl DesignConstructionOperandGroup {
         Ok(())
     }
 
+    /// Ordered operand references with checked strides.
     pub fn members(&self) -> &[Located<u32>] {
         &self.members
     }
 
+    /// Checked replacement of the operand-reference run.
     pub(crate) fn try_set_members(&mut self, members: Vec<Located<u32>>) -> Result<(), String> {
         Self::check_members(&members)?;
         self.members = members;
         Ok(())
     }
 
+    /// Role offset derived from the opaque-index location.
     pub fn role_offset(&self) -> u64 {
         self.frame.role_offset()
     }
@@ -987,24 +990,31 @@ fn distinct_construction_records(
 }
 
 impl DesignConstructionOperandGroupFrame {
+    /// Role offset derived from the opaque-index location.
     pub fn role_offset(&self) -> u64 {
         self.opaque_index_offset - 18
     }
+    /// First opaque-index location.
     pub fn opaque_index_offset(&self) -> u64 {
         self.opaque_index_offset
     }
+    /// Scalar location following the opaque index.
     pub fn opaque_scalar_offset(&self) -> u64 {
         self.opaque_index_offset + 4
     }
+    /// Finite nonnegative scalar.
     pub fn opaque_scalar(&self) -> f64 {
         self.opaque_scalar
     }
+    /// Zero or one trailing reference.
     pub fn trailing_records(&self) -> &[Located<u32>] {
         self.trailing_records.as_slice()
     }
+    /// Distinct auxiliary path records.
     pub fn auxiliary_paths(&self) -> &[DesignConstructionOperandPath] {
         &self.auxiliary_paths
     }
+    /// Checked replacement of auxiliary path records.
     pub(crate) fn try_set_auxiliary_paths(
         &mut self,
         records: Vec<DesignConstructionOperandPath>,
@@ -1016,9 +1026,11 @@ impl DesignConstructionOperandGroupFrame {
         self.auxiliary_paths = records;
         Ok(())
     }
+    /// Distinct trailing affine transforms.
     pub fn trailing_transforms(&self) -> &[DesignConstructionOperandTransform] {
         &self.trailing_transforms
     }
+    /// Checked replacement of trailing affine transforms.
     pub(crate) fn try_set_trailing_transforms(
         &mut self,
         records: Vec<DesignConstructionOperandTransform>,
@@ -1030,9 +1042,11 @@ impl DesignConstructionOperandGroupFrame {
         self.trailing_transforms = records;
         Ok(())
     }
+    /// Distinct trailing dual transforms.
     pub fn trailing_dual_transforms(&self) -> &[DesignConstructionOperandDualTransform] {
         &self.trailing_dual_transforms
     }
+    /// Checked replacement of trailing dual transforms.
     pub(crate) fn try_set_trailing_dual_transforms(
         &mut self,
         records: Vec<DesignConstructionOperandDualTransform>,
@@ -1044,9 +1058,11 @@ impl DesignConstructionOperandGroupFrame {
         self.trailing_dual_transforms = records;
         Ok(())
     }
+    /// Distinct trailing flag records.
     pub fn trailing_flags(&self) -> &[DesignConstructionOperandFlag] {
         &self.trailing_flags
     }
+    /// Checked replacement of trailing flag records.
     pub(crate) fn try_set_trailing_flags(
         &mut self,
         records: Vec<DesignConstructionOperandFlag>,

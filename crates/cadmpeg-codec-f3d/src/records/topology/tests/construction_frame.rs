@@ -77,7 +77,6 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
     check_collection!(trailing_transforms, try_set_trailing_transforms);
     check_collection!(trailing_dual_transforms, try_set_trailing_dual_transforms);
     check_collection!(auxiliary_paths, try_set_auxiliary_paths);
-    // The same identity is legal in different collections.
     let wire = serde_json::to_value(frame_wire()).unwrap();
     assert_eq!(serde_json::to_value(frame).unwrap(), wire);
 }
