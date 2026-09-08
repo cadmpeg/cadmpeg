@@ -90,7 +90,7 @@ fn attach_container_payloads(
         {
             continue;
         }
-        let Some((offset, byte_len)) = entry.file_span else {
+        let Some((offset, byte_len)) = entry.file_span() else {
             continue;
         };
         let (Ok(start), Ok(byte_len_usize)) = (usize::try_from(offset), usize::try_from(byte_len))
@@ -129,7 +129,7 @@ fn attach_indexed_om_unknowns(
     let annotation_stream = annotations.stream("nx:container");
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
@@ -768,7 +768,7 @@ fn attach_jpeg_preview_assets(
         .filter(|entry| entry.content() == EntryContent::PreviewImage)
         .enumerate()
     {
-        let Some((source_offset, source_byte_len)) = entry.file_span else {
+        let Some((source_offset, source_byte_len)) = entry.file_span() else {
             continue;
         };
         let (Ok(start), Ok(byte_len)) = (

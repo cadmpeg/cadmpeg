@@ -153,14 +153,7 @@ pub(crate) fn try_decode_geometry(
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
-        .map(|(_, table)| {
-            table
-                .object_ids
-                .into_vec()
-                .into_iter()
-                .map(|object_id| object_id.value)
-                .collect::<Vec<_>>()
-        })
+        .map(|(_, table)| table.object_ids.into_vec())
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
@@ -651,8 +644,8 @@ pub(crate) fn try_decode_geometry(
                 .and_then(|uncharted| {
                     let supports = uncharted
                         .supports
-                        .each_ref()
-                        .map(|xmt| surfaces_by_xmt.get(xmt).cloned());
+                        .references()
+                        .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
                     let [Some(first), Some(second)] = supports else {
                         return None;
                     };
@@ -1315,7 +1308,11 @@ pub(crate) fn topology_body_node_ids(
     let body_xmts: BTreeSet<_> = graph
         .body_shape_shells()
         .into_iter()
-        .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
+        .filter_map(|shell| {
+            shell
+                .shell_fields()
+                .and_then(|fields| fields.body.map(u32::from))
+        })
         .collect();
     body_xmts
         .into_iter()
@@ -1325,42 +1322,52 @@ pub(crate) fn topology_body_node_ids(
                 .filter(|shell| {
                     shell
                         .shell_fields()
-                        .is_some_and(|fields| fields.body == body_xmt)
+                        .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
                 })
                 .map(|shell| shell.xmt)
                 .collect();
             let faces: Vec<_> = graph
                 .of_kind(NodeKind::Face)
                 .filter(|face| {
-                    face.face_fields()
-                        .is_some_and(|fields| shells.contains(&fields.shell))
+                    face.face_fields().is_some_and(|fields| {
+                        fields
+                            .shell
+                            .is_some_and(|target| shells.contains(&u32::from(target)))
+                    })
                 })
                 .collect();
             let face_xmts: BTreeSet<_> = faces.iter().map(|face| face.xmt).collect();
             let loops: BTreeSet<_> = graph
                 .of_kind(NodeKind::Loop)
                 .filter(|loop_| {
-                    loop_
-                        .loop_fields()
-                        .is_some_and(|fields| face_xmts.contains(&fields.face))
+                    loop_.loop_fields().is_some_and(|fields| {
+                        fields
+                            .face
+                            .is_some_and(|target| face_xmts.contains(&u32::from(target)))
+                    })
                 })
                 .map(|loop_| loop_.xmt)
                 .collect();
             let fins: Vec<_> = graph
                 .of_kind(NodeKind::Fin)
                 .filter(|fin| {
-                    fin.fin_fields()
-                        .is_some_and(|fields| loops.contains(&fields.loop_xmt))
+                    fin.fin_fields().is_some_and(|fields| {
+                        fields
+                            .loop_xmt
+                            .is_some_and(|target| loops.contains(&u32::from(target)))
+                    })
                 })
                 .collect();
             let edge_xmts: BTreeSet<_> = fins
                 .iter()
-                .filter_map(|fin| fin.fin_fields().map(|fields| fields.edge))
-                .collect();
+                .filter_map(|fin| fin.fin_fields())
+                .map(|fields| fields.edge.map(u32::from))
+                .collect::<Option<_>>()?;
             let vertex_xmts: BTreeSet<_> = fins
                 .iter()
-                .filter_map(|fin| fin.fin_fields().map(|fields| fields.vertex))
-                .collect();
+                .filter_map(|fin| fin.fin_fields())
+                .map(|fields| fields.vertex.map(u32::from))
+                .collect::<Option<_>>()?;
             let face_ids = faces
                 .iter()
                 .map(|face| face.u32_at(4))

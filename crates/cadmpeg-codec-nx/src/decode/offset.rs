@@ -50,7 +50,7 @@ pub(crate) fn saved_offset_carriers(
     let face_surfaces = graph
         .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)
-        .map(|face| face.surface)
+        .filter_map(|face| face.surface.map(u32::from))
         .collect::<BTreeSet<_>>();
     let candidates = face_surfaces
         .iter()

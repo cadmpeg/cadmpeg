@@ -3269,21 +3269,24 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
                 continue;
             };
             let Some(first_fin) = graph
-                .get(NodeKind::Fin, edge_fields.fin)
+                .get_target(NodeKind::Fin, edge_fields.fin)
                 .and_then(Node::fin_fields)
             else {
                 continue;
             };
-            if edge_fields.curve != 1 || first_fin.curve_xmt != 1 || first_fin.other <= 1 {
+            if edge_fields.curve.is_some()
+                || first_fin.curve_xmt.is_some()
+                || first_fin.other.is_none_or(|target| u32::from(target) == 0)
+            {
                 continue;
             }
             let Some(second_fin) = graph
-                .get(NodeKind::Fin, first_fin.other)
+                .get_target(NodeKind::Fin, first_fin.other)
                 .and_then(Node::fin_fields)
             else {
                 continue;
             };
-            if second_fin.other != edge_fields.fin || second_fin.edge != xmt {
+            if second_fin.other != edge_fields.fin || second_fin.edge.map(u32::from) != Some(xmt) {
                 continue;
             }
             let Some(edge) = model_index.edges(edge_id.as_str()) else {
@@ -3295,7 +3298,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             if edge.curve.is_some() {
                 continue;
             }
-            let support = |fin_xmt| {
+            let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| {
+                let fin_xmt = u32::from(fin_xmt?);
                 let coedge_id =
                     CoedgeId::mint(format!("{prefix}:fin#{fin_xmt}")).expect("identity grammar");
                 let coedge = model_index.coedges(coedge_id.as_str())?;

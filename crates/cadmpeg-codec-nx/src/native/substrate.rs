@@ -401,7 +401,7 @@ mod tests {
             container: crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
-                layout: crate::container::test_modern_layout(0x06, 0),
+                layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
@@ -450,7 +450,7 @@ mod tests {
             container: crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
-                layout: crate::container::test_modern_layout(0x06, 0),
+                layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),

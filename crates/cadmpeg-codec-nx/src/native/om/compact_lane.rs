@@ -47,7 +47,7 @@ pub(crate) fn data_block_counted_index_lanes(
             let Some((_, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let block_count = records.len() + 1;
             records
                 .iter()
@@ -95,7 +95,7 @@ pub(crate) fn data_block_abr_reference_lanes(
             let Some(storage_offset) = records.first().map(|record| record.offset) else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let Some(source_base) = entry_offset.checked_add(storage_offset as u64) else {
                 return Vec::new();
             };
