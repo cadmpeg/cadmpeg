@@ -342,14 +342,6 @@ impl<R: RecipeForm> FeatureOperation<R> {
         self.name.stored_name()
     }
 
-    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
-        self.name.stored_name_bytes()
-    }
-
-    pub fn identifier_keyword(&self) -> Option<&str> {
-        self.name.identifier_keyword()
-    }
-
     pub fn stored_name_prefix(&self) -> Option<u8> {
         self.name.stored_name_prefix()
     }

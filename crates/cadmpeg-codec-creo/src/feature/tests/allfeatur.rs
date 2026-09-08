@@ -195,7 +195,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     assert_eq!(scan.features.rows[0].feature_id, 4);
     assert_eq!(scan.features.rows[0].body[..2], [0xeb, 0x04]);
     assert_eq!(
-        scan.features.rows[0].body,
+        scan.features.rows[0].body.to_vec(),
         vec![
             0xeb, 0x04, 0x00, 0x10, 0x01, 0x80, 0x80, 0x00, 0xe4, 0xe3, 0xf6, 0x83, 0x95, 0xe1,
             0xaa, 0xbb, 0xe3,
@@ -203,7 +203,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     );
     assert_eq!(scan.features.rows[1].feature_id, 9);
     assert_eq!(
-        scan.features.rows[1].body,
+        scan.features.rows[1].body.to_vec(),
         vec![
             0x90, 0x01, 0x00, 0x10, 0x01, 0x80, 0x80, 0x00, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
             0xcc,
