@@ -47,6 +47,18 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn gui_provider_object_rejects_empty_wire_identity() {
+        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
+        assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
+        for object in [serde_json::Value::Null, serde_json::json!("object")] {
+            wire["object"] = object;
+            let record =
+                serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
     fn retained_xml_records_reject_invalid_wire_spans() {
         let bases = [
             serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
@@ -1076,7 +1088,7 @@ pub struct GuiViewProviderRecord {
     /// Stable native identity.
     pub id: String,
     /// Application object identity, or `None` for a GUI-only provider.
-    pub object: Option<String>,
+    pub object: Option<NonEmptyString>,
     /// Persisted provider name.
     pub name: String,
     /// Persisted tree-expansion state.

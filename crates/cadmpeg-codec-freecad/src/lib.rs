@@ -323,7 +323,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         if provider
             .object
             .as_ref()
-            .is_some_and(|object| !object.is_empty() && !object_ids.contains(object.as_str()))
+            .is_some_and(|object| !object_ids.contains(object.as_str()))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
