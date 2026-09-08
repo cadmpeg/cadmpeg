@@ -69,7 +69,7 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
         wrong,
         target.clone(),
         line_entity(
-            "distractor-line",
+            "synthetic:test:id#distractor-line",
             &sketch,
             Point2::new(0.0, 10.0),
             Point2::new(10.0, 10.0),
@@ -115,7 +115,7 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
         Point2::new(0.0, 0.0),
     );
     let line = line_entity(
-        "line",
+        "synthetic:test:id#line",
         &sketch,
         Point2::new(-10.0, 2.0),
         Point2::new(10.0, 2.0),
@@ -173,7 +173,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
         Point2::new(0.0, 1.0),
     );
     let line = line_entity(
-        "line",
+        "synthetic:test:id#line",
         &sketch,
         Point2::new(-10.0, 0.0),
         Point2::new(10.0, 0.0),
