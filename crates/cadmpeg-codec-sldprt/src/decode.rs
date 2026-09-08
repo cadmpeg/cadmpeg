@@ -2813,16 +2813,8 @@ fn build_geometry_ir(
             }
             let mesh = display_face.mesh;
             ir.model.tessellations.push(
-                cadmpeg_ir::tessellation::Tessellation::from_decoded(
-                    id,
-                    mesh.vertices,
-                    mesh.triangles,
-                    mesh.strip_lengths,
-                    mesh.normals,
-                    Vec::new(),
-                    mesh.channels,
-                )
-                .expect("decoded SLDPRT display mesh is a valid tessellation"),
+                mesh.into_tessellation(id)
+                    .expect("decoded SLDPRT display mesh is a valid tessellation"),
             );
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());

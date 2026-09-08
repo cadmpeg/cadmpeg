@@ -32,12 +32,74 @@ pub struct Summary {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Mesh {
-    pub vertices: Vec<Point3>,
-    pub triangles: Vec<[u32; 3]>,
-    pub strip_lengths: Vec<u32>,
-    pub normals: Vec<Vector3>,
-    pub channels: Vec<TessellationChannel>,
+pub(crate) struct Mesh {
+    vertices: Vec<Point3>,
+    triangles: Vec<[u32; 3]>,
+    strip_lengths: Vec<u32>,
+    normals: Vec<Vector3>,
+    channels: Vec<TessellationChannel>,
+}
+
+impl Mesh {
+    fn new(
+        vertices: Vec<Point3>,
+        strip_lengths: Vec<u32>,
+        normals: Vec<Vector3>,
+        channels: Vec<TessellationChannel>,
+    ) -> Option<Self> {
+        let vertex_count = strip_lengths.iter().try_fold(0usize, |total, length| {
+            total.checked_add(usize::try_from(*length).ok()?)
+        })?;
+        if vertex_count != vertices.len()
+            || (!normals.is_empty() && normals.len() != vertices.len())
+        {
+            return None;
+        }
+        let mut triangles = Vec::new();
+        let mut base = 0u32;
+        for length in &strip_lengths {
+            for i in 0..length.saturating_sub(2) {
+                let [a, b, c] = if i % 2 == 0 {
+                    [
+                        base.checked_add(i)?,
+                        base.checked_add(i)?.checked_add(1)?,
+                        base.checked_add(i)?.checked_add(2)?,
+                    ]
+                } else {
+                    [
+                        base.checked_add(i)?,
+                        base.checked_add(i)?.checked_add(2)?,
+                        base.checked_add(i)?.checked_add(1)?,
+                    ]
+                };
+                triangles.push([a, b, c]);
+            }
+            base = base.checked_add(*length)?;
+        }
+        Some(Self {
+            vertices,
+            triangles,
+            strip_lengths,
+            normals,
+            channels,
+        })
+    }
+
+    pub(crate) fn into_tessellation(
+        self,
+        id: String,
+    ) -> Result<cadmpeg_ir::tessellation::Tessellation, cadmpeg_ir::tessellation::TessellationError>
+    {
+        cadmpeg_ir::tessellation::Tessellation::from_decoded(
+            id,
+            self.vertices,
+            self.triangles,
+            self.strip_lengths,
+            self.normals,
+            Vec::new(),
+            self.channels,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -319,9 +381,6 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         }
         at = end;
     }
-    let vertex_count = strips
-        .iter()
-        .try_fold(0usize, |total, length| total.checked_add(*length))?;
     if !matches!(channels.as_slice(), [a, positions, normals, ..]
         if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
             && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
@@ -331,37 +390,17 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     }
     if strips.is_empty()
         || vertices.is_empty()
-        || vertex_count != vertices.len()
-        || !normals.is_empty() && normals.len() != vertices.len()
         || !auxiliary_channels_are_consistent(&strips, &channels[3..])
     {
         return None;
     }
-    let mut triangles = Vec::new();
-    let mut base = 0usize;
-    for length in &strips {
-        for i in 0..length.saturating_sub(2) {
-            let [a, b, c] = if i % 2 == 0 {
-                [base + i, base + i + 1, base + i + 2]
-            } else {
-                [base + i, base + i + 2, base + i + 1]
-            };
-            triangles.push([
-                u32::try_from(a).ok()?,
-                u32::try_from(b).ok()?,
-                u32::try_from(c).ok()?,
-            ]);
-        }
-        base = base.checked_add(*length)?;
-    }
     Some((
-        Mesh {
+        Mesh::new(
             vertices,
-            triangles,
-            strip_lengths: strips.into_iter().map(|length| length as u32).collect(),
+            strips.into_iter().map(|length| length as u32).collect(),
             normals,
             channels,
-        },
+        )?,
         at,
     ))
 }
