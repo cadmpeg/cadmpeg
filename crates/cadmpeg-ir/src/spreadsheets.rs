@@ -13,12 +13,43 @@ crate::ids::reference_id_type!(
 );
 
 /// One used spreadsheet cell and its A1 address.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpreadsheetCellWire", into = "SpreadsheetCellWire")]
 pub struct SpreadsheetCell {
     /// One-based row and column.
     pub address: CellAddress,
     /// Parameter that stores the cell expression and value.
     pub parameter: ParameterId,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpreadsheetCellWire {
+    address: String,
+    parameter: ParameterId,
+}
+
+impl From<SpreadsheetCell> for SpreadsheetCellWire {
+    fn from(cell: SpreadsheetCell) -> Self {
+        Self {
+            address: cell.address.a1(),
+            parameter: cell.parameter,
+        }
+    }
+}
+
+impl TryFrom<SpreadsheetCellWire> for SpreadsheetCell {
+    type Error = String;
+
+    fn try_from(wire: SpreadsheetCellWire) -> Result<Self, Self::Error> {
+        let address = CellAddress::parse(&wire.address)
+            .ok_or_else(|| format!("invalid cell address {}", wire.address))?;
+        Ok(Self {
+            address,
+            parameter: wire.parameter,
+        })
+    }
 }
 
 /// One-based spreadsheet coordinate.
@@ -89,7 +120,7 @@ pub struct Spreadsheet {
 struct SpreadsheetWire {
     id: SpreadsheetId,
     feature: FeatureId,
-    cells: Vec<ParameterId>,
+    cells: Vec<SpreadsheetCell>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     column_widths: Vec<SpreadsheetDimensionWire>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -105,7 +136,7 @@ impl From<Spreadsheet> for SpreadsheetWire {
         Self {
             id: sheet.id,
             feature: sheet.feature,
-            cells: sheet.cells.into_iter().map(|cell| cell.parameter).collect(),
+            cells: sheet.cells,
             column_widths: sheet
                 .column_widths
                 .into_iter()
@@ -133,14 +164,7 @@ impl From<SpreadsheetWire> for Spreadsheet {
         Self {
             id: wire.id,
             feature: wire.feature,
-            cells: wire
-                .cells
-                .into_iter()
-                .map(|parameter| SpreadsheetCell {
-                    address: CellAddress::new(1, 1).expect("one-based origin"),
-                    parameter,
-                })
-                .collect(),
+            cells: wire.cells,
             column_widths: wire
                 .column_widths
                 .into_iter()
@@ -292,4 +316,28 @@ fn column_label(mut column: u32) -> String {
     }
     label.reverse();
     String::from_utf8(label).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spreadsheet_round_trip_preserves_b2_address() {
+        let sheet = Spreadsheet {
+            id: SpreadsheetId::mint("sheet").unwrap(),
+            feature: FeatureId::mint("feature").unwrap(),
+            cells: vec![SpreadsheetCell {
+                address: CellAddress::new(2, 2).unwrap(),
+                parameter: ParameterId::mint("parameter").unwrap(),
+            }],
+            column_widths: Vec::new(),
+            row_heights: Vec::new(),
+            merged_ranges: Vec::new(),
+            native_ref: None,
+        };
+        let json = serde_json::to_string(&sheet).unwrap();
+        let decoded: Spreadsheet = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, sheet);
+    }
 }
