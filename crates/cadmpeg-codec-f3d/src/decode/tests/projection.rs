@@ -645,7 +645,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let revolve = definition(serde_json::json!({
         "definition": "revolve",
         "construction": {
-            "profile": {"kind": "sketch", "value": "sketch:profile"},
+            "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
@@ -1503,8 +1503,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         native_ref: Some("native:sketch-placement".into()),
     });
     for (id, native_ref) in [
-        ("point", "native:sketch-point"),
-        ("curve", "native:sketch-curve"),
+        ("synthetic:test:id#point", "native:sketch-point"),
+        ("synthetic:test:id#curve", "native:sketch-curve"),
     ] {
         ir.model.sketch_entities.push(
             SketchEntity::new(
