@@ -2315,6 +2315,21 @@ fn embedded_projection(toks: &[Token]) -> Option<EmbeddedProjection> {
     })
 }
 
+/// A parsed five-byte projection role slot.
+pub struct ProjectionRoleSlot(usize);
+
+impl ProjectionRoleSlot {
+    fn parse(bytes: &[u8], position: usize) -> Option<Self> {
+        let encoded = bytes.get(position..position.checked_add(7)?)?;
+        matches!(encoded, b"\x07\x05surf1" | b"\x07\x05surf2").then_some(Self(position + 2))
+    }
+
+    /// Byte range of the fixed-width role payload.
+    pub fn range(&self) -> std::ops::Range<usize> {
+        self.0..self.0 + 5
+    }
+}
+
 /// Writable tail shape of a `proj_int_cur` subtype.
 pub enum ProjectionTailPatchLayout {
     /// The tail closes directly after the flag.
@@ -2329,7 +2344,7 @@ pub enum ProjectionTailPatchLayout {
         /// Byte offsets of the two tail parameter-range doubles.
         parameter_range: [usize; 2],
         /// Byte range of the role identifier payload.
-        role: std::ops::Range<usize>,
+        role: ProjectionRoleSlot,
     },
 }
 
@@ -2374,10 +2389,7 @@ pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Proj
             take_double_payload(bytes, &mut position)?,
             take_double_payload(bytes, &mut position)?,
         ];
-        (*bytes.get(position)? == 0x07).then_some(())?;
-        let length = usize::from(*bytes.get(position + 1)?);
-        let role = position + 2..position + 2 + length;
-        bytes.get(role.clone())?;
+        let role = ProjectionRoleSlot::parse(bytes, position)?;
         ProjectionTailPatchLayout::Ranged {
             flag: tail_flag,
             parameter_range,

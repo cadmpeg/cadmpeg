@@ -1305,6 +1305,7 @@ fn patch_projection_definition(
                     .zip(parameter_range)
                     .map(|(offset, value)| (*offset, *value)),
             );
+            let role_range = role_range.range();
             let role_target = record.offset + role_range.start..record.offset + role_range.end;
             bytes[role_target].copy_from_slice(role.as_str().as_bytes());
         }
