@@ -18,7 +18,7 @@ const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
 
 pub(crate) type SurfaceSelectionFaceBindings =
-    HashMap<(String, String), Option<Vec<cadmpeg_ir::ids::FaceId>>>;
+    HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
 
 pub(crate) struct FaceSelectionContext<'a> {
     pub(crate) ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
@@ -106,7 +106,6 @@ fn surface_selection_face_bindings<'a>(
             &selection.components,
         );
         let key = (selection.feature_ref.clone(), native);
-        let candidate = candidate.map(|face| vec![face]);
         match bindings.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
@@ -571,6 +570,7 @@ pub(crate) fn resolve_face_selection(
                 .get(&(feature_ref.to_string(), native.clone()))
                 .cloned()
                 .flatten()
+                .map(|face| vec![face])
         });
         if let Some(faces) = faces {
             *selection = FaceSelection::Resolved {
@@ -707,10 +707,10 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:entity#terminal-face"
-            )
-            .expect("identity grammar")]))
+            Some(Some(
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
+                    .expect("identity grammar")
+            ))
         );
     }
 
@@ -773,10 +773,10 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:entity#terminal-face"
-            )
-            .expect("identity grammar")]))
+            Some(Some(
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
+                    .expect("identity grammar")
+            ))
         );
     }
 }
