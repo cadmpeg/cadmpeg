@@ -496,7 +496,7 @@ pub enum EmbeddedDeformableData {
 /// Embedded bend curve and discriminator payload of a `defm_int_cur`.
 pub struct EmbeddedDeformable {
     /// The cache-first source context.
-    pub context: CacheFirstCurveContext,
+    pub context: Box<CacheFirstCurveContext>,
     /// The source the deformation bends.
     pub source: EmbeddedDeformableSource,
     /// Optional parameter bounds of the source; `None` marks an unbounded end.
@@ -1034,7 +1034,7 @@ fn embedded_deformable(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedD
         _ => return None,
     };
     matches!(toks.get(cur.pos()), Some(Token::SubtypeClose)).then_some(EmbeddedDeformable {
-        context,
+        context: Box::new(context),
         source,
         source_parameter_range,
         data,
