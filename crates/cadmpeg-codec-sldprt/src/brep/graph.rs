@@ -596,14 +596,14 @@ fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
 fn emit_offset_surface(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     surface: SurfaceId,
     construction: ProceduralSurfaceId,
     support: SurfaceId,
     offset: &OffsetCarrier,
 ) {
     annotations
-        .note(&surface, &source_stream, offset.offset as u64)
+        .note(&surface, source_stream, offset.offset as u64)
         .tag("00_3c");
     out.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -655,7 +655,7 @@ fn ensure_surface_support(
     emitted_face_surface_by_carrier: &HashMap<u16, u16>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     resolving: &mut HashSet<u16>,
 ) -> Option<SurfaceId> {
     if !resolving.insert(attr) {
@@ -676,7 +676,7 @@ fn ensure_surface_support(
                     annotate_surface_frame(annotations, id.as_str(), &geometry);
                 }
                 annotations
-                    .note(&id, &source_stream, carrier.offset as u64)
+                    .note(&id, source_stream, carrier.offset as u64)
                     .tag("procedural_support");
                 out.surfaces.push(Surface {
                     id: id.clone(),
@@ -692,7 +692,7 @@ fn ensure_surface_support(
                 emitted_face_surface_by_carrier,
                 out,
                 annotations,
-                source_stream.clone(),
+                source_stream,
                 resolving,
             )?;
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
@@ -706,7 +706,7 @@ fn ensure_surface_support(
                 emit_offset_surface(
                     out,
                     annotations,
-                    source_stream.clone(),
+                    source_stream,
                     surface.clone(),
                     construction,
                     support,
@@ -1721,7 +1721,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream.clone(),
+                        &source_stream,
                         &mut HashSet::new(),
                     )?;
                     Some((offset, support))
@@ -1770,7 +1770,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream.clone(),
+                        &source_stream,
                         &mut HashSet::new(),
                     )?;
                     let second = ensure_surface_support(
@@ -1779,7 +1779,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream.clone(),
+                        &source_stream,
                         &mut HashSet::new(),
                     )?;
                     Some((blend, first, second))
@@ -1793,7 +1793,7 @@ fn decode_graph(
                     emit_offset_surface(
                         &mut out,
                         &mut annotations,
-                        source_stream.clone(),
+                        &source_stream,
                         SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         construction,
                         support,
@@ -1938,13 +1938,13 @@ fn decode_graph(
         })
         .collect();
     solve_face_orientation(&mut out);
-    synthesize_cylinder_seams(&mut out, &mut annotations, source_stream.clone());
-    synthesize_sphere_seams(&mut out, &mut annotations, source_stream.clone());
-    derive_planar_pcurves(&mut out, &mut annotations, source_stream.clone());
-    derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream.clone());
-    derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream.clone());
-    derive_spherical_pcurves(&mut out, &mut annotations, source_stream.clone());
-    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, source_stream.clone());
+    synthesize_cylinder_seams(&mut out, &mut annotations, &source_stream);
+    synthesize_sphere_seams(&mut out, &mut annotations, &source_stream);
+    derive_planar_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_cylindrical_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_revolved_circle_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_spherical_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, &source_stream);
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
@@ -2311,7 +2311,7 @@ fn annotate_surface_frame(
 fn derive_planar_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -2490,7 +2490,7 @@ fn derive_planar_pcurves(
             }];
         }
         annotations
-            .note(&id, &source_stream, 0)
+            .note(&id, source_stream, 0)
             .tag("derived_planar_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -2500,7 +2500,7 @@ fn derive_planar_pcurves(
 fn derive_cylindrical_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -2777,7 +2777,7 @@ fn derive_cylindrical_pcurves(
             }];
         }
         annotations
-            .note(&id, &source_stream, 0)
+            .note(&id, source_stream, 0)
             .tag("derived_cylindrical_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -3051,7 +3051,7 @@ fn circle_azimuth_parameter(
 fn derive_revolved_circle_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -3200,7 +3200,7 @@ fn derive_revolved_circle_pcurves(
             }];
         }
         annotations
-            .note(&id, &source_stream, 0)
+            .note(&id, source_stream, 0)
             .tag("derived_revolved_circle_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -3210,7 +3210,7 @@ fn derive_revolved_circle_pcurves(
 fn derive_spherical_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -3337,7 +3337,7 @@ fn derive_spherical_pcurves(
             }];
         }
         annotations
-            .note(&id, &source_stream, 0)
+            .note(&id, source_stream, 0)
             .tag("derived_spherical_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -3347,7 +3347,7 @@ fn derive_spherical_pcurves(
 fn derive_nurbs_isoparametric_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -3493,7 +3493,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 parameter_range: pcurve.parameter_range(),
             }];
         }
-        annotations.note(&id, &source_stream, 0).tag(if cache {
+        annotations.note(&id, source_stream, 0).tag(if cache {
             "derived_nurbs_surface_cache_pcurve"
         } else {
             "derived_nurbs_isoparametric_pcurve"
@@ -4818,7 +4818,7 @@ fn solve_face_orientation(out: &mut Brep) {
 fn synthesize_cylinder_seams(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let surfaces: HashMap<_, _> = out
         .surfaces
@@ -4941,7 +4941,7 @@ fn synthesize_cylinder_seams(
             seam_b.as_str(),
         ] {
             annotations
-                .note(id, &source_stream, 0)
+                .note(id, source_stream, 0)
                 .tag("derived_periodic_seam");
             annotations.exactness(id, Exactness::Derived);
         }
@@ -5004,7 +5004,7 @@ fn synthesize_cylinder_seams(
 fn synthesize_sphere_seams(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let surface_geometry = out
         .surfaces
@@ -5124,7 +5124,7 @@ fn synthesize_sphere_seams(
         let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam:{suffix}"))
             .expect("identity grammar");
         annotations
-            .note(curve_id.as_str(), &source_stream, 0)
+            .note(curve_id.as_str(), source_stream, 0)
             .tag("derived_sphere_seam");
         annotations.exactness(curve_id.as_str(), Exactness::Derived);
         out.curves.push(Curve {
@@ -5237,7 +5237,7 @@ fn synthesize_sphere_seams(
                     .expect("identity grammar");
             for id in [point_id.as_str(), vertex_id.as_str()] {
                 annotations
-                    .note(id, &source_stream, 0)
+                    .note(id, source_stream, 0)
                     .tag("derived_sphere_seam");
                 annotations.exactness(id, Exactness::Derived);
             }
@@ -5260,7 +5260,7 @@ fn synthesize_sphere_seams(
             pcurve_id.as_str(),
         ] {
             annotations
-                .note(id, &source_stream, 0)
+                .note(id, source_stream, 0)
                 .tag("derived_sphere_seam");
             annotations.exactness(id, Exactness::Derived);
         }
@@ -6608,7 +6608,7 @@ mod tests {
         };
         let mut annotations = AnnotationBuilder::new();
         let source_stream = annotations.stream("test");
-        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, source_stream.clone());
+        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, &source_stream);
 
         assert!(brep.pcurves.is_empty());
         assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);

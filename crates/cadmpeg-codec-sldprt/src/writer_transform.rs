@@ -264,7 +264,7 @@ fn transform_surface(
         } => {
             *carrier = transform.compose(*carrier).map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
-            })?
+            })?;
         }
     }
     Ok(())
@@ -332,7 +332,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         } => {
             *carrier = transform.compose(*carrier).map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
-            })?
+            })?;
         }
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(

@@ -307,7 +307,7 @@ pub(crate) fn try_decode_geometry(
         {
             let pid = PointId::mint(format!("nx:s{si}:pt#{pi}")).expect("identity grammar");
             let vid = VertexId::mint(format!("nx:s{si}:v#{pi}")).expect("identity grammar");
-            annotate_node(&mut annotations, &pid, source_stream.clone(), node, "POINT");
+            annotate_node(&mut annotations, &pid, &source_stream, node, "POINT");
             annotations.derived(&pid, "position");
             ir.model.points.push(Point {
                 id: pid.clone(),
@@ -342,7 +342,7 @@ pub(crate) fn try_decode_geometry(
             annotate_node(
                 &mut annotations,
                 &id,
-                source_stream.clone(),
+                &source_stream,
                 node,
                 surface_tag(&geometry),
             );
@@ -545,7 +545,7 @@ pub(crate) fn try_decode_geometry(
             annotate_node(
                 &mut annotations,
                 &id,
-                source_stream.clone(),
+                &source_stream,
                 node,
                 curve_tag(&geometry),
             );
@@ -918,7 +918,7 @@ pub(crate) fn try_decode_geometry(
             &mut surfaces_by_xmt,
             &mut curves_by_xmt,
             &pcurves_by_xmt,
-            source_stream.clone(),
+            &source_stream,
             &mut annotations,
         );
         let intersection_starts = IntersectionEntityStarts {
@@ -941,7 +941,7 @@ pub(crate) fn try_decode_geometry(
             &pcurves_by_xmt,
             &pcurve_supports_by_xmt,
             &trim_ranges,
-            source_stream.clone(),
+            &source_stream,
             &mut annotations,
             &mut intersection_index,
             intersection_starts,

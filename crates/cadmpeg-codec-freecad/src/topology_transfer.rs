@@ -1864,16 +1864,16 @@ fn select_pcurve_representation<'a>(
                 surface: candidate_surface,
                 location,
                 ..
-            } if *candidate_surface == surface => {
-                if exact_transforms_equal(
+            } if *candidate_surface == surface
+                && exact_transforms_equal(
                     edge_transform
                         .compose(tables.location(*location))
                         .map_err(location_transform_error)?,
                     surface_transform,
-                ) {
-                    matched = Some((index, representation));
-                    break;
-                }
+                ) =>
+            {
+                matched = Some((index, representation));
+                break;
             }
             _ => {}
         }

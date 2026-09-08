@@ -592,7 +592,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         &graph,
         &edges,
         "nx:test",
-        stream.clone(),
+        &stream,
         &mut annotations,
     );
 
@@ -655,7 +655,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         &graph,
         &edges,
         "nx:test",
-        stream.clone(),
+        &stream,
         &mut annotations,
     );
     assert_eq!(off_support_ir.model.edges[0].curve, None);
@@ -684,7 +684,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         &graph,
         &edges,
         "nx:test",
-        source_stream.clone(),
+        &source_stream,
         &mut annotations,
     );
 
