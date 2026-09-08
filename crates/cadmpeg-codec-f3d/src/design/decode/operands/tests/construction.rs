@@ -123,8 +123,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [26, 37]
     );
-    assert_eq!(group.role, DesignOperandRole::BODIES_B);
-    assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
+    assert_eq!(group.role(), DesignOperandRole::BODIES_B);
+    assert_eq!(group.extrude_role(), Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.frame.member_count_offset, 21);
     assert!(group.frame.auxiliary_records.is_empty());
     assert_eq!(
@@ -147,9 +147,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
         .complete()
         .expect("counted Extrude whole-body group");
-    assert_eq!(whole_body.role, DesignOperandRole::BODIES_A);
+    assert_eq!(whole_body.role(), DesignOperandRole::BODIES_A);
     assert_eq!(
-        whole_body.extrude_role,
+        whole_body.extrude_role(),
         Some(DesignExtrudeOperandRole::Bodies)
     );
 
@@ -179,7 +179,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(flagged.role, DesignOperandRole::BODIES_B);
+    assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
     start_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
@@ -188,7 +188,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &record)
             .complete()
             .expect("counted Extrude retained role-five group");
-    assert_eq!(retained_role_five.extrude_role, None);
+    assert_eq!(retained_role_five.extrude_role(), None);
 
     let mut from_face_scope = scope.clone();
     if let crate::records::feature::DesignScopePayload::Extrude(slot)
@@ -218,14 +218,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&start_face_bytes, &from_face_scope, 0, &record)
             .complete()
             .expect("counted Extrude start-face group");
-    assert_eq!(start_face.role, DesignOperandRole::ROLE_0X5);
-    assert_eq!(start_face.extrude_role, None);
+    assert_eq!(start_face.role(), DesignOperandRole::ROLE_0X5);
+    assert_eq!(start_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
     );
     assert_eq!(
-        start_face.extrude_role,
+        start_face.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Start
         ))
@@ -262,14 +262,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
             .complete()
             .expect("counted Extrude legacy to-face group");
-    assert_eq!(legacy_to_face.role, DesignOperandRole::ROLE_0X12);
-    assert_eq!(legacy_to_face.extrude_role, None);
+    assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
+    assert_eq!(legacy_to_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
     );
     assert_eq!(
-        legacy_to_face.extrude_role,
+        legacy_to_face.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Termination
         ))
@@ -297,7 +297,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(flagless.role, DesignOperandRole::BODIES_B);
+    assert_eq!(flagless.role(), DesignOperandRole::BODIES_B);
     assert!(!flagless.frame.variant);
     assert_eq!(
         flagless.paired_byte_offset,
@@ -392,14 +392,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         [37, 48]
     );
     assert!(auxiliary.frame.trailing_records.is_empty());
-    assert_eq!(auxiliary.role, DesignOperandRole::FACES);
-    assert_eq!(auxiliary.extrude_role, None);
+    assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
+    assert_eq!(auxiliary.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut auxiliary),
     );
     assert_eq!(
-        auxiliary.extrude_role,
+        auxiliary.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Termination
         ))
@@ -417,7 +417,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .unwrap();
     let mut tool_group = group.clone();
     tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    tool_group.role = DesignOperandRole::ROLE_0X21;
+    tool_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     let mut target_group = group.clone();
     target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     target_group.record_index = 400;
@@ -426,7 +428,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 500,
         offset: 1129,
     }];
-    target_group.role = DesignOperandRole::ROLE_0X10;
+    target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
     let split_groups = [tool_group, target_group];
     let (features, _) = project_parameter_design(
         &[],
@@ -618,7 +622,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 200,
         offset: 1096,
     }];
-    split_tool_group.role = DesignOperandRole::ROLE_0X9;
+    split_tool_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
     let mut split_target_group = group.clone();
     split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     split_target_group.record_index = 400;
@@ -627,7 +632,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 500,
         offset: 1118,
     }];
-    split_target_group.role = DesignOperandRole::BODIES_A;
+    split_target_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let split_tool = DesignFaceOperand {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
         scope_record_index: split_body_scope.record_index,
@@ -730,7 +736,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     construction_tool_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
     let mut construction_tool = split_tool_group.clone();
-    construction_tool.role = DesignOperandRole::ROLE_0X21;
+    construction_tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     construction_tool.members = vec![200, 201]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
@@ -762,7 +770,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         match mutate {
             0 => tool.scope_reference_ordinal = 1,
             1 => tool.record_index = 101,
-            2 => tool.role = DesignOperandRole::BODIES_B,
+            2 => {
+                tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                )
+            }
             3 => {
                 tool.members = vec![crate::records::Located {
                     value: 201,
@@ -778,7 +790,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         match mutate {
             0 => target.scope_reference_ordinal = 3,
             1 => target.record_index = 401,
-            2 => target.role = DesignOperandRole::ROLE_0X5,
+            2 => {
+                target.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                )
+            }
             3 => {
                 target.members = vec![crate::records::Located {
                     value: 501,
@@ -820,7 +836,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 200,
         offset: 1096,
     }];
-    delete_group.role = DesignOperandRole::ROLE_0X10;
+    delete_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
     let mut delete_face_operand = split_tool.clone();
     delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
     delete_face_operand.scope_record_index = delete_scope.record_index;
@@ -1085,7 +1103,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody.into();
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    remove_group.role = DesignOperandRole::BODIES_A;
+    remove_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert_eq!(
         crate::design::feature_project::project_remove_body(
             &remove_scope,
@@ -1116,7 +1135,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
         .collect();
-    stitch_group.role = DesignOperandRole::ROLE_0X5;
+    stitch_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert_eq!(
         crate::design::feature_project::project_surface_stitch(
             &stitch_scope,
@@ -1233,7 +1253,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
                 .collect::<Vec<_>>(),
             [group_record_index + 3]
         );
-        assert_eq!(group.role, DesignOperandRole::BODIES_A);
+        assert_eq!(group.role(), DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
         assert_eq!(group.paired_byte_offset, paired_at as u64);
     }
@@ -1313,13 +1333,13 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let mut group = parse_construction_operand_group(&bytes, &scope, 0, &header)
         .complete()
         .expect("class-296 two-sided-to-faces construction group");
-    assert_eq!(group.extrude_role, None);
+    assert_eq!(group.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut group),
     );
     assert_eq!(
-        group.extrude_role,
+        group.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
             DesignExtrudeFaceRole::Termination
         ))
@@ -1330,7 +1350,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &header)
         .complete()
         .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role, None);
+    assert_eq!(group.extrude_role(), None);
 
     let mut wrong_extent = scope;
     let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
@@ -1342,7 +1362,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &header)
         .complete()
         .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role, None);
+    assert_eq!(group.extrude_role(), None);
 }
 
 #[test]

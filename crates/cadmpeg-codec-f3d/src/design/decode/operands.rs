@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+use crate::records::topology::{DesignConstructionOperandRole, DesignExtrudeFaceEncoding};
+
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
@@ -698,40 +700,40 @@ pub fn decode_face_operands(
             continue;
         };
         let is_extrude_operand = matches!(
-            group.extrude_role,
+            group.extrude_role(),
             Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces(_))
         );
         let is_offset_faces_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::OffsetFaces)
-            && group.role == DesignOperandRole::ROLE_0X10;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_shell_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Shell)
-            && group.role == DesignOperandRole::ROLE_0X10;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_loft_profile = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Loft)
             && matches!(
-                group.role,
+                group.role(),
                 DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
             );
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
-            && group.role == DesignOperandRole::FACES;
+            && group.role() == DesignOperandRole::FACES;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
-            && group.role == DesignOperandRole::ROLE_0X21;
+            && group.role() == DesignOperandRole::ROLE_0X21;
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind()),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
         );
         let is_circular_pattern_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::CircularPattern)
-            && group.role == DesignOperandRole::BODIES_B;
+            && group.role() == DesignOperandRole::BODIES_B;
         let is_mirror_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == DesignOperandRole::BODIES_B;
+            && group.role() == DesignOperandRole::BODIES_B;
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == DesignOperandRole::ROLE_0X5;
+            && group.role() == DesignOperandRole::ROLE_0X5;
         let is_split_face_operand =
             scope.kind() == crate::records::feature::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
@@ -740,17 +742,17 @@ pub fn decode_face_operands(
                 | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
         );
         let is_thread_face = scope.kind() == crate::records::feature::DesignFeatureKind::Thread
-            && group.role == DesignOperandRole::ROLE_0X10;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_hole_face = scope.kind() == crate::records::feature::DesignFeatureKind::Hole
-            && group.role == DesignOperandRole::BODIES_A;
+            && group.role() == DesignOperandRole::BODIES_A;
         let is_draft_operand =
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
-            && group.role == DesignOperandRole::ROLE_0X10;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
-            && group.role == DesignOperandRole::PROFILE;
+            && group.role() == DesignOperandRole::PROFILE;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -771,7 +773,7 @@ pub fn decode_face_operands(
         {
             continue;
         }
-        if group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+        if group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
             && scope.extrude_profile().is_some()
         {
             continue;
@@ -1668,22 +1670,28 @@ pub(crate) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
 ) {
-    let mut face_groups = groups
-        .iter_mut()
-        .filter(|group| extrude_operand_role(scope, group.role) == Some(PendingExtrudeRole::Faces));
+    let mut face_groups =
+        groups
+            .iter_mut()
+            .filter_map(|group| match extrude_operand_role(scope, group.role()) {
+                Some(PendingExtrudeRole::Faces(encoding)) => Some((group, encoding)),
+                _ => None,
+            });
     if scope.extrude_prologue().map(DesignExtrudePrologue::start)
         == Some(DesignExtrudeStart::FromFace)
     {
-        if let Some(group) = face_groups.next() {
-            group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
-                DesignExtrudeFaceRole::Start,
-            ));
+        if let Some((group, encoding)) = face_groups.next() {
+            group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+                encoding,
+                usage: DesignExtrudeFaceRole::Start,
+            };
         }
     }
-    for group in face_groups {
-        group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
-            DesignExtrudeFaceRole::Termination,
-        ));
+    for (group, encoding) in face_groups {
+        group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+            encoding,
+            usage: DesignExtrudeFaceRole::Termination,
+        };
     }
 }
 
@@ -1958,9 +1966,10 @@ impl ConstructionOperandGroupParse {
 /// start and termination uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PendingExtrudeRole {
-    Bodies,
+    BodiesA,
+    BodiesB,
     Profile,
-    Faces,
+    Faces(DesignExtrudeFaceEncoding),
 }
 
 /// Interpret the role of a counted group owned by an Extrude scope.
@@ -1978,16 +1987,19 @@ fn extrude_operand_role(
         return None;
     }
     match role {
-        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B => {
-            Some(PendingExtrudeRole::Bodies)
-        }
+        DesignOperandRole::BODIES_A => Some(PendingExtrudeRole::BodiesA),
+        DesignOperandRole::BODIES_B => Some(PendingExtrudeRole::BodiesB),
         DesignOperandRole::PROFILE => Some(PendingExtrudeRole::Profile),
-        DesignOperandRole::FACES => Some(PendingExtrudeRole::Faces),
+        DesignOperandRole::FACES => {
+            Some(PendingExtrudeRole::Faces(DesignExtrudeFaceEncoding::Faces))
+        }
         DesignOperandRole::ROLE_0X5
             if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>
         {
-            Some(PendingExtrudeRole::Faces)
+            Some(PendingExtrudeRole::Faces(
+                DesignExtrudeFaceEncoding::SelectedStart,
+            ))
         }
         DesignOperandRole::ROLE_0X12
             if scope
@@ -1995,11 +2007,13 @@ fn extrude_operand_role(
                 .and_then(DesignExtrudePrologue::extent)
                 == Some(DesignExtrudeExtent::OneSidedToFace) =>
         {
-            Some(PendingExtrudeRole::Faces)
+            Some(PendingExtrudeRole::Faces(
+                DesignExtrudeFaceEncoding::LegacyTermination,
+            ))
         }
-        DesignOperandRole::ROLE_0X12 if is_class_296_two_sided_to_faces_scope(scope) => {
-            Some(PendingExtrudeRole::Faces)
-        }
+        DesignOperandRole::ROLE_0X12 if is_class_296_two_sided_to_faces_scope(scope) => Some(
+            PendingExtrudeRole::Faces(DesignExtrudeFaceEncoding::LegacyTermination),
+        ),
         _ => None,
     }
 }
@@ -2198,10 +2212,11 @@ pub(crate) fn parse_construction_operand_group(
     // Face groups take their start/termination use from their ordered position
     // in the scope, which `assign_extrude_face_roles` resolves once every group
     // of the scope is decoded.
-    let extrude_role = match extrude_operand_role(scope, role) {
-        Some(PendingExtrudeRole::Bodies) => Some(DesignExtrudeOperandRole::Bodies),
-        Some(PendingExtrudeRole::Profile) => Some(DesignExtrudeOperandRole::Profile),
-        Some(PendingExtrudeRole::Faces) | None => None,
+    let operand_role = match extrude_operand_role(scope, role) {
+        Some(PendingExtrudeRole::BodiesA) => DesignConstructionOperandRole::ExtrudeBodiesA,
+        Some(PendingExtrudeRole::BodiesB) => DesignConstructionOperandRole::ExtrudeBodiesB,
+        Some(PendingExtrudeRole::Profile) => DesignConstructionOperandRole::ExtrudeProfile,
+        Some(PendingExtrudeRole::Faces(_)) | None => DesignConstructionOperandRole::Other(role),
     };
     let (Ok(member_count_offset), Ok(role_offset), Ok(opaque_index_offset), Ok(paired_byte_offset)) = (
         u64::try_from(member_count_at),
@@ -2237,8 +2252,7 @@ pub(crate) fn parse_construction_operand_group(
             opaque_scalar_offset: opaque_index_offset + 4,
             variant,
         },
-        role,
-        extrude_role,
+        operand_role,
         role_offset,
         paired_class_tag,
         paired_byte_offset,

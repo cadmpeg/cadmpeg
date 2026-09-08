@@ -1104,7 +1104,7 @@ pub fn project_parameter_design_with_edge_identities(
                                                     && group.scope_record_index
                                                         == scope.record_index
                                                     && group.record_index == *group_record_index
-                                                    && group.role == DesignOperandRole::ROLE_0X10
+                                                    && group.role() == DesignOperandRole::ROLE_0X10
                                                     && group
                                                         .members
                                                         .iter()
@@ -2327,7 +2327,7 @@ fn project_thread_face_selection(
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
                 && group.record_index == *record_index
-                && group.role == DesignOperandRole::ROLE_0X10
+                && group.role() == DesignOperandRole::ROLE_0X10
         });
         let Some(group) = matching.next() else {
             return FaceSelection::Unresolved;
@@ -2409,7 +2409,7 @@ fn project_full_round_fillet(
     });
     let group = groups.next()?;
     if groups.next().is_some()
-        || group.role != DesignOperandRole::BODIES_A
+        || group.role() != DesignOperandRole::BODIES_A
         || group.members.len() != 1
         || group.frame.trailing_records.len() != 1
         || group.frame.trailing_flags.len() != 1
@@ -2819,7 +2819,7 @@ fn project_surface_offset(
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
                 && group.record_index == *group_record_index
-                && group.role == DesignOperandRole::PROFILE
+                && group.role() == DesignOperandRole::PROFILE
                 && !group.members.is_empty()
         });
         let group = matching_groups.next()?;
@@ -2872,7 +2872,7 @@ fn project_draft(
         .filter(|group| {
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
-                && group.role == DesignOperandRole::ROLE_0X21
+                && group.role() == DesignOperandRole::ROLE_0X21
                 && !group.members.is_empty()
         })
         .collect::<Vec<_>>();
@@ -3241,7 +3241,7 @@ fn single_operand_group<'a>(
         .filter(|group| {
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
-                && group.role == role
+                && group.role() == role
                 && !group.members.is_empty()
         })
         .collect::<Vec<_>>();
@@ -3312,7 +3312,7 @@ pub(crate) fn project_thicken(
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
                 && matches!(
-                    group.role,
+                    group.role(),
                     DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X12
                 )
                 && !group.members.is_empty()
@@ -3427,7 +3427,7 @@ fn project_base_flange(
     };
     if profile_group.scope_reference_ordinal != 0
         || profile_group.record_index != operation.profile_group_record_index
-        || profile_group.role != DesignOperandRole::PROFILE
+        || profile_group.role() != DesignOperandRole::PROFILE
         || !profile_group
             .members
             .iter()
@@ -3518,7 +3518,7 @@ pub(crate) fn project_edge_flange(
                     native_stream(&group.id) == Some(stream)
                         && group.scope_record_index == scope.record_index
                         && group.record_index == *target_group_record_index
-                        && group.role == DesignOperandRole::ROLE_0X21
+                        && group.role() == DesignOperandRole::ROLE_0X21
                         && group
                             .members
                             .iter()
@@ -3658,7 +3658,7 @@ pub(crate) fn project_edge_flange(
             });
             let edge_group = matching.next()?;
             if matching.next().is_some()
-                || edge_group.role != DesignOperandRole::BODIES_B
+                || edge_group.role() != DesignOperandRole::BODIES_B
                 || edge_group.members.len() != 1
             {
                 return None;
@@ -3768,7 +3768,7 @@ pub(crate) fn project_hem(
     });
     let edge_group = edge_groups.next()?;
     let edge_has_extra = edge_groups.next().is_some();
-    let edge_role_ok = edge_group.role == DesignOperandRole::BODIES_B;
+    let edge_role_ok = edge_group.role() == DesignOperandRole::BODIES_B;
     let edge_members_ok = edge_group
         .members
         .iter()
@@ -3785,7 +3785,7 @@ pub(crate) fn project_hem(
     });
     let aggregate_group = aggregate_groups.next()?;
     let aggregate_has_extra = aggregate_groups.next().is_some();
-    let aggregate_role_ok = aggregate_group.role == DesignOperandRole::ROLE_0X43;
+    let aggregate_role_ok = aggregate_group.role() == DesignOperandRole::ROLE_0X43;
     let aggregate_members_ok = aggregate_group
         .members
         .iter()
@@ -3882,7 +3882,7 @@ pub(crate) fn project_surface_stitch(
                         .iter()
                         .map(|member| member.value)
                         .eq([*member_reference])
-                    || group.role != DesignOperandRole::ROLE_0X5
+                    || group.role() != DesignOperandRole::ROLE_0X5
             })
     {
         return None;
@@ -3948,7 +3948,7 @@ pub(crate) fn project_ruled_surface(
         });
         let group = matching.next()?;
         if matching.next().is_some()
-            || group.role != DesignOperandRole::BODIES_B
+            || group.role() != DesignOperandRole::BODIES_B
             || group.members.len() != 1
         {
             return None;
@@ -5349,7 +5349,7 @@ fn project_chamfer(
         .filter(|group| {
             native_stream(&group.id) == native_scope
                 && group.scope_record_index == scope.record_index
-                && group.extrude_role.is_none()
+                && group.extrude_role().is_none()
         })
         .collect::<Vec<_>>();
     edge_groups.sort_by_key(|group| group.scope_reference_ordinal);
@@ -5630,17 +5630,17 @@ pub(crate) fn project_fixed_revolve_with_entities(
         .collect::<Vec<_>>();
     let profiles = groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::PROFILE)
+        .filter(|group| group.role() == DesignOperandRole::PROFILE)
         .collect::<Vec<_>>();
     let axes = groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::ROLE_0X21)
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X21)
         .collect::<Vec<_>>();
     let bodies = groups
         .iter()
         .filter(|group| {
             matches!(
-                group.role,
+                group.role(),
                 DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
             )
         })
@@ -5795,7 +5795,7 @@ pub(crate) fn bind_revolve_face_axes(
             .filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-                    && group.role == DesignOperandRole::ROLE_0X21
+                    && group.role() == DesignOperandRole::ROLE_0X21
             })
             .collect::<Vec<_>>();
         let [group] = groups.as_slice() else {
@@ -6041,12 +6041,12 @@ pub(crate) fn project_fixed_loft(
         [_] => {
             if groups
                 .iter()
-                .any(|group| group.role == DesignOperandRole::BODIES_A)
+                .any(|group| group.role() == DesignOperandRole::BODIES_A)
             {
                 return None;
             }
             let mut body_groups = groups.iter().filter(|group| {
-                group.role == DesignOperandRole::BODIES_B && group.scope_reference_ordinal == 1
+                group.role() == DesignOperandRole::BODIES_B && group.scope_reference_ordinal == 1
             });
             let body_group = body_groups.next()?;
             if body_groups.next().is_some() {
@@ -6057,7 +6057,7 @@ pub(crate) fn project_fixed_loft(
         _ => return None,
     };
     let is_body_group = |group: &DesignConstructionOperandGroup| {
-        group.role == DesignOperandRole::BODIES_A
+        group.role() == DesignOperandRole::BODIES_A
             || legacy_body_group_identity
                 == Some((group.record_index, group.scope_reference_ordinal))
     };
@@ -6075,7 +6075,7 @@ pub(crate) fn project_fixed_loft(
         .iter()
         .filter(|group| {
             matches!(
-                group.role,
+                group.role(),
                 DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
             )
         })
@@ -6084,7 +6084,7 @@ pub(crate) fn project_fixed_loft(
     let (sections, guides, centerline) = if profile_groups.len() >= 2 {
         if operands.iter().any(|group| {
             !matches!(
-                group.role,
+                group.role(),
                 DesignOperandRole::PROFILE
                     | DesignOperandRole::ROLE_0X43
                     | DesignOperandRole::ROLE_0X5
@@ -6105,7 +6105,7 @@ pub(crate) fn project_fixed_loft(
             .collect::<Vec<_>>();
         let guides = operands
             .iter()
-            .filter(|group| group.role == DesignOperandRole::ROLE_0X5)
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
             .map(|group| {
                 resolved_loft_path(
                     group,
@@ -6118,7 +6118,7 @@ pub(crate) fn project_fixed_loft(
             .collect::<Vec<_>>();
         let centerlines = operands
             .iter()
-            .filter(|group| group.role == DesignOperandRole::ROLE_0X7)
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X7)
             .map(|group| {
                 resolved_loft_path(
                     group,
@@ -6139,20 +6139,20 @@ pub(crate) fn project_fixed_loft(
         if profile_groups.len() == 1
             && operands.iter().all(|group| {
                 matches!(
-                    group.role,
+                    group.role(),
                     DesignOperandRole::ROLE_0X43 | DesignOperandRole::ROLE_0X5
                 )
             })
         {
             let point_ordinal = operands.iter().position(|group| {
-                group.role == DesignOperandRole::ROLE_0X5 && group.members.len() == 1
+                group.role() == DesignOperandRole::ROLE_0X5 && group.members.len() == 1
             })?;
             if !matches!(point_ordinal, 0) && point_ordinal + 1 != operands.len() {
                 return None;
             }
             if operands.iter().enumerate().any(|(ordinal, group)| {
                 ordinal != point_ordinal
-                    && group.role == DesignOperandRole::ROLE_0X5
+                    && group.role() == DesignOperandRole::ROLE_0X5
                     && group.members.len() == 1
             }) {
                 return None;
@@ -6175,12 +6175,12 @@ pub(crate) fn project_fixed_loft(
         } else if profile_groups.is_empty() {
             let role = if operands
                 .iter()
-                .all(|group| group.role == DesignOperandRole::PROFILE)
+                .all(|group| group.role() == DesignOperandRole::PROFILE)
             {
                 DesignOperandRole::PROFILE
             } else if operands
                 .iter()
-                .all(|group| group.role == DesignOperandRole::ROLE_0X5)
+                .all(|group| group.role() == DesignOperandRole::ROLE_0X5)
             {
                 DesignOperandRole::ROLE_0X5
             } else {
@@ -6189,7 +6189,7 @@ pub(crate) fn project_fixed_loft(
             (
                 operands
                     .iter()
-                    .filter(|group| group.role == role)
+                    .filter(|group| group.role() == role)
                     .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
                     .collect::<Vec<_>>(),
                 Vec::new(),
@@ -6378,7 +6378,7 @@ pub(crate) fn project_circular_pattern(
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
                 && matches!(
-                    group.role,
+                    group.role(),
                     DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                 )
                 && !group.members.is_empty()
@@ -6387,7 +6387,7 @@ pub(crate) fn project_circular_pattern(
     let [group] = matching_groups.as_slice() else {
         return None;
     };
-    let seed = if group.role == DesignOperandRole::BODIES_A {
+    let seed = if group.role() == DesignOperandRole::BODIES_A {
         PatternSeed::Faces(
             resolved_historical_face_group(
                 scope,
@@ -6494,7 +6494,7 @@ fn project_rectangular_pattern_scalars(
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
                     && matches!(
-                        group.role,
+                        group.role(),
                         DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                     )
                     && !group.members.is_empty()
@@ -6503,7 +6503,7 @@ fn project_rectangular_pattern_scalars(
         let [group] = matching_groups.as_slice() else {
             return None;
         };
-        Some(if group.role == DesignOperandRole::BODIES_A {
+        Some(if group.role() == DesignOperandRole::BODIES_A {
             PatternSeed::Faces(
                 resolved_historical_face_group(
                     scope,
@@ -6554,7 +6554,7 @@ pub(crate) fn project_mirror(
         .filter(|group| {
             group.record_index == construction.seed_group_record_index
                 && matches!(
-                    group.role,
+                    group.role(),
                     DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                 )
                 && !group.members.is_empty()
@@ -6565,7 +6565,7 @@ pub(crate) fn project_mirror(
         .copied()
         .filter(|group| {
             group.record_index == construction.plane_group_record_index
-                && group.role == DesignOperandRole::ROLE_0X5
+                && group.role() == DesignOperandRole::ROLE_0X5
                 && group.members.len() == 1
         })
         .collect::<Vec<_>>();
@@ -6587,7 +6587,7 @@ pub(crate) fn project_mirror(
             return None;
         };
         PatternSeed::Feature(neutral_feature_id(seed_scope))
-    } else if seed_group.role == DesignOperandRole::BODIES_B {
+    } else if seed_group.role() == DesignOperandRole::BODIES_B {
         PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
             seed_group.id.clone(),
         ))
@@ -6675,20 +6675,20 @@ pub(crate) fn project_fixed_sweep(
         .collect::<Vec<_>>();
     let profiles = groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::PROFILE)
+        .filter(|group| group.role() == DesignOperandRole::PROFILE)
         .collect::<Vec<_>>();
     let mut paths = groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::ROLE_0X5)
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
         .collect::<Vec<_>>();
     paths.sort_by_key(|group| group.scope_reference_ordinal);
     let bodies = groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::BODIES_A)
+        .filter(|group| group.role() == DesignOperandRole::BODIES_A)
         .collect::<Vec<_>>();
     let guide_surfaces = groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::FACES)
+        .filter(|group| group.role() == DesignOperandRole::FACES)
         .collect::<Vec<_>>();
     let guide_surface_form = match guide_surfaces.as_slice() {
         [] => false,
@@ -6900,13 +6900,13 @@ fn project_fixed_pipe(
     let path_group = if legacy_reference_layout {
         if groups
             .iter()
-            .any(|group| group.role != DesignOperandRole::ROLE_0X5)
+            .any(|group| group.role() != DesignOperandRole::ROLE_0X5)
         {
             return None;
         }
         let mut legacy_paths = groups
             .iter()
-            .filter(|group| group.role == DesignOperandRole::ROLE_0X5);
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5);
         let path_group = legacy_paths.next()?;
         if legacy_paths.next().is_some() {
             return None;
@@ -6941,7 +6941,7 @@ fn project_fixed_pipe(
         let [path_group] = groups.as_slice() else {
             return None;
         };
-        if path_group.role != DesignOperandRole::ROLE_0X5
+        if path_group.role() != DesignOperandRole::ROLE_0X5
             || path_group.scope_reference_ordinal != 5
             || scope.reference_members.values().nth(5) != Some(&path_group.record_index)
             || path_group.members.is_empty()
@@ -7054,7 +7054,7 @@ pub(crate) fn project_surface_patch(
         if scope.reference_members.len() < 3
             || group.scope_reference_ordinal != 0
             || group.record_index != *scope.reference_members.values().next()?
-            || group.role != DesignOperandRole::BODIES_A
+            || group.role() != DesignOperandRole::BODIES_A
             || group.members.is_empty()
             || !group.members.iter().map(|member| member.value).eq(scope
                 .reference_members
@@ -7108,7 +7108,7 @@ pub(crate) fn project_surface_patch(
         let settings_ordinal = group_ordinal.checked_add(2)?;
         if settings_ordinal >= scope.reference_members.len()
             || boundary.record_index != *scope.reference_members.values().nth(group_ordinal)?
-            || boundary.role != boundary_role
+            || boundary.role() != boundary_role
             || !boundary.members.iter().map(|member| member.value).eq(scope
                 .reference_members
                 .values()
@@ -7196,7 +7196,7 @@ pub(crate) fn project_boundary_fill(
     let (tools, cells) = groups.split_first()?;
     if tools.scope_reference_ordinal != 0
         || tools.record_index != *scope.reference_members.values().next()?
-        || tools.role != DesignOperandRole::BODIES_A
+        || tools.role() != DesignOperandRole::BODIES_A
         || cells.is_empty()
     {
         return None;
@@ -7214,7 +7214,7 @@ pub(crate) fn project_boundary_fill(
                 .iter()
                 .map(|member| member.value)
                 .eq(scope.reference_members.values_in(start + 1..end)?.copied())
-            || (index > 0 && group.role != DesignOperandRole::ROLE_0X5)
+            || (index > 0 && group.role() != DesignOperandRole::ROLE_0X5)
         {
             return None;
         }
@@ -7368,7 +7368,7 @@ fn project_replace_face(
         .map(|value| *value);
     if replacement_group.scope_reference_ordinal != 0
         || replacement_group.record_index != references[0]
-        || replacement_group.role != DesignOperandRole::ROLE_0X9
+        || replacement_group.role() != DesignOperandRole::ROLE_0X9
         || !replacement_group
             .members
             .iter()
@@ -7376,7 +7376,7 @@ fn project_replace_face(
             .eq(references[1..2].iter().copied())
         || target_group.scope_reference_ordinal != 2
         || target_group.record_index != references[2]
-        || target_group.role != DesignOperandRole::ROLE_0X10
+        || target_group.role() != DesignOperandRole::ROLE_0X10
         || !target_group
             .members
             .iter()
@@ -7435,7 +7435,7 @@ pub(crate) fn project_surface_trim(
     };
     if target_group.scope_reference_ordinal != 0
         || target_group.record_index != references[0]
-        || target_group.role != DesignOperandRole::BODIES_A
+        || target_group.role() != DesignOperandRole::BODIES_A
         || !target_group
             .members
             .iter()
@@ -7443,7 +7443,7 @@ pub(crate) fn project_surface_trim(
             .eq(references[1..2].iter().copied())
         || tool_group.scope_reference_ordinal != 2
         || tool_group.record_index != references[2]
-        || tool_group.role != DesignOperandRole::ROLE_0X21
+        || tool_group.role() != DesignOperandRole::ROLE_0X21
         || !tool_group
             .members
             .iter()
@@ -7542,7 +7542,7 @@ pub(crate) fn project_split(
             .eq(tool_members.copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != target_record_index
-        || targets.role != DesignOperandRole::BODIES_A
+        || targets.role() != DesignOperandRole::BODIES_A
         || targets.members.is_empty()
         || !targets
             .members
@@ -7552,7 +7552,7 @@ pub(crate) fn project_split(
     {
         return None;
     }
-    let tools = match tool_group.role {
+    let tools = match tool_group.role() {
         DesignOperandRole::ROLE_0X9 => {
             let [crate::records::Located {
                 value: tool_record_index,
@@ -7637,7 +7637,7 @@ fn project_split_face(
     let target_ordinal = tool.members.len().checked_add(1)?;
     if tool.scope_reference_ordinal != 0
         || tool.record_index != *scope.reference_members.values().next()?
-        || tool.role != DesignOperandRole::ROLE_0X21
+        || tool.role() != DesignOperandRole::ROLE_0X21
         || tool.members.is_empty()
         || !tool.members.iter().map(|member| member.value).eq(scope
             .reference_members
@@ -7645,7 +7645,7 @@ fn project_split_face(
             .copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != *scope.reference_members.values().nth(target_ordinal)?
-        || targets.role != DesignOperandRole::ROLE_0X10
+        || targets.role() != DesignOperandRole::ROLE_0X10
         || targets.members.is_empty()
         || !targets.members.iter().map(|member| member.value).eq(scope
             .reference_members
@@ -7758,7 +7758,7 @@ fn project_delete_face(
     };
     if group.scope_reference_ordinal != 0
         || group.record_index != *scope.reference_members.values().next()?
-        || group.role != DesignOperandRole::ROLE_0X10
+        || group.role() != DesignOperandRole::ROLE_0X10
         || !group.members.iter().map(|member| member.value).eq(scope
             .reference_members
             .values()
@@ -7913,7 +7913,7 @@ pub(crate) fn project_extrude(
         .iter()
         .filter(|group| {
             group
-                .extrude_role
+                .extrude_role()
                 .is_some_and(|role| matches!(role, DesignExtrudeOperandRole::Faces(_)))
         })
         .copied()
@@ -8018,8 +8018,8 @@ pub(crate) fn project_extrude(
     let target_shape_groups = scope_groups
         .iter()
         .filter(|group| {
-            group.role == DesignOperandRole::ROLE_0X5
-                && group.extrude_role.is_none()
+            group.role() == DesignOperandRole::ROLE_0X5
+                && group.extrude_role().is_none()
                 && group.extrude_face_role().is_none()
                 && first_side_target_ordinal
                     .is_none_or(|ordinal| group.scope_reference_ordinal == ordinal)
@@ -8298,7 +8298,7 @@ pub(crate) fn project_extrude(
     };
     let has_body_operands = scope_groups
         .iter()
-        .any(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Bodies));
+        .any(|group| group.extrude_role() == Some(DesignExtrudeOperandRole::Bodies));
     let op = match (prologue.operation(), has_body_operands) {
         (DesignExtrudeOperation::Join, true) => BooleanOp::Join,
         (DesignExtrudeOperation::Cut, true) => BooleanOp::Cut,
@@ -8604,7 +8604,7 @@ fn project_coil(
         let mut body_groups = construction_groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-                && group.role == expected_role
+                && group.role() == expected_role
         });
         let first_body_group = body_groups.next();
         if body_groups.next().is_some() {

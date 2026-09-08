@@ -134,8 +134,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_B,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         paired_byte_offset: 0,
@@ -604,8 +605,9 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_B,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         paired_byte_offset: 0,
@@ -618,7 +620,9 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         value: 424,
         offset: target_group.members[0].offset,
     }];
-    target_group.role = DesignOperandRole::ROLE_0X21;
+    target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
 
     let target_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: format!("{stream}:design-entity-selection-operand#424"),
@@ -912,8 +916,9 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_A,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
         paired_byte_offset: 0,
@@ -1049,8 +1054,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                     opaque_scalar_offset: 0,
                     variant: false,
                 },
-                role,
-                extrude_role: None,
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
                 role_offset: 0,
                 paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned())
                     .unwrap(),

@@ -679,8 +679,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             opaque_scalar_offset: 1076,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_B,
-        extrude_role: Some(DesignExtrudeOperandRole::Bodies),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
         role_offset: 1054,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -720,8 +719,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         value: 201,
         offset: 1026,
     }];
-    target_shape_group.role = DesignOperandRole::ROLE_0X5;
-    target_shape_group.extrude_role = None;
+    target_shape_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     let Some(DesignExtrudePrologue::ReferenceAware {
         first_side_target_ordinal,
         ..
@@ -907,7 +906,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     first_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
     first_profile_group.record_index = 102;
     first_profile_group.scope_reference_ordinal = 0;
-    first_profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
+    first_profile_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile;
     let mut second_profile_group = first_profile_group.clone();
     second_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
     second_profile_group.record_index = 103;
@@ -950,8 +950,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut profile_group = body_group.clone();
     profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
     profile_group.record_index = 104;
-    profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
-    profile_group.role = DesignOperandRole::PROFILE;
+    profile_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile;
     let direct_profile_with_selection_group = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -1087,10 +1087,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     let mut face_group = body_group.clone();
     face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
-        DesignExtrudeFaceRole::Termination,
-    ));
-    face_group.role = DesignOperandRole::FACES;
+    face_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        };
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);
@@ -1227,9 +1228,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     set_extrude_direction_reversed(&mut scope, true);
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
-        DesignExtrudeFaceRole::Termination,
-    ));
+    face_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        };
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
         &scope,
@@ -1416,9 +1419,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
-    start_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(
-        DesignExtrudeFaceRole::Start,
-    ));
+    start_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Start,
+        };
     let from_face = project_extrude(
         &scope,
         &[

@@ -64,8 +64,9 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X5,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 0,

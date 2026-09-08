@@ -487,6 +487,64 @@ impl DesignOperandRole {
     }
 }
 
+/// Source encoding of an Extrude face operand run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignExtrudeFaceEncoding {
+    /// Standard face-group encoding.
+    Faces,
+    /// Selected-face start encoding.
+    SelectedStart,
+    /// Legacy termination-face encoding.
+    LegacyTermination,
+}
+
+/// A construction role classified in its owning scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignConstructionOperandRole {
+    /// A source role without an Extrude classification.
+    Other(DesignOperandRole),
+    /// Extrude body operand run A.
+    ExtrudeBodiesA,
+    /// Extrude body operand run B.
+    ExtrudeBodiesB,
+    /// Extrude profile operand run.
+    ExtrudeProfile,
+    /// An ordered Extrude face operand run.
+    ExtrudeFaces {
+        /// Source encoding admitted by the Extrude scope.
+        encoding: DesignExtrudeFaceEncoding,
+        /// Use assigned by the face run's position in the scope.
+        usage: DesignExtrudeFaceRole,
+    },
+}
+
+impl DesignConstructionOperandRole {
+    /// The source role code.
+    pub fn source(self) -> DesignOperandRole {
+        match self {
+            Self::Other(role) => role,
+            Self::ExtrudeBodiesA => DesignOperandRole::BODIES_A,
+            Self::ExtrudeBodiesB => DesignOperandRole::BODIES_B,
+            Self::ExtrudeProfile => DesignOperandRole::PROFILE,
+            Self::ExtrudeFaces { encoding, .. } => match encoding {
+                DesignExtrudeFaceEncoding::Faces => DesignOperandRole::FACES,
+                DesignExtrudeFaceEncoding::SelectedStart => DesignOperandRole::ROLE_0X5,
+                DesignExtrudeFaceEncoding::LegacyTermination => DesignOperandRole::ROLE_0X12,
+            },
+        }
+    }
+
+    /// The Extrude role of a scope-classified source encoding.
+    pub fn extrude(self) -> Option<DesignExtrudeOperandRole> {
+        match self {
+            Self::Other(_) => None,
+            Self::ExtrudeBodiesA | Self::ExtrudeBodiesB => Some(DesignExtrudeOperandRole::Bodies),
+            Self::ExtrudeProfile => Some(DesignExtrudeOperandRole::Profile),
+            Self::ExtrudeFaces { usage, .. } => Some(DesignExtrudeOperandRole::Faces(usage)),
+        }
+    }
+}
+
 /// Construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -517,11 +575,8 @@ pub struct DesignConstructionOperandGroup {
     pub lost_edge_references: Vec<String>,
     /// Exact framing of the operand-member run and its auxiliary fields.
     pub frame: DesignConstructionOperandGroupFrame,
-    /// Source u64 role code.
-    pub role: DesignOperandRole,
-    /// Extrude-specific semantic role of `role`. Face start/termination lives
-    /// on `Faces`.
-    pub extrude_role: Option<DesignExtrudeOperandRole>,
+    /// Source role classified in its owning scope.
+    pub operand_role: DesignConstructionOperandRole,
     /// Byte offset of `role`.
     pub role_offset: u64,
     /// Per-file dynamic paired class tag.
@@ -531,8 +586,18 @@ pub struct DesignConstructionOperandGroup {
 }
 
 impl DesignConstructionOperandGroup {
+    /// The source role code.
+    pub fn role(&self) -> DesignOperandRole {
+        self.operand_role.source()
+    }
+
+    /// The Extrude role derived from the scope-classified source encoding.
+    pub fn extrude_role(&self) -> Option<DesignExtrudeOperandRole> {
+        self.operand_role.extrude()
+    }
+
     pub(crate) fn extrude_face_role(&self) -> Option<DesignExtrudeFaceRole> {
-        match self.extrude_role {
+        match self.extrude_role() {
             Some(DesignExtrudeOperandRole::Faces(role)) => Some(role),
             _ => None,
         }
@@ -570,23 +635,28 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());
         }
-        let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
-            (Some(DesignExtrudeOperandRoleTag::Bodies), None) => {
-                Some(DesignExtrudeOperandRole::Bodies)
+        let role = DesignOperandRole::from_raw(wire.role);
+        let operand_role = match (role, wire.extrude_role, wire.extrude_face_role) {
+            (DesignOperandRole::BODIES_A, Some(DesignExtrudeOperandRoleTag::Bodies), None) => {
+                DesignConstructionOperandRole::ExtrudeBodiesA
             }
-            (Some(DesignExtrudeOperandRoleTag::Profile), None) => {
-                Some(DesignExtrudeOperandRole::Profile)
+            (DesignOperandRole::BODIES_B, Some(DesignExtrudeOperandRoleTag::Bodies), None) => {
+                DesignConstructionOperandRole::ExtrudeBodiesB
             }
-            (Some(DesignExtrudeOperandRoleTag::Faces), Some(face_role)) => {
-                Some(DesignExtrudeOperandRole::Faces(face_role))
+            (DesignOperandRole::PROFILE, Some(DesignExtrudeOperandRoleTag::Profile), None) => {
+                DesignConstructionOperandRole::ExtrudeProfile
             }
-            (None, None) => None,
-            _ => {
-                return Err(
-                    "extrude_face_role is required by, and only valid with, the faces extrude_role"
-                        .into(),
-                );
+            (role, Some(DesignExtrudeOperandRoleTag::Faces), Some(usage)) => {
+                let encoding = match role {
+                    DesignOperandRole::FACES => DesignExtrudeFaceEncoding::Faces,
+                    DesignOperandRole::ROLE_0X5 => DesignExtrudeFaceEncoding::SelectedStart,
+                    DesignOperandRole::ROLE_0X12 => DesignExtrudeFaceEncoding::LegacyTermination,
+                    _ => return Err("role does not encode a faces extrude_role".into()),
+                };
+                DesignConstructionOperandRole::ExtrudeFaces { encoding, usage }
             }
+            (role, None, None) => DesignConstructionOperandRole::Other(role),
+            _ => return Err("role, extrude_role, and extrude_face_role disagree".into()),
         };
         Ok(Self {
             id: wire.id,
@@ -603,8 +673,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
                 .collect(),
             lost_edge_references: wire.lost_edge_references,
             frame: wire.frame,
-            role: DesignOperandRole::from_raw(wire.role),
-            extrude_role,
+            operand_role,
             role_offset: wire.role_offset,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
@@ -619,7 +688,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             .into_iter()
             .map(|member| (member.value, member.offset))
             .unzip();
-        let (extrude_role, extrude_face_role) = match group.extrude_role {
+        let (extrude_role, extrude_face_role) = match group.operand_role.extrude() {
             Some(DesignExtrudeOperandRole::Bodies) => {
                 (Some(DesignExtrudeOperandRoleTag::Bodies), None)
             }
@@ -642,7 +711,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             lost_edge_references: group.lost_edge_references,
             member_offsets,
             frame: group.frame,
-            role: group.role.raw(),
+            role: group.operand_role.source().raw(),
             extrude_role,
             extrude_face_role,
             role_offset: group.role_offset,

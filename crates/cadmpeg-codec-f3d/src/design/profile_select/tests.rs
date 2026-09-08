@@ -61,8 +61,9 @@ fn group() -> DesignConstructionOperandGroup {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X5,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
@@ -921,7 +922,8 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = DesignOperandRole::PROFILE;
+    group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -980,7 +982,8 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = DesignOperandRole::PROFILE;
+    group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     group.members = vec![10]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })

@@ -211,8 +211,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             opaque_scalar_offset: 1075,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_B,
-        extrude_role: Some(DesignExtrudeOperandRole::Bodies),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
         role_offset: 1053,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -345,8 +344,9 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X5,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 953,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),

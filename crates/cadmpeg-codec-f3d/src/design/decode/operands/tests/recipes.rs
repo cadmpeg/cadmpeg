@@ -47,8 +47,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X5,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 953,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
@@ -322,8 +323,9 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_A,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 0,
@@ -740,8 +742,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 972,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_B,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        ),
         role_offset: 960,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -1653,10 +1656,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 958,
             variant: false,
         },
-        role: DesignOperandRole::FACES,
-        extrude_role: Some(DesignExtrudeOperandRole::Faces(
-            DesignExtrudeFaceRole::Termination,
-        )),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        },
         role_offset: 946,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -1788,7 +1791,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
-    split_group.role = DesignOperandRole::ROLE_0X10;
+    split_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
     split_group.members = vec![operand.record_index, operand.record_index + 1]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })

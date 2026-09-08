@@ -1258,7 +1258,7 @@ pub(crate) fn bind_feature_body_selections(
         let mut matching_groups = groups.iter().filter(|group| {
             group.id == *group_id
                 && group.scope_record_index == scope.record_index
-                && group.role == DesignOperandRole::BODIES_A
+                && group.role() == DesignOperandRole::BODIES_A
                 && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
         });
         let Some(group) = matching_groups.next() else {
@@ -1500,7 +1500,7 @@ fn bind_pattern_body_selections(
             .iter()
             .filter(|group| {
                 group.scope_record_index == scope.record_index
-                    && group.role == DesignOperandRole::BODIES_B
+                    && group.role() == DesignOperandRole::BODIES_B
                     && !group.members.is_empty()
                     && crate::ids::native_stream(&group.id) == stream
             })
@@ -1615,7 +1615,7 @@ fn bind_body_recipe_body_selection(
         group.id == *group_id
             && group.scope_record_index == scope.record_index
             && matches!(
-                group.role,
+                group.role(),
                 DesignOperandRole::BODIES_A
                     | DesignOperandRole::ROLE_0X5
                     | DesignOperandRole::BODIES_B
@@ -1687,7 +1687,7 @@ fn bind_direct_body_recipe_body_selection(
                 group.id == *group_id
                     && group.scope_record_index == scope.record_index
                     && matches!(
-                        group.role,
+                        group.role(),
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::ROLE_0X5
                             | DesignOperandRole::BODIES_B
@@ -2243,8 +2243,8 @@ fn bind_surface_stitch_face_selection(
         .filter(|group| {
             crate::ids::native_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
-                && group.role == DesignOperandRole::ROLE_0X5
-                && group.extrude_role.is_none()
+                && group.role() == DesignOperandRole::ROLE_0X5
+                && group.extrude_role().is_none()
                 && group.extrude_face_role().is_none()
         })
         .collect::<Vec<_>>();
@@ -3578,7 +3578,7 @@ fn exact_face_selection_group<'a>(
         crate::ids::native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
             && group.record_index == group_record_index
-            && group.role == DesignOperandRole::ROLE_0X10
+            && group.role() == DesignOperandRole::ROLE_0X10
             && group
                 .members
                 .get(group_member_ordinal)
@@ -3806,7 +3806,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
                     && group.record_index == group_record_index
-                    && group.extrude_role.is_some_and(|role| {
+                    && group.extrude_role().is_some_and(|role| {
                         matches!(
                             role,
                             crate::records::topology::DesignExtrudeOperandRole::Faces(_)
@@ -6515,7 +6515,7 @@ fn bind_body_recipe_face_selection(
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *native
             && group.scope_record_index == scope.record_index
-            && group.role == DesignOperandRole::ROLE_0X5
+            && group.role() == DesignOperandRole::ROLE_0X5
             && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
     });
     let Some(group) = matching_groups.next() else {
@@ -7432,7 +7432,7 @@ pub(crate) fn bind_mirror_selection_planes(
             crate::ids::native_stream(&group.id) == stream.as_deref()
                 && group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
-                && group.role == DesignOperandRole::ROLE_0X5
+                && group.role() == DesignOperandRole::ROLE_0X5
                 && group
                     .members
                     .iter()

@@ -838,8 +838,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_B,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 0,
@@ -997,7 +998,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale.into();
     scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
-    scale_group.role = DesignOperandRole::BODIES_A;
+    scale_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let scale_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),
@@ -1177,8 +1179,9 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
             opaque_scalar_offset: 1024,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X10,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        ),
         role_offset: 1030,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1100,
@@ -1348,8 +1351,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             opaque_scalar_offset: 1_024,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X10,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        ),
         role_offset: 1_030,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1_100,
@@ -1583,7 +1587,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .is_empty());
 
     let mut unrelated_group = group;
-    unrelated_group.role = DesignOperandRole::FACES;
+    unrelated_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::FACES);
     let mut rejected = vec![operand];
     bind_face_operand_history_candidates(
         &mut rejected,

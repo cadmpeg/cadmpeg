@@ -1565,7 +1565,7 @@ fn exact_surface_offset_face_groups(
         let Some(group) = group else {
             continue;
         };
-        if group.role != DesignOperandRole::PROFILE
+        if group.role() != DesignOperandRole::PROFILE
             || group.frame.opaque_index != 252
             || group.members.is_empty()
             || !covered_references.insert(group.record_index)
@@ -5143,7 +5143,7 @@ pub fn bind_mirror_constructions(
             .copied()
             .filter(|group| {
                 matches!(
-                    group.role,
+                    group.role(),
                     DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                 )
             })
@@ -5151,7 +5151,7 @@ pub fn bind_mirror_constructions(
         let plane_groups = scope_groups
             .iter()
             .copied()
-            .filter(|group| group.role == DesignOperandRole::ROLE_0X5)
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
             .collect::<Vec<_>>();
         let ([seed_group], [plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice())
         else {
@@ -5222,7 +5222,7 @@ pub fn bind_mirror_constructions(
                 continue;
             };
         let seed_feature = match seed_group.members.as_slice() {
-            _ if seed_group.role != DesignOperandRole::BODIES_B => None,
+            _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))
                 .and_then(|header| compact_feature_reference(bytes, header))

@@ -183,7 +183,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 let mut matching_groups = groups.iter().filter(|group| {
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
-                        && group.role == DesignOperandRole::PROFILE
+                        && group.role() == DesignOperandRole::PROFILE
                         && group
                             .members
                             .iter()
@@ -216,7 +216,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 let mut matching_groups = groups.iter().filter(|group| {
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
-                        && group.role == DesignOperandRole::PROFILE
+                        && group.role() == DesignOperandRole::PROFILE
                         && group.members.len() == 1
                         && native_stream(&group.id) == Some(stream)
                 });
@@ -279,7 +279,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             let mut matching_groups = groups.iter().filter(|group| {
                 group.id == *group_id
                     && group.scope_record_index == scope.record_index
-                    && group.role == DesignOperandRole::ROLE_0X5
+                    && group.role() == DesignOperandRole::ROLE_0X5
                     && native_stream(&group.id) == Some(stream)
             });
             let group = matching_groups.next()?;
@@ -315,7 +315,7 @@ pub(crate) fn bind_split_face_sketch_selections(
         };
         let mut matching_groups = resolution.groups.iter().filter(|group| {
             group.id == *group_id
-                && group.role == DesignOperandRole::ROLE_0X21
+                && group.role() == DesignOperandRole::ROLE_0X21
                 && !group.members.is_empty()
         });
         let Some(group) = matching_groups.next() else {
@@ -347,7 +347,7 @@ pub(crate) fn bind_surface_trim_sketch_selections(
         };
         let mut matching_groups = resolution.groups.iter().filter(|group| {
             group.id == *group_id
-                && group.role == DesignOperandRole::ROLE_0X21
+                && group.role() == DesignOperandRole::ROLE_0X21
                 && !group.members.is_empty()
         });
         let Some(group) = matching_groups.next() else {
@@ -536,7 +536,7 @@ fn resolve_entity_selection_profile(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::{PathRef, ProfileRef};
 
-    if group.role != DesignOperandRole::PROFILE {
+    if group.role() != DesignOperandRole::PROFILE {
         return None;
     }
     match resolve_entity_selection_path(group, resolution)? {
@@ -1983,7 +1983,7 @@ fn resolved_loft_entity_selection_path(
     resolution: &SketchProfileResolution<'_>,
 ) -> Option<cadmpeg_ir::features::PathRef> {
     if !matches!(
-        group.role,
+        group.role(),
         DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
     ) {
         return None;
@@ -2263,7 +2263,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     let mut resolved_profiles = HashMap::new();
     for group in groups.iter().filter(|group| {
         matches!(
-            group.role,
+            group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
         ) && group.members.len() == 1
     }) {
@@ -2331,7 +2331,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     let mut resolved_entity_paths = HashMap::new();
     for group in groups.iter().filter(|group| {
         matches!(
-            group.role,
+            group.role(),
             DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
         ) && !group.members.is_empty()
     }) {
@@ -2341,7 +2341,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     }
     for group in groups
         .iter()
-        .filter(|group| group.role == DesignOperandRole::ROLE_0X5 && group.members.len() == 1)
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5 && group.members.len() == 1)
     {
         let Some(stream) = native_stream(&group.id) else {
             continue;

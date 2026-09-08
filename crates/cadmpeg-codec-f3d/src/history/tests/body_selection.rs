@@ -48,8 +48,9 @@ fn move_body_selection_uses_unique_owning_history() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: DesignOperandRole::BODIES_A,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 0,

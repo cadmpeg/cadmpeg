@@ -74,7 +74,7 @@ pub fn project_decal_images(
         let Some(group) = groups.iter().find(|group| {
             group.scope_record_index == scope.record_index
                 && group.record_index == image.target_group_record_index
-                && group.role == DECAL_TARGET_ROLE
+                && group.role() == DECAL_TARGET_ROLE
                 && group.members.len() == 1
                 && ids::native_stream(&group.id) == native_stream
         }) else {

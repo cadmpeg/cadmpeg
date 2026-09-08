@@ -640,10 +640,13 @@ pub(super) fn continue_fixed_kind_operations(
     let mut revolve_profile = thicken_group.clone();
     revolve_profile.id = "stream:profile".into();
     revolve_profile.scope_record_index = revolve_scope.record_index;
-    revolve_profile.role = DesignOperandRole::PROFILE;
+    revolve_profile.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let mut revolve_axis = revolve_profile.clone();
     revolve_axis.id = "stream:axis".into();
-    revolve_axis.role = DesignOperandRole::ROLE_0X21;
+    revolve_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     assert_eq!(
         crate::design::feature_project::project_fixed_revolve_with_entities(
             &revolve_scope,
@@ -666,7 +669,8 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
-    indexed_profile.role = DesignOperandRole::PROFILE;
+    indexed_profile.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
@@ -674,11 +678,14 @@ pub(super) fn continue_fixed_kind_operations(
         value: 900,
         offset: indexed_axis.members[0].offset,
     }];
-    indexed_axis.role = DesignOperandRole::ROLE_0X21;
+    indexed_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
     indexed_bodies.record_index = 901;
-    indexed_bodies.role = DesignOperandRole::BODIES_A;
+    indexed_bodies.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:indexed-axis-selection".into(),
         scope_record_index: indexed_revolve_scope.record_index,
@@ -1047,7 +1054,7 @@ pub(super) fn continue_fixed_kind_operations(
         group.id = format!("stream:loft-group-{ordinal}");
         group.scope_record_index = loft_record_index;
         group.scope_reference_ordinal = ordinal;
-        group.role = role;
+        group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(role);
         group
     };
     let role_41 = [
@@ -1087,7 +1094,7 @@ pub(super) fn continue_fixed_kind_operations(
     let role_shape = |groups: &[DesignConstructionOperandGroup]| {
         groups
             .iter()
-            .map(|group| (group.role, group.members.len()))
+            .map(|group| (group.role(), group.members.len()))
             .collect::<Vec<_>>()
     };
     assert!(crate::validate::loft_operand_roles_are_valid(
@@ -1343,7 +1350,7 @@ pub(super) fn continue_fixed_kind_operations(
         group.id = format!("stream:sweep-group-{ordinal}");
         group.scope_record_index = sweep_record_index;
         group.scope_reference_ordinal = ordinal;
-        group.role = role;
+        group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(role);
         group
     };
     let profile = sweep_group(0, DesignOperandRole::PROFILE);

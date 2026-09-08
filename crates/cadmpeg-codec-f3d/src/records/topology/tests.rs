@@ -328,7 +328,12 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
                 false,
             ),
         ] {
-            let tagged = wire.replace(r#""role":0,"#, &format!("\"role\":0,{roles}"));
+            let role = if roles.contains("bodies") {
+                crate::records::topology::DesignOperandRole::BODIES_A
+            } else {
+                crate::records::topology::DesignOperandRole::FACES
+            };
+            let tagged = wire.replace(r#""role":0,"#, &format!("\"role\":{},{roles}", role.raw()));
             let parsed = serde_json::from_str::<
                 crate::records::topology::DesignConstructionOperandGroup,
             >(&tagged);
@@ -908,5 +913,44 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
                 .to_string()
                 .contains("postlude")
         );
+    }
+}
+
+#[test]
+fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
+    use crate::records::topology::{DesignConstructionOperandGroup, DesignOperandRole};
+    let wire = serde_json::json!({
+        "id": "group", "scope_record_index": 1, "scope_reference_ordinal": 0,
+        "record_index": 2, "byte_offset": 10, "class_tag": "256",
+        "members": [], "member_offsets": [],
+        "frame": {"member_count_offset": 20, "opaque_index": 1,
+            "opaque_index_offset": 30, "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 34, "variant": false},
+        "role": DesignOperandRole::PROFILE.raw(), "extrude_role": "profile",
+        "role_offset": 40, "paired_class_tag": "257", "paired_byte_offset": 50
+    });
+    let group: DesignConstructionOperandGroup = serde_json::from_value(wire.clone()).unwrap();
+    let encoded = serde_json::to_value(&group).unwrap();
+    assert_eq!(encoded["role"], wire["role"]);
+    assert_eq!(encoded["extrude_role"], wire["extrude_role"]);
+    assert_eq!(
+        serde_json::from_value::<DesignConstructionOperandGroup>(encoded).unwrap(),
+        group
+    );
+    for (role, extrude_role, face_role) in [
+        (DesignOperandRole::PROFILE, "bodies", None),
+        (DesignOperandRole::BODIES_A, "profile", None),
+        (DesignOperandRole::PROFILE, "faces", Some("start")),
+        (DesignOperandRole::FACES, "faces", None),
+        (DesignOperandRole::PROFILE, "profile", Some("termination")),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["role"] = serde_json::json!(role.raw());
+        invalid["extrude_role"] = serde_json::json!(extrude_role);
+        if let Some(face_role) = face_role {
+            invalid["extrude_face_role"] = serde_json::json!(face_role);
+        }
+        let error = serde_json::from_value::<DesignConstructionOperandGroup>(invalid).unwrap_err();
+        assert!(error.to_string().contains("role"));
     }
 }

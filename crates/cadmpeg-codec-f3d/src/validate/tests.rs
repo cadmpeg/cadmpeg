@@ -479,8 +479,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                 opaque_scalar_offset: role_offset + 22,
                 variant: false,
             },
-            role,
-            extrude_role: None,
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
             role_offset,
             paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
             paired_byte_offset: byte_offset + 80,
@@ -528,8 +527,8 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .iter()
         .any(invalid_frame));
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role =
-        DesignOperandRole::BODIES_B;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -538,14 +537,17 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes[0].payload =
             crate::records::feature::DesignFeatureKind::SurfaceTrim.into();
-        native.design_construction_operand_groups[1].role = DesignOperandRole::ROLE_0X21;
+        native.design_construction_operand_groups[1].operand_role =
+            crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::ROLE_0X21,
+            );
     }
     assert!(!crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role =
-        DesignOperandRole::BODIES_B;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -609,8 +611,9 @@ fn validation_checks_pipe_path_group_roles() {
             opaque_scalar_offset: 1_062,
             variant: false,
         },
-        role: DesignOperandRole::ROLE_0X5,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 1_040,
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 1_100,
@@ -671,8 +674,8 @@ fn validation_checks_pipe_path_group_roles() {
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[0].role =
-        DesignOperandRole::BODIES_B;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 
@@ -1013,9 +1016,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
         DesignParameterScope,
     };
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignExtrudeOperandRole, DesignSketchProfileOperand,
-    };
+    use crate::records::topology::{DesignConstructionOperandGroup, DesignSketchProfileOperand};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let profile = DesignSketchProfileOperand {
@@ -1109,8 +1110,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             opaque_scalar_offset: 464,
             variant: false,
         },
-        role: DesignOperandRole::PROFILE,
-        extrude_role: Some(DesignExtrudeOperandRole::Profile),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile,
         role_offset: 450,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
@@ -1204,8 +1204,9 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             opaque_scalar_offset: 1_033,
             variant: false,
         },
-        role: DesignOperandRole::from_raw(0),
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::from_raw(0),
+        ),
         role_offset: 1_041,
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1_050,
@@ -1318,8 +1319,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: DesignOperandRole::PROFILE,
-        extrude_role: Some(crate::records::topology::DesignExtrudeOperandRole::Profile),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile,
         role_offset: 953,
         paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
