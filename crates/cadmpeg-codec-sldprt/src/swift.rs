@@ -687,6 +687,9 @@ fn project_with_topology(
             continue;
         }
         if let Some(tolerance) = project_tolerance(entity, &datum_ids) {
+            let Some(targets) = targets(entity, &feature_index, topology) else {
+                continue;
+            };
             let datum_system = if tolerance.references.is_empty() {
                 None
             } else if let Some((_, id)) = datum_systems
@@ -717,7 +720,7 @@ fn project_with_topology(
                 id: pmi_id(&reference.id),
                 name: object_name(entity),
                 visible: None,
-                targets: targets(entity, &feature_index, topology),
+                targets,
                 definition: PmiDefinition::GeometricTolerance {
                     tolerance: tolerance.kind,
                     magnitude: tolerance.magnitude,
@@ -761,11 +764,12 @@ fn project_datum(
         .get("DatumIdentifier")
         .filter(|value| !value.is_empty())?
         .clone();
+    let targets = targets(entity, feature_index, topology)?;
     (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
         visible: None,
-        targets: targets(entity, feature_index, topology),
+        targets,
         definition: PmiDefinition::Datum { identification },
     })
 }
@@ -804,7 +808,7 @@ fn project_lower_profile_tier(
         .expect("identity grammar"),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
         visible: None,
-        targets: targets(entity, feature_index, topology),
+        targets: targets(entity, feature_index, topology)?,
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
@@ -853,7 +857,7 @@ fn project_dimension(
         id: pmi_id(&reference.id),
         name: object_name(entity),
         visible: None,
-        targets: targets(entity, feature_index, topology),
+        targets: targets(entity, feature_index, topology)?,
         definition: PmiDefinition::Dimension {
             dimension,
             nominal: match nominal {
@@ -2020,7 +2024,7 @@ fn targets(
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
-) -> Vec<PmiTarget> {
+) -> Option<Vec<PmiTarget>> {
     let mut ids = Vec::new();
     for reference in &entity.features.references {
         ids.extend(expanded_feature_ids(&reference.id, feature_index, 0));
@@ -2028,6 +2032,7 @@ fn targets(
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for source_id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
+        let source_id = cadmpeg_ir::products::NonEmptyString::new(source_id)?;
         let Some(feature) = feature_index.get(source_id.as_str()) else {
             targets.push(PmiTarget::ShapeAspect { source_id });
             continue;
@@ -2055,7 +2060,7 @@ fn targets(
             targets.push(PmiTarget::ShapeAspect { source_id });
         }
     }
-    targets
+    Some(targets)
 }
 
 fn cad_identifiers(feature: &Entity) -> Vec<&str> {

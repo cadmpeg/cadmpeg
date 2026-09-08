@@ -36,15 +36,15 @@ pub(super) fn decode(
     topology: &TopologyData,
     ir: &mut CadIr,
     ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, cadmpeg_core::CodecError> {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
-        return StageOutcome {
+        return Ok(StageOutcome {
             value: (),
             claims: HashSet::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
             notes: Vec::new(),
-        };
+        });
     }
     let base_aspects = exchange
         .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
@@ -90,7 +90,7 @@ pub(super) fn decode(
                     StepLossCode::MetadataStringInvalid,
                 )
             }),
-            targets([id]),
+            targets([id])?,
             None,
             PmiDefinition::Datum { identification },
         );
@@ -139,7 +139,7 @@ pub(super) fn decode(
                     StepLossCode::MetadataStringInvalid,
                 )
             }),
-            targets([id]),
+            targets([id])?,
             None,
             PmiDefinition::DatumTarget {
                 form: datum_target_form(&form),
@@ -195,7 +195,7 @@ pub(super) fn decode(
                     .iter()
                     .flat_map(references)
                     .filter(|id| base_aspects.contains(id)),
-            ),
+            )?,
             None,
             PmiDefinition::DatumSystem {
                 references: datum_references,
@@ -265,7 +265,7 @@ pub(super) fn decode(
             &mut annotations,
             id,
             name,
-            targets(aspect_ids),
+            targets(aspect_ids)?,
             None,
             PmiDefinition::Dimension {
                 dimension: kind,
@@ -516,7 +516,7 @@ pub(super) fn decode(
                         StepLossCode::MetadataStringInvalid,
                     )
                 }),
-            targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
+            targets(refs.iter().copied().filter(|id| base_aspects.contains(id)))?,
             None,
             PmiDefinition::GeometricTolerance {
                 tolerance,
@@ -663,7 +663,7 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
-    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
+    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed)?;
     let points_by_source = point_sources(ir);
     let curves_by_source = curve_sources(ir);
     let geometry_sources = GeometrySources {
@@ -686,19 +686,21 @@ pub(super) fn decode(
         .iter()
         .flat_map(|annotation| &annotation.targets)
         .filter_map(|target| match target {
-            PmiTarget::ShapeAspect { source_id } => source_id.strip_prefix('#')?.parse().ok(),
+            PmiTarget::ShapeAspect { source_id } => {
+                source_id.as_str().strip_prefix('#')?.parse().ok()
+            }
             _ => None,
         })
         .collect::<BTreeSet<u64>>();
     typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionTolerance) -> bool {
@@ -776,7 +778,7 @@ fn resolve_feature_for_datum_target_relationships(
     annotations: &BTreeMap<u64, usize>,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
@@ -793,11 +795,15 @@ fn resolve_feature_for_datum_target_relationships(
         push_target(
             basis,
             PmiTarget::ShapeAspect {
-                source_id: format!("#{relating}"),
+                source_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{relating}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source_id must not be empty")
+                    })?,
             },
         );
         typed.extend([id, relating]);
     }
+    Ok(())
 }
 
 fn resolve_geometric_item_usages(
@@ -1355,12 +1361,16 @@ fn push_annotation(
     });
 }
 
-fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
+fn targets(ids: impl IntoIterator<Item = u64>) -> Result<Vec<PmiTarget>, cadmpeg_core::CodecError> {
     let mut seen = BTreeSet::new();
     ids.into_iter()
         .filter(|id| seen.insert(*id))
-        .map(|id| PmiTarget::ShapeAspect {
-            source_id: format!("#{id}"),
+        .map(|id| {
+            Ok(PmiTarget::ShapeAspect {
+                source_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}")).ok_or_else(
+                    || cadmpeg_core::CodecError::malformed("source_id must not be empty"),
+                )?,
+            })
         })
         .collect()
 }

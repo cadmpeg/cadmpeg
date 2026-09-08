@@ -213,7 +213,7 @@ pub(super) fn project_edge(
         None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
         Some(CurveGeometry::Line { .. }) | None => line(),
         Some(other) => Some(SketchGeometry::Native {
-            native_kind: format!("{other:?}"),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(format!("{other:?}"))?,
         }),
     }
 }

@@ -61,7 +61,8 @@ pub enum PmiTarget {
     /// Source shape-aspect identity whose geometric target is not resolved.
     ShapeAspect {
         /// Stable source identity of the unresolved aspect.
-        source_id: String,
+        #[serde(deserialize_with = "deserialize_source_id")]
+        source_id: crate::products::NonEmptyString,
     },
 }
 
@@ -574,6 +575,13 @@ pub struct PmiAnnotation {
     pub definition: PmiDefinition,
 }
 
+fn deserialize_source_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("source_id: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,7 +598,8 @@ mod tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![PmiTarget::ShapeAspect {
-                source_id: "#10".into(),
+                source_id: crate::products::NonEmptyString::new("#10")
+                    .expect("nonempty source identity"),
             }],
             definition: PmiDefinition::Datum {
                 identification: "A".into(),
@@ -842,5 +851,18 @@ mod tests {
         let error = serde_json::from_str::<PmiMagnitude>(r#"{"value":-1.0,"quantity":"length"}"#)
             .expect_err("negative magnitude");
         assert!(error.to_string().contains("magnitude"));
+    }
+
+    #[test]
+    fn source_identity_admission_preserves_nonempty_wire() {
+        let wire = serde_json::json!({"kind": "shape_aspect", "source_id": "#42"});
+        let value: PmiTarget = serde_json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let error = serde_json::from_value::<PmiTarget>(
+            serde_json::json!({"kind": "shape_aspect", "source_id": ""}),
+        )
+        .expect_err("empty source_id");
+        assert!(error.to_string().contains("source_id"));
+        assert!(crate::products::NonEmptyString::new("").is_none());
     }
 }

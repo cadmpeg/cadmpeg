@@ -1570,31 +1570,38 @@ fn native_curve_families_accept_only_their_defined_loci() {
         (
             point.clone(),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("point".to_string())
+                    .expect("nonempty source identity"),
             },
         ),
         (
             bounded.clone(),
             SketchGeometry::Native {
-                native_kind: "bounded_curve".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("bounded_curve".to_string())
+                    .expect("nonempty source identity"),
             },
         ),
         (
             line.clone(),
             SketchGeometry::Native {
-                native_kind: "line".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("line".to_string())
+                    .expect("nonempty source identity"),
             },
         ),
         (
             reference_line.clone(),
             SketchGeometry::Native {
-                native_kind: "reference_line".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                    "reference_line".to_string(),
+                )
+                .expect("nonempty source identity"),
             },
         ),
         (
             circle.clone(),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("circle".to_string())
+                    .expect("nonempty source identity"),
             },
         ),
     ]);

@@ -759,7 +759,8 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
             SketchEntityId(format!("entity-{id}")),
             sketch.clone(),
             SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some(id.into()))
@@ -788,7 +789,8 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     for entity in &mut entities[3..] {
         entity.endpoint_refs.reverse();
         entity.geometry = SketchGeometry::Native {
-            native_kind: "sldprt:marker-geometry:2".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                .expect("nonempty source identity"),
         };
     }
     resolve_connected_marker_arcs(&mut entities, 1.0e-8);
@@ -919,7 +921,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         SketchEntityId("carrier".into()),
         sketch_id.clone(),
         SketchGeometry::Native {
-            native_kind: "sldprt:marker-geometry:0".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:0")
+                .expect("nonempty source identity"),
         },
     )
     .with_native_ref(Some("center".into()));

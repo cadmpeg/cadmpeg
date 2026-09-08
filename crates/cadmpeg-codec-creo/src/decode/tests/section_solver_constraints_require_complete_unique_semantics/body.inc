@@ -524,13 +524,13 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Native {
-                native_kind: "arc".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("arc").expect("nonempty source identity"),
             },
         ),
     ]);
@@ -801,7 +801,7 @@ offset: 30,
     let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
         SketchGeometry::Native {
-            native_kind: "bounded_curve".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("bounded_curve").expect("nonempty source identity"),
         },
     )]);
     let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
@@ -1055,13 +1055,13 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
             },
         ),
     ]);
@@ -1083,7 +1083,7 @@ offset: 30,
     let missing_point_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
         SketchGeometry::Native {
-            native_kind: "point".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
         },
     )]);
     assert!(matches!(
@@ -1217,7 +1217,7 @@ offset: 30,
         (
             native_endpoint.clone(),
             SketchGeometry::Native {
-                native_kind: "solver_only_section_entity".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity").expect("nonempty source identity"),
             },
         ),
         (
@@ -1297,7 +1297,7 @@ offset: 30,
     unresolved_arc_geometry.insert(
         SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
         SketchGeometry::Native {
-            native_kind: "arc".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("arc").expect("nonempty source identity"),
         },
     );
     let inactive = section_skamp_constraints_for_geometry(
@@ -1336,7 +1336,7 @@ offset: 30,
     unresolved_arc_geometry.insert(
         SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
         SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity").expect("nonempty source identity"),
         },
     );
     assert_eq!(
@@ -1481,13 +1481,13 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("circle").expect("nonempty source identity"),
             },
         ),
     ]);
@@ -1550,19 +1550,19 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:97".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:98".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("circle").expect("nonempty source identity"),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("circle").expect("nonempty source identity"),
             },
         ),
     ]);
@@ -2566,7 +2566,7 @@ offset: 30,
             Some(&BTreeMap::from([(
                 SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "point".into(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
                 },
             )])),
         ),
@@ -2884,7 +2884,7 @@ offset: 30,
                 (
                     SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "point".into(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("point").expect("nonempty source identity"),
                     },
                 ),
             ])),
@@ -2943,7 +2943,7 @@ offset: 30,
             Some(&BTreeMap::from([(
                 SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "line".into(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
                 },
             )])),
         )[0]
@@ -2966,7 +2966,7 @@ offset: 30,
                 (
                     SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "line".into(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
                     },
                 ),
             ])),

@@ -370,7 +370,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         Some(session.ctx),
-    );
+    )?;
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,
@@ -378,7 +378,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
         Some(session.ctx),
-    );
+    )?;
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
     if !session.ir.model.points.is_empty()

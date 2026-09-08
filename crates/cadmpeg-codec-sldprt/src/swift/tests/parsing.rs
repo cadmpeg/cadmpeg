@@ -121,10 +121,12 @@ fn parses_and_projects_semantic_graph() {
         position.targets,
         [
             PmiTarget::ShapeAspect {
-                source_id: "F20".into()
+                source_id: cadmpeg_ir::products::NonEmptyString::new("F20")
+                    .expect("nonempty source identity")
             },
             PmiTarget::ShapeAspect {
-                source_id: "F21".into()
+                source_id: cadmpeg_ir::products::NonEmptyString::new("F21")
+                    .expect("nonempty source identity")
             }
         ]
     );

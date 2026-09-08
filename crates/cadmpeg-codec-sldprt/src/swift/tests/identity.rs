@@ -169,7 +169,8 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
     assert_eq!(
         first.targets,
         [PmiTarget::ShapeAspect {
-            source_id: "F10".into()
+            source_id: cadmpeg_ir::products::NonEmptyString::new("F10")
+                .expect("nonempty source identity")
         }]
     );
 }
