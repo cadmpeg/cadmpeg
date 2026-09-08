@@ -833,22 +833,25 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         next_record_index: 32,
         next_byte_offset: 240,
     };
-    let point = |record_index, y| SketchPoint {
-        id: format!("{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, y),
+    let point = |record_index, y| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+                None,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, y),
+        })
+        .unwrap()
     };
     let points = [point(40, 0.0), point(41, 2.0)];
     let sketch = neutral_sketch_id(&placement);
@@ -859,7 +862,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 SketchEntityId(format!("point-{}", point.record_index)),
                 sketch.clone(),
                 SketchGeometry::Point {
-                    position: point.coordinates,
+                    position: point.coordinates(),
                 },
             )
             .with_native_ref(Some(point.id.clone()))
@@ -908,7 +911,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 )),
                 spatial_sketch.id.clone(),
                 cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
-                    position: Point3::new(0.0, point.coordinates.v, 0.0),
+                    position: Point3::new(0.0, point.coordinates().v, 0.0),
                 },
             )
             .with_native_ref(Some(point.id.clone()))

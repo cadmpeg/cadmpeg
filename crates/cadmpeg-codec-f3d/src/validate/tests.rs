@@ -698,12 +698,13 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         let source_id = native.sketch_points[0]
             .persistent_id()
             .expect("generated point identity");
-        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } =
-            &mut native.sketch_points[1].record_form
+        let mut form = native.sketch_points[1].record_form().clone();
+        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form
         else {
             panic!("generated point has a version-11 record form");
         };
         *persistent_id = std::num::NonZeroU64::new(source_id).unwrap();
+        native.sketch_points[1].try_set_record_form(form).unwrap();
         native.sketch_points[0].owner_reference = Some(100);
         native.sketch_points[1].owner_reference = Some(100);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
@@ -744,12 +745,13 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         let source_id = native.sketch_points[0]
             .persistent_id()
             .expect("generated point identity");
-        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } =
-            &mut native.sketch_points[1].record_form
+        let mut form = native.sketch_points[1].record_form().clone();
+        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form
         else {
             panic!("generated point has a version-11 record form");
         };
         *persistent_id = std::num::NonZeroU64::new(source_id).unwrap();
+        native.sketch_points[1].try_set_record_form(form).unwrap();
         native.sketch_points[0].owner_reference = Some(100);
         native.sketch_points[1].owner_reference = Some(101);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
@@ -787,12 +789,13 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
         let source_id = native.sketch_points[0]
             .persistent_id()
             .expect("generated point identity");
-        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } =
-            &mut native.sketch_points[1].record_form
+        let mut form = native.sketch_points[1].record_form().clone();
+        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form
         else {
             panic!("generated point has a version-11 record form");
         };
         *persistent_id = std::num::NonZeroU64::new(source_id).unwrap();
+        native.sketch_points[1].try_set_record_form(form).unwrap();
         native.sketch_points[0].owner_reference = None;
         native.sketch_points[1].owner_reference = None;
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;

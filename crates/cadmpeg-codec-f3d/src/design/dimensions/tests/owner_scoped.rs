@@ -338,25 +338,28 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         curve(12, 110, std::f64::consts::FRAC_PI_2),
         curve(13, 120, -std::f64::consts::FRAC_PI_4),
     ];
-    let point = |record_index, byte_offset, incident_curves| SketchPoint {
-        id: format!("{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            Some(crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
-                incident_curves,
-            }),
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
+    let point = |record_index, byte_offset, incident_curves| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset,
+            coordinate_offset: 0,
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+                Some(crate::records::SketchPointCompanion {
+                    prefix_present_zero: false,
+                    incident_curves,
+                }),
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
     };
     let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
     let entity = |record_index, angle: f64| {
