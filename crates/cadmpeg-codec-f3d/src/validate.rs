@@ -6352,11 +6352,11 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (selected_sketch.is_some()
                 && design_stream(&curve.id) == native_stream
                 && curve.owner_reference == selected_sketch
-                && (curve.primary_id == member.local_id
+                && (curve.primary_id.get() == member.local_id
                     || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
                 .then_some(records::SketchRelationOperand::Curve {
                     record_index: curve.record_index,
-                    primary_id: curve.primary_id,
+                    primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
                 })
         });
@@ -8343,10 +8343,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .len()
                 == companion.incident_curves.len()
         });
-        let identity_form_valid = point
-            .persistent_id()
-            .is_none_or(|persistent_id| persistent_id != 0);
-        if !companion_curves_unique || point.companion().is_none() || !identity_form_valid {
+        if !companion_curves_unique || point.companion().is_none() {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -8386,11 +8383,11 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
             !sketch_curve_identities.insert((
                 design_stream(&curve.id),
                 owner_reference,
-                curve.primary_id,
+                curve.primary_id.get(),
                 curve.secondary_id,
             ))
         });
-        if curve.primary_id == 0 || duplicate {
+        if duplicate {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -8413,10 +8410,10 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
             !sketch_surface_identities.insert((
                 design_stream(&surface.id),
                 owner_reference,
-                surface.persistent_id,
+                surface.persistent_id.get(),
             ))
         });
-        if surface.persistent_id == 0 || duplicate {
+        if duplicate {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -8476,7 +8473,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (design_stream(&curve.id), curve.record_index),
                 records::SketchRelationOperand::Curve {
                     record_index: curve.record_index,
-                    primary_id: curve.primary_id,
+                    primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
                 },
             )
@@ -8486,7 +8483,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (design_stream(&surface.id), surface.record_index),
                 records::SketchRelationOperand::Surface {
                     record_index: surface.record_index,
-                    persistent_id: surface.persistent_id,
+                    persistent_id: surface.persistent_id.get(),
                 },
             )
         }))

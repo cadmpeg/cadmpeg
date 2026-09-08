@@ -527,7 +527,7 @@ fn encode_sketch_point(
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
     record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
+    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.get().to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
     record[81 + shift..89 + shift].copy_from_slice(&flags.map(u8::from));
@@ -606,7 +606,7 @@ fn encode_sketch_curve_identity(
     record[29 + shift..43 + shift].copy_from_slice(b"crv_primary_id");
     record[43 + shift..47 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[47 + shift..70 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.to_le_bytes());
+    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.get().to_le_bytes());
     record[78 + shift..82 + shift].copy_from_slice(&16u32.to_le_bytes());
     record[82 + shift..98 + shift].copy_from_slice(b"crv_secondary_id");
     record[98 + shift..102 + shift].copy_from_slice(&23u32.to_le_bytes());

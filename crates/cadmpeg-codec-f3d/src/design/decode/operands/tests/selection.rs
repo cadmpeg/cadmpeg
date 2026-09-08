@@ -726,7 +726,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         byte_offset: 4000,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 586,
+        primary_id: std::num::NonZeroU64::new(586).unwrap(),
         secondary_id: 0,
         geometry: None,
     };

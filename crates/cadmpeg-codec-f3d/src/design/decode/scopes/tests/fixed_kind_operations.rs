@@ -747,7 +747,7 @@ pub(super) fn continue_fixed_kind_operations(
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 104,
+        primary_id: std::num::NonZeroU64::new(104).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(1.0, 2.0, 3.0),

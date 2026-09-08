@@ -142,7 +142,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id,
+        primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
         geometry: None,
     }
@@ -824,7 +824,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
             SpatialSketchEntity::new(
                 neutral_spatial_sketch_curve_id(
                     &spatial_sketch,
-                    curve.primary_id,
+                    curve.primary_id.get(),
                     curve.secondary_id,
                 ),
                 spatial_sketch.clone(),
@@ -866,7 +866,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                 .map(|curve| {
                     neutral_spatial_sketch_curve_id(
                         &spatial_sketch,
-                        curve.primary_id,
+                        curve.primary_id.get(),
                         curve.secondary_id,
                     )
                 })
@@ -882,7 +882,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let curve_ids = curves
         .iter()
-        .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id))
+        .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id))
         .collect::<Vec<_>>();
     let sketch_entities = [
         SketchEntity::new(
@@ -963,7 +963,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let placement = placement();
     let sketch = neutral_sketch_id(&placement);
     let curve = curve(30, 100, 101);
-    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id);
     let sketch_entities = [SketchEntity::new(
         entity_id.clone(),
         sketch.clone(),

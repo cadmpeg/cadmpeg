@@ -975,7 +975,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 42,
+        primary_id: std::num::NonZeroU64::new(42).unwrap(),
         secondary_id: 0,
         geometry: None,
     };

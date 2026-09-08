@@ -1782,3 +1782,22 @@ fn sketch_pattern_count_enforces_both_bounds() {
         );
     }
 }
+
+#[test]
+fn sketch_identity_sidecar_rejects_zero() {
+    let point = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
+        "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
+        "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
+        "persistent_id": 0, "closure": {"selector": 0, "state": 0}});
+    assert!(serde_json::from_value::<super::SketchPoint>(point)
+        .unwrap_err()
+        .to_string()
+        .contains("persistent_id"));
+    let curve = serde_json::json!({"id": "curve", "record_index": 1, "class_tag": "000",
+        "byte_offset": 0, "geometry_offset": 0, "primary_id": 0, "secondary_id": 0});
+    assert!(serde_json::from_value::<super::SketchCurveIdentity>(curve).is_err());
+    let surface = serde_json::json!({"id": "surface", "record_index": 1, "class_tag": "000",
+        "byte_offset": 0, "persistent_id": 0, "u_degree": 0, "v_degree": 0,
+        "u_knots": [], "v_knots": [], "control_points": []});
+    assert!(serde_json::from_value::<super::SketchSurface>(surface).is_err());
+}
