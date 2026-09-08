@@ -144,10 +144,11 @@ pub(crate) fn transfer_neutral(
             text: record.text.clone(),
             references,
             value: None,
-            format: if schema.has_format_spec {
-                string_property(&owned, "FormatSpec", "App::PropertyString")?
-            } else {
-                None
+            format: match schema.text {
+                Some(carrier) if carrier.has_format_spec => {
+                    string_property(&owned, carrier.property, carrier.type_name)?
+                }
+                _ => None,
             },
             position: annotation_position(&owned, schema.position)?,
             parameters: record.parameters.clone(),
@@ -170,7 +171,6 @@ pub(crate) fn is_annotation_type(type_name: &str) -> bool {
 struct AnnotationSchema {
     kind: SemanticAnnotationKind,
     text: Option<TextCarrier>,
-    has_format_spec: bool,
     position: PositionCarrier,
 }
 
@@ -178,6 +178,7 @@ struct AnnotationSchema {
 struct TextCarrier {
     property: &'static str,
     type_name: &'static str,
+    has_format_spec: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -207,8 +208,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             text: Some(TextCarrier {
                 property: "LabelText",
                 type_name: "App::PropertyStringList",
+                has_format_spec: false,
             }),
-            has_format_spec: false,
             position: PositionCarrier::Vector {
                 name: "Position",
                 type_name: "App::PropertyVector",
@@ -219,8 +220,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             text: Some(TextCarrier {
                 property: "LabelText",
                 type_name: "App::PropertyStringList",
+                has_format_spec: false,
             }),
-            has_format_spec: false,
             position: PositionCarrier::Vector {
                 name: "TextPosition",
                 type_name: "App::PropertyVector",
@@ -232,8 +233,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             text: Some(TextCarrier {
                 property: "Text",
                 type_name: "App::PropertyStringList",
+                has_format_spec: false,
             }),
-            has_format_spec: false,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -246,8 +247,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
                 text: Some(TextCarrier {
                     property: "AnnoText",
                     type_name: "App::PropertyString",
+                    has_format_spec: false,
                 }),
-                has_format_spec: false,
                 position: PositionCarrier::Coordinates {
                     x_name: "X",
                     y_name: "Y",
@@ -262,8 +263,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             text: Some(TextCarrier {
                 property: "FormatSpec",
                 type_name: "App::PropertyString",
+                has_format_spec: true,
             }),
-            has_format_spec: true,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -275,8 +276,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             text: Some(TextCarrier {
                 property: "Text",
                 type_name: "App::PropertyString",
+                has_format_spec: false,
             }),
-            has_format_spec: false,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -287,7 +288,6 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             AnnotationSchema {
                 kind: Kind::Leader,
                 text: None,
-                has_format_spec: false,
                 position: PositionCarrier::Coordinates {
                     x_name: "X",
                     y_name: "Y",
@@ -303,8 +303,8 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
             text: Some(TextCarrier {
                 property: "TailText",
                 type_name: "App::PropertyString",
+                has_format_spec: false,
             }),
-            has_format_spec: false,
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
