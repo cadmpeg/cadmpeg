@@ -1378,13 +1378,14 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
     }
     let mut external_target = base;
     external_target["target"]["external_identity"] = serde_json::json!({
-        "selector_asset_id": "00000004-1111-4111-8111-111111111111", "selector_asset_id_offset": 0,
-        "selector_context_id": "00000005-1111-4111-8111-111111111111", "selector_context_id_offset": 0,
-        "occurrence_reference": 1, "occurrence_reference_offset": 0,
-        "external_body_reference": 2, "external_body_reference_offset": 0,
-        "external_segment": 1, "external_segment_offset": 0,
-        "external_asset_id": "00000006-1111-4111-8111-111111111111", "external_asset_id_offset": 0,
-        "external_link_name": "link", "external_link_name_offset": 0
+        "selector_asset_id": "00000004-1111-4111-8111-111111111111", "selector_asset_id_offset": 44,
+        "selector_context_id": "00000005-1111-4111-8111-111111111111", "selector_context_id_offset": 120,
+        "occurrence_reference": 1, "occurrence_reference_offset": 205,
+        "external_body_reference": 2, "external_body_reference_offset": 220,
+        "external_segment": 1, "external_segment_offset": 229,
+        "external_asset_id": "00000004-1111-4111-8111-111111111111", "external_asset_id_offset": 237,
+        "external_link_name": "link", "external_link_name_offset": 314,
+        "tail_values": [0, 0], "tail_value_offsets": [329, 341]
     });
     let error =
         serde_json::from_value::<crate::records::feature::DesignCombineOperation>(external_target)
