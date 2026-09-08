@@ -314,7 +314,7 @@ pub(crate) fn project_compact_sketch_profiles(
                             .filter(|marker| {
                                 marker.feature_ref.as_deref() == Some(feature.id.as_str())
                             })
-                            .map(|marker| marker.offset())
+                            .map(crate::records::SketchInputEntity::offset)
                             .min()
                     })?;
                 Some((start, *feature))
@@ -778,7 +778,7 @@ pub(crate) fn project_marker_backed_sketches(
                             .filter(|marker| {
                                 marker.feature_ref.as_deref() == Some(feature.id.as_str())
                             })
-                            .map(|marker| marker.offset())
+                            .map(crate::records::SketchInputEntity::offset)
                             .min()
                     })?;
                 Some((start, *feature))

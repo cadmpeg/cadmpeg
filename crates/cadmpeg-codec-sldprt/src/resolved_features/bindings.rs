@@ -1140,7 +1140,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
                 .iter()
                 .all(|(start, end, _)| entity.offset() < *start || entity.offset() >= *end)
         })
-        .map(|entity| entity.offset())
+        .map(crate::records::SketchInputEntity::offset)
         .collect::<Vec<_>>();
     let Some(&first) = markers.first() else {
         return;
