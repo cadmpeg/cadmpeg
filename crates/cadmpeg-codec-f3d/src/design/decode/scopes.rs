@@ -8097,13 +8097,21 @@ fn exact_hole_face_selection(
             ) else {
                 continue;
             };
+            let Ok(asset_id) = crate::records::DesignRelaxedGuidText::try_from(frame.asset_id)
+            else {
+                continue;
+            };
+            let Ok(context_id) = crate::records::DesignRelaxedGuidText::try_from(frame.context_id)
+            else {
+                continue;
+            };
             candidates.push(DesignHoleFaceSelection {
                 record_index: frame.record_index,
                 byte_offset: frame.byte_offset,
                 class_tag,
-                asset_id: frame.asset_id.try_into().ok()?,
+                asset_id,
                 asset_id_offset: frame.asset_id_offset,
-                context_id: frame.context_id.try_into().ok()?,
+                context_id,
                 context_id_offset: frame.context_id_offset,
                 identity_record_index: frame.identity_record_index,
                 identity_record_offset: frame.identity_record_offset,
