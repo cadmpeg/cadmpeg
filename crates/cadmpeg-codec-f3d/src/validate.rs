@@ -1709,27 +1709,12 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut bounded_bodies = HashSet::new();
     for bounds in &native.design_body_bounds {
         let native_stream = design_stream(&bounds.id);
-        let expected_indices = u32::try_from(bounds.entity_suffix).ok().and_then(|index| {
-            Some([
-                index.checked_add(1)?,
-                index.checked_add(2)?,
-                index.checked_add(3)?,
-            ])
-        });
-        let corners = [
-            bounds.maximum.x,
-            bounds.maximum.y,
-            bounds.maximum.z,
-            bounds.minimum.x,
-            bounds.minimum.y,
-            bounds.minimum.z,
-        ];
         let mut expected_bindings = native
             .design_body_bindings
             .iter()
             .filter(|binding| {
                 design_stream_contains_entry(native_stream, &binding.stream)
-                    && binding.entity_suffix == bounds.entity_suffix
+                    && binding.entity_suffix == bounds.entity_suffix()
             })
             .collect::<Vec<_>>();
         expected_bindings.sort_by_key(|binding| binding.asm_body_key_offset);
@@ -1738,32 +1723,17 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .map(|binding| binding.id.as_str())
             .collect::<Vec<_>>();
         let valid = entity_headers_by_suffix
-            .get(&(native_stream, bounds.entity_suffix))
+            .get(&(native_stream, bounds.entity_suffix()))
             .is_some_and(|entity| {
                 entity.module() == Some(records::DESIGN_MODULE_BODY)
                     && entity.byte_offset == bounds.entity_byte_offset
             })
-            && expected_indices == Some(bounds.record_indices)
-            && bounds.record_byte_offsets[0] < bounds.record_byte_offsets[1]
-            && bounds.record_byte_offsets[1] < bounds.record_byte_offsets[2]
-            && bounds
-                .value_byte_offsets
-                .iter()
-                .zip(bounds.record_byte_offsets)
-                .all(|(value, record)| *value > record)
             && bounds
                 .body_binding_ids
                 .iter()
                 .map(String::as_str)
                 .eq(expected_binding_ids)
-            && corners.iter().all(|value| value.is_finite())
-            && bounds.maximum.x >= bounds.minimum.x
-            && bounds.maximum.y >= bounds.minimum.y
-            && bounds.maximum.z >= bounds.minimum.z
-            && (bounds.maximum.x > bounds.minimum.x
-                || bounds.maximum.y > bounds.minimum.y
-                || bounds.maximum.z > bounds.minimum.z)
-            && bounded_bodies.insert((native_stream, bounds.entity_suffix));
+            && bounded_bodies.insert((native_stream, bounds.entity_suffix()));
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
