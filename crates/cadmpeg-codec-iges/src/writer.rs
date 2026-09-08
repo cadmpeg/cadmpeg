@@ -5517,7 +5517,7 @@ fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
         CurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
         CurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
-            Ok([values[0], *values.last().expect("polyline has points")])
+            Ok([values.first, values.last])
         }
         CurveGeometry::Line { .. }
         | CurveGeometry::Parabola { .. }
@@ -6138,7 +6138,16 @@ fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[f64; 2], CodecError> {
     Ok([nurbs.knots()[degree], nurbs.knots()[end]])
 }
 
-fn polyline_parameters(count: usize, parameters: Option<&[f64]>) -> Result<Vec<f64>, CodecError> {
+struct PolylineParameters {
+    first: f64,
+    interior: Vec<f64>,
+    last: f64,
+}
+
+fn polyline_parameters(
+    count: usize,
+    parameters: Option<&[f64]>,
+) -> Result<PolylineParameters, CodecError> {
     if count < 2 {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least two polyline points".into(),
@@ -6148,22 +6157,29 @@ fn polyline_parameters(count: usize, parameters: Option<&[f64]>) -> Result<Vec<f
         || (0..count).map(|value| value as f64).collect(),
         <[f64]>::to_vec,
     );
-    if values.len() != count
-        || values.iter().any(|value| !value.is_finite())
-        || values.windows(2).any(|pair| pair[0] >= pair[1])
-    {
-        return Err(CodecError::Malformed(
+    match values.as_slice() {
+        [first, interior @ .., last]
+            if values.len() == count
+                && values.iter().all(|value| value.is_finite())
+                && values.windows(2).all(|pair| pair[0] < pair[1]) =>
+        {
+            Ok(PolylineParameters {
+                first: *first,
+                interior: interior.to_vec(),
+                last: *last,
+            })
+        }
+        _ => Err(CodecError::Malformed(
             "IGES polyline parameters must be finite and strictly increasing".into(),
-        ));
+        )),
     }
-    Ok(values)
 }
 
-fn polyline_knots(parameters: &[f64]) -> Vec<f64> {
-    let mut knots = Vec::with_capacity(parameters.len() + 2);
-    knots.extend([parameters[0], parameters[0]]);
-    knots.extend_from_slice(&parameters[1..parameters.len() - 1]);
-    knots.extend([*parameters.last().expect("polyline has points"); 2]);
+fn polyline_knots(parameters: &PolylineParameters) -> Vec<f64> {
+    let mut knots = Vec::with_capacity(parameters.interior.len() + 4);
+    knots.extend([parameters.first; 2]);
+    knots.extend_from_slice(&parameters.interior);
+    knots.extend([parameters.last; 2]);
     knots
 }
 
