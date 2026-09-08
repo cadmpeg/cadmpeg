@@ -106,7 +106,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
             let resolved = match procedural.definition() {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::RollingBallJet { .. } => true,
+                | ProceduralSurfaceDefinition::RollingBallJet(_) => true,
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     resolved_surfaces.contains(support)
                 }

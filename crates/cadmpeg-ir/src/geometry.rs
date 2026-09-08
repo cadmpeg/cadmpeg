@@ -3661,17 +3661,7 @@ pub enum ProceduralSurfaceDefinition {
         native: Option<Box<RollingBallConstruction>>,
     },
     /// Rolling-ball surface defined by aligned quintic value/derivative jets.
-    RollingBallJet {
-        /// Polynomial degree of every scalar channel.
-        degree: u32,
-        /// Ordered knots with their multiplicities and complete derivative jets.
-        #[serde(flatten, with = "rolling_ball_jet_stations_wire")]
-        #[cfg_attr(
-            feature = "schema",
-            schemars(with = "rolling_ball_jet_stations_wire::ReadWire")
-        )]
-        stations: Vec<RollingBallJetStation>,
-    },
+    RollingBallJet(RollingBallJetStations),
     /// Preserved construction without a neutral interpretation.
     Unknown {
         /// Reference to the preserved raw source record, when retained.
@@ -4503,50 +4493,115 @@ pub struct RollingBallJetStation {
     pub site: RollingBallJetSite,
 }
 
-mod rolling_ball_jet_stations_wire {
-    use super::{RollingBallJetSite, RollingBallJetStation};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 
-    #[derive(Serialize)]
-    struct WriteWire<'a> {
-        knots: Vec<f64>,
-        multiplicities: Vec<u32>,
-        sites: Vec<&'a RollingBallJetSite>,
-    }
+/// Degree and finite clamped station data of a rolling-ball jet.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "RollingBallJetReadWire")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RollingBallJetStations {
+    degree: u32,
+    stations: Vec<RollingBallJetStation>,
+}
 
-    #[derive(Deserialize)]
-    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    pub(super) struct ReadWire {
-        knots: Vec<f64>,
-        multiplicities: Vec<u32>,
-        sites: Vec<RollingBallJetSite>,
-    }
-
-    pub fn serialize<S: Serializer>(
-        stations: &[RollingBallJetStation],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        WriteWire {
-            knots: stations.iter().map(|station| station.knot).collect(),
-            multiplicities: stations
+impl RollingBallJetStations {
+    /// Admit clamped increasing knots and finite equal-radius station data.
+    pub fn try_new(
+        degree: u32,
+        stations: Vec<RollingBallJetStation>,
+    ) -> Result<Self, &'static str> {
+        let maximum_multiplicity = degree.checked_add(1).filter(|_| degree != 0).ok_or(
+            "rolling-ball jet degree must be positive with a representable end multiplicity",
+        )?;
+        if stations.len() < 2 {
+            return Err("rolling-ball jet stations must contain at least two rows");
+        }
+        if stations[0].multiplicity != maximum_multiplicity
+            || stations[stations.len() - 1].multiplicity != maximum_multiplicity
+            || stations.iter().any(|station| {
+                station.multiplicity == 0 || station.multiplicity > maximum_multiplicity
+            })
+        {
+            return Err(
+                "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
+            );
+        }
+        if stations.iter().any(|station| !station.knot.is_finite())
+            || stations.windows(2).any(|pair| pair[0].knot >= pair[1].knot)
+        {
+            return Err("rolling-ball jet knots must be finite and strictly increasing");
+        }
+        for station in &stations {
+            let site = &station.site;
+            if [site.first_limit, site.second_limit, site.center]
                 .iter()
-                .map(|station| station.multiplicity)
-                .collect(),
-            sites: stations.iter().map(|station| &station.site).collect(),
+                .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+                || !site.angle.is_finite()
+            {
+                return Err("rolling-ball jet site coordinates and angle must be finite");
+            }
+            for derivative in [&site.first_derivative, &site.second_derivative] {
+                if [
+                    derivative.first_limit,
+                    derivative.second_limit,
+                    derivative.center,
+                ]
+                .iter()
+                .any(|vector| {
+                    ![vector.x, vector.y, vector.z]
+                        .into_iter()
+                        .all(f64::is_finite)
+                }) || !derivative.angle.is_finite()
+                {
+                    return Err("rolling-ball jet site derivatives must be finite");
+                }
+            }
+            let first_radius = site.first_limit.distance(site.center);
+            let second_radius = site.second_limit.distance(site.center);
+            if !first_radius.is_finite()
+                || first_radius <= 0.0
+                || !second_radius.is_finite()
+                || (first_radius - second_radius).abs()
+                    > EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
+            {
+                return Err("rolling-ball jet site radii must be finite and agree within tolerance, with a positive first radius");
+            }
         }
-        .serialize(serializer)
+        Ok(Self { degree, stations })
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Vec<RollingBallJetStation>, D::Error> {
-        let wire = ReadWire::deserialize(deserializer)?;
+    /// Return the polynomial degree of each scalar channel.
+    #[must_use]
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Return the ordered station data.
+    #[must_use]
+    pub fn stations(&self) -> &[RollingBallJetStation] {
+        &self.stations
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct RollingBallJetReadWire {
+    degree: u32,
+    knots: Vec<f64>,
+    multiplicities: Vec<u32>,
+    sites: Vec<RollingBallJetSite>,
+}
+
+impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
+    type Error = &'static str;
+
+    fn try_from(wire: RollingBallJetReadWire) -> Result<Self, Self::Error> {
         if wire.knots.len() != wire.multiplicities.len() || wire.knots.len() != wire.sites.len() {
-            return Err(serde::de::Error::custom(
+            return Err(
                 "rolling-ball jet knots, multiplicities, and sites must have equal lengths",
-            ));
+            );
         }
-        Ok(wire
+        let stations = wire
             .knots
             .into_iter()
             .zip(wire.multiplicities)
@@ -4556,7 +4611,32 @@ mod rolling_ball_jet_stations_wire {
                 multiplicity,
                 site,
             })
-            .collect())
+            .collect();
+        Self::try_new(wire.degree, stations)
+    }
+}
+
+#[derive(Serialize)]
+struct RollingBallJetWriteWire<'a> {
+    degree: u32,
+    knots: Vec<f64>,
+    multiplicities: Vec<u32>,
+    sites: Vec<&'a RollingBallJetSite>,
+}
+
+impl Serialize for RollingBallJetStations {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        RollingBallJetWriteWire {
+            degree: self.degree,
+            knots: self.stations.iter().map(|station| station.knot).collect(),
+            multiplicities: self
+                .stations
+                .iter()
+                .map(|station| station.multiplicity)
+                .collect(),
+            sites: self.stations.iter().map(|station| &station.site).collect(),
+        }
+        .serialize(serializer)
     }
 }
 

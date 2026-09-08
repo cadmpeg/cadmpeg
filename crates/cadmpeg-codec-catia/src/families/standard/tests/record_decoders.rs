@@ -1237,15 +1237,11 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
         Some(
             crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: 0x1234_5678,
-                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-                    degree: 5,
-                    ..
-                },
+                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet),
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
-        )
-    ));
+        ) if jet.degree() == 5));
 }
 
 #[test]
@@ -1349,7 +1345,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
         Some(
             crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: 110,
-                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(_),
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }

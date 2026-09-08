@@ -1257,7 +1257,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     );
                 }
             }
-            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            ProceduralSurfaceDefinition::RollingBallJet(_)
             | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
