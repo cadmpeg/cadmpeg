@@ -79,7 +79,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 PmiTarget::Curve { curve } => curves.contains(curve.as_str()),
                 PmiTarget::Product { product } => products.contains(product.as_str()),
                 PmiTarget::Occurrence { occurrence } => occurrences.contains(occurrence.as_str()),
-                PmiTarget::ShapeAspect { source_id } => !source_id.is_empty(),
+                PmiTarget::ShapeAspect { .. } => true,
             };
             if !resolved {
                 invalid(findings, annotation.id.as_str(), "unresolved PMI target");

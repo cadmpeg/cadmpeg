@@ -87,7 +87,7 @@ pub(super) fn check_presentation(
                 PresentationItem::Tessellation { tessellation } => {
                     tessellations.contains(tessellation.as_str())
                 }
-                PresentationItem::Source { source_id } => !source_id.is_empty(),
+                PresentationItem::Source { .. } => true,
             };
             if !resolved {
                 invalid_layer(

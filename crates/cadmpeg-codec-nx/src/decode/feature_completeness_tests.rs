@@ -1243,7 +1243,8 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         entity_id.clone(),
         sketch_id.clone(),
         SketchGeometry::Native {
-            native_kind: "test".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("test")
+                .expect("nonempty source identity"),
         },
     ));
     ir.model.sketch_constraints.push(SketchConstraint {

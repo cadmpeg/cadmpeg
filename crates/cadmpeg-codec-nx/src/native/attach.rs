@@ -3976,7 +3976,9 @@ fn attach_sketch_graph(
                     )),
                     sketch_id.clone(),
                     SketchGeometry::Native {
-                        native_kind: "nx-coordinate-pair".into(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            "nx-coordinate-pair",
+                        )?,
                     },
                 )
                 .with_native_ref(Some(pair.id.clone())),
@@ -4244,7 +4246,7 @@ fn native_fixed_point_entities(
                 )),
                 sketch_id.clone(),
                 SketchGeometry::Native {
-                    native_kind: "nx-fixed-point".into(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("nx-fixed-point")?,
                 },
             )
             .with_native_ref(Some(point.id.clone())),

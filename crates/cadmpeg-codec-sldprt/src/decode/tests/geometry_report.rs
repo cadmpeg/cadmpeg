@@ -30,7 +30,8 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
             SketchEntityId("planar-entity".into()),
             SketchId("planar-sketch".into()),
             SketchGeometry::Native {
-                native_kind: "SplineHandle".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("SplineHandle")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some("native:planar".into())),
@@ -40,7 +41,8 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
             SpatialSketchEntityId("spatial-entity".into()),
             SpatialSketchId("spatial-sketch".into()),
             SpatialSketchGeometry::Native {
-                native_kind: "ReferenceCurve".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("ReferenceCurve")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some("native:spatial".into())),
@@ -81,7 +83,8 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             SketchEntityId("represented-geometry".into()),
             SketchId("sketch".into()),
             SketchGeometry::Native {
-                native_kind: "UnknownGeometry".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("UnknownGeometry")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some("geometry-marker".into())),
@@ -197,7 +200,8 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
             SketchEntityId(id.into()),
             SketchId("sketch".into()),
             SketchGeometry::Native {
-                native_kind: "UnknownGeometry".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("UnknownGeometry")
+                    .expect("nonempty source identity"),
             },
         )
         .with_native_ref(Some(native_ref.into()))

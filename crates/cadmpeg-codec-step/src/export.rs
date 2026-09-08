@@ -2840,11 +2840,11 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                if aspects.contains_key(source_id) {
+                if aspects.contains_key(source_id.as_str()) {
                     continue;
                 }
                 let target = self.emit_datum_target(pds, annotation, form, identification);
-                aspects.insert(source_id.clone(), target);
+                aspects.insert(source_id.to_string(), target);
             }
         }
         for annotation in &annotations {
@@ -2852,10 +2852,10 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                aspects.entry(source_id.clone()).or_insert_with(|| {
+                aspects.entry(source_id.to_string()).or_insert_with(|| {
                     self.emitter.emit(
                         "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
+                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
                     )
                 });
             }
@@ -2868,10 +2868,10 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                aspects.entry(source_id.clone()).or_insert_with(|| {
+                aspects.entry(source_id.to_string()).or_insert_with(|| {
                     self.emitter.emit(
                         "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
+                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
                     )
                 });
             }
@@ -2890,7 +2890,7 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     return None;
                 };
-                aspects.get(source_id).copied()
+                aspects.get(source_id.as_str()).copied()
             });
             let target_ref = target_ref
                 .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
@@ -2911,7 +2911,7 @@ impl<'a> Builder<'a> {
                     exact = false;
                     continue;
                 };
-                let Some(basis_ref) = aspects.get(source_id).copied() else {
+                let Some(basis_ref) = aspects.get(source_id.as_str()).copied() else {
                     exact = false;
                     continue;
                 };
@@ -2931,7 +2931,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .find_map(|target| {
                     if let PmiTarget::ShapeAspect { source_id } = target {
-                        aspects.get(source_id).copied()
+                        aspects.get(source_id.as_str()).copied()
                     } else {
                         None
                     }

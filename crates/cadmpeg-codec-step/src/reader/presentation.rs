@@ -28,7 +28,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
     ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, cadmpeg_core::CodecError> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
@@ -216,20 +216,17 @@ pub(super) fn decode(
                 )
             })
             .filter(|value| !value.is_empty());
-        let items = assigned_items
-            .iter()
-            .filter_map(ValueExt::reference)
-            .flat_map(|id| {
-                presentation_item(
-                    id,
-                    exchange,
-                    topology,
-                    &entity_ids,
-                    &face_indices,
-                    &body_indices,
-                )
-            })
-            .collect();
+        let mut items = Vec::new();
+        for id in assigned_items.iter().filter_map(ValueExt::reference) {
+            items.extend(presentation_item(
+                id,
+                exchange,
+                topology,
+                &entity_ids,
+                &face_indices,
+                &body_indices,
+            )?);
+        }
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint(ids::presentation("layer", layer_id)).expect("identity grammar"),
             name,
@@ -541,13 +538,13 @@ pub(super) fn decode(
                 )));
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn invisible_body_ids(
@@ -771,53 +768,53 @@ fn presentation_item(
     entity_ids: &EntityIds,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
-) -> Vec<PresentationItem> {
+) -> Result<Vec<PresentationItem>, cadmpeg_core::CodecError> {
     if let Some(bodies) = topology.body_by_root.get(&id) {
-        return bodies
+        return Ok(bodies
             .iter()
             .filter(|body| body_indices.contains_key(body.as_str()))
             .cloned()
             .map(|body| PresentationItem::Body { body })
-            .collect();
+            .collect());
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
-        return faces
+        return Ok(faces
             .iter()
             .filter(|face| face_indices.contains_key(face.as_str()))
             .cloned()
             .map(|face| PresentationItem::Face { face })
-            .collect();
+            .collect());
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
-        return edges
+        return Ok(edges
             .iter()
             .filter(|edge| entity_ids.edges.contains(edge.as_str()))
             .cloned()
             .map(|edge| PresentationItem::Edge { edge })
-            .collect();
+            .collect());
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
-        return vertices
+        return Ok(vertices
             .iter()
             .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
             .cloned()
             .map(|vertex| PresentationItem::Vertex { vertex })
-            .collect();
+            .collect());
     }
     if let Some(products) = entity_ids.products.get(&id) {
-        return products
+        return Ok(products
             .iter()
             .cloned()
             .map(|product| PresentationItem::Product { product })
-            .collect();
+            .collect());
     }
-    vec![presentation_item_one(
+    Ok(vec![presentation_item_one(
         id,
         exchange,
         entity_ids,
         face_indices,
         body_indices,
-    )]
+    )?])
 }
 
 fn presentation_item_one(
@@ -826,57 +823,59 @@ fn presentation_item_one(
     entity_ids: &EntityIds,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
-) -> PresentationItem {
+) -> Result<PresentationItem, cadmpeg_core::CodecError> {
     let candidate = |kind: &str| ids::data(kind, id);
     let body = candidate("body");
     if body_indices.contains_key(&body) {
-        return PresentationItem::Body {
+        return Ok(PresentationItem::Body {
             body: BodyId::mint(body).expect("identity grammar"),
-        };
+        });
     }
     let face = candidate("face");
     if face_indices.contains_key(&face) {
-        return PresentationItem::Face {
+        return Ok(PresentationItem::Face {
             face: FaceId::mint(face).expect("identity grammar"),
-        };
+        });
     }
     let edge = candidate("edge");
     if entity_ids.edges.contains(&edge) {
-        return PresentationItem::Edge {
+        return Ok(PresentationItem::Edge {
             edge: EdgeId::mint(edge).expect("identity grammar"),
-        };
+        });
     }
     let vertex = candidate("vertex");
     if entity_ids.vertices.contains(&vertex) {
-        return PresentationItem::Vertex {
+        return Ok(PresentationItem::Vertex {
             vertex: VertexId::mint(vertex).expect("identity grammar"),
-        };
+        });
     }
     let point = candidate("point");
     if entity_ids.points.contains(&point) {
-        return PresentationItem::Point {
+        return Ok(PresentationItem::Point {
             point: PointId::mint(point).expect("identity grammar"),
-        };
+        });
     }
     let curve = candidate("curve");
     if entity_ids.curves.contains(&curve) {
-        return PresentationItem::Curve {
+        return Ok(PresentationItem::Curve {
             curve: CurveId::mint(curve).expect("identity grammar"),
-        };
+        });
     }
     let surface = candidate("surface");
     if entity_ids.surfaces.contains(&surface) {
-        return PresentationItem::Surface {
+        return Ok(PresentationItem::Surface {
             surface: SurfaceId::mint(surface).expect("identity grammar"),
-        };
+        });
     }
     let Some(record) = exchange.records.get(&id) else {
-        return PresentationItem::Source {
-            source_id: format!("#{id}"),
-        };
+        return Ok(PresentationItem::Source {
+            source_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}")).ok_or_else(
+                || cadmpeg_core::CodecError::malformed("source_id must not be empty"),
+            )?,
+        });
     };
     let has = |name: &str| has_partial(record, name);
-    if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+    let item = if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
             .contains(&ids::product("occurrence", id))
@@ -909,9 +908,12 @@ fn presentation_item_one(
         }
     } else {
         PresentationItem::Source {
-            source_id: format!("#{id}"),
+            source_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}")).ok_or_else(
+                || cadmpeg_core::CodecError::malformed("source_id must not be empty"),
+            )?,
         }
-    }
+    };
+    Ok(item)
 }
 
 struct EntityIds {

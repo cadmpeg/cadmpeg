@@ -265,7 +265,8 @@ pub enum PresentationItem {
     /// Source item whose neutral target type is not modeled.
     Source {
         /// Stable source item identity.
-        source_id: String,
+        #[serde(deserialize_with = "deserialize_source_id")]
+        source_id: crate::products::NonEmptyString,
     },
 }
 
@@ -310,6 +311,13 @@ fn deserialize_point_size<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
     crate::units::deserialize_named(deserializer, "point_size")
+}
+
+fn deserialize_source_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("source_id: {error}")))
 }
 
 #[cfg(test)]
@@ -382,7 +390,8 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: "#42".into(),
+                source_id: crate::products::NonEmptyString::new("#42")
+                    .expect("nonempty source identity"),
             }],
         });
 
@@ -398,7 +407,8 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: "#42".into(),
+                source_id: crate::products::NonEmptyString::new("#42")
+                    .expect("nonempty source identity"),
             }],
         });
 
@@ -422,5 +432,19 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.check == Check::Presentation));
+    }
+
+    #[test]
+    fn source_identity_admission_preserves_nonempty_wire() {
+        let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
+        let value: PresentationItem =
+            serde_json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let error = serde_json::from_value::<PresentationItem>(
+            serde_json::json!({"kind": "source", "source_id": ""}),
+        )
+        .expect_err("empty source_id");
+        assert!(error.to_string().contains("source_id"));
+        assert!(crate::products::NonEmptyString::new("").is_none());
     }
 }

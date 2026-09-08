@@ -697,21 +697,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
             }
-            SketchGeometry::ExternalReference { object, .. } => {
-                if object.is_empty() {
-                    finding(
-                        findings,
-                        Check::ReferentialIntegrity,
-                        id,
-                        "empty external sketch reference",
-                    );
-                }
-            }
-            SketchGeometry::Native { native_kind } => {
-                if native_kind.is_empty() {
-                    finding(findings, Check::Counts, id, "empty native sketch kind");
-                }
-            }
+            SketchGeometry::ExternalReference { .. } => {}
+            SketchGeometry::Native { .. } => {}
         }
     }
 
@@ -925,16 +912,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SpatialSketchGeometry::Native { native_kind } => {
-                if native_kind.is_empty() {
-                    finding(
-                        findings,
-                        Check::Counts,
-                        id,
-                        "empty native spatial sketch kind",
-                    );
-                }
-            }
+            SpatialSketchGeometry::Native { .. } => {}
         }
     }
 

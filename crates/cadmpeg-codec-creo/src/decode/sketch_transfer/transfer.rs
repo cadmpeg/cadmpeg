@@ -191,7 +191,9 @@ pub(in super::super) fn transfer_sketches(
                     .flatten()
                     .or_else(|| {
                         Some(SketchGeometry::Native {
-                            native_kind: "line".to_string(),
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                "line".to_string(),
+                            )?,
                         })
                     });
             }
@@ -461,18 +463,20 @@ pub(in super::super) fn transfer_sketches(
                     id,
                     sketch_id.clone(),
                     SketchGeometry::Native {
-                        native_kind: match solver_only_section_entity_family(
-                            definition,
-                            external_id,
-                        ) {
-                            Some(SectionEntityIncidenceFamily::Point) => "point",
-                            Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
-                            Some(SectionEntityIncidenceFamily::Line) => "line",
-                            Some(SectionEntityIncidenceFamily::Arc) => "arc",
-                            Some(SectionEntityIncidenceFamily::Circular) => "circle",
-                            None => "solver_only_section_entity",
-                        }
-                        .to_string(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            match solver_only_section_entity_family(definition, external_id) {
+                                Some(SectionEntityIncidenceFamily::Point) => "point",
+                                Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                                Some(SectionEntityIncidenceFamily::Line) => "line",
+                                Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                                Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                                None => "solver_only_section_entity",
+                            }
+                            .to_string(),
+                        )
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                        })?,
                     },
                 )
                 .with_construction(true)
