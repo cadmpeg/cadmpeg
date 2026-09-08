@@ -852,6 +852,18 @@ fn linear_boundary_model_points(
     Some(points)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundarySpace {
+    Parameter,
+    Model,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundarySurfaceKind {
+    Bounded,
+    Trimmed,
+}
+
 #[derive(Clone)]
 enum LinearBoundaryGeometry {
     Parameter(Vec<[f64; 2]>),
@@ -864,7 +876,7 @@ fn linear_boundary_geometry(
     support: &SurfaceGeometry,
     resolution: f64,
     closure_tolerance: f64,
-    use_parameter_curves: bool,
+    surface_kind: BoundarySurfaceKind,
 ) -> Option<LinearBoundaryGeometry> {
     let SurfaceGeometry::Plane { origin, normal, .. } = support else {
         return None;
@@ -887,7 +899,7 @@ fn linear_boundary_geometry(
         return None;
     }
     let model_coordinates = plane_coordinates(&model_points, model_plane)?;
-    if use_parameter_curves
+    if surface_kind == BoundarySurfaceKind::Trimmed
         && items
             .iter()
             .any(|item| item.segment.parameter_curves_authoritative)
@@ -986,16 +998,18 @@ fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
 
 fn linear_boundary_rings(
     candidates: &[Option<LinearBoundaryGeometry>],
-    parameter: bool,
+    space: BoundarySpace,
 ) -> Option<Result<Vec<SimpleRing>, NonSimpleRing>> {
     if candidates.is_empty() {
         return None;
     }
     let rings = candidates
         .iter()
-        .map(|candidate| match (parameter, candidate.as_ref()) {
-            (true, Some(LinearBoundaryGeometry::Parameter(points)))
-            | (false, Some(LinearBoundaryGeometry::Model(points))) => Some(points.clone()),
+        .map(|candidate| match (space, candidate.as_ref()) {
+            (BoundarySpace::Parameter, Some(LinearBoundaryGeometry::Parameter(points)))
+            | (BoundarySpace::Model, Some(LinearBoundaryGeometry::Model(points))) => {
+                Some(points.clone())
+            }
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
@@ -1024,7 +1038,7 @@ fn inner_boundaries_are_disjoint_and_inside(outer: &SimpleRing, inners: &[Simple
 
 fn linear_boundary_relationship_is_valid(
     rings: Result<&[SimpleRing], &NonSimpleRing>,
-    trimmed_surface: bool,
+    surface_kind: BoundarySurfaceKind,
     has_explicit_outer: bool,
     support: &SurfaceGeometry,
     support_bounds: Option<[Option<f64>; 4]>,
@@ -1034,7 +1048,7 @@ fn linear_boundary_relationship_is_valid(
         Ok(rings) => rings,
         Err(NonSimpleRing) => return Some(false),
     };
-    if !trimmed_surface {
+    if surface_kind == BoundarySurfaceKind::Bounded {
         return Some(true);
     }
     if has_explicit_outer {
@@ -1739,158 +1753,162 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let trimmed_surface = entry.entity_type == 144;
-        let (surface_sequence, boundary_sequences, has_explicit_outer, mut valid) =
-            if trimmed_surface {
-                let Some(surface) = pointer(record, 1) else {
+        let surface_kind = if entry.entity_type == 144 {
+            BoundarySurfaceKind::Trimmed
+        } else {
+            BoundarySurfaceKind::Bounded
+        };
+        let (surface_sequence, boundary_sequences, has_explicit_outer, mut valid) = if surface_kind
+            == BoundarySurfaceKind::Trimmed
+        {
+            let Some(surface) = pointer(record, 1) else {
+                losses.push(entity_loss(
+                    entry,
+                    "trimmed-surface support pointer is invalid",
+                ));
+                continue;
+            };
+            let Some(has_explicit_outer) = record.integer(2).and_then(|value| match value {
+                0 => Some(false),
+                1 => Some(true),
+                _ => None,
+            }) else {
+                losses.push(entity_loss(
+                    entry,
+                    "trimmed-surface outer-boundary flag is not 0 or 1",
+                ));
+                continue;
+            };
+            let Some(inner_count) = record.count(3) else {
+                losses.push(entity_loss(
+                    entry,
+                    "trimmed-surface inner-boundary count is invalid",
+                ));
+                continue;
+            };
+            let mut sequences = Vec::with_capacity(inner_count + usize::from(has_explicit_outer));
+            if has_explicit_outer {
+                let Some(outer) = pointer(record, 4) else {
                     losses.push(entity_loss(
                         entry,
-                        "trimmed-surface support pointer is invalid",
+                        "trimmed-surface outer-boundary pointer is invalid",
                     ));
                     continue;
                 };
-                let Some(has_explicit_outer) = record.integer(2).and_then(|value| match value {
-                    0 => Some(false),
-                    1 => Some(true),
-                    _ => None,
-                }) else {
+                if entries
+                    .get(&outer)
+                    .is_none_or(|target| target.entity_type != 142 || target.form != 0)
+                {
                     losses.push(entity_loss(
-                        entry,
-                        "trimmed-surface outer-boundary flag is not 0 or 1",
-                    ));
-                    continue;
-                };
-                let Some(inner_count) = record.count(3) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "trimmed-surface inner-boundary count is invalid",
-                    ));
-                    continue;
-                };
-                let mut sequences =
-                    Vec::with_capacity(inner_count + usize::from(has_explicit_outer));
-                if has_explicit_outer {
-                    let Some(outer) = pointer(record, 4) else {
-                        losses.push(entity_loss(
-                            entry,
-                            "trimmed-surface outer-boundary pointer is invalid",
-                        ));
-                        continue;
-                    };
-                    if entries
-                        .get(&outer)
-                        .is_none_or(|target| target.entity_type != 142 || target.form != 0)
-                    {
-                        losses.push(entity_loss(
                             entry,
                             "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity",
                         ));
-                        continue;
-                    }
-                    sequences.push(outer);
-                } else if !matches!(
-                    record.value(4),
-                    None | Some(TokenValue::Omitted | TokenValue::Integer(0))
-                ) {
-                    losses.push(entity_loss(
+                    continue;
+                }
+                sequences.push(outer);
+            } else if !matches!(
+                record.value(4),
+                None | Some(TokenValue::Omitted | TokenValue::Integer(0))
+            ) {
+                losses.push(entity_loss(
                         entry,
                         "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted",
                     ));
-                    continue;
-                }
-                let mut valid = true;
-                for index in 0..inner_count {
-                    let Some(sequence) = pointer(record, 5 + index) else {
-                        losses.push(entity_loss(
-                            entry,
-                            "trimmed-surface inner-boundary pointer is invalid",
-                        ));
-                        valid = false;
-                        break;
-                    };
-                    if entries
-                        .get(&sequence)
-                        .is_none_or(|target| target.entity_type != 142 || target.form != 0)
-                    {
-                        losses.push(entity_loss(
+                continue;
+            }
+            let mut valid = true;
+            for index in 0..inner_count {
+                let Some(sequence) = pointer(record, 5 + index) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "trimmed-surface inner-boundary pointer is invalid",
+                    ));
+                    valid = false;
+                    break;
+                };
+                if entries
+                    .get(&sequence)
+                    .is_none_or(|target| target.entity_type != 142 || target.form != 0)
+                {
+                    losses.push(entity_loss(
                             entry,
                             "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity",
                         ));
-                        valid = false;
-                        break;
-                    }
-                    sequences.push(sequence);
+                    valid = false;
+                    break;
                 }
-                (surface, sequences, has_explicit_outer, valid)
-            } else {
-                let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
-                else {
+                sequences.push(sequence);
+            }
+            (surface, sequences, has_explicit_outer, valid)
+        } else {
+            let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "bounded-surface representation type is not 0 or 1",
+                ));
+                continue;
+            };
+            let Some(surface) = pointer(record, 2) else {
+                losses.push(entity_loss(
+                    entry,
+                    "bounded-surface support pointer is invalid",
+                ));
+                continue;
+            };
+            let Some(count) = record.count(3).filter(|count| *count > 0) else {
+                losses.push(entity_loss(
+                    entry,
+                    "bounded-surface boundary count is not positive",
+                ));
+                continue;
+            };
+            let mut sequences = Vec::with_capacity(count);
+            let mut valid = true;
+            for index in 0..count {
+                let Some(sequence) = pointer(record, 4 + index) else {
                     losses.push(entity_loss(
                         entry,
-                        "bounded-surface representation type is not 0 or 1",
+                        "bounded-surface boundary pointer is invalid",
                     ));
-                    continue;
+                    valid = false;
+                    break;
                 };
-                let Some(surface) = pointer(record, 2) else {
+                if entries
+                    .get(&sequence)
+                    .is_none_or(|target| target.entity_type != 141 || target.form != 0)
+                {
                     losses.push(entity_loss(
                         entry,
-                        "bounded-surface support pointer is invalid",
+                        "bounded-surface boundary pointer does not target a Type 141 Form 0 entity",
                     ));
-                    continue;
-                };
-                let Some(count) = record.count(3).filter(|count| *count > 0) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "bounded-surface boundary count is not positive",
-                    ));
-                    continue;
-                };
-                let mut sequences = Vec::with_capacity(count);
-                let mut valid = true;
-                for index in 0..count {
-                    let Some(sequence) = pointer(record, 4 + index) else {
-                        losses.push(entity_loss(
-                            entry,
-                            "bounded-surface boundary pointer is invalid",
-                        ));
-                        valid = false;
-                        break;
-                    };
-                    if entries
-                        .get(&sequence)
-                        .is_none_or(|target| target.entity_type != 141 || target.form != 0)
-                    {
-                        losses.push(entity_loss(
-                            entry,
-                            "bounded-surface boundary pointer does not target a Type 141 Form 0 entity",
-                        ));
-                        valid = false;
-                        break;
-                    }
-                    if boundaries.get(&sequence).is_some_and(|boundary| {
-                        (representation == 0
+                    valid = false;
+                    break;
+                }
+                if boundaries.get(&sequence).is_some_and(|boundary| {
+                    (representation == 0
+                        && boundary
+                            .segments
+                            .iter()
+                            .all(|segment| segment.pcurves.is_empty()))
+                        || (representation == 1
                             && boundary
                                 .segments
                                 .iter()
-                                .all(|segment| segment.pcurves.is_empty()))
-                            || (representation == 1
-                                && boundary
-                                    .segments
-                                    .iter()
-                                    .all(|segment| !segment.pcurves.is_empty()))
-                    }) {
-                        sequences.push(sequence);
-                    } else {
-                        losses.push(entity_loss(
-                            entry,
-                            "bounded-surface representation disagrees with its boundary",
-                        ));
-                        valid = false;
-                        break;
-                    }
+                                .all(|segment| !segment.pcurves.is_empty()))
+                }) {
+                    sequences.push(sequence);
+                } else {
+                    losses.push(entity_loss(
+                        entry,
+                        "bounded-surface representation disagrees with its boundary",
+                    ));
+                    valid = false;
+                    break;
                 }
-                (surface, sequences, false, valid)
-            };
+            }
+            (surface, sequences, false, valid)
+        };
         if !valid {
             continue;
         }
@@ -1926,8 +1944,9 @@ pub(super) fn project(
             global.real_precision(),
         );
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
-        let implicit_outer_domain =
-            trimmed_surface && !has_explicit_outer && !boundary_sequences.is_empty();
+        let implicit_outer_domain = surface_kind == BoundarySurfaceKind::Trimmed
+            && !has_explicit_outer
+            && !boundary_sequences.is_empty();
         let mut implicit_boundary_curves = Vec::new();
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
@@ -2126,7 +2145,7 @@ pub(super) fn project(
                 &support_geometry,
                 carrier_agreement_tolerance,
                 sewing_tolerance,
-                trimmed_surface,
+                surface_kind,
             ));
             let loop_id = LoopId::mint(format!("iges:model:loop#{stem}:{boundary_index}"))
                 .expect("identity grammar");
@@ -2245,12 +2264,14 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let linear_rings = linear_boundary_rings(&linear_boundary_candidates, true)
-            .or_else(|| linear_boundary_rings(&linear_boundary_candidates, false));
+        let linear_rings =
+            linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Parameter).or_else(
+                || linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model),
+            );
         let linear_relationship = linear_rings.and_then(|rings| {
             linear_boundary_relationship_is_valid(
                 rings.as_deref(),
-                trimmed_surface,
+                surface_kind,
                 has_explicit_outer,
                 &support_geometry,
                 support_parameter_bounds,
@@ -2260,7 +2281,7 @@ pub(super) fn project(
         if linear_relationship == Some(false) {
             losses.push(entity_loss(
                 entry,
-                if trimmed_surface {
+                if surface_kind == BoundarySurfaceKind::Trimmed {
                     "trimmed-surface boundary loops are not simple, disjoint, and correctly nested"
                 } else {
                     "boundary loop is not a simple closed carrier"
@@ -2307,7 +2328,7 @@ pub(super) fn project(
             sense: Sense::Forward,
             loops: {
                 let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids);
-                if trimmed_surface {
+                if surface_kind == BoundarySurfaceKind::Trimmed {
                     let outer = has_explicit_outer.then(|| loops.first().cloned()).flatten();
                     loops.classify_outer(outer.as_ref());
                 }
