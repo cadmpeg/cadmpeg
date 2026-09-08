@@ -469,10 +469,13 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     )
     .is_none());
 
-    ir.model.curves[0].geometry = CurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(10.0, 0.0, 0.0).unit().unwrap(),
+    ir.model.curves[0].geometry = CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            None,
+            false,
         )
         .unwrap(),
     );
@@ -498,10 +501,13 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(3.0, 0.0, 0.0).unit().unwrap(),
+        geometry: CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                None,
+                false,
             )
             .unwrap(),
         ),
