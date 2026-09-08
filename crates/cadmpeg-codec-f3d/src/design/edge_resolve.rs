@@ -1895,11 +1895,7 @@ pub(crate) fn result_boundary_reference_edge_group_candidates(
     if structure.root != 2
         || structure.sides.len() != 2
         || structure.sides.iter().any(|side| {
-            side.field_count.get() != 3
-                || side.scalars.len() != 2
-                || side.payload_prefix != [0]
-                || side.payload_entry_count != 0
-                || !side.entries.is_empty()
+            side.scalars.len() != 2 || side.payload_prefix != [0] || !side.entries.is_empty()
         })
         || operand.recipe_references.is_empty()
         || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
@@ -1969,11 +1965,7 @@ fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option
     if structure.root != 2
         || structure.sides.len() != 2
         || structure.sides.iter().any(|side| {
-            side.field_count.get() != 3
-                || side.scalars.len() != 2
-                || side.payload_prefix != [0]
-                || side.payload_entry_count != 0
-                || !side.entries.is_empty()
+            side.scalars.len() != 2 || side.payload_prefix != [0] || !side.entries.is_empty()
         })
     {
         return None;

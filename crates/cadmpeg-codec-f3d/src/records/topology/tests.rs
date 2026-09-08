@@ -954,3 +954,25 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         assert!(error.to_string().contains("role"));
     }
 }
+
+#[test]
+fn recipe_sidecar_rejects_disagreeing_counts() {
+    let side = serde_json::json!({"field_count": 3, "header_value": 0,
+        "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
+    assert!(serde_json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
+    let side = serde_json::json!({"field_count": 2, "header_value": 0,
+        "scalars": [0], "payload_prefix": [0], "payload_entry_count": 1, "entries": []});
+    assert!(serde_json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
+    let clause = serde_json::json!({"fields": [], "face_reference_ordinals": [0, 0],
+        "edge_reference_ordinals": [0, 0], "payload_entry_count": 1, "entries": []});
+    assert!(serde_json::from_value::<super::DesignSurfacePatchRecipeClause>(clause).is_err());
+}
+
+#[test]
+fn recipe_sidecar_derives_counts_without_changing_wire() {
+    let side = serde_json::json!({"field_count": 2, "header_value": 0,
+        "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
+    let record: super::DesignTopologyRecipeSide = serde_json::from_value(side.clone()).unwrap();
+    assert_eq!(record.field_count(), 2);
+    assert_eq!(serde_json::to_value(record).unwrap(), side);
+}

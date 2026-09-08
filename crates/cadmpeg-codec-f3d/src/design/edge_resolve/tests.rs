@@ -289,11 +289,10 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
     operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
         root: 1,
         sides: vec![crate::records::topology::DesignTopologyRecipeSide {
-            field_count: std::num::NonZeroU32::new(1).expect("one recipe field"),
             header_value: 1,
             scalars: Vec::new(),
             payload_prefix: Vec::new(),
-            payload_entry_count: 0,
+
             entries: Vec::new(),
         }],
     });
@@ -584,7 +583,7 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
                     ],
                     face_reference_ordinals: [0, 0],
                     edge_reference_ordinals: [0, 0],
-                    payload_entry_count: 0,
+
                     entries: Vec::new(),
                 }
             }),
@@ -1617,11 +1616,10 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
         root: 2,
         sides: (0..2)
             .map(|_| crate::records::topology::DesignTopologyRecipeSide {
-                field_count: std::num::NonZeroU32::new(3).expect("field count"),
                 header_value: 2,
                 scalars: vec![1, 0],
                 payload_prefix: vec![0],
-                payload_entry_count: 0,
+
                 entries: Vec::new(),
             })
             .collect(),

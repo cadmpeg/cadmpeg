@@ -913,10 +913,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("standard two-side recipe structure");
     assert_eq!(structured.root, 2);
-    assert_eq!(structured.sides[0].field_count.get(), 3);
+    assert_eq!(structured.sides[0].field_count(), 3);
     assert_eq!(structured.sides[0].header_value, 0);
     assert_eq!(structured.sides[0].scalars, [2, 1]);
-    assert_eq!(structured.sides[0].payload_entry_count, 1);
+    assert_eq!(structured.sides[0].entries.len(), 1);
     assert_eq!(structured.sides[0].entries[0].selector, 1);
     assert_eq!(structured.sides[0].entries[0].boundary_edge_count.get(), 5);
     assert_eq!(
@@ -967,10 +967,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .map(|incident| incident.side),
         Some(crate::records::topology::DesignTopologyIncidentSide::Preceding)
     );
-    assert_eq!(structured.sides[1].field_count.get(), 3);
+    assert_eq!(structured.sides[1].field_count(), 3);
     assert_eq!(structured.sides[1].header_value, 0);
     assert_eq!(structured.sides[1].scalars, [1, 3]);
-    assert_eq!(structured.sides[1].payload_entry_count, 1);
+    assert_eq!(structured.sides[1].entries.len(), 1);
     assert_eq!(structured.sides[1].entries[0].selector, 2);
     assert_eq!(structured.sides[1].entries[0].boundary_edge_count.get(), 5);
     assert_eq!(
@@ -1124,7 +1124,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("recipe structure with a third scalar on its second side");
     assert_eq!(extended.sides[0].scalars, [1, 0]);
     assert_eq!(extended.sides[1].scalars, [0, 1, 4]);
-    assert_eq!(extended.sides[1].field_count.get(), 4);
+    assert_eq!(extended.sides[1].field_count(), 4);
     assert!(extended.sides[0].entries.is_empty());
     assert!(extended.sides[1].entries.is_empty());
     let zero_delimited = crate::design::decode::operands::edge_recipe_structure(&[
@@ -1133,11 +1133,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("recipe structure with zero-delimited side fields");
     assert_eq!(zero_delimited.root, 2);
-    assert_eq!(zero_delimited.sides[0].field_count.get(), 3);
+    assert_eq!(zero_delimited.sides[0].field_count(), 3);
     assert_eq!(zero_delimited.sides[0].header_value, 1);
     assert_eq!(zero_delimited.sides[0].scalars, [0, 2]);
     assert!(zero_delimited.sides[0].entries.is_empty());
-    assert_eq!(zero_delimited.sides[1].field_count.get(), 4);
+    assert_eq!(zero_delimited.sides[1].field_count(), 4);
     assert_eq!(zero_delimited.sides[1].scalars, [3, 4, 0]);
     assert_eq!(zero_delimited.sides[1].entries.len(), 1);
     assert_eq!(zero_delimited.sides[1].entries[0].selector, 2);
@@ -1168,7 +1168,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         1, -1, 2, -1, 0, 0, -1,
     ])
     .expect("recipe structure with four scalar fields");
-    assert_eq!(variable_scalars.sides[0].field_count.get(), 5);
+    assert_eq!(variable_scalars.sides[0].field_count(), 5);
     assert_eq!(variable_scalars.sides[0].scalars, [0, 2, 3, 4]);
     let extended_payload = crate::design::decode::operands::edge_recipe_structure(&[
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 2, 3, -1, 0, 0, -1, 4, -1, 0, 0,
@@ -1191,11 +1191,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
     assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);
-    assert_eq!(surface_patch.clauses[0].payload_entry_count, 1);
+    assert_eq!(surface_patch.clauses[0].entries.len(), 1);
     assert_eq!(surface_patch.clauses[0].entries[0].selector, 0);
     assert_eq!(surface_patch.clauses[1].face_reference_ordinals, [3, 1]);
     assert_eq!(surface_patch.clauses[1].edge_reference_ordinals, [0, 3]);
-    assert_eq!(surface_patch.clauses[1].payload_entry_count, 0);
+    assert_eq!(surface_patch.clauses[1].entries.len(), 0);
     assert!(surface_patch.clauses[1].entries.is_empty());
     assert!(
         crate::design::decode::operands::surface_patch_recipe_structure(
@@ -1261,10 +1261,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("face node topology recipe structure");
     assert_eq!(face.root, 0);
     assert_eq!(face.prelude, [1, 2]);
-    assert_eq!(face.sides[0].field_count.get(), 3);
+    assert_eq!(face.sides[0].field_count(), 3);
     assert_eq!(face.sides[0].header_value, 0);
     assert_eq!(face.sides[0].scalars, [2, 1]);
-    assert_eq!(face.sides[1].field_count.get(), 3);
+    assert_eq!(face.sides[1].field_count(), 3);
     assert_eq!(face.sides[1].header_value, 0);
     assert_eq!(face.sides[1].scalars, [1, 3]);
     let zero_delimited_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -1690,19 +1690,17 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             prelude: [0, 2],
             sides: [
                 DesignTopologyRecipeSide {
-                    field_count: std::num::NonZeroU32::new(3).unwrap(),
                     header_value: 0,
                     scalars: vec![0, 1],
                     payload_prefix: vec![0],
-                    payload_entry_count: 0,
+
                     entries: Vec::new(),
                 },
                 DesignTopologyRecipeSide {
-                    field_count: std::num::NonZeroU32::new(3).unwrap(),
                     header_value: 1,
                     scalars: vec![1, 0],
                     payload_prefix: vec![0],
-                    payload_entry_count: 0,
+
                     entries: Vec::new(),
                 },
             ],

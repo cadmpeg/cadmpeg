@@ -3092,6 +3092,10 @@ impl From<DesignSurfacePatchRecipeStructure> for DesignSurfacePatchRecipeStructu
 
 /// One clause in a `SurfacePatch` edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignSurfacePatchRecipeClauseWire",
+    into = "DesignSurfacePatchRecipeClauseWire"
+)]
 pub struct DesignSurfacePatchRecipeClause {
     /// Six delimiter-bounded fields before the counted topology payload.
     pub fields: Vec<Vec<i32>>,
@@ -3099,27 +3103,112 @@ pub struct DesignSurfacePatchRecipeClause {
     pub face_reference_ordinals: [u32; 2],
     /// Zero-based edge-reference ordinals named by the third and fifth fields.
     pub edge_reference_ordinals: [u32; 2],
-    /// Number of eight-word topology entries in the payload.
-    pub payload_entry_count: u32,
     /// Ordered topology entries in the payload.
     pub entries: Vec<DesignTopologyRecipeEntry>,
+}
+#[derive(Serialize, Deserialize)]
+struct DesignSurfacePatchRecipeClauseWire {
+    /// Six delimiter-bounded fields before the counted topology payload.
+    fields: Vec<Vec<i32>>,
+    /// Zero-based face-reference ordinals named by the first two fields.
+    face_reference_ordinals: [u32; 2],
+    /// Zero-based edge-reference ordinals named by the third and fifth fields.
+    edge_reference_ordinals: [u32; 2],
+    /// Number of eight-word topology entries in the payload.
+    payload_entry_count: usize,
+    /// Ordered topology entries in the payload.
+    entries: Vec<DesignTopologyRecipeEntry>,
+}
+impl TryFrom<DesignSurfacePatchRecipeClauseWire> for DesignSurfacePatchRecipeClause {
+    type Error = &'static str;
+    fn try_from(wire: DesignSurfacePatchRecipeClauseWire) -> Result<Self, Self::Error> {
+        if wire.payload_entry_count != wire.entries.len() {
+            return Err("payload_entry_count disagrees with entries");
+        }
+        Ok(Self {
+            fields: wire.fields,
+            face_reference_ordinals: wire.face_reference_ordinals,
+            edge_reference_ordinals: wire.edge_reference_ordinals,
+            entries: wire.entries,
+        })
+    }
+}
+impl From<DesignSurfacePatchRecipeClause> for DesignSurfacePatchRecipeClauseWire {
+    fn from(value: DesignSurfacePatchRecipeClause) -> Self {
+        Self {
+            payload_entry_count: value.entries.len(),
+            fields: value.fields,
+            face_reference_ordinals: value.face_reference_ordinals,
+            edge_reference_ordinals: value.edge_reference_ordinals,
+            entries: value.entries,
+        }
+    }
 }
 
 /// One delimiter-bounded side clause in a standard edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignTopologyRecipeSideWire",
+    into = "DesignTopologyRecipeSideWire"
+)]
 pub struct DesignTopologyRecipeSide {
-    /// Encoded number of fields after the header count: scalar fields plus the payload.
-    pub field_count: NonZeroU32,
     /// Second word of the side header.
     pub header_value: i32,
     /// Ordered scalar fields following the side header.
     pub scalars: Vec<i32>,
     /// Exact field program preceding the topology-entry count.
     pub payload_prefix: Vec<i32>,
-    /// Encoded number of eight-word topology entries following the field program.
-    pub payload_entry_count: u32,
     /// Ordered eight-word payload entries.
     pub entries: Vec<DesignTopologyRecipeEntry>,
+}
+#[derive(Serialize, Deserialize)]
+struct DesignTopologyRecipeSideWire {
+    /// Encoded number of fields after the header count: scalar fields plus the payload.
+    field_count: usize,
+    /// Second word of the side header.
+    header_value: i32,
+    /// Ordered scalar fields following the side header.
+    scalars: Vec<i32>,
+    /// Exact field program preceding the topology-entry count.
+    payload_prefix: Vec<i32>,
+    /// Encoded number of eight-word topology entries following the field program.
+    payload_entry_count: usize,
+    /// Ordered eight-word payload entries.
+    entries: Vec<DesignTopologyRecipeEntry>,
+}
+impl TryFrom<DesignTopologyRecipeSideWire> for DesignTopologyRecipeSide {
+    type Error = &'static str;
+    fn try_from(wire: DesignTopologyRecipeSideWire) -> Result<Self, Self::Error> {
+        if wire.field_count != wire.scalars.len() + 1 {
+            return Err("field_count disagrees with scalars");
+        }
+        if wire.payload_entry_count != wire.entries.len() {
+            return Err("payload_entry_count disagrees with entries");
+        }
+        Ok(Self {
+            header_value: wire.header_value,
+            scalars: wire.scalars,
+            payload_prefix: wire.payload_prefix,
+            entries: wire.entries,
+        })
+    }
+}
+impl From<DesignTopologyRecipeSide> for DesignTopologyRecipeSideWire {
+    fn from(value: DesignTopologyRecipeSide) -> Self {
+        Self {
+            field_count: value.field_count(),
+            payload_entry_count: value.entries.len(),
+            header_value: value.header_value,
+            scalars: value.scalars,
+            payload_prefix: value.payload_prefix,
+            entries: value.entries,
+        }
+    }
+}
+impl DesignTopologyRecipeSide {
+    pub(crate) fn field_count(&self) -> usize {
+        self.scalars.len() + 1
+    }
 }
 
 /// One eight-word topology entry in an edge-recipe side clause.
