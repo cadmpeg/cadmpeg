@@ -738,6 +738,32 @@ mod tests {
     }
 
     #[test]
+    fn joint_limits_admit_only_finite_ordered_bounds() {
+        assert!(JointLimits::new(None, None).is_none());
+        assert!(JointLimits::new(Some(2.0), Some(1.0)).is_none());
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(JointLimits::new(Some(value), None).is_none());
+            assert!(JointLimits::new(None, Some(value)).is_none());
+        }
+        for (minimum, maximum) in [
+            (Some(-2.0), None),
+            (None, Some(-1.0)),
+            (Some(0.0), Some(0.0)),
+        ] {
+            let limits = JointLimits::new(minimum, maximum).unwrap();
+            assert_eq!(
+                serde_json::from_value::<JointLimits>(serde_json::to_value(&limits).unwrap())
+                    .unwrap(),
+                limits
+            );
+        }
+        assert!(serde_json::from_value::<JointLimits>(
+            serde_json::json!({"minimum":2.0,"maximum":1.0})
+        )
+        .is_err());
+    }
+
+    #[test]
     fn empty_link_state_is_absent() {
         assert!(LinkState::new(Vec::new(), None, None, None).is_none());
         assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
@@ -1067,45 +1093,34 @@ impl JsonSchema for JointOperand {
 
 /// Enabled bounds for one joint degree of freedom.
 #[derive(Debug, Clone, PartialEq)]
-pub enum JointLimits {
-    /// Lower bound only.
-    Minimum(f64),
-    /// Upper bound only.
-    Maximum(f64),
-    /// Lower and upper bounds.
-    Both {
-        /// Lower bound.
-        minimum: f64,
-        /// Upper bound.
-        maximum: f64,
-    },
+pub struct JointLimits {
+    minimum: Option<f64>,
+    maximum: Option<f64>,
 }
 
 impl JointLimits {
-    /// Constructs enabled bounds when at least one bound is present.
+    /// Constructs finite ordered limits with at least one enabled bound.
     pub fn new(minimum: Option<f64>, maximum: Option<f64>) -> Option<Self> {
-        match (minimum, maximum) {
-            (Some(minimum), None) => Some(Self::Minimum(minimum)),
-            (None, Some(maximum)) => Some(Self::Maximum(maximum)),
-            (Some(minimum), Some(maximum)) => Some(Self::Both { minimum, maximum }),
-            (None, None) => None,
+        if minimum.is_none() && maximum.is_none()
+            || minimum.is_some_and(|value| !value.is_finite())
+            || maximum.is_some_and(|value| !value.is_finite())
+            || minimum
+                .zip(maximum)
+                .is_some_and(|(minimum, maximum)| minimum > maximum)
+        {
+            return None;
         }
+        Some(Self { minimum, maximum })
     }
 
     /// Returns the lower bound, when enabled.
     pub fn minimum(&self) -> Option<f64> {
-        match *self {
-            Self::Minimum(minimum) | Self::Both { minimum, .. } => Some(minimum),
-            Self::Maximum(_) => None,
-        }
+        self.minimum
     }
 
     /// Returns the upper bound, when enabled.
     pub fn maximum(&self) -> Option<f64> {
-        match *self {
-            Self::Maximum(maximum) | Self::Both { maximum, .. } => Some(maximum),
-            Self::Minimum(_) => None,
-        }
+        self.maximum
     }
 }
 
@@ -1137,8 +1152,11 @@ impl<'de> Deserialize<'de> for JointLimits {
         D: serde::Deserializer<'de>,
     {
         let wire = JointLimitsWire::deserialize(deserializer)?;
-        Self::new(wire.minimum, wire.maximum)
-            .ok_or_else(|| serde::de::Error::custom("joint limits must contain at least one bound"))
+        Self::new(wire.minimum, wire.maximum).ok_or_else(|| {
+            serde::de::Error::custom(
+                "joint limits minimum/maximum must be finite and ordered, with at least one bound",
+            )
+        })
     }
 }
 

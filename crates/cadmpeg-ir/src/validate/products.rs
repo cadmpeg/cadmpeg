@@ -105,23 +105,8 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .chain(joint.translation_offset().into_iter().flatten())
             .chain(joint.distance())
             .chain(joint.distance2())
-            .chain(
-                joint
-                    .angular_limits()
-                    .into_iter()
-                    .chain(joint.linear_limits())
-                    .flat_map(|limits| [limits.minimum(), limits.maximum()])
-                    .flatten(),
-            )
             .all(f64::is_finite);
-        let ordered = [joint.angular_limits(), joint.linear_limits()]
-            .into_iter()
-            .flatten()
-            .all(|limits| match (limits.minimum(), limits.maximum()) {
-                (Some(minimum), Some(maximum)) => minimum <= maximum,
-                _ => true,
-            });
-        if !operands_valid || !finite || !ordered {
+        if !operands_valid || !finite {
             invalid(
                 findings,
                 joint.id.as_str(),
