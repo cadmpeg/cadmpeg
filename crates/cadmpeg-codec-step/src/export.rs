@@ -1893,7 +1893,7 @@ impl<'a> Builder<'a> {
                 "COORDINATES_LIST",
                 &format!(
                     "{}, {},({coordinates})",
-                    string(&mesh.id),
+                    string(mesh.id.as_str()),
                     mesh.vertices().len()
                 ),
             );
@@ -1938,7 +1938,7 @@ impl<'a> Builder<'a> {
             if !mesh.faces.is_empty() {
                 reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
             }
-            if mesh.chordal_deflection.is_some() {
+            if mesh.chordal_deflection().is_some() {
                 reduced_fields.push("chordal deflection".to_string());
             }
             if !mesh.channels().is_empty() {
@@ -1972,7 +1972,7 @@ impl<'a> Builder<'a> {
                     "TRIANGULATED_FACE",
                     &format!(
                         "{},{coordinates},{},{normals},$,({point_indices}),({triangles})",
-                        string(&mesh.id),
+                        string(mesh.id.as_str()),
                         mesh.vertices().len()
                     ),
                 );
@@ -1982,7 +1982,7 @@ impl<'a> Builder<'a> {
                     } else {
                         "TESSELLATED_SHELL"
                     },
-                    &format!("{},({face}),{link}", string(&mesh.id)),
+                    &format!("{},({face}),{link}", string(mesh.id.as_str())),
                 )
             } else {
                 let triangles = mesh
@@ -2002,12 +2002,13 @@ impl<'a> Builder<'a> {
                     "TRIANGULATED_SURFACE_SET",
                     &format!(
                         "{},{coordinates},{},{normals},({point_indices}),({triangles})",
-                        string(&mesh.id),
+                        string(mesh.id.as_str()),
                         mesh.vertices().len()
                     ),
                 )
             };
-            self.tessellation_step_refs.insert(mesh.id.clone(), item);
+            self.tessellation_step_refs
+                .insert(mesh.id.to_string(), item);
             representation_items.push(item);
         }
         if !representation_items.is_empty() {

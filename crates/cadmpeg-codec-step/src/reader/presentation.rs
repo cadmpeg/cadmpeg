@@ -95,7 +95,7 @@ pub(super) fn decode(
             .model
             .tessellations
             .iter()
-            .map(|item| item.id.clone())
+            .map(|item| item.id.to_string())
             .collect(),
     };
     let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
