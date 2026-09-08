@@ -613,42 +613,49 @@ fn validate_declared_transform_frame(
 
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
-    pub(crate) rows: [[f64; 4]; 3],
+    transform: cadmpeg_ir::transform::Transform,
 }
 
 impl Affine {
-    pub(crate) const IDENTITY: Self = Self {
-        rows: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ],
-    };
+    pub(crate) fn identity() -> Self {
+        Self {
+            transform: cadmpeg_ir::transform::Transform::identity(),
+        }
+    }
 
-    pub(crate) fn compose(self, local: Self) -> Self {
+    pub(crate) fn new(rows: [[f64; 4]; 3]) -> Option<Self> {
+        cadmpeg_ir::transform::Transform::affine(rows).map(|transform| Self { transform })
+    }
+
+    pub(crate) fn rows(self) -> [[f64; 4]; 3] {
+        let rows = self.transform.rows();
+        [rows[0], rows[1], rows[2]]
+    }
+
+    pub(crate) fn compose(self, local: Self) -> Option<Self> {
         let mut rows = [[0.0; 4]; 3];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate().take(3) {
                 *value = (0..3)
-                    .map(|index| self.rows[row][index] * local.rows[index][column])
+                    .map(|index| self.rows()[row][index] * local.rows()[index][column])
                     .sum();
             }
-            values[3] = self.rows[row][3]
+            values[3] = self.rows()[row][3]
                 + (0..3)
-                    .map(|index| self.rows[row][index] * local.rows[index][3])
+                    .map(|index| self.rows()[row][index] * local.rows()[index][3])
                     .sum::<f64>();
         }
-        Self { rows }
+        Self::new(rows)
     }
 
     pub(super) fn point(self, point: Point3) -> Point3 {
         let values = [point.x, point.y, point.z];
         let coordinate = |row: usize| {
-            self.rows[row][3]
+            self.rows()[row][3]
                 + values
                     .iter()
                     .enumerate()
-                    .map(|(column, value)| self.rows[row][column] * value)
+                    .map(|(column, value)| self.rows()[row][column] * value)
                     .sum::<f64>()
         };
         Point3::new(coordinate(0), coordinate(1), coordinate(2))
@@ -660,20 +667,14 @@ impl Affine {
             values
                 .iter()
                 .enumerate()
-                .map(|(column, value)| self.rows[row][column] * value)
+                .map(|(column, value)| self.rows()[row][column] * value)
                 .sum::<f64>()
         };
         Vector3::new(coordinate(0), coordinate(1), coordinate(2))
     }
 
     pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
-        cadmpeg_ir::transform::Transform::from_rows([
-            self.rows[0],
-            self.rows[1],
-            self.rows[2],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform")
+        self.transform
     }
 }
 
@@ -687,7 +688,7 @@ pub(crate) fn resolve_transform(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Affine, String> {
     if sequence == 0 {
-        return Ok(Affine::IDENTITY);
+        return Ok(Affine::identity());
     }
     let sequence = u32::try_from(sequence)
         .map_err(|_| "transformation pointer is not a positive sequence".to_string())?;
@@ -788,13 +789,14 @@ pub(crate) fn resolve_transform(
         .ok_or_else(|| format!("transformation D{sequence} second axis cannot be normalized"))?;
         let perpendicular = first.cross(second);
         let third = perpendicular.scale(expected_determinant);
-        let local = Affine {
-            rows: [
-                [first.x, second.x, third.x, values[3]],
-                [first.y, second.y, third.y, values[7]],
-                [first.z, second.z, third.z, values[11]],
-            ],
-        };
+        let local = Affine::new([
+            [first.x, second.x, third.x, values[3]],
+            [first.y, second.y, third.y, values[7]],
+            [first.z, second.z, third.z, values[11]],
+        ])
+        .ok_or_else(|| {
+            format!("transformation D{sequence} has non-finite coefficients after length scaling")
+        })?;
         let parent = resolve_transform(
             entry.transform,
             entries,
@@ -804,7 +806,9 @@ pub(crate) fn resolve_transform(
             path,
             ctx,
         )?;
-        Ok(parent.compose(local))
+        parent.compose(local).ok_or_else(|| {
+            format!("transformation D{sequence} has non-finite coefficients after composition")
+        })
     })();
     path.remove(&sequence);
     result
