@@ -273,7 +273,7 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
     }
     let mut entry_ids = Vec::new();
     entry_ids.try_reserve_exact(entries.len()).ok()?;
-    entry_ids.extend(entries.iter().map(|entry| entry.id()));
+    entry_ids.extend(entries.iter().map(SavedToggleEntry::id));
     Some(ParsedToggleStream {
         stream: SavedToggleStream::try_from(SavedToggleStreamWire {
             id: "nx:saved-toggle:stream#0".to_string(),
