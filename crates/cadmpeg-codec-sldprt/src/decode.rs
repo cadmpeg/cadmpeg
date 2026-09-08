@@ -291,9 +291,9 @@ fn sketch_constraint_has_complete_neutral_semantics(
 }
 
 fn spatial_sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
 ) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Constraint;
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Constraint;
 
     match definition {
         Constraint::Native { .. } => false,
@@ -897,7 +897,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .spatial_sketch_constraints
         .iter()
         .filter(|constraint| {
-            !spatial_sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+            !spatial_sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
         })
         .count();
     let native_constraints = native_planar_constraints + native_spatial_constraints;

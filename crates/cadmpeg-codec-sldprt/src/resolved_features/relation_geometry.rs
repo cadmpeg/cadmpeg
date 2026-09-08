@@ -38,7 +38,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchNativeOperand, SpatialSketch,
-    SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchEntity,
+    SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
 };
 use std::collections::{HashMap, HashSet};
@@ -300,7 +300,7 @@ pub(crate) fn project_spatial_relation_bindings(
                         relation, sketch, parameter?, lane, entities,
                     );
                     result.and_then(|(point, line)| {
-                        Some(SpatialSketchConstraintDefinition::PointLineDistance {
+                        Some(SpatialSketchConstraintDefinitionInput::PointLineDistance {
                             point,
                             line,
                             parameter: parameter_id.clone()?,
@@ -308,8 +308,8 @@ pub(crate) fn project_spatial_relation_bindings(
                     })
                 })
                 .flatten();
-            let definition =
-                typed_definition.unwrap_or_else(|| SpatialSketchConstraintDefinition::Native {
+            let definition = typed_definition.unwrap_or_else(|| {
+                SpatialSketchConstraintDefinitionInput::Native {
                     native_kind: relation_native_kind(relation.family).into(),
                     native_state: None,
                     parameter: parameter_id.clone(),
@@ -326,7 +326,13 @@ pub(crate) fn project_spatial_relation_bindings(
                             native_ref: operand.entity_ref.clone(),
                         })
                         .collect(),
-                });
+                }
+            });
+            let Ok(definition) =
+                cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition)
+            else {
+                continue;
+            };
             let projected = SpatialSketchConstraint {
                 id: match SketchConstraintId::mint(format!(
                     "sldprt:model:spatial-sketch-constraint#relation:{lane_key}:{}",
@@ -341,11 +347,11 @@ pub(crate) fn project_spatial_relation_bindings(
             };
             if let Some(index) = constraints_by_native_ref.get(relation.id.as_str()).copied() {
                 if matches!(
-                    constraints[index].definition,
-                    SpatialSketchConstraintDefinition::Native { .. }
+                    constraints[index].definition.kind(),
+                    SpatialSketchConstraintDefinitionInput::Native { .. }
                 ) && !matches!(
-                    projected.definition,
-                    SpatialSketchConstraintDefinition::Native { .. }
+                    projected.definition.kind(),
+                    SpatialSketchConstraintDefinitionInput::Native { .. }
                 ) {
                     constraints[index] = projected;
                 }
@@ -3355,7 +3361,7 @@ mod relation_geometry_tests {
             Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
         };
         use cadmpeg_ir::sketches::{
-            SpatialSketch, SpatialSketchConstraintDefinition, SpatialSketchGeometryDefinition,
+            SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchGeometryDefinition,
             SpatialSketchId,
         };
         use std::collections::BTreeMap;
@@ -3527,11 +3533,11 @@ mod relation_geometry_tests {
         let [constraint] = constraints.as_slice() else {
             panic!("one spatial relation constraint");
         };
-        let SpatialSketchConstraintDefinition::PointLineDistance {
+        let SpatialSketchConstraintDefinitionInput::PointLineDistance {
             point,
             line,
             parameter,
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("tagged marker roster has a unique point-line witness");
         };

@@ -162,7 +162,10 @@ pub(super) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for constraint in &mut ir.model.spatial_sketch_constraints {
-        scale_spatial_sketch_constraint_definition(&mut constraint.definition, length_scale_mm);
+        constraint
+            .definition
+            .edit(|kind| scale_spatial_sketch_constraint_definition(kind, length_scale_mm))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
 }
@@ -1602,11 +1605,12 @@ fn scale_sketch_constraint_definition(
 }
 
 fn scale_spatial_sketch_constraint_definition(
-    definition: &mut cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+    definition: &mut cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
     scale: f64,
 ) {
-    if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Offset { distance, .. } =
-        definition
+    if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Offset {
+        distance, ..
+    } = definition
     {
         scale_length(distance, scale);
     }

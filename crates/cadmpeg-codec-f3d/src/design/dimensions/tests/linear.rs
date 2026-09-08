@@ -995,16 +995,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         &spatial_constraints[0],
         cadmpeg_ir::sketches::SpatialSketchConstraint {
             sketch: actual_sketch,
-            definition: SpatialSketchConstraintDefinition::PointDistance {
-                first,
-                second,
-                parameter: actual_parameter,
-            },
+            definition,
             ..
-        } if actual_sketch == &spatial_sketch.id
+        } if matches!(definition.kind(), SpatialSketchConstraintDefinitionInput::PointDistance { first, second, parameter: actual_parameter } if actual_sketch == &spatial_sketch.id
             && actual_parameter == &neutral_parameter_id_parts(stream, 20)
             && first == spatial_entities[0].id()
-            && second == spatial_entities[1].id()
+            && second == spatial_entities[1].id())
     ));
 
     let axis_record = SketchCurveIdentity {
@@ -1111,8 +1107,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     );
     assert_eq!(symmetry_constraints.len(), 2, "{symmetry_constraints:#?}");
     assert!(symmetry_constraints.iter().any(|constraint| matches!(
-        &constraint.definition,
-        SpatialSketchConstraintDefinition::Symmetric {
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
@@ -1121,8 +1117,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             && axis == axis_entity.id()
     )));
     assert!(symmetry_constraints.iter().any(|constraint| matches!(
-        constraint.definition,
-        SpatialSketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Native {
             parameter: Some(_),
             ..
         }

@@ -6,7 +6,7 @@ use super::super::*;
 use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchConstraintId, SpatialSketchConstraint,
-    SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
+    SpatialSketchConstraintDefinitionInput, SpatialSketchEntityId, SpatialSketchId,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -28,13 +28,13 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
         }
     ));
     assert!(spatial_sketch_constraint_has_complete_neutral_semantics(
-        &SpatialSketchConstraintDefinition::Coincident {
+        &SpatialSketchConstraintDefinitionInput::Coincident {
             first: SpatialSketchEntityId::mint("synthetic:test:id#first").unwrap(),
             second: SpatialSketchEntityId::mint("synthetic:test:id#second").unwrap(),
         }
     ));
     assert!(!spatial_sketch_constraint_has_complete_neutral_semantics(
-        &SpatialSketchConstraintDefinition::Native {
+        &SpatialSketchConstraintDefinitionInput::Native {
             native_kind: "unresolved".into(),
             native_state: None,
             parameter: None,
@@ -51,12 +51,15 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
         .push(SpatialSketchConstraint {
             id: SketchConstraintId::mint("synthetic:test:id#native-spatial").unwrap(),
             sketch: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
-            definition: SpatialSketchConstraintDefinition::Native {
-                native_kind: "unresolved".into(),
-                native_state: None,
-                parameter: None,
-                operands: Vec::new(),
-            },
+            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                SpatialSketchConstraintDefinitionInput::Native {
+                    native_kind: "unresolved".into(),
+                    native_state: None,
+                    parameter: None,
+                    operands: Vec::new(),
+                },
+            )
+            .unwrap(),
             native_ref: None,
         });
     let mut report = super::empty_report(true);

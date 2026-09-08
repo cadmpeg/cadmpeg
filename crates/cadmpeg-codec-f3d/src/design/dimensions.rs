@@ -2464,7 +2464,7 @@ pub fn project_spatial_dimension_constraints(
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchNativeOperand, SpatialSketchConstraint,
-        SpatialSketchConstraintDefinition,
+        SpatialSketchConstraintDefinitionInput,
     };
 
     let &DimensionConstraintInputs {
@@ -2616,7 +2616,7 @@ pub fn project_spatial_dimension_constraints(
                             &second.geometry,
                             expected,
                         ) {
-                            Some(SpatialSketchConstraintDefinition::PointDistance {
+                            Some(SpatialSketchConstraintDefinitionInput::PointDistance {
                                 first: first.id().clone(),
                                 second: second.id().clone(),
                                 parameter: parameter.clone(),
@@ -2626,11 +2626,13 @@ pub fn project_spatial_dimension_constraints(
                             &second.geometry,
                             expected,
                         ) {
-                            Some(SpatialSketchConstraintDefinition::ParallelLineDistance {
-                                first: first.id().clone(),
-                                second: second.id().clone(),
-                                parameter: parameter.clone(),
-                            })
+                            Some(
+                                SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
+                                    first: first.id().clone(),
+                                    second: second.id().clone(),
+                                    parameter: parameter.clone(),
+                                },
+                            )
                         } else {
                             None
                         }
@@ -2682,7 +2684,7 @@ pub fn project_spatial_dimension_constraints(
                         })
                     });
                     symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
-                        SpatialSketchConstraintDefinition::Native {
+                        SpatialSketchConstraintDefinitionInput::Native {
                             native_kind,
                             native_state,
                             parameter,
@@ -2695,7 +2697,10 @@ pub fn project_spatial_dimension_constraints(
             Some(SpatialSketchConstraint {
                 id: constraint.id,
                 sketch,
-                definition,
+                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                    definition,
+                )
+                .ok()?,
                 native_ref: constraint.native_ref,
             })
         })
@@ -2703,23 +2708,24 @@ pub fn project_spatial_dimension_constraints(
 
     let retained_parameters = projected
         .iter()
-        .filter_map(|constraint| match &constraint.definition {
-            SpatialSketchConstraintDefinition::Native {
+        .filter_map(|constraint| match constraint.definition.kind() {
+            SpatialSketchConstraintDefinitionInput::Native {
                 parameter: Some(parameter),
                 ..
             }
-            | SpatialSketchConstraintDefinition::PointDistance { parameter, .. }
-            | SpatialSketchConstraintDefinition::PointLineDistance { parameter, .. }
-            | SpatialSketchConstraintDefinition::LineLength { parameter, .. }
-            | SpatialSketchConstraintDefinition::RepeatedLineLength { parameter, .. }
-            | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. }
-            | SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
+            | SpatialSketchConstraintDefinitionInput::PointDistance { parameter, .. }
+            | SpatialSketchConstraintDefinitionInput::PointLineDistance { parameter, .. }
+            | SpatialSketchConstraintDefinitionInput::LineLength { parameter, .. }
+            | SpatialSketchConstraintDefinitionInput::RepeatedLineLength { parameter, .. }
+            | SpatialSketchConstraintDefinitionInput::ParallelLineDistance { parameter, .. }
+            | SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
+                parameter,
+                ..
+            }
+            | SpatialSketchConstraintDefinitionInput::ParallelLineSetDistance {
                 parameter, ..
-            }
-            | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. } => {
-                Some(parameter)
-            }
-            SpatialSketchConstraintDefinition::Offset {
+            } => Some(parameter),
+            SpatialSketchConstraintDefinitionInput::Offset {
                 parameter: Some(parameter),
                 ..
             } => Some(&parameter.id),
@@ -2756,28 +2762,33 @@ pub fn project_spatial_dimension_constraints(
         Some(SpatialSketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
             sketch,
-            definition: SpatialSketchConstraintDefinition::Native {
-                native_kind: parameter.source_kind().to_owned(),
-                native_state: None,
-                parameter: Some(parameter_id),
-                operands: vec![SketchNativeOperand {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension_companion")
-                        .expect("source operand kind is nonempty"),
-                    field: Some(NativeOperandField {
-                        name: cadmpeg_ir::products::NonEmptyString::new(
-                            if companion.payload_byte_length == 0 {
-                                "companion"
-                            } else {
-                                "companion_payload"
-                            },
+            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                SpatialSketchConstraintDefinitionInput::Native {
+                    native_kind: parameter.source_kind().to_owned(),
+                    native_state: None,
+                    parameter: Some(parameter_id),
+                    operands: vec![SketchNativeOperand {
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            "dimension_companion",
                         )
-                        .expect("source field name is nonempty"),
-                        role: None,
-                    }),
-                    object_index: companion.record_index,
-                    native_ref: Some(companion.id.clone()),
-                }],
-            },
+                        .expect("source operand kind is nonempty"),
+                        field: Some(NativeOperandField {
+                            name: cadmpeg_ir::products::NonEmptyString::new(
+                                if companion.payload_byte_length == 0 {
+                                    "companion"
+                                } else {
+                                    "companion_payload"
+                                },
+                            )
+                            .expect("source field name is nonempty"),
+                            role: None,
+                        }),
+                        object_index: companion.record_index,
+                        native_ref: Some(companion.id.clone()),
+                    }],
+                },
+            )
+            .ok()?,
             native_ref: Some(companion.id.clone()),
         })
     }));
@@ -2790,9 +2801,9 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
+        SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2842,9 +2853,9 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
+        SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
@@ -2894,9 +2905,9 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchEntityPair,
+        SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchEntityPair,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
@@ -2958,9 +2969,9 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
+        SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -3067,9 +3078,9 @@ fn spatial_reflection_symmetry(
     native_ref: Option<&str>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
+        SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !native_kind.starts_with("Linear Dimension") || native_state != Some(0) {
@@ -3144,9 +3155,9 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Definition;
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
 
     if !native_kind.starts_with("Linear Dimension")
         || native_state != Some(0x20)

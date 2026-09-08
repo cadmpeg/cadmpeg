@@ -1082,11 +1082,115 @@ pub struct SpatialSketchEntityPair {
     pub second: SpatialSketchEntityId,
 }
 
+const EPS_SPATIAL_CONSTRAINT_UNIT: f64 = 1.0e-9;
+
+/// A spatial sketch constraint with admitted local members and scalar values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchConstraintDefinitionInput")]
+pub struct SpatialSketchConstraintDefinition(SpatialSketchConstraintDefinitionInput);
+
+impl SpatialSketchConstraintDefinition {
+    /// Borrow the admitted spatial constraint kind.
+    #[must_use]
+    pub fn kind(&self) -> &SpatialSketchConstraintDefinitionInput {
+        &self.0
+    }
+
+    /// Replace the kind only after all edited local invariants pass.
+    pub fn edit<R>(
+        &mut self,
+        edit: impl FnOnce(&mut SpatialSketchConstraintDefinitionInput) -> R,
+    ) -> Result<R, &'static str> {
+        let mut kind = self.0.clone();
+        let result = edit(&mut kind);
+        *self = kind.try_into()?;
+        Ok(result)
+    }
+}
+
+impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraintDefinition {
+    type Error = &'static str;
+
+    fn try_from(kind: SpatialSketchConstraintDefinitionInput) -> Result<Self, Self::Error> {
+        use SpatialSketchConstraintDefinitionInput as Kind;
+        let unit = |direction: &Vector3| {
+            let norm = direction.norm();
+            norm.is_finite() && (norm - 1.0).abs() <= EPS_SPATIAL_CONSTRAINT_UNIT
+        };
+        let valid = match &kind {
+            Kind::Native { .. } | Kind::LineLength { .. } => true,
+            Kind::Coincident { first, second }
+            | Kind::Tangent { first, second }
+            | Kind::PointDistance { first, second, .. }
+            | Kind::ParallelLineDistance { first, second, .. } => first != second,
+            Kind::Symmetric {
+                first,
+                second,
+                axis,
+            } => first != second && first != axis && second != axis,
+            Kind::PointOnSurface { point, surface } => point != surface,
+            Kind::Midpoint { point, entity } => point != entity,
+            Kind::PointLineDistance { point, line, .. } => point != line,
+            Kind::RepeatedLineLength { entities, .. } | Kind::SplineGroup { entities } => {
+                entities.len() >= 2
+                    && entities
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == entities.len()
+            }
+            Kind::RepeatedParallelLineDistance { pairs, .. } => {
+                let mut entities = std::collections::HashSet::new();
+                pairs.len() >= 2
+                    && pairs
+                        .iter()
+                        .all(|pair| entities.insert(&pair.first) && entities.insert(&pair.second))
+            }
+            Kind::ParallelLineSetDistance { first, second, .. } => {
+                !first.is_empty()
+                    && !second.is_empty()
+                    && (first.len() > 1 || second.len() > 1)
+                    && first
+                        .iter()
+                        .chain(second)
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == first.len() + second.len()
+            }
+            Kind::Offset {
+                sources,
+                results,
+                normal,
+                distance,
+                ..
+            } => {
+                !sources.is_empty()
+                    && !results.is_empty()
+                    && unit(normal)
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
+                    && sources
+                        .iter()
+                        .chain(results)
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == sources.len() + results.len()
+            }
+            Kind::ParallelToDirection { direction, .. } => unit(direction),
+        };
+        if !valid {
+            return Err("invalid spatial sketch constraint local arity or scalar value");
+        }
+        Ok(Self(kind))
+    }
+}
+
 /// Neutral geometric relations between model-space sketch entities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SpatialSketchConstraintDefinition {
+pub enum SpatialSketchConstraintDefinitionInput {
     /// Source-native spatial relation without complete neutral semantics.
     Native {
         /// Source relation family.
