@@ -980,7 +980,7 @@ pub fn decode_design_body_bindings(
         for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
-            for (ordinal, binding) in record.bindings.iter().enumerate() {
+            for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
                 let source_bodies = body_keys
                     .iter()
                     .filter(|key| {
@@ -995,8 +995,7 @@ pub fn decode_design_body_bindings(
                     id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
                     stream: entry.name.clone(),
                     pair_count,
-                    pair_ordinal: u32::try_from(ordinal)
-                        .expect("pair ordinal is below its u32 pair count"),
+                    pair_ordinal: ordinal,
                     asm_body_key: binding.asm_key,
                     asm_body_key_offset: binding.asm_key_offset as u64,
                     entity_suffix: binding.entity_suffix,
