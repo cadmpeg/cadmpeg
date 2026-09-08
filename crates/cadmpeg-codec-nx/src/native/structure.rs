@@ -686,10 +686,7 @@ mod tests {
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,
-                body: crate::container::DirEntryBody::File {
-                    offset: 0,
-                    len,
-                },
+                body: crate::container::DirEntryBody::File { offset: 0, len },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
