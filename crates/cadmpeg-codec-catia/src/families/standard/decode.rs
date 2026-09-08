@@ -2317,11 +2317,11 @@ fn try_decode_standard_population(
             ),
         );
     }
+    report.coverage.record(
+        crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
+        0,
+    );
     for (key, exhaustion) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
-            mesh_quotient::MeshCandidateExhaustion::QuotientPreparation,
-        ),
         (
             crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,

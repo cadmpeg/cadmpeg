@@ -94,7 +94,6 @@ pub(crate) enum MeshCandidateAmbiguity {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeshCandidateExhaustion {
-    QuotientPreparation,
     IncidenceEnumeration,
     EndpointResolution,
     PreferredSolutionSearch,
