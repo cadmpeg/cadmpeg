@@ -50,6 +50,25 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn string_table_admission_requires_distinct_backward_references() {
+        let entry = |id, components| serde_json::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
+        for (entries, valid) in [
+            (vec![entry(1, vec![]), entry(2, vec![1])], true),
+            (vec![entry(1, vec![]), entry(1, vec![])], false),
+            (vec![entry(1, vec![1])], false),
+            (vec![entry(1, vec![2]), entry(2, vec![])], false),
+            (vec![entry(1, vec![9])], false),
+        ] {
+            let wire = serde_json::json!({"id":"table","index":0,"owner_property":null,"save_all":false,"threshold":0,"declared_count":entries.len(),"source_entry":null,"entries":entries});
+            let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
+            assert_eq!(result.is_ok(), valid);
+            if let Ok(record) = result {
+                assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            }
+        }
+    }
+
+    #[test]
     fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
         for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
             let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
@@ -2332,13 +2351,45 @@ pub struct StringTableRecord {
     /// Referenced side entry, or `None` for inline data.
     pub source_entry: Option<String>,
     /// Parsed records in serialized order.
-    pub entries: Vec<StringTableEntry>,
+    entries: Vec<StringTableEntry>,
 }
 
 impl StringTableRecord {
+    pub(crate) fn try_new(
+        id: String,
+        index: usize,
+        owner_property: Option<String>,
+        save_all: bool,
+        threshold: i64,
+        source_entry: Option<String>,
+        entries: Vec<StringTableEntry>,
+    ) -> Result<Self, String> {
+        let mut seen = std::collections::HashSet::new();
+        for entry in &entries {
+            if entry.components.iter().any(|id| !seen.contains(id)) {
+                return Err("entries.components must reference earlier string_id values".to_owned());
+            }
+            if !seen.insert(entry.string_id) {
+                return Err("entries.string_id values must be distinct".to_owned());
+            }
+        }
+        Ok(Self {
+            id,
+            index,
+            owner_property,
+            save_all,
+            threshold,
+            source_entry,
+            entries,
+        })
+    }
+    pub(crate) fn entries(&self) -> &[StringTableEntry] {
+        &self.entries
+    }
+
     /// Declared number of serialized entries, equal to `entries.len()`.
     pub fn declared_count(&self) -> usize {
-        self.entries.len()
+        self.entries().len()
     }
 }
 
@@ -2377,15 +2428,15 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
         if wire.declared_count != wire.entries.len() {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
-        Ok(Self {
-            id: wire.id,
-            index: wire.index,
-            owner_property: wire.owner_property,
-            save_all: wire.save_all,
-            threshold: wire.threshold,
-            source_entry: wire.source_entry,
-            entries: wire.entries,
-        })
+        Self::try_new(
+            wire.id,
+            wire.index,
+            wire.owner_property,
+            wire.save_all,
+            wire.threshold,
+            wire.source_entry,
+            wire.entries,
+        )
     }
 }
 

@@ -537,21 +537,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(table.id.clone()),
             ));
         }
-        let mut known_string_ids = HashSet::new();
-        for entry in &table.entries {
-            if !known_string_ids.insert(entry.string_id)
-                || entry
-                    .components
-                    .iter()
-                    .any(|id| !known_string_ids.contains(id))
-            {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} has duplicate or forward string-id references", table.id),
-                    Some(table.id.clone()),
-                ));
-            }
-        }
     }
     let topology_ids = ir
         .model
@@ -593,7 +578,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         {
             if let Some(table) = map.hasher_index.and_then(|index| string_tables.get(index)) {
                 let known_ids = table
-                    .entries
+                    .entries()
                     .iter()
                     .map(|entry| entry.string_id)
                     .collect::<HashSet<_>>();
