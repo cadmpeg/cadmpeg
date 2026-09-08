@@ -1026,7 +1026,8 @@ fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
 
     let mut first_direction = pattern_direction([1.0, 0.0]);
     first_direction.distance = Some(SketchPatternDistance::Spacing(
-        crate::features::ParameterId::mint("test:parameter#spacing").expect("identity grammar"),
+        crate::features::ParameterId::mint("test:test:parameter#spacing")
+            .expect("identity grammar"),
     ));
     let pattern = SketchRectangularPattern::new(
         [first_direction, pattern_direction([0.0, 1.0])],
@@ -1126,7 +1127,7 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
         }],
         distance: Length(2.0),
         parameter: Some(OffsetParameter {
-            id: ParameterId::mint("test:parameter#offset").expect("identity grammar"),
+            id: ParameterId::mint("test:test:parameter#offset").expect("identity grammar"),
             negated: true,
         }),
     };

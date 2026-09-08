@@ -1469,8 +1469,8 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
 #[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
-        id: ParameterId::mint("radial").expect("identity grammar"),
-        owner: Some(FeatureId::mint("sketch").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#radial").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#sketch").expect("identity grammar")),
         ordinal: 0,
         name: "radial".into(),
         expression: String::new(),
@@ -1499,7 +1499,7 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
 
 #[test]
 fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
-    let feature_id = FeatureId::mint("feature").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature_ref = "feature";
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let marker_id = "marker";
@@ -1570,7 +1570,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "D1".into(),

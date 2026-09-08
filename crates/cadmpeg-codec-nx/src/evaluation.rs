@@ -1203,7 +1203,7 @@ mod tests {
         let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(body.as_str()));
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -1242,7 +1242,8 @@ mod tests {
             })
             .collect();
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint("active".to_string()).expect("identity grammar"),
+            id: ConfigurationId::mint("synthetic:test:id#active".to_string())
+                .expect("identity grammar"),
             ordinal: 0,
             active: true,
             source_index: Some(0),
@@ -1261,7 +1262,7 @@ mod tests {
 
     fn complete_hole(body: BodyId) -> Feature {
         Feature {
-            id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#hole".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: Some(false),
@@ -1384,7 +1385,8 @@ mod tests {
         let body = BodyId::mint("test:model:entity#sphere".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(body.as_str()));
         ir.model.features.push(Feature {
-            id: FeatureId::mint("sphere-feature".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#sphere-feature".to_string())
+                .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -1415,7 +1417,8 @@ mod tests {
         ir.model.features.insert(
             0,
             Feature {
-                id: FeatureId::mint("initial-bodies".to_string()).expect("identity grammar"),
+                id: FeatureId::mint("synthetic:test:id#initial-bodies".to_string())
+                    .expect("identity grammar"),
                 ordinal: 0,
                 name: Some("Retained history input".to_string()),
                 suppressed: Some(false),
@@ -1513,7 +1516,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("section".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#section".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("section_shape".to_string()),
                     ordinal: 1
@@ -1535,7 +1539,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#block".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("block".to_string()),
                     ordinal: 0
@@ -1594,7 +1599,8 @@ mod tests {
         let created =
             BodyId::mint("test:model:entity#extruded".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(created.as_str()));
-        let profile = FeatureId::mint("profile".to_string()).expect("identity grammar");
+        let profile =
+            FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
             profile.as_str(),
             1,
@@ -1631,7 +1637,8 @@ mod tests {
     fn new_body_operation_cannot_reuse_an_existing_body_identity() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let profile = FeatureId::mint("profile".to_string()).expect("identity grammar");
+        let profile =
+            FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
             profile.as_str(),
             1,
@@ -1651,7 +1658,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("extrude".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#extrude".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("extrude".to_string()),
                     ordinal: 2
@@ -1668,7 +1676,8 @@ mod tests {
         let mut extrude = complete_extrude_feature(
             "extrude",
             1,
-            FeatureId::mint("missing-profile".to_string()).expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#missing-profile".to_string())
+                .expect("identity grammar"),
             vec![body.clone()],
             BooleanOp::Unresolved,
         );
@@ -1699,7 +1708,7 @@ mod tests {
             complete_extrude_feature(
                 "fixture",
                 1,
-                FeatureId::mint("profile".to_string()).expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar"),
                 Vec::new(),
                 BooleanOp::NewBody,
             )
@@ -1856,7 +1865,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#hole".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("hole".to_string()),
                     ordinal: 1
@@ -1869,15 +1879,16 @@ mod tests {
     #[test]
     fn replay_requires_dependencies_to_precede_their_consumers() {
         let mut ir = complete_block_ir();
-        ir.model.features[0]
-            .dependencies
-            .push(FeatureId::mint("later".to_string()).expect("identity grammar"));
+        ir.model.features[0].dependencies.push(
+            FeatureId::mint("synthetic:test:id#later".to_string()).expect("identity grammar"),
+        );
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#block".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("block".to_string()),
                     ordinal: 0
@@ -1912,7 +1923,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#hole".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("hole".to_string()),
                     ordinal: 0
@@ -1944,7 +1956,7 @@ mod tests {
             BodyId::mint("test:model:entity#extracted".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(extracted.as_str()));
         ir.model.features.push(Feature {
-            id: FeatureId::mint("extract".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#extract".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: Some(false),
@@ -1975,7 +1987,8 @@ mod tests {
     fn output_free_local_extract_does_not_change_the_saved_body_census() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("extract-local".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#extract-local".to_string())
+                .expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2006,7 +2019,7 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: Some(false),
@@ -2034,7 +2047,8 @@ mod tests {
     fn delete_body_ignores_a_complete_feature_local_body() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("delete-local".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#delete-local".to_string())
+                .expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2066,7 +2080,7 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2087,7 +2101,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#delete".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("delete_body".to_string()),
                     ordinal: 1
@@ -2235,7 +2250,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#combine".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("combine".to_string()),
                     ordinal: 1
@@ -2326,7 +2342,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("trim".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#trim".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("trim_bodies".to_string()),
                     ordinal: 1
@@ -2358,7 +2375,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("trim".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#trim".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("trim_bodies".to_string()),
                     ordinal: 1
@@ -2372,7 +2390,8 @@ mod tests {
     fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("trim-local".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#trim-local".to_string())
+                .expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2432,7 +2451,8 @@ mod tests {
         let mut ir = complete_block_ir();
         let output = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("sew-local".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#sew-local".to_string())
+                .expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2483,7 +2503,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#combine".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("combine".to_string()),
                     ordinal: 1
@@ -2520,7 +2541,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("sew".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#sew".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("sew_bodies".to_string()),
                     ordinal: 1
@@ -2541,7 +2563,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#block".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("base_feature".to_string()),
                     ordinal: 0
@@ -2788,7 +2811,7 @@ mod tests {
     fn output_free_unresolved_loft_is_body_census_neutral() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("loft".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#loft".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2815,7 +2838,8 @@ mod tests {
     fn output_free_unresolved_freeform_surface_is_body_census_neutral() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("freeform".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#freeform".to_string())
+                .expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
@@ -2865,7 +2889,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("trim-surface".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#trim-surface".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("trim_surface".to_string()),
                     ordinal: 1
@@ -2879,7 +2904,7 @@ mod tests {
     fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("datum".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#datum".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
@@ -2908,7 +2933,8 @@ mod tests {
         let mut extrude = complete_extrude_feature(
             "transient-extrude",
             1,
-            FeatureId::mint("unresolved-profile".to_string()).expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#unresolved-profile".to_string())
+                .expect("identity grammar"),
             Vec::new(),
             BooleanOp::NewBody,
         );
@@ -2980,7 +3006,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#block".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("block".to_string()),
                     ordinal: 0
@@ -3026,7 +3053,7 @@ mod tests {
     fn native_delete_without_a_primary_body_is_body_neutral() {
         let mut ir = CadIr::empty();
         let mut deletion = Feature {
-            id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
@@ -3057,7 +3084,8 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: FeatureBoundary {
-                    id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+                    id: FeatureId::mint("synthetic:test:id#delete".to_string())
+                        .expect("identity grammar"),
                     name: None,
                     family: Some("native".to_string()),
                     ordinal: 0

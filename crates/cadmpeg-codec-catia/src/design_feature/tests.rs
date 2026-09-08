@@ -343,23 +343,23 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         feature_ids: HashMap::from([
             (
                 "first-object".to_string(),
-                FeatureId::mint("first-feature").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
             ),
             (
                 "second-object".to_string(),
-                FeatureId::mint("second-feature").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar"),
             ),
             (
                 "source-object".to_string(),
-                FeatureId::mint("source-feature").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"),
             ),
             (
                 "forward-object".to_string(),
-                FeatureId::mint("forward-feature").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#forward-feature").expect("identity grammar"),
             ),
             (
                 "storage-object".to_string(),
-                FeatureId::mint("storage-feature").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#storage-feature").expect("identity grammar"),
             ),
         ]),
         ..DesignFeatureTransfer::default()
@@ -371,23 +371,25 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id == FeatureId::mint("source-feature").expect("identity grammar"))
+        .find(|feature| {
+            feature.id
+                == FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar")
+        })
         .unwrap();
     assert_eq!(
         source.dependencies,
         [
-            FeatureId::mint("first-feature").expect("identity grammar"),
-            FeatureId::mint("second-feature").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar")
         ]
     );
-    assert!(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| feature.id
-                != FeatureId::mint("source-feature").expect("identity grammar"))
-            .all(|feature| feature.dependencies.is_empty())
-    );
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.id
+            != FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"))
+        .all(|feature| feature.dependencies.is_empty()));
 }
 
 #[test]
@@ -450,7 +452,9 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     assert_eq!(ir.model.features[1].ordinal, 20);
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::mint("parent-object:feature").expect("identity grammar"))
+        Some(
+            &FeatureId::mint("synthetic:test:id#parent-object:feature").expect("identity grammar")
+        )
     );
     assert!(matches!(
         ir.model.features[0].definition,
@@ -1109,17 +1113,26 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
             .collect::<Vec<_>>(),
         vec![
             (
-                ParameterId::mint("late-parameter".to_string()).expect("identity grammar"),
-                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
+                ParameterId::mint("synthetic:test:id#late-parameter".to_string())
+                    .expect("identity grammar"),
+                Some(
+                    FeatureId::mint("synthetic:test:id#operation-object:feature")
+                        .expect("identity grammar")
+                ),
                 1,
             ),
             (
-                ParameterId::mint("early-parameter".to_string()).expect("identity grammar"),
-                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
+                ParameterId::mint("synthetic:test:id#early-parameter".to_string())
+                    .expect("identity grammar"),
+                Some(
+                    FeatureId::mint("synthetic:test:id#operation-object:feature")
+                        .expect("identity grammar")
+                ),
                 0,
             ),
             (
-                ParameterId::mint("document-parameter".to_string()).expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#document-parameter".to_string())
+                    .expect("identity grammar"),
                 None,
                 0,
             ),
@@ -1210,11 +1223,15 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let transfer = transfer_design_features(&mut ir, &native, None);
     transfer.assign_parameter_owners(&mut ir, &native);
 
-    let child_feature = FeatureId::mint("child-operation:feature").expect("identity grammar");
+    let child_feature =
+        FeatureId::mint("synthetic:test:id#child-operation:feature").expect("identity grammar");
     assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::mint("parent-operation:feature").expect("identity grammar"))
+        Some(
+            &FeatureId::mint("synthetic:test:id#parent-operation:feature")
+                .expect("identity grammar")
+        )
     );
     assert_eq!(
         ir.model.features[1]
@@ -1229,7 +1246,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
 fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1256,12 +1273,13 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         &mut ir,
         &HashMap::from([
             (
-                ParameterId::mint("first".to_string()).expect("identity grammar"),
-                FeatureId::mint("feature").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#first".to_string()).expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
             (
-                ParameterId::mint("second".to_string()).expect("identity grammar"),
-                FeatureId::mint("feature").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#second".to_string())
+                    .expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
         ]),
     );
@@ -1282,7 +1300,7 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("pattern-feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1307,8 +1325,9 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     assign_native_operation_parameter_values(
         &mut ir,
         &HashMap::from([(
-            ParameterId::mint("pattern-parameter".to_string()).expect("identity grammar"),
-            FeatureId::mint("pattern-feature").expect("identity grammar"),
+            ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
+                .expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         )]),
     );
 
@@ -1323,7 +1342,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
 
 #[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
-    let owner = FeatureId::mint("feature").expect("identity grammar");
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let mut ir = CadIr::empty();
     let mut first = parameter("first", "first-native");
     first.owner = Some(owner.clone());
@@ -1517,8 +1536,10 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:parameter".to_string())
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint(
+                "synthetic:test:id#synthetic:parameter".to_string(),
+            )
+            .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
@@ -1693,8 +1714,10 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:child-parameter".to_string())
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint(
+                "synthetic:test:id#synthetic:child-parameter".to_string(),
+            )
+            .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),

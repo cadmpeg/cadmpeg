@@ -40,7 +40,7 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
 fn relation_point_materializes_under_one_proven_marker_transform() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -457,7 +457,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
 fn relation_point_coexists_with_nonpoint_native_carrier() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -608,7 +608,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -842,8 +842,12 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         native_ref: Some(format!("native-{id}")),
     };
     let mut features = vec![
-        feature("first", "Sketch1", None),
-        feature("second", "Sketch2", Some(sketch_id.clone())),
+        feature("synthetic:test:id#first", "Sketch1", None),
+        feature(
+            "synthetic:test:id#second",
+            "Sketch2",
+            Some(sketch_id.clone()),
+        ),
     ];
     let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
         id: ParameterId::mint(id).expect("identity grammar"),
@@ -859,8 +863,8 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         native_ref: None,
     };
     let parameters = [
-        parameter("first-diameter", "first", 4.0),
-        parameter("second-diameter", "second", 5.0),
+        parameter("synthetic:test:id#first-diameter", "first", 4.0),
+        parameter("synthetic:test:id#second-diameter", "second", 5.0),
     ];
     let mut sketches = [Sketch {
         id: sketch_id.clone(),

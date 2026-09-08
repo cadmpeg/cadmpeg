@@ -65,7 +65,8 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         },
     );
     let radius_parameter =
-        cadmpeg_ir::features::ParameterId::mint("parameter#radius").expect("identity grammar");
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
+            .expect("identity grammar");
     assert!(matches!(
         radial_dimension_definition(
             &entity,
@@ -87,7 +88,8 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             if actual == entity.id()
     ));
     let diameter_parameter =
-        cadmpeg_ir::features::ParameterId::mint("parameter#diameter").expect("identity grammar");
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
+            .expect("identity grammar");
     assert!(matches!(
         radial_dimension_definition(
             &entity,
@@ -227,7 +229,8 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
     ))
     .expect("linear parameter");
     let parameter_id =
-        cadmpeg_ir::features::ParameterId::mint("parameter#line-length").expect("identity grammar");
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#line-length")
+            .expect("identity grammar");
 
     assert!(matches!(
         owner_scoped_line_length_dimension_definition(
@@ -284,8 +287,8 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         std::f64::consts::FRAC_PI_6,
     ))
     .expect("angular parameter");
-    let parameter_id =
-        cadmpeg_ir::features::ParameterId::mint("parameter#angle").expect("identity grammar");
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#angle")
+        .expect("identity grammar");
 
     assert!(matches!(
         owner_scoped_angular_dimension_definition(
@@ -391,7 +394,8 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     ))
     .expect("angular parameter");
     parameter.byte_offset = 100;
-    let parameter_id = ParameterId::mint("parameter#angle").expect("identity grammar");
+    let parameter_id =
+        ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     assert!(matches!(
         preceding_incident_angular_dimension_definition(
@@ -435,8 +439,9 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
         1.3,
     ))
     .expect("linear parameter");
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("parameter#point-classes")
-        .expect("identity grammar");
+    let parameter_id =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#point-classes")
+            .expect("identity grammar");
 
     assert!(matches!(
         unique_point_class_dimension_definition(
@@ -498,8 +503,8 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         other_center,
         other_radius,
     ];
-    let parameter =
-        cadmpeg_ir::features::ParameterId::mint("parameter#radial-loci").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radial-loci")
+        .expect("identity grammar");
 
     assert!(matches!(
         radial_locus_dimension_definition(

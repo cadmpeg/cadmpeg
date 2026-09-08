@@ -2301,7 +2301,7 @@ mod tests {
         let missing = SketchEntityId::mint("synthetic:test:dimension-relation#missing").unwrap();
         let mut constraint = SketchConstraintDefinition::Distance {
             entities: vec![missing],
-            parameter: ParameterId::mint("synthetic:test:dimension-parameter")
+            parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
                 .expect("identity grammar"),
         };
 
@@ -2326,7 +2326,7 @@ mod tests {
             SketchEntityId::mint("synthetic:test:dimension-relation#emitted").unwrap();
         let mut missing_parameter = SketchConstraintDefinition::Distance {
             entities: vec![emitted_entity.clone()],
-            parameter: ParameterId::mint("synthetic:test:dimension-parameter")
+            parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
                 .expect("identity grammar"),
         };
         assert!(reconcile_section_dimension_constraint(

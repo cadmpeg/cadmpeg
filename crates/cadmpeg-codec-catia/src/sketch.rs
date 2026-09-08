@@ -1849,8 +1849,10 @@ mod tests {
         let (mut ir, native, mut transfer, graph_scope) = fixture(false);
         transfer.feature_ids.insert(
             "source-object".to_string(),
-            cadmpeg_ir::features::FeatureId::mint("source-object:feature".to_string())
-                .expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint(
+                "synthetic:test:id#source-object:feature".to_string(),
+            )
+            .expect("identity grammar"),
         );
 
         assert_eq!(

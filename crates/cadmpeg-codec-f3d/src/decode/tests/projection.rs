@@ -129,8 +129,8 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
     use cadmpeg_ir::assets::AssetId;
     use cadmpeg_ir::tessellation::TessellationTextureAssignment;
 
-    let first = AssetId::mint("asset:first").expect("identity grammar");
-    let second = AssetId::mint("asset:second").expect("identity grammar");
+    let first = AssetId::mint("synthetic:test:id#asset:first").expect("identity grammar");
+    let second = AssetId::mint("synthetic:test:id#asset:second").expect("identity grammar");
     let textures = [
         ("resource:first".into(), first.clone()),
         ("resource:second".into(), second.clone()),
@@ -152,7 +152,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             },
             TessellationTextureAssignment {
                 source_id: Some("resource:third".into()),
-                texture: AssetId::mint("asset:first").expect("identity grammar"),
+                texture: AssetId::mint("synthetic:test:id#asset:first").expect("identity grammar"),
                 triangles: vec![3],
             },
         ]
@@ -162,7 +162,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             Some(&[2]),
             &[(
                 "resource:only".into(),
-                AssetId::mint("asset:only").expect("identity grammar")
+                AssetId::mint("synthetic:test:id#asset:only").expect("identity grammar")
             )],
             1,
         ),
@@ -960,16 +960,24 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         },
         native_ref: None,
     };
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:1",
+        Some("EdgeFlange"),
+        "native-a",
+    ));
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:2",
+        Some("EdgeFlange"),
+        "native-b",
+    ));
     ir.model
         .features
-        .push(feature("feature:1", Some("EdgeFlange"), "native-a"));
-    ir.model
-        .features
-        .push(feature("feature:2", Some("EdgeFlange"), "native-b"));
-    ir.model.features.push(feature("feature:3", None, "Hem"));
-    ir.model
-        .features
-        .push(feature("feature:4", Some("Canvas"), "Canvas"));
+        .push(feature("synthetic:test:id#feature:3", None, "Hem"));
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:4",
+        Some("Canvas"),
+        "Canvas",
+    ));
 
     assert_eq!(
         incomplete_feature_families(&ir),

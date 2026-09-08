@@ -18,14 +18,14 @@ use std::collections::BTreeMap;
 fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let faces = FaceSelection::Generated {
         faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-            feature: FeatureId::mint("producer").expect("identity grammar"),
+            feature: FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
             local_id: "1".into(),
         }],
         native: "native".into(),
     };
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("draft").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -64,7 +64,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
         plane: FaceSelection::Generated {
             faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId::mint("producer").expect("identity grammar"),
+                feature: FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                 local_id: "2".into(),
             }],
             native: "native".into(),
@@ -87,7 +87,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
 #[test]
 fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("configured").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -132,7 +132,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         ),
     ] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration-{ordinal}"))
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration-{ordinal}"))
                 .expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
@@ -156,7 +156,10 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                             .collect(),
                     },
                     dependencies: (ordinal == 0)
-                        .then(|| FeatureId::mint("missing-dependency").expect("identity grammar"))
+                        .then(|| {
+                            FeatureId::mint("synthetic:test:id#missing-dependency")
+                                .expect("identity grammar")
+                        })
                         .into_iter()
                         .collect(),
                     definition,
@@ -185,7 +188,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("metadata-only").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#metadata-only").expect("identity grammar"),
         ordinal: 0,
         name: Some("Localized tree item".into()),
         suppressed: Some(false),
@@ -214,8 +217,9 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
 #[test]
 fn active_configuration_inherits_late_feature_resolutions() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("mirror").expect("identity grammar");
-    let seed = PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"));
+    let feature_id = FeatureId::mint("synthetic:test:id#mirror").expect("identity grammar");
+    let seed =
+        PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -236,7 +240,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         },
         native_ref: None,
     });
-    let hole_id = FeatureId::mint("hole").expect("identity grammar");
+    let hole_id = FeatureId::mint("synthetic:test:id#hole").expect("identity grammar");
     ir.model.features.push(Feature {
         id: hole_id.clone(),
         ordinal: 1,
@@ -270,7 +274,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -379,7 +383,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
 #[test]
 fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("feature").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -399,7 +403,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "D1".into(),
@@ -412,7 +416,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("unevaluated-parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#unevaluated-parameter").expect("identity grammar"),
         owner: None,
         ordinal: 1,
         name: "Text".into(),
@@ -425,7 +429,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -464,13 +468,15 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
 #[test]
 fn active_configuration_snapshots_final_neutral_design_state() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("feature").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(true),
-        dependencies: vec![FeatureId::mint("dependency").expect("identity grammar")],
+        dependencies: vec![
+            FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
+        ],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -483,7 +489,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         },
         native_ref: None,
     });
-    let parameter_id = ParameterId::mint("parameter").expect("identity grammar");
+    let parameter_id = ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: parameter_id.clone(),
         owner: Some(feature_id.clone()),
@@ -499,7 +505,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     });
     for (ordinal, active) in [(0, true), (1, false)] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration-{ordinal}"))
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration-{ordinal}"))
                 .expect("identity grammar"),
             ordinal,
             active,
@@ -525,7 +531,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-            dependencies: vec![FeatureId::mint("dependency").expect("identity grammar")],
+            dependencies: vec![
+                FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
+            ],
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: Vec::new(),
@@ -559,9 +567,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
 #[test]
 fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() {
     let mut ir = CadIr::empty();
-    let independent = ParameterId::mint("independent").expect("identity grammar");
-    let overridden = ParameterId::mint("overridden").expect("identity grammar");
-    let dependent = ParameterId::mint("dependent").expect("identity grammar");
+    let independent = ParameterId::mint("synthetic:test:id#independent").expect("identity grammar");
+    let overridden = ParameterId::mint("synthetic:test:id#overridden").expect("identity grammar");
+    let dependent = ParameterId::mint("synthetic:test:id#dependent").expect("identity grammar");
     let parameter = |id: ParameterId, value, dependencies| DesignParameter {
         id,
         owner: None,
@@ -608,10 +616,10 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     };
     ir.model.configurations = vec![
         configuration(
-            "resolved",
+            "synthetic:test:id#resolved",
             BTreeMap::from([(overridden.clone(), ParameterValue::Length(Length(25.0)))]),
         ),
-        configuration("unresolved", BTreeMap::new()),
+        configuration("synthetic:test:id#unresolved", BTreeMap::new()),
     ];
 
     complete_resolved_configuration_parameter_snapshots(&mut ir);

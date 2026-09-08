@@ -361,7 +361,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         };
     let mut features = vec![
         neutral(
-            "base",
+            "synthetic:test:id#base",
             "Profile",
             "native-base",
             FeatureDefinition::Sketch {
@@ -369,7 +369,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             },
         ),
         neutral(
-            "alias",
+            "synthetic:test:id#alias",
             "Profile<3>",
             "native-alias",
             FeatureDefinition::Sketch {
@@ -377,7 +377,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             },
         ),
         neutral(
-            "different",
+            "synthetic:test:id#different",
             "Profile<4>",
             "native-different",
             FeatureDefinition::Sketch {
@@ -385,7 +385,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             },
         ),
         neutral(
-            "consumer",
+            "synthetic:test:id#consumer",
             "Boss",
             "native-consumer",
             FeatureDefinition::Extrude {
@@ -449,7 +449,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     ));
     assert_eq!(
         features[1].dependencies,
-        vec![FeatureId::mint("base").expect("identity grammar")]
+        vec![FeatureId::mint("synthetic:test:id#base").expect("identity grammar")]
     );
     assert!(matches!(
         &features[2].definition,
@@ -465,7 +465,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     ));
     assert_eq!(
         features[3].dependencies,
-        vec![FeatureId::mint("base").expect("identity grammar")]
+        vec![FeatureId::mint("synthetic:test:id#base").expect("identity grammar")]
     );
 }
 
