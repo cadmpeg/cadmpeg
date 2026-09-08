@@ -516,8 +516,8 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     )
     .expect("legacy class-383 alignment");
 
-    assert_eq!(alignment.angle, 0.25);
-    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.angle(), 0.25);
+    assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
     assert_eq!(
         alignment
             .owners
@@ -688,8 +688,8 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         &owners,
     )
     .expect("legacy class-388 alignment");
-    assert_eq!(alignment.angle, 0.25);
-    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.angle(), 0.25);
+    assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
     assert_eq!(
         alignment
             .owners
@@ -954,8 +954,8 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         &owners,
     )
     .expect("exact As-built alignment");
-    assert_eq!(alignment.angle, 0.25);
-    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.angle(), 0.25);
+    assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
     assert_eq!(
         alignment
             .owners
@@ -1179,8 +1179,8 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             &owners,
         )
         .expect("exact 421-byte As-built alignment");
-        assert!((alignment.angle - 0.25).abs() <= EPS_EXACT_FIXTURE);
-        for (actual, expected) in alignment.offset.into_iter().zip([1.0, 2.0, 3.0]) {
+        assert!((alignment.angle() - 0.25).abs() <= EPS_EXACT_FIXTURE);
+        for (actual, expected) in alignment.offset().into_iter().zip([1.0, 2.0, 3.0]) {
             assert!((actual - expected).abs() <= EPS_EXACT_FIXTURE);
         }
         assert_eq!(
@@ -1201,8 +1201,8 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         );
         let limits = alignment.limits().expect("assembly limits");
         assert_eq!(limits.kind, expected_limit_kind);
-        assert!((limits.minimum - -1.0).abs() <= EPS_EXACT_FIXTURE);
-        assert!((limits.maximum - 1.5).abs() <= EPS_EXACT_FIXTURE);
+        assert!((limits.minimum() - -1.0).abs() <= EPS_EXACT_FIXTURE);
+        assert!((limits.maximum() - 1.5).abs() <= EPS_EXACT_FIXTURE);
         assert_eq!(
             limits.owner_record_indices,
             if reverse_limit_order {
@@ -1851,10 +1851,10 @@ fn append_axial_test_component_operand(
 }
 
 fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignment {
-    DesignAssemblyAlignment {
-        angle: 0.0,
-        offset: [0.0; 3],
-        owners: vec![
+    DesignAssemblyAlignment::try_new(
+        0.0,
+        [0.0; 3],
+        vec![
             crate::records::Located {
                 value: 90,
                 offset: 1,
@@ -1864,7 +1864,7 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 offset: 2,
             },
         ],
-        form: Some(
+        Some(
             crate::records::feature::DesignAssemblyAlignmentForm::Frames {
                 frames: [
                     DesignAssemblyOperandFrame {
@@ -1882,7 +1882,8 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 ],
             },
         ),
-    }
+    )
+    .unwrap()
 }
 
 fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterScope {

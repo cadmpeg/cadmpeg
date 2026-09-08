@@ -50,8 +50,8 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         &owners,
     )
     .expect("variable-reference assembly alignment");
-    assert_eq!(alignment.angle, 8.0);
-    assert_eq!(alignment.offset, [9.0, 10.0, 11.0]);
+    assert_eq!(alignment.angle(), 8.0);
+    assert_eq!(alignment.offset(), [9.0, 10.0, 11.0]);
     assert_eq!(
         alignment
             .owners

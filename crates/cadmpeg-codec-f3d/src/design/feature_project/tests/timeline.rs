@@ -369,16 +369,19 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     if let crate::records::feature::DesignScopePayload::Assemble(slot)
     | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
     {
-        *slot = Some(DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owners: Vec::new(),
-            form: Some(
-                crate::records::feature::DesignAssemblyAlignmentForm::DatumEnvelope {
-                    joint_origin_scope_record_index: 20,
-                },
-            ),
-        });
+        *slot = Some(
+            DesignAssemblyAlignment::try_new(
+                0.0,
+                [0.0; 3],
+                Vec::new(),
+                Some(
+                    crate::records::feature::DesignAssemblyAlignmentForm::DatumEnvelope {
+                        joint_origin_scope_record_index: 20,
+                    },
+                ),
+            )
+            .unwrap(),
+        );
     }
     let mut origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
@@ -494,16 +497,19 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
         if let crate::records::feature::DesignScopePayload::Assemble(slot)
         | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut scope.payload
         {
-            *slot = Some(DesignAssemblyAlignment {
-                angle: 0.0,
-                offset: [0.0; 3],
-                owners: Vec::new(),
-                form: Some(
-                    crate::records::feature::DesignAssemblyAlignmentForm::DatumEnvelope {
-                        joint_origin_scope_record_index: 20,
-                    },
-                ),
-            });
+            *slot = Some(
+                DesignAssemblyAlignment::try_new(
+                    0.0,
+                    [0.0; 3],
+                    Vec::new(),
+                    Some(
+                        crate::records::feature::DesignAssemblyAlignmentForm::DatumEnvelope {
+                            joint_origin_scope_record_index: 20,
+                        },
+                    ),
+                )
+                .unwrap(),
+            );
         }
         scope
     };
