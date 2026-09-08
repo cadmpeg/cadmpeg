@@ -267,8 +267,8 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
         ),
         (3, 3)
     );
-    assert_eq!(headers[0].u_multiplicities, [3, 3]);
-    assert_eq!(headers[0].v_multiplicities, [3, 3]);
+    assert_eq!(headers[0].u_knots.multiplicities(), [3, 3]);
+    assert_eq!(headers[0].v_knots.multiplicities(), [3, 3]);
     assert_eq!(
         headers[0].pole_storage,
         crate::families::a5a8::records::PoleStorage::Inline

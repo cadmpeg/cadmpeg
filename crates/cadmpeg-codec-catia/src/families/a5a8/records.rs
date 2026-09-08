@@ -385,6 +385,38 @@ fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
     frames
 }
 
+/// Distinct finite increasing knots paired with their multiplicities.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8KnotLane {
+    distinct: Vec<f64>,
+    multiplicities: Vec<u32>,
+}
+
+impl A8KnotLane {
+    /// Multiplicity of each distinct knot.
+    #[cfg(test)]
+    pub(crate) fn multiplicities(&self) -> &[u32] {
+        &self.multiplicities
+    }
+
+    fn try_new(distinct: Vec<f64>, multiplicities: Vec<u32>) -> Option<Self> {
+        (distinct.len() == multiplicities.len() && strictly_increasing_finite(&distinct)).then_some(
+            Self {
+                distinct,
+                multiplicities,
+            },
+        )
+    }
+
+    fn expanded(&self) -> Option<Vec<f64>> {
+        expand_knots(&self.distinct, &self.multiplicities)
+    }
+
+    fn pole_count(&self, degree: u32) -> Option<u32> {
+        pole_count(&self.multiplicities, degree)
+    }
+}
+
 /// Parameter lattice decoded from an `a8 <flag> 34` surface record independently
 /// of its pole representation.
 #[derive(Debug, Clone, PartialEq)]
@@ -397,14 +429,10 @@ pub struct A8SurfaceHeader {
     pub u_degree: u32,
     /// V degree.
     pub v_degree: u32,
-    /// Distinct U knots.
-    pub u_distinct_knots: Vec<f64>,
-    /// Distinct V knots.
-    pub v_distinct_knots: Vec<f64>,
-    /// U multiplicities corresponding to `u_distinct_knots`.
-    pub u_multiplicities: Vec<u32>,
-    /// V multiplicities corresponding to `v_distinct_knots`.
-    pub v_multiplicities: Vec<u32>,
+    /// U knots and multiplicities.
+    pub u_knots: A8KnotLane,
+    /// V knots and multiplicities.
+    pub v_knots: A8KnotLane,
     /// Whether the record selects rational weights.
     pub rational: bool,
     /// Whether poles occupy the payload or an external grid.
@@ -414,12 +442,12 @@ pub struct A8SurfaceHeader {
 impl A8SurfaceHeader {
     /// U pole count derived from degree and knot multiplicities.
     pub fn u_count(&self) -> Option<u32> {
-        pole_count(&self.u_multiplicities, self.u_degree)
+        self.u_knots.pole_count(self.u_degree)
     }
 
     /// V pole count derived from degree and knot multiplicities.
     pub fn v_count(&self) -> Option<u32> {
-        pole_count(&self.v_multiplicities, self.v_degree)
+        self.v_knots.pole_count(self.v_degree)
     }
 }
 
@@ -1349,8 +1377,8 @@ pub fn a8_surface_from_external_grid(
         geometry: NurbsSurface::new(
             header.u_degree,
             header.v_degree,
-            expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
-            expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+            header.u_knots.expanded()?,
+            header.v_knots.expanded()?,
             header.u_count()?,
             header.v_count()?,
             control_points.clone(),
@@ -1628,30 +1656,28 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
         || u_distinct_count < 2
         || v_distinct_count < 2
         || !matches!(mode, 0x01 | 0x05)
-        || !strictly_increasing_finite(&u_distinct)
-        || !strictly_increasing_finite(&v_distinct)
     {
         return None;
     }
-    let u_count = pole_count(&u_mults, u_degree)?;
-    let v_count = pole_count(&v_mults, v_degree)?;
+    let u_knots = A8KnotLane::try_new(u_distinct, u_mults)?;
+    let v_knots = A8KnotLane::try_new(v_distinct, v_mults)?;
+    let u_count = u_knots.pole_count(u_degree)?;
+    let v_count = v_knots.pole_count(v_degree)?;
     if u_count == 0 || v_count == 0 {
         return None;
     }
     let tail_end = at.checked_add(141)?;
     let elided = tail_end <= end
         && closed_a8_child_run(data, tail_end, end)
-        && parse_a8_elided_surface_tail(data, at, &v_distinct).is_some();
+        && parse_a8_elided_surface_tail(data, at, &v_knots.distinct).is_some();
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
             object_id,
             u_degree,
             v_degree,
-            u_distinct_knots: u_distinct,
-            v_distinct_knots: v_distinct,
-            u_multiplicities: u_mults,
-            v_multiplicities: v_mults,
+            u_knots,
+            v_knots,
             rational: mode == 0x05,
             pole_storage: if elided {
                 PoleStorage::Elided
@@ -1677,10 +1703,8 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         object_id,
         u_degree,
         v_degree,
-        u_distinct_knots,
-        v_distinct_knots,
-        u_multiplicities,
-        v_multiplicities,
+        u_knots,
+        v_knots,
         rational,
         pole_storage,
         ..
@@ -1721,8 +1745,8 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         geometry: NurbsSurface::new(
             u_degree,
             v_degree,
-            expand_knots(&u_distinct_knots, &u_multiplicities)?,
-            expand_knots(&v_distinct_knots, &v_multiplicities)?,
+            u_knots.expanded()?,
+            v_knots.expanded()?,
             u_count,
             v_count,
             control_points,
@@ -1862,4 +1886,21 @@ pub(super) fn a5_weights(
         .iter()
         .all(|weight| weight.is_finite() && *weight != 0.0)
         .then_some(weights)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::A8KnotLane;
+
+    #[test]
+    fn knot_lane_admission_requires_aligned_increasing_values() {
+        assert!(A8KnotLane::try_new(vec![0.0, 1.0], vec![2]).is_none());
+        assert!(A8KnotLane::try_new(vec![0.0], vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(vec![1.0, 0.0], vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(vec![0.0, 0.0], vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(vec![0.0, f64::INFINITY], vec![2, 2]).is_none());
+        let lane = A8KnotLane::try_new(vec![0.0, 1.0], vec![2, 2]).unwrap();
+        assert_eq!(lane.expanded(), Some(vec![0.0, 0.0, 1.0, 1.0]));
+        assert_eq!(lane.pole_count(1), Some(2));
+    }
 }
