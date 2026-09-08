@@ -180,6 +180,12 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         let offset = lane.sketch_entities[index].offset() as usize + 88;
         lane.native_payload[offset..offset + 4].copy_from_slice(&local_id.to_le_bytes());
     }
+    for entity in &mut lane.sketch_entities {
+        entity.object_index = crate::resolved_features::markers::marker_object_index(
+            &lane.native_payload,
+            entity.offset() as usize,
+        );
+    }
     let expected = crate::native::lanes::expected_lanes(&native).remove(0).1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
