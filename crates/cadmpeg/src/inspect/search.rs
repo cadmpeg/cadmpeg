@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-pattern search and printable-string extraction.
+use std::num::NonZeroUsize;
 
 /// One byte of a search pattern: a fixed value or a `??` wildcard.
 pub type PatternByte = Option<u8>;
@@ -181,8 +182,12 @@ pub struct FoundString {
 /// the results are sorted by offset, so a UTF-16LE run is also visible as the
 /// ASCII characters interleaved with its zero bytes only when those characters
 /// themselves form a long enough ASCII run.
-pub fn extract_strings(bytes: &[u8], min_len: usize, encoding: StringScan) -> Vec<FoundString> {
-    let min_len = min_len.max(1);
+pub fn extract_strings(
+    bytes: &[u8],
+    min_len: NonZeroUsize,
+    encoding: StringScan,
+) -> Vec<FoundString> {
+    let min_len = min_len.get();
     let mut found = match encoding {
         StringScan::Ascii => ascii_runs(bytes, min_len),
         StringScan::Utf16le => utf16le_runs(bytes, min_len),
@@ -353,7 +358,7 @@ mod tests {
     #[test]
     fn extracts_maximal_ascii_runs_over_the_minimum_length() {
         let bytes = b"\x00abcd\x00ef\x00longer-name\x00";
-        let found = extract_strings(bytes, 4, StringScan::Ascii);
+        let found = extract_strings(bytes, NonZeroUsize::new(4).unwrap(), StringScan::Ascii);
         let texts: Vec<&str> = found.iter().map(|item| item.text.as_str()).collect();
         assert_eq!(texts, ["abcd", "longer-name"]);
         assert_eq!(found[0].offset, 1);
@@ -368,7 +373,7 @@ mod tests {
             bytes.push(0);
         }
         bytes.push(0xff);
-        let found = extract_strings(&bytes, 4, StringScan::Utf16le);
+        let found = extract_strings(&bytes, NonZeroUsize::new(4).unwrap(), StringScan::Utf16le);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].text, "Part1");
         assert_eq!(found[0].offset, 1);
@@ -382,7 +387,7 @@ mod tests {
             bytes.push(c);
             bytes.push(0);
         }
-        let found = extract_strings(&bytes, 4, StringScan::Both);
+        let found = extract_strings(&bytes, NonZeroUsize::new(4).unwrap(), StringScan::Both);
         let pairs: Vec<(u64, &str)> = found
             .iter()
             .map(|item| (item.offset, item.text.as_str()))

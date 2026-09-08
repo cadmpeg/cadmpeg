@@ -18,6 +18,7 @@ pub mod search;
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -227,10 +228,14 @@ pub struct HexArgs {
     #[arg(long, visible_alias = "length", value_parser = parse_offset)]
     pub len: Option<u64>,
     /// Bytes per output line.
-    #[arg(long, default_value_t = 16)]
-    pub width: usize,
+    #[arg(long, default_value = "16")]
+    pub width: NonZeroUsize,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
+}
+
+fn parse_stride(text: &str) -> Result<NonZeroU64, String> {
+    NonZeroU64::new(parse_offset(text)?).ok_or_else(|| "stride must be at least 1".to_owned())
 }
 
 /// Arguments for `cadmpeg inspect read`.
@@ -248,8 +253,8 @@ pub struct ReadArgs {
     #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
     /// Byte step between consecutive values; defaults to the scalar width.
-    #[arg(long, alias = "step", value_parser = parse_offset)]
-    pub stride: Option<u64>,
+    #[arg(long, alias = "step", value_parser = parse_stride)]
+    pub stride: Option<NonZeroU64>,
     #[command(flatten)]
     pub endian: EndianArgs,
     #[command(flatten)]
@@ -375,9 +380,9 @@ pub struct StringsArgs {
         long,
         visible_alias = "min-len",
         alias = "min-length",
-        default_value_t = 4
+        default_value = "4"
     )]
-    pub min: usize,
+    pub min: NonZeroUsize,
     /// Which encodings to scan for.
     #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
     pub encoding: search::StringScan,
@@ -578,9 +583,6 @@ fn read_whole(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn hex(args: &HexArgs) -> Result<()> {
-    if args.width == 0 {
-        bail!("--width must be at least 1");
-    }
     let len = args.len.unwrap_or(DEFAULT_HEX_LEN);
     let bytes = read_window(args.file.path(), args.offset, len)?;
     if bytes.is_empty() {
@@ -593,12 +595,9 @@ fn hex(args: &HexArgs) -> Result<()> {
 
 fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
     let width = args.ty.width() as u64;
-    let stride = args.stride.unwrap_or(width);
+    let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
         return Ok(());
-    }
-    if stride == 0 {
-        bail!("--stride 0 would read the same bytes forever");
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
@@ -691,9 +690,6 @@ fn find(args: &FindArgs) -> Result<()> {
 }
 
 fn strings(args: &StringsArgs) -> Result<()> {
-    if args.min == 0 {
-        bail!("--min must be at least 1");
-    }
     let bytes = read_whole(args.file.path())?;
     for found in search::extract_strings(&bytes, args.min, args.encoding) {
         println!(
@@ -861,7 +857,11 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
     let end = usize::try_from(start.saturating_add(len))
         .unwrap_or(usize::MAX)
         .min(bytes.len());
-    hexdump::render(begin as u64, &bytes[begin..end], 16)
+    hexdump::render(
+        begin as u64,
+        &bytes[begin..end],
+        const { NonZeroUsize::new(16).unwrap() },
+    )
 }
 
 #[cfg(test)]
