@@ -13,7 +13,7 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
-pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
+pub(crate) fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
     let sections = scan.sections().collect::<Vec<_>>();
     let has_explicit_lanes = sections.iter().any(|source| {
         source

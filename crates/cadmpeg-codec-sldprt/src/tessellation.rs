@@ -26,9 +26,9 @@ const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Summary {
-    pub vertices: usize,
-    pub triangles: usize,
+pub(crate) struct Summary {
+    pub(crate) vertices: usize,
+    pub(crate) triangles: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -464,7 +464,7 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
     faces
 }
 
-pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
+pub(crate) fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
     section_display_faces(section)
         .into_iter()
         .map(|face| face.mesh)
@@ -620,7 +620,7 @@ fn persistent_surface_references(
     references
 }
 
-pub fn section_summary(section: Section<'_>) -> Option<Summary> {
+pub(crate) fn section_summary(section: Section<'_>) -> Option<Summary> {
     let meshes = section_meshes(section);
     (!meshes.is_empty()).then(|| Summary {
         vertices: meshes.iter().map(|mesh| mesh.vertices.len()).sum(),
@@ -628,7 +628,7 @@ pub fn section_summary(section: Section<'_>) -> Option<Summary> {
     })
 }
 
-pub fn summary(scan: &ContainerScan) -> Summary {
+pub(crate) fn summary(scan: &ContainerScan) -> Summary {
     scan.sections()
         .filter_map(section_summary)
         .fold(Summary::default(), |mut total, next| {
@@ -992,13 +992,32 @@ struct PlaneFrame {
     origin: Point3,
     normal: Vector3,
     u_axis: Vector3,
-    v_axis: Vector3,
 }
 
 impl PlaneFrame {
+    fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
+        let normal = normal.unit()?;
+        let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
+        normal.cross(u_axis).unit()?;
+        [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
+            .into_iter()
+            .all(f64::is_finite)
+            .then_some(Self {
+                origin,
+                normal,
+                u_axis,
+            })
+    }
+
+    fn v_axis(self) -> Vector3 {
+        let axis = self.normal.cross(self.u_axis);
+        let length = axis.norm();
+        Vector3::new(axis.x / length, axis.y / length, axis.z / length)
+    }
+
     fn project(self, point: Point3) -> Point2 {
         let delta = point.vector_from(self.origin);
-        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis))
+        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis()))
     }
 }
 
@@ -2088,18 +2107,7 @@ fn plane_frame(surface: &SurfaceGeometry) -> Option<PlaneFrame> {
         }
         _ => return None,
     };
-    let normal = normal.unit()?;
-    let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
-    let v_axis = normal.cross(u_axis).unit()?;
-    [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(PlaneFrame {
-            origin,
-            normal,
-            u_axis,
-            v_axis,
-        })
+    PlaneFrame::new(origin, normal, u_axis)
 }
 
 fn point_distance(left: Point2, right: Point2) -> f64 {

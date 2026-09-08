@@ -1296,12 +1296,12 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
 #[test]
 fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
     let trim = PlanarTrim {
-        frame: PlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
+        frame: PlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-3.0, -3.0),
             Point2::new(3.0, -3.0),
@@ -1347,12 +1347,12 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 #[test]
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
     let trim = PlanarTrim {
-        frame: PlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
+        frame: PlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-4.0, -4.0),
             Point2::new(4.0, -4.0),

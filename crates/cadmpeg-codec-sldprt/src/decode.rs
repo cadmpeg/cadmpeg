@@ -74,7 +74,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let classification = crate::dialect::classify_layers(&scan);
     let form_padding = classification.host().form_code_padding();
