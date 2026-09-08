@@ -998,12 +998,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
             .as_ref()
             .expect("required invariant")
             .color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
     assert_eq!(
         curve

@@ -488,7 +488,7 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
         );
         let record = appearance_record(schema, properties);
         assert_eq!(
-            super::appearance_base_color(&record).map(|color| color.g),
+            super::appearance_base_color(&record).map(|color| color.g()),
             Some(0.25),
             "{schema} selects {primary_id}"
         );
@@ -514,7 +514,7 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
     assert_eq!(
-        super::appearance_base_color(&record).map(|color| color.g),
+        super::appearance_base_color(&record).map(|color| color.g()),
         Some(0.625)
     );
 }
@@ -778,18 +778,8 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
 
     let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
-    let assignment_color = Color {
-        r: 0.75,
-        g: 0.25,
-        b: 0.125,
-        a: 1.0,
-    };
-    let explicit_color = Color {
-        r: 0.1,
-        g: 0.8,
-        b: 0.2,
-        a: 1.0,
-    };
+    let assignment_color = Color::new(0.75, 0.25, 0.125, 1.0).expect("valid color");
+    let explicit_color = Color::new(0.1, 0.8, 0.2, 1.0).expect("valid color");
     let make_ir = || {
         let mut ir = cadmpeg_ir::examples::unit_cube();
         let face = ir.model.faces[0].id.clone();
@@ -815,12 +805,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             physical_token: None,
             schema: None,
             category: None,
-            base_color: Some(Color {
-                r: 0.0,
-                g: 0.0,
-                b: 1.0,
-                a: 1.0,
-            }),
+            base_color: Some(Color::new(0.0, 0.0, 1.0, 1.0).expect("valid color")),
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
         });
@@ -867,12 +852,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
     let assignment = |r| crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
         visual_guid: visual_guid.into(),
-        color: Some(Color {
-            r,
-            g: 0.25,
-            b: 0.5,
-            a: 1.0,
-        }),
+        color: Some(Color::new(r, 0.25, 0.5, 1.0).expect("valid color")),
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let error = crate::decode::resolve_face_appearance_bindings(
@@ -899,7 +879,7 @@ fn decode_transfers_generated_protein_appearance() {
         Some("11111111-2222-3333-4444-555555555555")
     );
     let color = appearance.base_color.expect("decoded diffuse color");
-    assert_eq!((color.r, color.g, color.b), (0.1, 0.2, 0.3));
+    assert_eq!((color.r(), color.g(), color.b()), (0.1, 0.2, 0.3));
     assert_eq!(
         appearance.physical_token.as_deref(),
         Some("PrismMaterial-018")
@@ -1751,21 +1731,11 @@ fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
     assert_eq!(out[0].visual_guid, visual_guid);
     assert_eq!(
         out[0].color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.25,
-            g: 0.5,
-            b: 0.75,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"))
     );
     assert_eq!(
         out[1].color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.75,
-            g: 0.25,
-            b: 0.5,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.75, 0.25, 0.5, 1.0).expect("valid color"))
     );
 }
 
@@ -1930,12 +1900,9 @@ fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
         physical_token: None,
         schema: Some("PrismOpaqueSchema".to_owned()),
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.5,
-            g: 0.5,
-            b: 0.5,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.5, 0.5, 0.5, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     }

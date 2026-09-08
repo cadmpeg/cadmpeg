@@ -768,12 +768,7 @@ pub(crate) fn validate_material_assignment_appearances(
             let color = after.base_color.ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
             })?;
-            if before.base_color.is_none()
-                || ![color.r, color.g, color.b, color.a]
-                    .into_iter()
-                    .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-                || color.a != 1.0
-            {
+            if before.base_color.is_none() || color.a() != 1.0 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
@@ -2805,12 +2800,7 @@ pub(crate) fn validate_body_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D body color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D body color {id} must replace an existing opaque finite RGB color"
             )));
@@ -2961,12 +2951,7 @@ pub(crate) fn validate_face_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D face color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D face color {id} must replace an existing opaque finite RGB color"
             )));

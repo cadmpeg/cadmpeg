@@ -200,8 +200,8 @@ pub(crate) fn attach(
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    attach_rm_face_colors(ir, model, scan, annotations);
-    attach_rm_appearances(ir, model, scan, annotations);
+    attach_rm_face_colors(ir, model, scan, annotations)?;
+    attach_rm_appearances(ir, model, scan, annotations)?;
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -379,7 +379,7 @@ fn attach_rm_face_colors(
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let face_indices = ir
         .model
         .faces
@@ -394,7 +394,7 @@ fn attach_rm_face_colors(
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
         &super::substrate::paired_delta_streams(scan),
-    );
+    )?;
     for (face_id, color) in bindings {
         let Some(index) = face_indices.get(&face_id).copied() else {
             continue;
@@ -405,6 +405,7 @@ fn attach_rm_face_colors(
             annotations.derived(&face.id, "color");
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -426,7 +427,7 @@ fn attach_rm_appearances(
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
     let face_ids = ir
         .model
@@ -442,7 +443,7 @@ fn attach_rm_appearances(
         &super::substrate::paired_delta_streams(scan),
     );
     if source_bindings.is_empty() && face_bindings.is_empty() {
-        return;
+        return Ok(());
     }
     let definitions = model
         .om
@@ -462,7 +463,7 @@ fn attach_rm_appearances(
             &mut appearances,
             definition,
             annotation_stream,
-        );
+        )?;
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-color#{}",
             native_entity_key(&binding.source_id)
@@ -497,12 +498,13 @@ fn attach_rm_appearances(
         else {
             continue;
         };
-        let color = Color {
-            r: definition.components[0].0.value(),
-            g: definition.components[1].0.value(),
-            b: definition.components[2].0.value(),
-            a: 1.0,
-        };
+        let color = Color::new(
+            definition.components[0].0.value(),
+            definition.components[1].0.value(),
+            definition.components[2].0.value(),
+            1.0,
+        )
+        .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
         if existing_color.is_some_and(|existing| existing != color) {
             continue;
         }
@@ -512,7 +514,7 @@ fn attach_rm_appearances(
             &mut appearances,
             definition,
             annotation_stream,
-        );
+        )?;
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-face-color#{}",
             native_entity_key(&binding.face_id)
@@ -534,6 +536,7 @@ fn attach_rm_appearances(
             channels: BTreeMap::new(),
         });
     }
+    Ok(())
 }
 
 fn ensure_rm_color_appearance(
@@ -542,8 +545,15 @@ fn ensure_rm_color_appearance(
     appearances: &mut BTreeMap<String, AppearanceId>,
     definition: &crate::native::om::PartColorDefinition,
     annotation_stream: cadmpeg_ir::annotations::StreamHandle,
-) -> AppearanceId {
-    appearances
+) -> Result<AppearanceId, CodecError> {
+    let color = Color::new(
+        definition.components[0].0.value(),
+        definition.components[1].0.value(),
+        definition.components[2].0.value(),
+        1.0,
+    )
+    .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
+    Ok(appearances
         .entry(definition.id.clone())
         .or_insert_with(|| {
             let id = AppearanceId::mint(format!(
@@ -566,18 +576,13 @@ fn ensure_rm_color_appearance(
                 physical_token: None,
                 schema: Some("UGS::COLOR_table".into()),
                 category: None,
-                base_color: Some(Color {
-                    r: definition.components[0].0.value(),
-                    g: definition.components[1].0.value(),
-                    b: definition.components[2].0.value(),
-                    a: 1.0,
-                }),
+                base_color: Some(color),
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
             });
             id
         })
-        .clone()
+        .clone())
 }
 
 fn native_entity_key(id: &str) -> String {
@@ -654,7 +659,7 @@ fn resolve_rm_face_colors(
     definitions: &[super::om::PartColorDefinition],
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Vec<(String, Color)> {
+) -> Result<Vec<(String, Color)>, CodecError> {
     let definitions_by_id = definitions
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
@@ -665,14 +670,18 @@ fn resolve_rm_face_colors(
             let definition = definitions_by_id.get(binding.color_definition.as_str())?;
             Some((
                 binding.face_id,
-                Color {
-                    r: definition.components[0].0.value(),
-                    g: definition.components[1].0.value(),
-                    b: definition.components[2].0.value(),
-                    a: 1.0,
-                },
+                Color::new(
+                    definition.components[0].0.value(),
+                    definition.components[1].0.value(),
+                    definition.components[2].0.value(),
+                    1.0,
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("RM color components must be in [0, 1]".into())
+                }),
             ))
         })
+        .map(|(id, color)| color.map(|color| (id, color)))
         .collect()
 }
 

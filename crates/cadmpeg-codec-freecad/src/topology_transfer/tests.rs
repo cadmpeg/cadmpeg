@@ -39,6 +39,8 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     }
 }
 
+const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+
 #[test]
 fn neutral_identity_keys_preserve_exact_composed_locations() {
     let positive = translation(0.5e-12, 0.0, 0.0);
@@ -887,10 +889,10 @@ Co 1001000 +2 0 *
     assert_eq!(view.line_width, Some(2.5));
     assert_eq!(view.point_size, Some(4.0));
     let color = result.ir().model.bodies[0].color.expect("shape color");
-    assert!((color.r - 0x33 as f32 / 255.0).abs() < 1.0e-6);
-    assert!((color.g - 0x66 as f32 / 255.0).abs() < 1.0e-6);
-    assert!((color.b - 0x99 as f32 / 255.0).abs() < 1.0e-6);
-    assert!((color.a - 0.75).abs() < 1.0e-6);
+    assert!((color.r() - 0x33 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - 0x66 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - 0x99 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.a() - 0.75).abs() < EPS_COLOR_COMPONENT);
     let shape_material = result
         .ir()
         .model

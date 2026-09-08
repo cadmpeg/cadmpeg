@@ -5457,12 +5457,7 @@ mod tests {
             color_attr,
             face_seq,
             stream_order: 0,
-            color: Color {
-                r: rgb[0],
-                g: rgb[1],
-                b: rgb[2],
-                a: 1.0,
-            },
+            color: Color::new(rgb[0], rgb[1], rgb[2], 1.0).expect("valid color"),
             offset: usize::from(face_attr),
             target: None,
         }

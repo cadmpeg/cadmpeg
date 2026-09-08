@@ -155,16 +155,7 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     {
         return None;
     }
-    Some((
-        attr,
-        Color {
-            r: r as f32,
-            g: g as f32,
-            b: b as f32,
-            a: 1.0,
-        },
-        p + 30,
-    ))
+    Some((attr, Color::new(r as f32, g as f32, b as f32, 1.0)?, p + 30))
 }
 
 #[derive(Clone, Copy)]
