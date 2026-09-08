@@ -12,7 +12,7 @@ use crate::design::decode::assembly::{
 };
 use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
-    parse_face_operand, ConstructionOperandGroupParse,
+    parse_face_operand, ConstructionOperandGroupParse, RecordFrame,
 };
 use crate::design::decode::sketch::{
     identity_matrix, next_indexed_record_offset, IndexedRecordOffsets,
@@ -1623,8 +1623,7 @@ fn exact_construction_operand_group(
         if after_tag != start + 7 {
             continue;
         }
-        let header = DesignRecordHeader {
-            id: String::new(),
+        let header = RecordFrame {
             record_index,
             class_tag: class_tag.clone().try_into().ok()?,
             byte_offset: u64::try_from(start).ok()?,
@@ -8673,7 +8672,7 @@ fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
 pub(crate) fn parameter_scope_candidate_headers(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-) -> Vec<DesignRecordHeader> {
+) -> Vec<RecordFrame> {
     records
         .records()
         .flat_map(|(record_index, offsets)| {
@@ -8682,8 +8681,7 @@ pub(crate) fn parameter_scope_candidate_headers(
                 .filter_map(move |at| {
                     let (class_tag, _) =
                         lp_ascii_filtered(bytes, *at, 0..=2000, u8::is_ascii_graphic)?;
-                    Some(DesignRecordHeader {
-                        id: String::new(),
+                    Some(RecordFrame {
                         record_index,
                         class_tag: class_tag.try_into().ok()?,
                         byte_offset: *at as u64,
