@@ -363,15 +363,15 @@ pub(crate) fn transfer_neutral(
                 scale,
                 name: Some(record.object.clone()),
                 visible: None,
-                link: Some(LinkState {
-                    linked_subelements: record.linked_subelements().to_vec(),
-                    element_component: record
+                link: LinkState::new(
+                    record.linked_subelements().to_vec(),
+                    record
                         .element_objects()
                         .get(index)
                         .map(|object| definition_id(object)),
-                    claim_child: record.claim_child(),
+                    record.claim_child(),
                     copy_on_change,
-                }),
+                ),
                 native_ref: Some(record.object.clone()),
             });
         }
