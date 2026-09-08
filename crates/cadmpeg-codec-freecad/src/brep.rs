@@ -4245,6 +4245,7 @@ fn parse_surface(
     })
 }
 
+#[derive(Clone, Copy)]
 enum AnalyticSurfaceKind {
     Plane,
     Cylinder,
