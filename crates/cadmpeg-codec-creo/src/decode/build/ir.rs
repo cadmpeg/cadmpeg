@@ -536,7 +536,7 @@ pub(in super::super) fn build_ir(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm)
     {
-        super::units::normalize_model_lengths(&mut ir, length_scale_mm);
+        super::units::normalize_model_lengths(&mut ir, length_scale_mm)?;
     }
     collect_feature_coverage(
         scan,

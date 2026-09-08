@@ -16,7 +16,7 @@ use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// RGBA color, components in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -568,15 +568,85 @@ pub enum LoopBoundary {
         pcurves: Vec<PcurveUse>,
     },
     /// An ordered coedge ring and its anchored pole occurrences.
-    Ring {
-        /// Coedges in ring order.
+    Ring(LoopRing),
+}
+
+/// Structural error in a loop coedge ring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopRingError(String);
+
+impl std::fmt::Display for LoopRingError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for LoopRingError {}
+
+/// A checked, ordered coedge ring and its anchored pole occurrences.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct LoopRing {
+    coedges: Vec<CoedgeId>,
+    vertex_uses: Vec<AnchoredVertexUse>,
+}
+
+impl LoopRing {
+    /// Build a nonempty ring of distinct coedges whose anchors belong to that ring.
+    pub fn new(
         coedges: Vec<CoedgeId>,
-        /// Ordered pole-vertex occurrences within the cyclic traversal.
         vertex_uses: Vec<AnchoredVertexUse>,
-    },
+    ) -> Result<Self, LoopRingError> {
+        if coedges.is_empty() {
+            return Err(LoopRingError("loop ring must contain a coedge".into()));
+        }
+        let members: HashSet<_> = coedges.iter().collect();
+        if members.len() != coedges.len() {
+            return Err(LoopRingError("loop ring coedges must be distinct".into()));
+        }
+        if vertex_uses
+            .iter()
+            .any(|vertex_use| !members.contains(&vertex_use.after))
+        {
+            return Err(LoopRingError(
+                "loop ring vertex-use after must name a coedge in the ring".into(),
+            ));
+        }
+        Ok(Self {
+            coedges,
+            vertex_uses,
+        })
+    }
+
+    /// Coedges in source traversal order.
+    #[must_use]
+    pub fn coedges(&self) -> &[CoedgeId] {
+        &self.coedges
+    }
+
+    /// Pole occurrences in source traversal order.
+    #[must_use]
+    pub fn vertex_uses(&self) -> &[AnchoredVertexUse] {
+        &self.vertex_uses
+    }
 }
 
 impl Loop {
+    /// Replace the complete coedge ring after checking its local structure.
+    pub fn replace_ring(
+        &mut self,
+        coedges: Vec<CoedgeId>,
+        vertex_uses: Vec<AnchoredVertexUse>,
+    ) -> Result<(), LoopRingError> {
+        if !matches!(&self.boundary, LoopBoundary::Ring(_)) {
+            return Err(LoopRingError(
+                "cannot replace the ring of a vertex-only loop".into(),
+            ));
+        }
+        self.boundary = LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses)?);
+        Ok(())
+    }
+
     /// Role of this loop on its owning face.
     #[must_use]
     pub fn boundary_role_in(&self, faces: &[Face]) -> LoopBoundaryRole {
@@ -592,7 +662,7 @@ impl Loop {
     pub fn coedges(&self) -> &[CoedgeId] {
         match &self.boundary {
             LoopBoundary::Vertex { .. } => &[],
-            LoopBoundary::Ring { coedges, .. } => coedges,
+            LoopBoundary::Ring(ring) => ring.coedges(),
         }
     }
 
@@ -601,18 +671,7 @@ impl Loop {
     pub fn anchored_vertex_uses(&self) -> &[AnchoredVertexUse] {
         match &self.boundary {
             LoopBoundary::Vertex { .. } => &[],
-            LoopBoundary::Ring { vertex_uses, .. } => vertex_uses,
-        }
-    }
-
-    /// Returns mutable ring members when this is a ring boundary.
-    pub fn ring_mut(&mut self) -> Option<(&mut Vec<CoedgeId>, &mut Vec<AnchoredVertexUse>)> {
-        match &mut self.boundary {
-            LoopBoundary::Vertex { .. } => None,
-            LoopBoundary::Ring {
-                coedges,
-                vertex_uses,
-            } => Some((coedges, vertex_uses)),
+            LoopBoundary::Ring(ring) => ring.vertex_uses(),
         }
     }
 
@@ -621,7 +680,7 @@ impl Loop {
     pub fn singular_vertex(&self) -> Option<(&VertexId, &[PcurveUse])> {
         match &self.boundary {
             LoopBoundary::Vertex { vertex, pcurves } => Some((vertex, pcurves)),
-            LoopBoundary::Ring { .. } => None,
+            LoopBoundary::Ring(_) => None,
         }
     }
 
@@ -629,7 +688,7 @@ impl Loop {
     pub fn vertices(&self) -> impl Iterator<Item = &VertexId> {
         let (singular, anchored) = match &self.boundary {
             LoopBoundary::Vertex { vertex, .. } => (Some(vertex), &[][..]),
-            LoopBoundary::Ring { vertex_uses, .. } => (None, vertex_uses.as_slice()),
+            LoopBoundary::Ring(ring) => (None, ring.vertex_uses()),
         };
         singular
             .into_iter()
@@ -668,7 +727,7 @@ impl Loop {
     pub fn vertex_pcurves(&self) -> impl Iterator<Item = &PcurveUse> {
         let (singular, anchored) = match &self.boundary {
             LoopBoundary::Vertex { pcurves, .. } => (Some(pcurves.as_slice()), &[][..]),
-            LoopBoundary::Ring { vertex_uses, .. } => (None, vertex_uses.as_slice()),
+            LoopBoundary::Ring(ring) => (None, ring.vertex_uses()),
         };
         singular
             .into_iter()
@@ -684,7 +743,7 @@ impl Loop {
             LoopBoundary::Vertex { vertex, pcurves } => {
                 (Some((vertex, pcurves.as_slice())), &[][..])
             }
-            LoopBoundary::Ring { vertex_uses, .. } => (None, vertex_uses.as_slice()),
+            LoopBoundary::Ring(ring) => (None, ring.vertex_uses()),
         };
         singular
             .into_iter()
@@ -732,7 +791,7 @@ struct LoopVertexUseSchemaWire {
 }
 
 mod loop_boundary_wire {
-    use super::{AnchoredVertexUse, CoedgeId, LoopBoundary, PcurveUse, VertexId};
+    use super::{AnchoredVertexUse, CoedgeId, LoopBoundary, LoopRing, PcurveUse, VertexId};
     use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize, Deserialize)]
@@ -765,12 +824,10 @@ mod loop_boundary_wire {
                     pcurves: pcurves.clone(),
                 }],
             },
-            LoopBoundary::Ring {
-                coedges,
-                vertex_uses,
-            } => Wire {
-                coedges: coedges.clone(),
-                vertex_uses: vertex_uses
+            LoopBoundary::Ring(ring) => Wire {
+                coedges: ring.coedges().to_vec(),
+                vertex_uses: ring
+                    .vertex_uses()
                     .iter()
                     .map(|vertex_use| VertexUseWire {
                         vertex: vertex_use.vertex.clone(),
@@ -822,10 +879,9 @@ mod loop_boundary_wire {
                 })
             })
             .collect::<Result<_, D::Error>>()?;
-        Ok(LoopBoundary::Ring {
-            coedges: wire.coedges,
-            vertex_uses,
-        })
+        LoopRing::new(wire.coedges, vertex_uses)
+            .map(LoopBoundary::Ring)
+            .map_err(D::Error::custom)
     }
 }
 
@@ -1072,7 +1128,53 @@ pub struct Point {
 
 #[cfg(test)]
 mod tests {
-    use super::{with_topology_serialization, Coedge, CoedgeUseCurve, Loop, LoopBoundary};
+    use super::{
+        with_topology_serialization, AnchoredVertexUse, Coedge, CoedgeUseCurve, Loop, LoopBoundary,
+        LoopRing,
+    };
+
+    #[test]
+    fn loop_ring_rejects_empty_or_duplicate_coedges_and_foreign_anchors() {
+        assert!(LoopRing::new(Vec::new(), Vec::new()).is_err());
+
+        let coedge: super::CoedgeId = "test:model:coedge#0".try_into().unwrap();
+        let foreign: super::CoedgeId = "test:model:coedge#foreign".try_into().unwrap();
+        let vertex: super::VertexId = "test:model:vertex#0".try_into().unwrap();
+        assert!(LoopRing::new(vec![coedge.clone(), coedge.clone()], Vec::new()).is_err());
+        assert!(LoopRing::new(
+            vec![coedge],
+            vec![AnchoredVertexUse {
+                vertex,
+                after: foreign,
+                pcurves: Vec::new(),
+            }],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn replacing_a_ring_rejects_invalid_contents_without_changing_the_loop() {
+        let coedge: super::CoedgeId = "test:model:coedge#0".try_into().unwrap();
+        let mut loop_ = Loop {
+            id: "test:model:loop#0".try_into().unwrap(),
+            face: "test:model:face#0".try_into().unwrap(),
+            boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
+        };
+        let before = loop_.clone();
+        assert!(loop_.replace_ring(Vec::new(), Vec::new()).is_err());
+        assert_eq!(loop_, before);
+        assert!(loop_
+            .replace_ring(
+                vec![coedge],
+                vec![AnchoredVertexUse {
+                    vertex: "test:model:vertex#0".try_into().unwrap(),
+                    after: "test:model:coedge#foreign".try_into().unwrap(),
+                    pcurves: Vec::new(),
+                }],
+            )
+            .is_err());
+        assert_eq!(loop_, before);
+    }
 
     fn coedge_json() -> serde_json::Value {
         serde_json::json!({
@@ -1101,10 +1203,9 @@ mod tests {
         let loop_ = Loop {
             id: coedge.owner_loop.clone(),
             face: "test:model:face#0".try_into().expect("valid identity"),
-            boundary: LoopBoundary::Ring {
-                coedges: vec![coedge.id.clone()],
-                vertex_uses: Vec::new(),
-            },
+            boundary: LoopBoundary::Ring(
+                super::LoopRing::new(vec![coedge.id.clone()], Vec::new()).expect("valid loop ring"),
+            ),
         };
         let encoded = with_topology_serialization(
             &[],
@@ -1203,7 +1304,7 @@ mod tests {
             }]
         });
         let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
-        assert!(matches!(loop_.boundary, LoopBoundary::Ring { .. }));
+        assert!(matches!(loop_.boundary, LoopBoundary::Ring(_)));
         assert_eq!(serde_json::to_value(loop_).unwrap(), json);
     }
 

@@ -54,8 +54,11 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
         panic!("typed intersection");
     };
     assert!(context.sides[0].pcurve.is_some());
-    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[1].pcurve.as_ref() else {
+    let Some(support) = context.sides[1].pcurve.as_ref() else {
         panic!("completed second support pcurve");
+    };
+    let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
+        panic!("completed second support NURBS pcurve");
     };
     assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(nurbs.control_points().last(), Some(&Point2::new(0.0, 10.0)));

@@ -33,7 +33,9 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, Coedge, Edge, Face, Loop, LoopRing, Point, Region, Shell, Vertex,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -323,13 +325,11 @@ pub(super) fn emit_topology(
                                     sides: [
                                         IntcurveSupportSide {
                                             surface: Some(surface),
-                                            pcurve: Some(pcurve),
-                                            pcurve_parameter_range: None,
+                                            pcurve: Some(pcurve.into()),
                                         },
                                         IntcurveSupportSide {
                                             surface: None,
                                             pcurve: None,
-                                            pcurve_parameter_range: None,
                                         },
                                     ],
                                     parameter_range,
@@ -484,6 +484,8 @@ pub(super) fn emit_topology(
         faces.insert(node.xmt, id);
     }
     let mut loops = BTreeMap::new();
+    let mut loop_specs = BTreeMap::new();
+    let mut loop_coedges = BTreeMap::<u32, Vec<CoedgeId>>::new();
     for &loop_xmt in valid_loop_rings.keys() {
         let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
             graph
@@ -505,22 +507,7 @@ pub(super) fn emit_topology(
         };
         let id = LoopId::mint(format!("{prefix}:loop#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "LOOP");
-        ir.model.loops.push(Loop {
-            id: id.clone(),
-            face: face.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: Vec::new(),
-                vertex_uses: Vec::new(),
-            },
-        });
-        if let Some(parent) = ir
-            .model
-            .faces
-            .iter_mut()
-            .find(|candidate| candidate.id == face)
-        {
-            parent.loops.push(id.clone());
-        }
+        loop_specs.insert(node.xmt, (id.clone(), face));
         loops.insert(node.xmt, id);
     }
     let fin_ids: BTreeMap<u32, CoedgeId> = valid_fin_xmts
@@ -556,7 +543,7 @@ pub(super) fn emit_topology(
                 Some((
                     (owner.clone(), side.surface.clone()?),
                     (
-                        side.pcurve.clone()?,
+                        side.pcurve.clone()?.geometry,
                         context.parameter_range,
                         procedural.cache_fit_tolerance(),
                     ),
@@ -748,15 +735,27 @@ pub(super) fn emit_topology(
                 .collect(),
             use_curve: None,
         });
+        loop_coedges.entry(fields.loop_xmt).or_default().push(id);
+    }
+    for (loop_xmt, (id, face)) in loop_specs {
+        let Some(ring) = loop_coedges
+            .remove(&loop_xmt)
+            .and_then(|coedges| LoopRing::new(coedges, Vec::new()).ok())
+        else {
+            continue;
+        };
+        ir.model.loops.push(Loop {
+            id: id.clone(),
+            face: face.clone(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+        });
         if let Some(parent) = ir
             .model
-            .loops
+            .faces
             .iter_mut()
-            .find(|candidate| candidate.id == loop_id)
+            .find(|candidate| candidate.id == face)
         {
-            if let cadmpeg_ir::topology::LoopBoundary::Ring { coedges, .. } = &mut parent.boundary {
-                coedges.push(id);
-            }
+            parent.loops.push(id);
         }
     }
     attach_tolerant_edge_intersections_with_budget(

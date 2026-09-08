@@ -32,7 +32,8 @@ pub fn project_sketch_constraints(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinition as Definition, SketchNativeOperand,
+        NativeOperandField, SketchConstraint, SketchConstraintDefinition as Definition,
+        SketchNativeOperand,
     };
 
     let planar_sketches = entities
@@ -126,9 +127,13 @@ pub fn project_sketch_constraints(
             ("record", None)
         };
         SketchNativeOperand {
-            native_kind: family.into(),
-            native_field: Some(field.into()),
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(family)
+                .expect("source operand kind is nonempty"),
+            field: Some(NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new(field)
+                    .expect("source field name is nonempty"),
+                role: None,
+            }),
             object_index: record_index,
             native_ref: native_ref
                 .filter(|_| !projected.contains_key(&(scope, record_index)))

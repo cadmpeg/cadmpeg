@@ -344,28 +344,36 @@ pub(in super::super) fn interpolation_spline_surface(
 pub(in super::super) fn placed_section_nurbs(
     transform: &crate::placement::FeatureSectionTransform,
     nurbs: &NurbsCurve,
-) -> NurbsCurve {
+) -> Option<NurbsCurve> {
     let mut placed = nurbs.clone();
-    for point in placed.control_points_mut() {
-        let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
-        *point = Point3::new(model[0], model[1], model[2]);
-    }
     placed
+        .edit_control_points(|points| {
+            for point in points {
+                let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
+                *point = Point3::new(model[0], model[1], model[2]);
+            }
+        })
+        .ok()?;
+    Some(placed)
 }
 
 pub(in super::super) fn translated_nurbs_curve(
     curve: &NurbsCurve,
     translation: [f64; 3],
-) -> NurbsCurve {
+) -> Option<NurbsCurve> {
     let mut translated = curve.clone();
-    for point in translated.control_points_mut() {
-        *point = Point3::new(
-            point.x + translation[0],
-            point.y + translation[1],
-            point.z + translation[2],
-        );
-    }
     translated
+        .edit_control_points(|points| {
+            for point in points {
+                *point = Point3::new(
+                    point.x + translation[0],
+                    point.y + translation[1],
+                    point.z + translation[2],
+                );
+            }
+        })
+        .ok()?;
+    Some(translated)
 }
 
 pub(in super::super) fn extruded_nurbs_surface(
@@ -407,7 +415,9 @@ pub(in super::super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<
     let SketchGeometry::Nurbs { curve } = geometry else {
         return None;
     };
-    let nurbs = curve.lift(|point| Point3::new(point.u, point.v, 0.0));
+    let nurbs = curve
+        .lift(|point| Point3::new(point.u, point.v, 0.0))
+        .ok()?;
     valid_positive_nurbs_curve(&nurbs).map(|()| nurbs)
 }
 
@@ -427,11 +437,10 @@ pub(in super::super) fn oriented_sketch_nurbs_curve(
         .rev()
         .map(|knot| lower + upper - knot)
         .collect::<Vec<_>>();
-    reversed.knots_mut().copy_from_slice(&knots);
-    reversed.control_points_mut().reverse();
-    if let Some(weights) = reversed.weights_mut() {
-        weights.reverse();
-    }
+    reversed.reverse_parameterization();
+    reversed
+        .edit_knots(|target| target.copy_from_slice(&knots))
+        .ok()?;
     Some(reversed)
 }
 
@@ -466,13 +475,14 @@ pub(in super::super) fn extrusion_brep_side_surface(
 ) -> Option<SurfaceGeometry> {
     if matches!(geometry, SketchGeometry::Nurbs { .. }) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        let placed = placed_section_nurbs(transform, &directrix);
         let lower_translation = transform.normal.map(|value| value * span.lower);
         let sweep = transform
             .normal
             .map(|value| value * (span.upper - span.lower));
+        let placed = placed_section_nurbs(transform, &directrix)?;
+        let translated = translated_nurbs_curve(&placed, lower_translation)?;
         return Some(SurfaceGeometry::Nurbs(extruded_nurbs_surface(
-            &translated_nurbs_curve(&placed, lower_translation),
+            &translated,
             sweep,
         )?));
     }
@@ -771,7 +781,9 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
 
 #[cfg(test)]
 mod tests {
-    use super::signed_unit_chart;
+    use super::{signed_unit_chart, translated_nurbs_curve};
+    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn signed_unit_chart_accepts_bounded_endpoint_rounding_only() {
@@ -780,5 +792,20 @@ mod tests {
             Some((1.0, 0.0))
         );
         assert!(signed_unit_chart([1.0, 4.0], [1.0, 4.001], 0.0).is_none());
+    }
+
+    #[test]
+    fn translating_nurbs_rejects_nonfinite_poles() {
+        let curve = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("finite NURBS fixture");
+
+        assert!(translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]).is_none());
+        assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
 }

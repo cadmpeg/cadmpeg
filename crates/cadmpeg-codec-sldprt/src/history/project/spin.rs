@@ -91,8 +91,9 @@ pub(crate) fn project_loft(
     )?;
     Some(FeatureDefinition::Loft {
         sections,
-        guides: guides.into_iter().map(PathRef::Native).collect(),
-        centerline: None,
+        guidance: cadmpeg_ir::features::LoftGuidance::Guides(
+            guides.into_iter().map(PathRef::Native).collect(),
+        ),
         op: feature
             .properties
             .get("Operation")

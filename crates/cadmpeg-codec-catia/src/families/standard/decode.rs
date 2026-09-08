@@ -5,10 +5,10 @@ use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
-    Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -501,10 +501,10 @@ mod consolidated_revolution_binding_tests {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face,
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: vec![coedge.clone()],
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),
@@ -535,7 +535,6 @@ mod consolidated_revolution_binding_tests {
                             sides: std::array::from_fn(|side| IntcurveSupportSide {
                                 surface: Some(surface_ids[side].clone()),
                                 pcurve: None,
-                                pcurve_parameter_range: None,
                             }),
                             parameter_range: [0.0, 1.0],
                             discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -857,10 +856,12 @@ pub(crate) fn emit_standard_extrusion_definition(
                     procedural_supports,
                     &side,
                 )),
-                pcurve: Some(side.pcurve),
-                pcurve_parameter_range: (side.pcurve_parameter_range
-                    != extrusion.directrix_parameter_range)
-                    .then_some(side.pcurve_parameter_range),
+                pcurve: Some(SupportPcurve::new(
+                    side.pcurve,
+                    (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
+                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                        .flatten(),
+                )),
             });
             annotate(
                 annotations,
@@ -2137,6 +2138,12 @@ fn try_decode_standard_population(
         },
         topology_failure.map(StandardTopologyFailure::message),
     );
+    if consolidated_curve_bindings.rechart_numeric_failures != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveRechartNonFinite.note(format!(
+            "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
+            consolidated_curve_bindings.rechart_numeric_failures,
+        )));
+    }
     report.coverage.record(
         crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
         usize::from(true),
@@ -5197,10 +5204,10 @@ fn emit_standard_topology(
                 id: loop_id.clone(),
                 face: FaceId::mint(format!("catia:standard:face#{face_index}"))
                     .expect("identity grammar"),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids,
-                    vertex_uses,
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }
@@ -8157,8 +8164,10 @@ pub(crate) fn build_standard_edge_curve(
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
-                pcurve: Some(pcurves[side].clone()),
-                pcurve_parameter_range: Some(native.parameter_range),
+                pcurve: Some(SupportPcurve::new(
+                    pcurves[side].clone(),
+                    DirectedParameterRange::new(native.parameter_range).ok(),
+                )),
             })
         } else {
             support.faces.map(|face| {
@@ -8168,7 +8177,6 @@ pub(crate) fn build_standard_edge_curve(
                 IntcurveSupportSide {
                     surface,
                     pcurve: None,
-                    pcurve_parameter_range: None,
                 }
             })
         };

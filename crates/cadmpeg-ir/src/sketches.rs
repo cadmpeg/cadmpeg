@@ -3,6 +3,7 @@
 
 use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
+use crate::products::NonEmptyString;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -1036,18 +1037,28 @@ pub enum SketchCoordinateAxis {
     V,
 }
 
+/// Source-native field and optional role carrying one sketch operand.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperandField {
+    /// Non-empty source-native field name.
+    pub name: NonEmptyString,
+    /// Source-native role code, when the field carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<u32>,
+}
+
 /// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SketchNativeOperand {
-    /// Source-native operand family.
-    pub native_kind: String,
-    /// Source-native field containing this operand.
+    /// Non-empty source-native operand family.
+    pub native_kind: NonEmptyString,
+    /// Source-native field and optional role containing this operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_field: Option<String>,
-    /// Source-native role code, when the field carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_role: Option<u32>,
+    pub field: Option<NativeOperandField>,
     /// Source-native object index.
     pub object_index: u32,
     /// Resolved source-native operand record.

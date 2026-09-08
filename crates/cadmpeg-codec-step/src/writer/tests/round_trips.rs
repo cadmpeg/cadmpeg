@@ -1246,11 +1246,12 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
         .iter_mut()
         .find(|loop_| loop_.coedges().len() >= 3)
         .expect("unit cube has an edge loop");
+    let mut coedges = loop_.coedges().to_vec();
+    coedges.swap(0, 1);
+    let vertex_uses = loop_.anchored_vertex_uses().to_vec();
     loop_
-        .ring_mut()
-        .expect("selected loop is a ring")
-        .0
-        .swap(0, 1);
+        .replace_ring(coedges, vertex_uses)
+        .expect("reordered loop ring remains valid");
 
     let mut bytes = Vec::new();
     let report = write_step(

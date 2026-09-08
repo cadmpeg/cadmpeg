@@ -28,7 +28,7 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.act_entities = vec![ActEntity {
-        id: "generated:act-entity#0".into(),
+        id: "f3d:generated:act-entity#0".into(),
         record_index: 7,
         entity_id: "0_985".into(),
         membership: crate::records::ActEntityMembership::TableOnly(

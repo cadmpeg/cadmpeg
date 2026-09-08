@@ -299,15 +299,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             else {
                                 continue;
                             };
-                            let placed = placed_section_nurbs(transform, &nurbs);
-                            let translated = translated_nurbs_curve(
+                            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
+                                continue;
+                            };
+                            let Some(translated) = translated_nurbs_curve(
                                 &placed,
                                 [
                                     offset * transform.normal[0],
                                     offset * transform.normal[1],
                                     offset * transform.normal[2],
                                 ],
-                            );
+                            ) else {
+                                continue;
+                            };
                             CurveGeometry::Nurbs(translated)
                         }
                         _ => unreachable!("profile family checked above"),
@@ -405,18 +409,18 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: bottom_loop.clone(),
                 face: bottom_face.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: bottom_coedges.clone(),
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(bottom_coedges.clone(), Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.loops.push(IrLoop {
                 id: top_loop.clone(),
                 face: top_face.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: top_coedges.clone(),
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(top_coedges.clone(), Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
@@ -524,10 +528,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                        coedges: coedges.to_vec(),
-                        vertex_uses: Vec::new(),
-                    },
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                        cadmpeg_ir::topology::LoopRing::new(coedges.to_vec(), Vec::new())
+                            .expect("valid loop ring"),
+                    ),
                 });
                 let edge_uses = [
                     (bottom_edges[index].clone(), Sense::Forward),

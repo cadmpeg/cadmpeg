@@ -2230,8 +2230,7 @@ pub(crate) fn intersection_side(
     });
     IntcurveSupportSide {
         surface,
-        pcurve,
-        pcurve_parameter_range: None,
+        pcurve: pcurve.map(Into::into),
     }
 }
 
@@ -2276,7 +2275,9 @@ pub(crate) fn normalize_pcurve_parameters(
                 .iter()
                 .map(|point| surface_parameters(surface, [point.u, point.v]))
                 .collect::<Option<Vec<_>>>()?;
-            nurbs.control_points_mut().copy_from_slice(&converted);
+            nurbs
+                .edit_control_points(|points| points.copy_from_slice(&converted))
+                .ok()?;
         }
         _ => {}
     }
@@ -2316,7 +2317,9 @@ mod tests {
         )
         .expect("valid offset support");
         let mut candidate = support.clone();
-        candidate.control_points_mut()[4].z += 1.0;
+        candidate
+            .edit_control_points(|points| points[4].z += 1.0)
+            .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Nurbs(support);
         let candidate = SurfaceGeometry::Nurbs(candidate);
         let budget = GeometryWorkBudget::new(200);

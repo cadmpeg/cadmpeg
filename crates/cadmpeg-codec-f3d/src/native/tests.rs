@@ -90,7 +90,8 @@ fn diff_reports_design_material_assignment_changes() {
         .unwrap()[0];
     let mut assignment_fields = assignment.fields();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
-    *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields);
+    *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields)
+        .expect("valid native identity");
     let report = cadmpeg_ir::diff(decoded.ir(), &edited);
     let arena = report
         .per_arena
@@ -364,7 +365,9 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
         panic!("embedded use curve must be NURBS")
     };
-    nurbs.control_points_mut()[0].x += 1.0;
+    nurbs
+        .edit_control_points(|points| points[0].x += 1.0)
+        .unwrap();
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut preserved)

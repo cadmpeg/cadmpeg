@@ -98,7 +98,7 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
-        id: "generated:material-assignment#0".into(),
+        id: "f3d:generated:material-assignment#0".into(),
         asm_body_key: 42,
         asm_body_key_offset: 0,
 
@@ -133,7 +133,7 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         .into_iter()
         .enumerate()
         .map(|(ordinal, entity_suffix)| crate::records::BodyVisibility {
-            id: format!("generated:body-visibility#{ordinal}"),
+            id: format!("f3d:generated:body-visibility#{ordinal}"),
             body: body.clone(),
             stream: "generated/Design1/BulkStream.dat".into(),
             byte_offset: 0,

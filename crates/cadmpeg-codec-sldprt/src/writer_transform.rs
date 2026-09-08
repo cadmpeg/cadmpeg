@@ -242,9 +242,14 @@ fn transform_surface(
             *ref_direction = transform.apply_vector(*ref_direction);
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
-            .control_points_mut()
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
+            .edit_control_points(|points| {
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+            })?,
         SurfaceGeometry::Polygonal(surface) => surface
             .vertices_mut()
             .iter_mut()
@@ -282,9 +287,14 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             *major_direction = transform.apply_vector(*major_direction);
         }
         CurveGeometry::Nurbs(nurbs) => nurbs
-            .control_points_mut()
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
+            .edit_control_points(|points| {
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+            })?,
         CurveGeometry::Polyline(polyline) => polyline
             .points_mut()
             .iter_mut()

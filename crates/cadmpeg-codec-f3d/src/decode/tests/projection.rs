@@ -892,10 +892,10 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
                 "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
             }
         ],
-        "guides": [{
+        "guidance": {"kind": "guides", "path": [{
             "kind": "spatial_sketch_curves",
             "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
-        }],
+        }]},
         "op": "join"
     }))
     .expect("resolved Loft definition");
@@ -910,7 +910,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
                 "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
             }
         ],
-        "guides": [{"kind": "native", "value": "native:guide"}],
+        "guidance": {"kind": "guides", "path": [{"kind": "native", "value": "native:guide"}]},
         "op": "join"
     }))
     .expect("unresolved Loft definition");

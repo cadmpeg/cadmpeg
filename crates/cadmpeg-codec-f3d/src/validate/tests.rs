@@ -870,7 +870,7 @@ fn validation_accepts_user_design_parameter_frame() {
         .expect("generated F3D decode");
     let (mut ir, _, _) = decoded.into_parts();
     let parameter = crate::records::DesignParameter {
-        id: "generated:design-parameter#0".into(),
+        id: "f3d:generated:design-parameter#0".into(),
         byte_offset: 100,
         class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 900,

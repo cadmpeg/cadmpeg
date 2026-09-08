@@ -602,10 +602,7 @@ fn insert_homogeneous_knot(
 fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<NurbsCurve> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let control_count = curve.control_points().len();
-    if curve.periodic()
-        || curve.knots().iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(curve.knots())
-    {
+    if curve.periodic() {
         return None;
     }
     let [start, end] = interval;
@@ -801,12 +798,11 @@ fn elevate_nurbs_to_degree(
         .iter()
         .map(|knot| knot + interval[0])
         .collect();
-    if let Some(first) = elevated_knots.first_mut() {
-        *first = interval[0];
-    }
-    if let Some(last) = elevated_knots.last_mut() {
-        *last = interval[1];
-    }
+    // Translation must preserve every copy of each clamped source endpoint.
+    // Adding the origin back can round past the declared endpoint.
+    elevated_knots[..=target_degree].fill(interval[0]);
+    let end_start = elevated_knots.len() - target_degree - 1;
+    elevated_knots[end_start..].fill(interval[1]);
     let Ok(elevated) = NurbsCurve::new(
         elevated_degree,
         elevated_knots,
@@ -1267,8 +1263,13 @@ fn anchor_analytic_nurbs_endpoint_poles(
     {
         return None;
     }
-    *nurbs.control_points_mut().first_mut()? = start;
-    *nurbs.control_points_mut().last_mut()? = end;
+    nurbs
+        .edit_control_points(|points| {
+            points[0] = start;
+            let last = points.len() - 1;
+            points[last] = end;
+        })
+        .ok()?;
     Some(())
 }
 

@@ -945,7 +945,7 @@ mod tests {
     #[test]
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
-    fn surface_isocurve_rejects_invalid_weight_shape_and_output() {
+    fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points, weights| {
             NurbsSurface::new(
                 1,
@@ -967,12 +967,6 @@ mod tests {
                 vec![Point3::new(f64::MAX, 0.0, 0.0); 4],
                 Some(vec![1.0e200; 4]),
             ),
-            0.5,
-            true,
-        )
-        .is_none());
-        assert!(nurbs_surface_isocurve(
-            &surface(vec![Point3::new(0.0, 0.0, 0.0); 4], Some(vec![0.0; 4])),
             0.5,
             true,
         )
@@ -1111,17 +1105,5 @@ mod tests {
             direction: Point2::new(1.0, 0.0),
         };
         assert!(reverse_pcurve_geometry(&nonfinite_line, [0.0, 1.0]).is_none());
-
-        let zero_weight_curve = CurveGeometry::Nurbs(
-            NurbsCurve::new(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                Some(vec![1.0, 0.0]),
-                false,
-            )
-            .unwrap(),
-        );
-        assert!(reverse_curve_geometry(&zero_weight_curve, [0.0, 1.0]).is_none());
     }
 }

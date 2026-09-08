@@ -67,10 +67,10 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            "asm-history-0",
-            serde_json::Map::default(),
-        )],
+        vec![
+            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", serde_json::Map::default())
+                .expect("valid native identity"),
+        ],
     );
     ir.finalize();
     let encoder = StepCodec {

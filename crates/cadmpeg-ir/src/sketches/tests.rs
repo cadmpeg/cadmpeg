@@ -1466,3 +1466,27 @@ fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
     let error = serde_json::from_value::<SpatialSketchGeometry>(ragged).unwrap_err();
     assert!(error.to_string().contains("control_points row"));
 }
+
+#[test]
+fn native_operand_requires_nonempty_names_and_keeps_the_role_inside_the_field() {
+    use crate::sketches::SketchNativeOperand;
+
+    for wire in [
+        serde_json::json!({"native_kind": "", "object_index": 0}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0,
+            "field": {"name": "", "role": 1}}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0, "native_role": 1}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0, "field": {"role": 1}}),
+    ] {
+        assert!(serde_json::from_value::<SketchNativeOperand>(wire).is_err());
+    }
+    for wire in [
+        serde_json::json!({"native_kind": "operand", "object_index": 0}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0, "field": {"name": "edge"}}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0,
+            "field": {"name": "edge", "role": 1}}),
+    ] {
+        let operand: SketchNativeOperand = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+    }
+}

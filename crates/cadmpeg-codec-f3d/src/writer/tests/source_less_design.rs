@@ -29,7 +29,7 @@ fn generated_source_less_writes_design_type_metastream() {
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
         SegmentType {
-            id: "generated:design-type#0".into(),
+            id: "f3d:generated:design-type#0".into(),
             byte_offset: 0,
             module: "Fusion".to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![1, 2]),
@@ -43,7 +43,7 @@ fn generated_source_less_writes_design_type_metastream() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:design-type#1".into(),
+            id: "f3d:generated:design-type#1".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![277]),
@@ -65,7 +65,7 @@ fn generated_source_less_writes_design_type_metastream() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:design-type#2".into(),
+            id: "f3d:generated:design-type#2".into(),
             byte_offset: 0,
             module: "FutureFeature".to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![999]),
@@ -179,7 +179,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     .into_iter()
     .enumerate()
     .map(|(ordinal, kind)| ConstructionRecipe {
-        id: format!("generated:recipe#{ordinal}"),
+        id: format!("f3d:generated:recipe#{ordinal}"),
         byte_offset: 0,
         record_index_offset: None,
         kind,
@@ -196,21 +196,21 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     .collect();
     native.persistent_references = vec![
         PersistentReference {
-            id: "generated:persistent-reference#0".into(),
+            id: "f3d:generated:persistent-reference#0".into(),
             byte_offset: 0,
             value_offset: 0,
             kind: PersistentReferenceKind::Point,
             value: 900,
         },
         PersistentReference {
-            id: "generated:persistent-reference#1".into(),
+            id: "f3d:generated:persistent-reference#1".into(),
             byte_offset: 0,
             value_offset: 0,
             kind: PersistentReferenceKind::CurvePrimary,
             value: 100,
         },
         PersistentReference {
-            id: "generated:persistent-reference#2".into(),
+            id: "f3d:generated:persistent-reference#2".into(),
             byte_offset: 0,
             value_offset: 0,
             kind: PersistentReferenceKind::CurveSecondary,
@@ -218,7 +218,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         },
     ];
     native.lost_edge_references = vec![LostEdgeReference::new(
-        "generated:lost-edge-reference#0".into(),
+        "f3d:generated:lost-edge-reference#0".into(),
         0,
         "419".into(),
         4645,
@@ -367,7 +367,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![SegmentType {
-        id: "generated:design-type#0".into(),
+        id: "f3d:generated:design-type#0".into(),
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
         entities: crate::records::ReferenceRun::unlocated(vec![277]),
@@ -382,20 +382,20 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     }];
     native.design_body_members = vec![
         DesignBodyMember {
-            id: "generated:body-member#0".into(),
+            id: "f3d:generated:body-member#0".into(),
             byte_offset: 0,
             entity_suffix: 985,
             flags: 0,
         },
         DesignBodyMember {
-            id: "generated:body-member#1".into(),
+            id: "f3d:generated:body-member#1".into(),
             byte_offset: 0,
             entity_suffix: 8422,
             flags: 3,
         },
     ];
     native.design_entity_headers = vec![DesignEntityHeader {
-        id: "generated:entity-header#0".into(),
+        id: "f3d:generated:entity-header#0".into(),
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned())
@@ -418,13 +418,13 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     }];
     native.design_record_headers = vec![
         DesignRecordHeader {
-            id: "generated:record-header#0".into(),
+            id: "f3d:generated:record-header#0".into(),
             record_index: 33,
             class_tag: crate::records::DesignClassTag::try_from("350".to_owned()).unwrap(),
             byte_offset: 0,
         },
         DesignRecordHeader {
-            id: "generated:record-header#1".into(),
+            id: "f3d:generated:record-header#1".into(),
             record_index: 44,
             class_tag: crate::records::DesignClassTag::try_from("351".to_owned()).unwrap(),
             byte_offset: 0,
@@ -497,7 +497,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
         SegmentType {
-            id: "generated:sketch-type-00-object#0".into(),
+            id: "f3d:generated:sketch-type-00-object#0".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![277]),
@@ -511,7 +511,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-type-01-relation#0".into(),
+            id: "f3d:generated:sketch-type-01-relation#0".into(),
             byte_offset: 1,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![33]),
@@ -525,7 +525,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-type-02-point#0".into(),
+            id: "f3d:generated:sketch-type-02-point#0".into(),
             byte_offset: 2,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![100]),
@@ -539,7 +539,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-type-03-line#0".into(),
+            id: "f3d:generated:sketch-type-03-line#0".into(),
             byte_offset: 3,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![600]),
@@ -553,7 +553,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-type-04-circular#0".into(),
+            id: "f3d:generated:sketch-type-04-circular#0".into(),
             byte_offset: 4,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![601]),
@@ -567,7 +567,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-type-05-nurbs#0".into(),
+            id: "f3d:generated:sketch-type-05-nurbs#0".into(),
             byte_offset: 5,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![602]),
@@ -581,7 +581,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-type-06-point-companion#0".into(),
+            id: "f3d:generated:sketch-type-06-point-companion#0".into(),
             byte_offset: 6,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![101]),
@@ -597,7 +597,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         },
     ];
     native.design_entity_headers = vec![DesignEntityHeader {
-        id: "generated:sketch-header#0".into(),
+        id: "f3d:generated:sketch-header#0".into(),
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned())
@@ -619,7 +619,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect("valid module registration"),
     }];
     native.sketch_points = vec![SketchPoint {
-        id: "generated:sketch-point#0".into(),
+        id: "f3d:generated:sketch-point#0".into(),
         record_index: 100,
         owner_reference: Some(277),
         class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
@@ -640,7 +640,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }];
     native.sketch_curve_identities = vec![
         SketchCurveIdentity {
-            id: "generated:sketch-curve#0".into(),
+            id: "f3d:generated:sketch-curve#0".into(),
             record_index: 600,
             owner_reference: Some(277),
             class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -657,7 +657,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             }),
         },
         SketchCurveIdentity {
-            id: "generated:sketch-curve#1".into(),
+            id: "f3d:generated:sketch-curve#1".into(),
             record_index: 601,
             owner_reference: Some(277),
             class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
@@ -676,7 +676,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             }),
         },
         SketchCurveIdentity {
-            id: "generated:sketch-curve#2".into(),
+            id: "f3d:generated:sketch-curve#2".into(),
             record_index: 602,
             owner_reference: Some(277),
             class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
@@ -712,7 +712,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         },
     ];
     native.sketch_relations = vec![SketchRelation {
-        id: "generated:sketch-relation#0".into(),
+        id: "f3d:generated:sketch-relation#0".into(),
         record_index: 33,
         class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
         byte_offset: 0,

@@ -252,9 +252,10 @@ mod tests {
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: crate::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     },

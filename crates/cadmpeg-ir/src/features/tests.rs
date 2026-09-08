@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::features::TrimCellSelection;
+use crate::features::{ConfigurationEvaluation, TrimCellSelection};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -27,8 +27,9 @@ fn native_feature_kind_preserves_the_source_spelling() {
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{
-        Angle, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,
-        Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
+        Angle, ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId, Length,
+        ParameterId, ParameterValue,
     };
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
@@ -96,12 +97,13 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
         ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: vec![
+                    BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
+                ],
+            },
             dependencies: vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
                 .expect("identity grammar")],
-            outputs: vec![
-                BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
-            ],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
                 construction: None,
@@ -170,9 +172,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         first_feature.clone(),
         ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: vec![body.clone(), body.clone()],
+            },
             dependencies: vec![later_feature.clone(), later_feature.clone()],
-            outputs: vec![body.clone(), body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
                 construction: None,
@@ -195,20 +198,15 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         first_feature.clone(),
         ConfigurationFeatureState {
-            suppressed: true,
+            evaluation: ConfigurationEvaluation::Suppressed,
             dependencies: Vec::new(),
-            outputs: vec![body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
                 construction: None,
             },
         },
     )]);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message == "suppressed configuration feature state has output bodies"
-    }));
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].active = true;
@@ -225,9 +223,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         later_feature.clone(),
         ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: vec![body.clone()],
+            },
             dependencies: vec![first_feature.clone()],
-            outputs: vec![body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
                 construction: None,
@@ -240,9 +239,8 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states.insert(
         first_feature.clone(),
         ConfigurationFeatureState {
-            suppressed: true,
+            evaluation: ConfigurationEvaluation::Suppressed,
             dependencies: Vec::new(),
-            outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
                 construction: None,
@@ -262,7 +260,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         .feature_states
         .get_mut(&first_feature)
         .expect("dependency state")
-        .suppressed = false;
+        .evaluation = ConfigurationEvaluation::Active {
+        outputs: Vec::new(),
+    };
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
 
@@ -364,9 +364,8 @@ fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
         feature_states: BTreeMap::from([(
             feature.id.clone(),
             ConfigurationFeatureState {
-                suppressed: true,
+                evaluation: ConfigurationEvaluation::Suppressed,
                 dependencies: feature.dependencies.clone(),
-                outputs: Vec::new(),
                 definition: feature.definition.clone(),
             },
         )]),
@@ -393,8 +392,8 @@ fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
     );
 
     let mut invalid = serde_json::to_value(&ir).unwrap();
-    invalid["model"]["configurations"][0]["feature_states"][feature.id.0.as_str()]["suppressed"] =
-        serde_json::json!(false);
+    invalid["model"]["configurations"][0]["feature_states"][feature.id.0.as_str()]["evaluation"]
+        ["kind"] = serde_json::json!("active");
     let error = serde_json::from_value::<CadIr>(invalid).unwrap_err();
     assert!(error
         .to_string()
@@ -577,22 +576,22 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
 }
 
 #[test]
-fn loft_sections_accept_legacy_profiles_and_preserve_profile_shape() {
+fn loft_sections_preserve_profile_shape() {
     use crate::features::{BooleanOp, FeatureDefinition, LoftSection, ProfileRef};
 
-    let legacy = serde_json::json!({
+    let wire = serde_json::json!({
         "definition": "loft",
-        "profiles": [{"kind": "native", "value": "native:section"}],
+        "sections": [{"kind": "native", "value": "native:section"}],
+        "guidance": {"kind": "guides", "path": []},
         "op": "new_body",
         "closed": false
     });
-    let definition: FeatureDefinition = serde_json::from_value(legacy).unwrap();
+    let definition: FeatureDefinition = serde_json::from_value(wire).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Loft {
             sections,
-            guides,
-            centerline: None,
+            guidance: crate::features::LoftGuidance::Guides(guides),
             op: BooleanOp::NewBody,
             closed: false,
             ..
@@ -1133,11 +1132,14 @@ fn body_selections_round_trip_through_json() {
             native: "body:17".into(),
         },
         BodySelection::ResolvedSet {
-            bodies: vec![
-                BodyId::mint("synthetic:test:body#0").expect("valid identity"),
-                BodyId::mint("synthetic:test:body#1").expect("valid identity"),
-            ],
-            native: vec!["body:17".into(), "body:18".into()],
+            members: crate::features::BodyMembers::try_from_parts(
+                vec![
+                    BodyId::mint("synthetic:test:body#0").expect("valid identity"),
+                    BodyId::mint("synthetic:test:body#1").expect("valid identity"),
+                ],
+                vec!["body:17".into(), "body:18".into()],
+            )
+            .expect("valid body selection rows"),
         },
         BodySelection::Historical {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
@@ -1150,20 +1152,30 @@ fn body_selections_round_trip_through_json() {
         BodySelection::HistoricalSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
-            bodies: vec![
-                HistoricalBodyId::mint("synthetic:history-input:body#0").expect("valid identity"),
-                HistoricalBodyId::mint("synthetic:history-input:body#1").expect("valid identity"),
-            ],
-            native: vec!["body:16".into(), "body:17".into()],
+            members: crate::features::BodyMembers::try_from_parts(
+                vec![
+                    HistoricalBodyId::mint("synthetic:history-input:body#0")
+                        .expect("valid identity"),
+                    HistoricalBodyId::mint("synthetic:history-input:body#1")
+                        .expect("valid identity"),
+                ],
+                vec!["body:16".into(), "body:17".into()],
+            )
+            .expect("valid historical body selection rows"),
         },
         BodySelection::HistoricalUnorderedSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
-            bodies: vec![
-                HistoricalBodyId::mint("synthetic:history-input:body#0").expect("valid identity"),
-                HistoricalBodyId::mint("synthetic:history-input:body#1").expect("valid identity"),
-            ],
-            native: vec!["body:16".into(), "body:17".into()],
+            selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
+                vec![
+                    HistoricalBodyId::mint("synthetic:history-input:body#0")
+                        .expect("valid identity"),
+                    HistoricalBodyId::mint("synthetic:history-input:body#1")
+                        .expect("valid identity"),
+                ],
+                vec!["body:16".into(), "body:17".into()],
+            )
+            .expect("valid unordered historical body selection"),
         },
         BodySelection::Native("body:17,body:18".into()),
         BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()]),
@@ -1173,6 +1185,75 @@ fn body_selections_round_trip_through_json() {
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
     );
+}
+
+#[test]
+fn body_selection_members_reject_blank_native_rows() {
+    use crate::features::{BodyMember, BodyMembers};
+    use crate::ids::BodyId;
+
+    let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
+    assert!(BodyMember::new(body.clone(), " \t".into()).is_err());
+    assert!(BodyMembers::try_from_parts(vec![body.clone()], vec!["\n".into()]).is_err());
+    assert!(
+        serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
+            {"body": body, "native": " "}
+        ]))
+        .is_err()
+    );
+}
+
+#[test]
+fn configuration_evaluation_wire_is_flat_and_strict() {
+    use crate::features::ConfigurationEvaluation;
+    use crate::ids::BodyId;
+
+    let body = BodyId::mint("synthetic:test:body#evaluation").expect("identity grammar");
+    let active = ConfigurationEvaluation::Active {
+        outputs: vec![body],
+    };
+    let wire = serde_json::to_value(&active).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({"kind": "active", "outputs": ["synthetic:test:body#evaluation"]})
+    );
+    assert_eq!(
+        serde_json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
+        active
+    );
+    assert!(
+        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+            "kind": "suppressed",
+            "outputs": []
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+            "kind": "active",
+            "outputs": [],
+            "suppressed": true
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn loft_guidance_rejects_mixed_wire_members() {
+    use crate::features::{LoftGuidance, PathRef};
+
+    let guidance = LoftGuidance::Centerline(PathRef::Native("test:centerline".into()));
+    let wire = serde_json::to_value(&guidance).unwrap();
+    assert_eq!(
+        serde_json::from_value::<LoftGuidance>(wire).unwrap(),
+        guidance
+    );
+    assert!(serde_json::from_value::<LoftGuidance>(serde_json::json!({
+        "kind": "guides",
+        "path": [],
+        "centerline": {"kind": "native", "value": "test:centerline"}
+    }))
+    .is_err());
 }
 
 #[test]
@@ -1760,5 +1841,25 @@ fn sketch_binding_preserves_known_planar_space_without_geometry() {
     assert_ne!(
         super::SketchFeatureBinding::Unresolved,
         super::SketchFeatureBinding::Planar(None)
+    );
+}
+
+mod body_selection;
+
+#[test]
+fn active_configuration_evaluation_can_have_no_body_outputs() {
+    use crate::features::ConfigurationEvaluation;
+
+    let active = ConfigurationEvaluation::Active {
+        outputs: Vec::new(),
+    };
+    assert_eq!(
+        serde_json::to_value(&active).unwrap(),
+        serde_json::json!({"kind": "active"})
+    );
+    assert_eq!(
+        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({"kind": "active"}))
+            .unwrap(),
+        active,
     );
 }

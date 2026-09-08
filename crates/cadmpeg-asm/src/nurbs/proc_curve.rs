@@ -193,23 +193,32 @@ fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
     }
 }
 
-fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs) {
+fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs) -> Option<()> {
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
-            for point in pcurve.control_points_mut() {
-                point.u *= LEN_TO_MM;
-                point.v *= -LEN_TO_MM;
-            }
+            pcurve
+                .edit_control_points(|points| {
+                    for point in points {
+                        point.u *= LEN_TO_MM;
+                        point.v *= -LEN_TO_MM;
+                    }
+                })
+                .ok()?;
         }
         NativeSupportChart::Cone { axial_scale } => {
-            for point in pcurve.control_points_mut() {
-                let native = *point;
-                point.u = native.v;
-                point.v = native.u * axial_scale;
-            }
+            pcurve
+                .edit_control_points(|points| {
+                    for point in points {
+                        let native = *point;
+                        point.u = native.v;
+                        point.v = native.u * axial_scale;
+                    }
+                })
+                .ok()?;
         }
     }
+    Some(())
 }
 
 /// Convert a pcurve stored in a standalone analytic surface's native chart to
@@ -218,7 +227,7 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     surface_head: &str,
     surface_tokens: &[Token],
     pcurve: &mut PcurveNurbs,
-) {
+) -> Option<()> {
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
@@ -229,21 +238,18 @@ pub(crate) fn normalize_pcurve_for_surface_record(
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            let Some((&sine, &cosine, &u_scale)) = values
+            let (&sine, &cosine, &u_scale) = values
                 .get(1)
                 .zip(values.get(2))
                 .zip(values.get(3))
-                .map(|((sine, cosine), u_scale)| (sine, cosine, u_scale))
-            else {
-                return;
-            };
+                .map(|((sine, cosine), u_scale)| (sine, cosine, u_scale))?;
             NativeSupportChart::Cone {
                 axial_scale: cone_axial_scale(sine, cosine, u_scale),
             }
         }
-        _ => return,
+        _ => return Some(()),
     };
-    normalize_support_pcurve(chart, pcurve);
+    normalize_support_pcurve(chart, pcurve)
 }
 
 fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [PcurveNurbs; 2])> {
@@ -258,11 +264,11 @@ fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [Pc
     normalize_support_pcurve(
         native_support_chart(cur.toks(), first_surface_start),
         &mut first_pcurve,
-    );
+    )?;
     normalize_support_pcurve(
         native_support_chart(cur.toks(), second_surface_start),
         &mut second_pcurve,
-    );
+    )?;
     Some((
         [first_surface, second_surface],
         [first_pcurve, second_pcurve],
@@ -1084,7 +1090,7 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
         native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve);
+            normalize_support_pcurve(chart, pcurve)?;
         }
     }
     let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
@@ -1201,11 +1207,11 @@ fn embedded_spring(
         Some(pcurve)
     };
     if let EmbeddedSpringPcurve::Pcurve(pcurve) = &mut first_pcurve {
-        normalize_support_pcurve(first_chart, pcurve);
+        normalize_support_pcurve(first_chart, pcurve)?;
     }
     let mut second_pcurve = second_pcurve;
     if let Some(pcurve) = &mut second_pcurve {
-        normalize_support_pcurve(second_chart, pcurve);
+        normalize_support_pcurve(second_chart, pcurve)?;
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
@@ -2069,13 +2075,13 @@ fn cache_first_curve_context(
         normalize_support_pcurve(
             native_support_chart(cur.toks(), first_surface_start),
             pcurve,
-        );
+        )?;
     }
     if let Some(pcurve) = &mut pcurves[1] {
         normalize_support_pcurve(
             native_support_chart(cur.toks(), second_surface_start),
             pcurve,
-        );
+        )?;
     }
     let solved_range = [
         cur.take_optional_range_value()?.value(),
@@ -2265,7 +2271,7 @@ fn embedded_three_surface_intersection(toks: &[Token]) -> Option<EmbeddedThreeSu
     normalize_support_pcurve(
         native_support_chart(toks, third_surface_start),
         &mut third_pcurve,
-    );
+    )?;
     Some(EmbeddedThreeSurfaceIntersection {
         surfaces: [first, second, third],
         pcurves: [first_pcurve, second_pcurve, third_pcurve],
@@ -2490,10 +2496,10 @@ fn cache_first_intersection(
         nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
-        normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve);
+        normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve)?;
     }
     if let Some(pcurve) = &mut pcurves[1] {
-        normalize_support_pcurve(native_support_chart(toks, second_surface_start), pcurve);
+        normalize_support_pcurve(native_support_chart(toks, second_surface_start), pcurve)?;
     }
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
@@ -2577,7 +2583,7 @@ fn embedded_two_sided_offset(toks: &[Token]) -> Option<EmbeddedTwoSidedOffset> {
         native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve);
+            normalize_support_pcurve(chart, pcurve)?;
         }
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -3353,18 +3359,32 @@ mod cache_form_tests {
     #[test]
     fn analytic_support_charts_map_to_neutral_surface_parameters() {
         let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
-        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane);
+        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane).unwrap();
         assert_eq!(
             plane.control_points(),
             [Point2::new(10.0, -20.0), Point2::new(30.0, -40.0)]
         );
 
         let mut cone = linear_pcurve([Point2::new(2.0, 0.5), Point2::new(-3.0, -0.25)]);
-        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone);
+        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone)
+            .unwrap();
         assert_eq!(
             cone.control_points(),
             [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
         );
+    }
+
+    #[test]
+    fn support_chart_overflow_refuses_projection_without_changing_the_pcurve() {
+        for chart in [
+            NativeSupportChart::PlaneLengths,
+            NativeSupportChart::Cone { axial_scale: 2.0 },
+        ] {
+            let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
+            let original = pcurve.clone();
+            assert!(normalize_support_pcurve(chart, &mut pcurve).is_none());
+            assert_eq!(pcurve, original);
+        }
     }
 
     #[test]
@@ -3396,7 +3416,7 @@ mod cache_form_tests {
             Token::Double(2.0),
         ];
         let mut pcurve = linear_pcurve([Point2::new(-0.5, 1.25), Point2::new(0.75, -2.0)]);
-        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve);
+        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve).unwrap();
         assert_eq!(
             pcurve.control_points(),
             [Point2::new(1.25, -10.0), Point2::new(-2.0, 15.0)]

@@ -1049,10 +1049,18 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     else {
         unreachable!()
     };
-    nurbs.control_points_mut()[2].x = 17.5;
-    nurbs.control_points_mut()[2].z = -3.25;
-    nurbs.u_knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
-    nurbs.v_knots_mut().copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
+    nurbs
+        .edit_control_points(|points| {
+            points[2].x = 17.5;
+            points[2].z = -3.25;
+        })
+        .unwrap();
+    nurbs
+        .edit_u_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
+        .unwrap();
+    nurbs
+        .edit_v_knots(|knots| knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]))
+        .unwrap();
     nurbs.set_u_periodic(true);
     *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
@@ -1109,7 +1117,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     else {
         unreachable!()
     };
-    nurbs.weights_mut().expect("rational weights")[1] = 0.65;
+    nurbs.edit_weights(|weights| weights[1] = 0.65).unwrap();
     *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
     )
@@ -1545,9 +1553,15 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
     let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
         panic!("expected NURBS blend support")
     };
-    nurbs.control_points_mut()[1].x = 6.0;
-    nurbs.control_points_mut()[1].z = 4.0;
-    nurbs.u_knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+    nurbs
+        .edit_control_points(|points| {
+            points[1].x = 6.0;
+            points[1].z = 4.0;
+        })
+        .unwrap();
+    nurbs
+        .edit_u_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
+        .unwrap();
     let expected = surface.clone();
 
     let mut regenerated = Vec::new();

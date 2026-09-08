@@ -16,6 +16,7 @@ use crate::records::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
@@ -353,9 +354,13 @@ fn project_all_dimension_constraints(
             .copied()
             .unwrap_or(("record", None, ""));
         SketchNativeOperand {
-            native_kind: native_kind.into(),
-            native_field: Some(field.into()),
-            native_role: role,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(native_kind)
+                .expect("source operand kind is nonempty"),
+            field: Some(NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new(field)
+                    .expect("source field name is nonempty"),
+                role,
+            }),
             object_index: record_index,
             native_ref: (!native_ref.is_empty() && !projected.contains_key(&(scope, record_index)))
                 .then(|| native_ref.to_owned()),
@@ -831,9 +836,15 @@ fn project_all_dimension_constraints(
                         .iter()
                         .map(|operand| match operand.geometry_record_index {
                             None => SketchNativeOperand {
-                                native_kind: "null_locus".into(),
-                                native_field: Some("locus".into()),
-                                native_role: Some(operand.role),
+                                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                    "null_locus",
+                                )
+                                .expect("source operand kind is nonempty"),
+                                field: Some(NativeOperandField {
+                                    name: cadmpeg_ir::products::NonEmptyString::new("locus")
+                                        .expect("source field name is nonempty"),
+                                    role: Some(operand.role),
+                                }),
                                 object_index: 0,
                                 native_ref: None,
                             },
@@ -917,9 +928,13 @@ fn project_all_dimension_constraints(
             }
             let operands = vec![
                 SketchNativeOperand {
-                    native_kind: "null_locus".into(),
-                    native_field: Some("locus".into()),
-                    native_role: Some(pair.loci[0].role),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("null_locus")
+                        .expect("source operand kind is nonempty"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_ir::products::NonEmptyString::new("locus")
+                            .expect("source field name is nonempty"),
+                        role: Some(pair.loci[0].role),
+                    }),
                     object_index: 0,
                     native_ref: None,
                 },
@@ -1058,9 +1073,15 @@ fn project_all_dimension_constraints(
                         operands: records
                             .into_iter()
                             .map(|record| SketchNativeOperand {
-                                native_kind: "construction_recipe".into(),
-                                native_field: Some("recipe".into()),
-                                native_role: None,
+                                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                    "construction_recipe",
+                                )
+                                .expect("source operand kind is nonempty"),
+                                field: Some(NativeOperandField {
+                                    name: cadmpeg_ir::products::NonEmptyString::new("recipe")
+                                        .expect("source field name is nonempty"),
+                                    role: None,
+                                }),
                                 object_index: record.record_index,
                                 native_ref: Some(record.id.clone()),
                             })
@@ -1234,9 +1255,13 @@ fn project_all_dimension_constraints(
             entities: Vec::new(),
             parameter: Some(parameter_id.clone()),
             operands: vec![SketchNativeOperand {
-                native_kind: "dimension_companion".into(),
-                native_field: Some("companion_payload".into()),
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension_companion")
+                    .expect("source operand kind is nonempty"),
+                field: Some(NativeOperandField {
+                    name: cadmpeg_ir::products::NonEmptyString::new("companion_payload")
+                        .expect("source field name is nonempty"),
+                    role: None,
+                }),
                 object_index: companion.record_index,
                 native_ref: Some(companion.id.clone()),
             }],
@@ -2484,7 +2509,7 @@ pub fn project_spatial_dimension_constraints(
                         let measured = operands
                             .iter()
                             .filter(|operand| {
-                                operand.native_field.as_deref().is_some_and(|field| {
+                                operand_field(operand).is_some_and(|field| {
                                     field == "locus" || field.ends_with("_locus")
                                 }) && operand.object_index != 0
                             })
@@ -2530,7 +2555,7 @@ pub fn project_spatial_dimension_constraints(
                     });
                     let owner_scoped = (operands.len() == 1
                         && operands[0].native_kind == "dimension_companion"
-                        && operands[0].native_field.as_deref().is_some_and(|field| {
+                        && operand_field(&operands[0]).is_some_and(|field| {
                             field == "companion" || field == "companion_payload"
                         }))
                     .then_some(())
@@ -2654,16 +2679,19 @@ pub fn project_spatial_dimension_constraints(
                 native_state: None,
                 parameter: Some(parameter_id),
                 operands: vec![SketchNativeOperand {
-                    native_kind: "dimension_companion".into(),
-                    native_field: Some(
-                        if companion.payload_byte_length == 0 {
-                            "companion"
-                        } else {
-                            "companion_payload"
-                        }
-                        .into(),
-                    ),
-                    native_role: None,
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension_companion")
+                        .expect("source operand kind is nonempty"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_ir::products::NonEmptyString::new(
+                            if companion.payload_byte_length == 0 {
+                                "companion"
+                            } else {
+                                "companion_payload"
+                            },
+                        )
+                        .expect("source field name is nonempty"),
+                        role: None,
+                    }),
                     object_index: companion.record_index,
                     native_ref: Some(companion.id.clone()),
                 }],
@@ -2934,6 +2962,14 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     })
 }
 
+fn operand_field(operand: &cadmpeg_ir::sketches::SketchNativeOperand) -> Option<&str> {
+    operand.field.as_ref().map(|field| field.name.as_str())
+}
+
+fn operand_role(operand: &cadmpeg_ir::sketches::SketchNativeOperand) -> Option<u32> {
+    operand.field.as_ref().and_then(|field| field.role)
+}
+
 fn spatial_reflection_symmetry(
     native_kind: &str,
     native_state: Option<u64>,
@@ -2951,18 +2987,18 @@ fn spatial_reflection_symmetry(
     }
     let mut owners = operands
         .iter()
-        .filter(|operand| operand.native_field.as_deref() == Some("owner"));
+        .filter(|operand| operand_field(operand) == Some("owner"));
     let owner = owners.next()?;
     if owners.next().is_some() {
         return None;
     }
-    if owner.native_role != Some(0x400) {
+    if operand_role(owner) != Some(0x400) {
         return None;
     }
     let scope = native_stream(native_ref?)?;
     let entities = operands
         .iter()
-        .filter(|operand| operand.native_field.as_deref() == Some("locus"))
+        .filter(|operand| operand_field(operand) == Some("locus"))
         .map(|operand| {
             spatial_by_record
                 .get(&(scope, operand.object_index))
@@ -3035,19 +3071,19 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         .find_map(|operand| native_stream(operand.native_ref.as_deref()?))?;
     let loci = operands
         .iter()
-        .take_while(|operand| operand.native_field.as_deref() == Some("locus"))
+        .take_while(|operand| operand_field(operand) == Some("locus"))
         .collect::<Vec<_>>();
     let owner_position = loci.len();
     let owner = operands.get(owner_position)?;
     let returns = operands.get(owner_position + 1..)?;
-    if owner.native_field.as_deref() != Some("owner")
+    if operand_field(owner) != Some("owner")
         || owner.native_kind != "record"
-        || owner.native_role != Some(0)
+        || operand_role(owner) != Some(0)
         || loci.iter().any(|operand| operand.native_kind != "curve")
         || returns.iter().any(|operand| {
             operand.native_kind != "curve"
-                || operand.native_field.as_deref() != Some("return")
-                || operand.native_role.is_some()
+                || operand_field(operand) != Some("return")
+                || operand_role(operand).is_some()
         })
         || loci.len() < 4
         || !loci.len().is_multiple_of(2)
@@ -3057,21 +3093,21 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     }
     let source_count = loci
         .iter()
-        .position(|operand| operand.native_role == Some(0))?;
+        .position(|operand| operand_role(operand) == Some(0))?;
     if source_count == 0
         || source_count * 2 != loci.len()
         || loci[..source_count]
             .iter()
-            .any(|operand| operand.native_role == Some(0))
+            .any(|operand| operand_role(operand) == Some(0))
         || loci[source_count..]
             .iter()
-            .any(|operand| operand.native_role != Some(0))
+            .any(|operand| operand_role(operand) != Some(0))
     {
         return None;
     }
     let roles = loci
         .iter()
-        .map(|operand| Some((operand.object_index, operand.native_role?)))
+        .map(|operand| Some((operand.object_index, operand_role(operand)?)))
         .collect::<Option<HashMap<_, _>>>()?;
     if roles.len() != loci.len() {
         return None;

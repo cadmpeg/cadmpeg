@@ -345,11 +345,11 @@ mod tests {
     #[test]
     fn model_only_index_excludes_native_identity_universe() {
         let mut ir = CadIr::empty();
-        let native_id = "test:native#0";
+        let native_id = "test:fixture:native#0";
         let mut namespace = NativeNamespace::default();
         namespace.arenas_mut().insert(
             "records".into(),
-            vec![NativeRecord::new(native_id, Map::new())],
+            vec![NativeRecord::new(native_id, Map::new()).expect("valid native identity")],
         );
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:model#0";

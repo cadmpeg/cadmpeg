@@ -43,9 +43,10 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             feature_states: BTreeMap::from([(
                 consumer.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: vec![predecessor.clone()],
-                    outputs: Vec::new(),
                     definition: ir.model.features[0].definition.clone(),
                 },
             )]),

@@ -79,10 +79,13 @@ fn edgeless_doc() -> CadIr {
     ir.model.loops.push(Loop {
         id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(
+                vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
+                Vec::new(),
+            )
+            .expect("valid loop ring"),
+        ),
     });
     ir.model.faces.push(Face {
         id: FaceId::mint("test:model:face#f0").expect("identity grammar"),
@@ -368,11 +371,13 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             source_id: Some("synthetic:test:group#0".into()),
             triangles: vec![0],
         }])
+        .expect("valid triangle group partition")
         .with_texture_assignments(vec![TessellationTextureAssignment {
             source_id: Some("synthetic:test:texture-resource#0".into()),
             texture,
             triangles: vec![0],
-        }]),
+        }])
+        .expect("valid texture assignments"),
     );
 
     let report = write_step(
@@ -1553,7 +1558,6 @@ fn procedural_construction_reduction_is_reported() {
                 sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
-                    pcurve_parameter_range: None,
                 }),
                 parameter_range: [0.0, 1.0],
                 discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -1573,9 +1577,10 @@ fn procedural_construction_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| loss
-        .message
-        .contains("reduced to their solved STEP carriers")));
+    assert!(report.losses.iter().any(|loss| {
+        loss.message
+            .contains("reduced to their solved STEP carriers")
+    }));
 }
 
 #[test]
@@ -1583,10 +1588,10 @@ fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            "asm-history-0",
-            Default::default(),
-        )],
+        vec![
+            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", Default::default())
+                .expect("valid native identity"),
+        ],
     );
     ir.finalize();
 
@@ -1598,7 +1603,8 @@ fn source_native_record_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| loss
-        .message
-        .contains("source-native record(s) were not represented in STEP")));
+    assert!(report.losses.iter().any(|loss| {
+        loss.message
+            .contains("source-native record(s) were not represented in STEP")
+    }));
 }

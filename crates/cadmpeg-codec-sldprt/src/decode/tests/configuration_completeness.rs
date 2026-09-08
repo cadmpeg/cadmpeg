@@ -146,16 +146,17 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             feature_states: BTreeMap::from([(
                 feature_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: (ordinal == 0)
+                            .then(|| {
+                                BodyId::mint("test:model:entity#missing-output")
+                                    .expect("identity grammar")
+                            })
+                            .into_iter()
+                            .collect(),
+                    },
                     dependencies: (ordinal == 0)
                         .then(|| FeatureId::mint("missing-dependency").expect("identity grammar"))
-                        .into_iter()
-                        .collect(),
-                    outputs: (ordinal == 0)
-                        .then(|| {
-                            BodyId::mint("test:model:entity#missing-output")
-                                .expect("identity grammar")
-                        })
                         .into_iter()
                         .collect(),
                     definition,
@@ -283,9 +284,10 @@ fn active_configuration_inherits_late_feature_resolutions() {
             (
                 feature_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: FeatureDefinition::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::Unresolved,
@@ -295,9 +297,10 @@ fn active_configuration_inherits_late_feature_resolutions() {
             (
                 hole_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: FeatureDefinition::Hole {
                         profile: None,
                         profile_filter: None,
@@ -521,9 +524,8 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     assert_eq!(
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
-            suppressed: true,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
             dependencies: vec![FeatureId::mint("dependency").expect("identity grammar")],
-            outputs: vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: Vec::new(),
@@ -541,13 +543,17 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .feature_states
         .get_mut(&feature_id)
         .expect("active feature state")
-        .suppressed = false;
+        .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
+        outputs: Vec::new(),
+    };
     snapshot_active_configuration(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
         ParameterValue::Length(Length(25.0))
     );
-    assert!(!ir.model.configurations[0].feature_states[&feature_id].suppressed);
+    assert!(!ir.model.configurations[0].feature_states[&feature_id]
+        .evaluation
+        .is_suppressed());
 }
 
 #[test]

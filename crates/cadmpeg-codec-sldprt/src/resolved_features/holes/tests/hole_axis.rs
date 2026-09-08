@@ -456,10 +456,13 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let loop_ = Loop {
         id: LoopId::mint("test:model:entity#loop").expect("identity grammar"),
         face: face.id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![CoedgeId::mint("test:model:entity#coedge").expect("identity grammar")],
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(
+                vec![CoedgeId::mint("test:model:entity#coedge").expect("identity grammar")],
+                Vec::new(),
+            )
+            .expect("valid loop ring"),
+        ),
     };
     let coedge = Coedge {
         id: CoedgeId::mint("test:model:entity#coedge").expect("identity grammar"),

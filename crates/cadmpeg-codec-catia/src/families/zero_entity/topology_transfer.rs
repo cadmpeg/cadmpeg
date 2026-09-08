@@ -583,13 +583,11 @@ pub(crate) fn transfer_closed_face_topology(
                 .derived(loop_id, "face")
                 .derived(loop_id, "coedges")
                 .derived(loop_id, "vertex_uses");
+            let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses).ok()?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids.clone(),
-                    vertex_uses,
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
 
             for (member_index, support_record_ordinal) in loop_record

@@ -62,6 +62,34 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 }
 
 #[test]
+fn pcurve_lift_rejects_non_finite_model_poles() {
+    let curve = crate::geometry::PcurveNurbs::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
+            crate::math::Point2::new(0.0, 0.0),
+            crate::math::Point2::new(1.0, 1.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    assert!(curve
+        .lift(|point| crate::math::Point3::new(point.u, point.v, f64::NAN))
+        .is_err());
+}
+
+#[test]
+fn support_side_rejects_orphan_legacy_parameter_range() {
+    let wire = serde_json::json!({
+        "surface": null,
+        "pcurve": null,
+        "pcurve_parameter_range": [0.0, 1.0],
+    });
+    assert!(serde_json::from_value::<crate::geometry::IntcurveSupportSide>(wire).is_err());
+}
+
+#[test]
 fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
     let pcurve = crate::geometry::Pcurve {
         id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
@@ -723,6 +751,7 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
 
 mod compound_components;
 mod compound_loft;
+mod nurbs_invariants;
 
 mod vertex_blend_twists;
 

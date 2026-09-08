@@ -128,18 +128,20 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .links()
             .iter()
             .map(|link| SketchNativeOperand {
-                native_kind: "sldprt:marker-local-id".into(),
-                native_field: None,
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-local-id")
+                    .expect("source operand kind is nonempty"),
+                field: None,
                 object_index: u32::from(link.local_id),
                 native_ref: Some(link.entity_ref.clone()),
             })
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().filter_map(|owner| {
             Some(SketchNativeOperand {
-                native_kind: "sldprt:marker-constraint-owner".into(),
-                native_field: None,
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                    "sldprt:marker-constraint-owner",
+                )
+                .expect("source operand kind is nonempty"),
+                field: None,
                 object_index: owner.object_index.or(owner.local_id)?,
                 native_ref: Some(owner.id.clone()),
             })

@@ -39,20 +39,30 @@ fuzz_target!(|data: &[u8]| {
         1 => {
             // Create invalid cross-references
             if !ir.model.vertices.is_empty() {
-                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId::mint("nonexistent".to_string()).expect("identity grammar");
+                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId::mint("fuzz:missing:point#0")
+                    .expect("identity grammar");
             }
         }
         2 => {
-            if let Some(loop_) = ir.model.loops.iter_mut().find_map(|loop_| loop_.ring_mut()) {
-                if loop_.0.len() >= 2 {
-                    loop_.0.swap(0, 1);
+            if let Some(loop_) = ir
+                .model
+                .loops
+                .iter_mut()
+                .find(|loop_| !loop_.coedges().is_empty())
+            {
+                let mut coedges = loop_.coedges().to_vec();
+                if coedges.len() >= 2 {
+                    coedges.swap(0, 1);
+                    let vertex_uses = loop_.anchored_vertex_uses().to_vec();
+                    let _ = loop_.replace_ring(coedges, vertex_uses);
                 }
             }
         }
         3 => {
             // Create inconsistent edge references
             if !ir.model.edges.is_empty() {
-                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId::mint("nonexistent".to_string()).expect("identity grammar");
+                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId::mint("fuzz:missing:vertex#0")
+                    .expect("identity grammar");
             }
         }
         4 => {
@@ -93,7 +103,8 @@ fuzz_target!(|data: &[u8]| {
         9 => {
             // Break a radial ring with an unresolved coedge.
             if let Some(coedge) = ir.model.coedges.first_mut() {
-                coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("nonexistent".to_string()).expect("identity grammar");
+                coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("fuzz:missing:coedge#0")
+                    .expect("identity grammar");
             }
         }
         10 => {
@@ -123,5 +134,9 @@ fuzz_target!(|data: &[u8]| {
         _ => {}
     }
 
-    let _ = cadmpeg_ir::validate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new());
+    let _ = cadmpeg_ir::validate::validate_neutral_with_source_fidelity(
+        &ir,
+        &source_fidelity,
+        Vec::new(),
+    );
 });

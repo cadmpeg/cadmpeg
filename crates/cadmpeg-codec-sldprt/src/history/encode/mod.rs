@@ -366,8 +366,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             ),
             FeatureDefinition::Loft {
                 sections,
-                guides,
-                centerline,
+                guidance,
                 op,
                 closed,
                 solid,
@@ -377,8 +376,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 allow_multi_profile_faces,
             } => self.encode_loft(
                 sections,
-                guides,
-                centerline,
+                guidance,
                 op,
                 closed,
                 solid,

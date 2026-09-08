@@ -344,8 +344,12 @@ fn saved_line_joins_through_order_table() {
     };
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "triples_ptr"
-            && operand.native_field.as_deref() == Some("equation_id")
-            && operand.native_role.is_none()
+            && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+            && operand
+                .field
+                .as_ref()
+                .and_then(|field| field.role)
+                .is_none()
             && operand.object_index == 11
     }));
     let mut equation_only_incidence = constrained.clone();
@@ -368,7 +372,8 @@ fn saved_line_joins_through_order_table() {
         unreachable!();
     };
     assert!(operands.iter().any(|operand| {
-        operand.native_field.as_deref() == Some("equation_id") && operand.object_index == 11
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+            && operand.object_index == 11
     }));
     let mut missing_equation = equation_only_incidence.clone();
     missing_equation
@@ -389,9 +394,9 @@ fn saved_line_joins_through_order_table() {
     else {
         unreachable!();
     };
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+    }));
     let mut duplicate_equation = equation_only_incidence.clone();
     let duplicate_equation_relations = duplicate_equation.relations.as_mut().expect("relations");
     declared_solver_rows(&mut duplicate_equation_relations.triples).push(
@@ -418,9 +423,9 @@ fn saved_line_joins_through_order_table() {
     else {
         unreachable!();
     };
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+    }));
     assert_eq!(
         relation_incidence_entities(
             &constrained,
@@ -457,12 +462,13 @@ fn saved_line_joins_through_order_table() {
     };
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "skamp_ptr"
-            && operand.native_field.as_deref() == Some("triples_ptr.skamp_id")
+            && operand.field.as_ref().map(|field| field.name.as_str())
+                == Some("triples_ptr.skamp_id")
             && operand.object_index == 5
     }));
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "triples_ptr"
-            && operand.native_field.as_deref() == Some("equation_id")
+            && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
             && operand.object_index == 11
     }));
     declared_solver_rows(&mut native_join.relations.as_mut().expect("relations").triples).push(
@@ -490,12 +496,12 @@ fn saved_line_joins_through_order_table() {
     else {
         panic!("untyped relation must remain native");
     };
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("triples_ptr.skamp_id")));
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("triples_ptr.skamp_id")
+    }));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+    }));
     let mut solver_families = constrained.clone();
     let family_relations = solver_families.relations.as_mut().expect("relations");
     *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {

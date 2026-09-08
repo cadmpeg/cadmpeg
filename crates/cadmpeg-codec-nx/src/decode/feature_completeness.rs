@@ -142,9 +142,9 @@ pub(crate) fn active_configuration_state_is_incomplete(
         else {
             return true;
         };
-        Some(state.suppressed) != feature.suppressed
+        Some(state.evaluation.is_suppressed()) != feature.suppressed
             || state.dependencies != feature.dependencies
-            || state.outputs != feature.outputs
+            || state.evaluation.outputs() != feature.outputs.as_slice()
             || state.definition != feature.definition
     }) {
         return true;
@@ -611,8 +611,7 @@ pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
 pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Loft {
         sections,
-        centerline,
-        guides,
+        guidance,
         op,
         max_degree,
         ..
@@ -629,9 +628,14 @@ pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
                     if profile_dependency_is_incomplete(profile, &feature.dependencies)
             )
         })
-        || centerline.as_ref().is_some_and(path_ref_is_incomplete)
-        || guides.iter().any(path_ref_is_incomplete)
-        || (centerline.is_some() && !guides.is_empty())
+        || match guidance {
+            cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                guides.iter().any(path_ref_is_incomplete)
+            }
+            cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                path_ref_is_incomplete(centerline)
+            }
+        }
         || max_degree.is_some_and(|degree| degree == 0)
         || matches!(op, BooleanOp::Unresolved)
 }

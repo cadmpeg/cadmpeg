@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -659,10 +659,12 @@ fn emit_extrusion_procedure(
         } => {
             let sides = (*supports).map(|side| IntcurveSupportSide {
                 surface: Some(surface_ids[&side.surface_object_id].clone()),
-                pcurve: Some(side.pcurve),
-                pcurve_parameter_range: (side.pcurve_parameter_range
-                    != extrusion.directrix_parameter_range)
-                    .then_some(side.pcurve_parameter_range),
+                pcurve: Some(SupportPcurve::new(
+                    side.pcurve,
+                    (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
+                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                        .flatten(),
+                )),
             });
             annotate(
                 annotations,
@@ -909,9 +911,12 @@ mod tests {
         };
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert_eq!(context.sides[0].surface, Some(support_ids[&10].clone()));
-        assert_eq!(context.sides[0].pcurve_parameter_range, None);
+        assert_eq!(context.sides[0].pcurve_parameter_range(), None);
         assert_eq!(context.sides[1].surface, Some(support_ids[&20].clone()));
-        assert_eq!(context.sides[1].pcurve_parameter_range, Some([0.25, 0.75]));
+        assert_eq!(
+            context.sides[1].pcurve_parameter_range(),
+            Some([0.25, 0.75])
+        );
         assert_eq!(
             ir.model.procedural_curves[0].cache_fit_tolerance(),
             Some(1e-5)

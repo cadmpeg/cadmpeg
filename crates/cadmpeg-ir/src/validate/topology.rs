@@ -308,16 +308,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            crate::topology::LoopBoundary::Ring {
-                coedges,
-                vertex_uses,
-            } => {
-                for ce in coedges {
+            crate::topology::LoopBoundary::Ring(ring) => {
+                for ce in ring.coedges() {
                     if ids.coedges(ce.as_str()).is_none() {
                         ref_error(findings, lp.id.as_str(), "coedge", ce.as_str());
                     }
                 }
-                for use_ in vertex_uses {
+                for use_ in ring.vertex_uses() {
                     if ids.vertices(use_.vertex.as_str()).is_none() {
                         ref_error(findings, lp.id.as_str(), "vertex", use_.vertex.as_str());
                     }
@@ -2365,16 +2362,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            if state.suppressed && !state.outputs.is_empty() {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: "suppressed configuration feature state has output bodies".into(),
-                    entity: Some(configuration.id.as_str().to_owned()),
-                });
-            }
             let mut outputs = HashSet::new();
-            for output in &state.outputs {
+            for output in state.evaluation.outputs() {
                 if ids.bodies(output.as_str()).is_none() {
                     ref_error(
                         findings,
@@ -2865,12 +2854,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             } => {
                 body_selections.push(bodies);
                 let body_count = match bodies {
-                    BodySelection::Bodies(bodies)
-                    | BodySelection::Resolved { bodies, .. }
-                    | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
-                    BodySelection::Historical { bodies, .. }
-                    | BodySelection::HistoricalSet { bodies, .. }
-                    | BodySelection::HistoricalUnorderedSet { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        Some(bodies.len())
+                    }
+                    BodySelection::ResolvedSet { members } => Some(members.len()),
+                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::HistoricalSet { members, .. } => Some(members.len()),
+                    BodySelection::HistoricalUnorderedSet { selection, .. } => {
+                        Some(selection.len())
+                    }
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
                     BodySelection::Unresolved
@@ -3328,8 +3320,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::Loft {
                 sections,
-                guides,
-                centerline,
+                guidance,
                 max_degree,
                 ..
             } => {
@@ -3374,10 +3365,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         ),
                     }
                 }
-                paths.extend(guides);
-                paths.extend(centerline);
-                if centerline.is_some() && !guides.is_empty() {
-                    feature_geometry_error(findings, feature, "loft construction is invalid");
+                match guidance {
+                    crate::features::LoftGuidance::Guides(guides) => paths.extend(guides),
+                    crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
                 }
                 if max_degree.is_some_and(|value| value == 0) {
                     feature_geometry_error(findings, feature, "loft maximum degree is invalid");
@@ -3797,12 +3787,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "body combine operands overlap");
                 }
                 let target_count = match target {
-                    BodySelection::Bodies(bodies)
-                    | BodySelection::Resolved { bodies, .. }
-                    | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
-                    BodySelection::Historical { bodies, .. }
-                    | BodySelection::HistoricalSet { bodies, .. }
-                    | BodySelection::HistoricalUnorderedSet { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        Some(bodies.len())
+                    }
+                    BodySelection::ResolvedSet { members } => Some(members.len()),
+                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::HistoricalSet { members, .. } => Some(members.len()),
+                    BodySelection::HistoricalUnorderedSet { selection, .. } => {
+                        Some(selection.len())
+                    }
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
                     BodySelection::Unresolved
@@ -5326,26 +5319,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         |identity| ids.bodies(identity).is_some(),
                     );
                 }
-                BodySelection::ResolvedSet { bodies, native } => {
+                BodySelection::ResolvedSet { members } => {
                     check_ids(
                         findings,
                         feature.id.as_str(),
                         "selected body",
-                        bodies.iter().map(super::super::ids::BodyId::as_str),
+                        members.bodies().map(super::super::ids::BodyId::as_str),
                         |identity| ids.bodies(identity).is_some(),
                     );
-                    if bodies.len() != native.len()
-                        || native.is_empty()
-                        || bodies.iter().collect::<HashSet<_>>().len() != bodies.len()
-                        || native.iter().any(|member| member.trim().is_empty())
-                        || native.iter().collect::<HashSet<_>>().len() != native.len()
-                    {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "resolved body selection set is invalid",
-                        );
-                    }
                 }
                 BodySelection::Historical {
                     state,
@@ -5372,29 +5353,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
-                BodySelection::HistoricalSet {
-                    state,
-                    bodies,
-                    native,
-                } => {
-                    let native_is_valid = bodies.len() == native.len()
-                        && !native.is_empty()
-                        && native.iter().all(|member| !member.trim().is_empty())
-                        && native.iter().collect::<HashSet<_>>().len() == native.len();
-                    if !native_is_valid {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "historical body selection set is invalid",
-                        );
-                    }
+                BodySelection::HistoricalSet { state, members } => {
                     check_historical_selection(
                         findings,
                         &feature.id,
                         (
                             state,
-                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
-                            native.first().map_or("", String::as_str),
+                            members.bodies().map(crate::ids::HistoricalBodyId::as_str),
+                            members.native().next().unwrap_or(""),
                         ),
                         "body",
                         false,
@@ -5408,29 +5374,17 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
-                BodySelection::HistoricalUnorderedSet {
-                    state,
-                    bodies,
-                    native,
-                } => {
-                    let set_is_valid = bodies.len() == native.len()
-                        && !native.is_empty()
-                        && native.iter().all(|member| !member.trim().is_empty())
-                        && native.iter().collect::<HashSet<_>>().len() == native.len();
-                    if !set_is_valid {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "historical unordered body selection set is invalid",
-                        );
-                    }
+                BodySelection::HistoricalUnorderedSet { state, selection } => {
                     check_historical_selection(
                         findings,
                         &feature.id,
                         (
                             state,
-                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
-                            native.first().map_or("", String::as_str),
+                            selection
+                                .bodies()
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str),
+                            selection.native().first().map_or("", String::as_str),
                         ),
                         "body",
                         false,
@@ -5885,7 +5839,7 @@ fn check_configuration_state_closure(
     let mut closure = configuration
         .feature_states
         .iter()
-        .filter(|(_, state)| !state.suppressed)
+        .filter(|(_, state)| !state.evaluation.is_suppressed())
         .map(|(feature, _)| feature.clone())
         .collect::<HashSet<_>>();
     let mut pending = closure.iter().cloned().collect::<Vec<_>>();
@@ -5894,7 +5848,7 @@ fn check_configuration_state_closure(
         for dependency in &state.dependencies {
             match configuration.feature_states.get(dependency) {
                 None => {}
-                Some(dependency_state) if dependency_state.suppressed => {
+                Some(dependency_state) if dependency_state.evaluation.is_suppressed() => {
                     findings.push(Finding {
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
@@ -5953,11 +5907,12 @@ fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> boo
 }
 
 fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    fn direct(selection: &BodySelection) -> Option<&[crate::ids::BodyId]> {
+    fn direct(selection: &BodySelection) -> Option<Vec<&crate::ids::BodyId>> {
         match selection {
-            BodySelection::Bodies(bodies)
-            | BodySelection::Resolved { bodies, .. }
-            | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.as_slice()),
+            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                Some(bodies.iter().collect())
+            }
+            BodySelection::ResolvedSet { members } => Some(members.bodies().collect()),
             _ => None,
         }
     }
@@ -5965,12 +5920,18 @@ fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> boo
         selection: &BodySelection,
     ) -> Option<(
         &crate::ids::FeatureInputTopologyId,
-        &[crate::ids::HistoricalBodyId],
+        Vec<&crate::ids::HistoricalBodyId>,
     )> {
         match selection {
-            BodySelection::Historical { state, bodies, .. }
-            | BodySelection::HistoricalSet { state, bodies, .. }
-            | BodySelection::HistoricalUnorderedSet { state, bodies, .. } => Some((state, bodies)),
+            BodySelection::Historical { state, bodies, .. } => {
+                Some((state, bodies.iter().collect()))
+            }
+            BodySelection::HistoricalSet { state, members } => {
+                Some((state, members.bodies().collect()))
+            }
+            BodySelection::HistoricalUnorderedSet { state, selection } => {
+                Some((state, selection.bodies().iter().collect()))
+            }
             _ => None,
         }
     }
@@ -6250,17 +6211,16 @@ fn check_feature_sketch_references(
                 profiles.push(&construction.profile);
             }
             FeatureDefinition::Loft {
-                sections,
-                guides,
-                centerline,
-                ..
+                sections, guidance, ..
             } => {
                 profiles.extend(sections.iter().filter_map(|section| match section {
                     crate::features::LoftSection::Profile(profile) => Some(profile),
                     crate::features::LoftSection::Point(_) => None,
                 }));
-                paths.extend(guides);
-                paths.extend(centerline);
+                match guidance {
+                    crate::features::LoftGuidance::Guides(guides) => paths.extend(guides),
+                    crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
+                }
             }
             FeatureDefinition::Pattern { pattern, .. } => {
                 collect_pattern_paths(pattern, &mut paths);
@@ -6838,8 +6798,8 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
                     .or_default()
                     .insert(*face);
             }
-            crate::topology::LoopBoundary::Ring { vertex_uses, .. } => {
-                for vertex_use in vertex_uses {
+            crate::topology::LoopBoundary::Ring(ring) => {
+                for vertex_use in ring.vertex_uses() {
                     faces_by_vertex
                         .entry(vertex_use.vertex.as_str())
                         .or_default()

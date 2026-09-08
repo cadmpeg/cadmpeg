@@ -5,8 +5,8 @@ use super::super::super::graph::{
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
-    b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    ordered_subrange, orient_b5_supports_to_edge,
+    b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
+    orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::surfaces::{rational_arc, revolve_nurbs};
@@ -629,7 +629,11 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         ProceduralCurveDefinition::SurfaceCurve { family }
             if family.context().parameter_range == [2.0, 4.0]
                 && family.context().sides[0].surface == Some(surfaces[&10].clone())
-                && family.context().sides[0].pcurve == Some(pcurve_20)
+                && family.context().sides[0]
+                    .pcurve
+                    .as_ref()
+                    .map(|pcurve| &pcurve.geometry)
+                    == Some(&pcurve_20)
                 && family.context().sides[1].surface.is_none()
     ));
 
@@ -645,8 +649,15 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range == [2.0, 4.0]
                 && context.sides[1].surface == Some(surfaces[&11].clone())
-                && context.sides[1].pcurve == Some(pcurve_21)
-                && context.sides.iter().all(|side| side.pcurve_parameter_range.is_none())
+                && context.sides[1]
+                    .pcurve
+                    .as_ref()
+                    .map(|pcurve| &pcurve.geometry)
+                    == Some(&pcurve_21)
+            && context
+                .sides
+                .iter()
+                .all(|side| side.pcurve_parameter_range().is_none())
     ));
     let (_, _, independently_parameterized) = b5_edge_support_definition(
         &[(10, 20, [2.0, 4.0]), (11, 21, [5.0, 2.0])],
@@ -659,8 +670,8 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range == [0.0, 1.0]
-                && context.sides[0].pcurve_parameter_range == Some([2.0, 4.0])
-                && context.sides[1].pcurve_parameter_range == Some([5.0, 2.0])
+            && context.sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            && context.sides[1].pcurve_parameter_range() == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(10, 20, [2.0, 4.0])],
@@ -673,7 +684,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
             if family.context().parameter_range == [0.0, 8.0]
-                && family.context().sides[0].pcurve_parameter_range == Some([2.0, 4.0])
+            && family.context().sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
     ));
 }
 
@@ -780,21 +791,6 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         &surfaces,
         &pcurves,
     ));
-}
-
-#[test]
-fn descending_nurbs_knots_are_not_promoted_as_curve_caches() {
-    let geometry = CurveGeometry::Nurbs(
-        NurbsCurve::new(
-            1,
-            vec![1.0, 1.0, 0.0, 0.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("cardinality-valid descending-knot curve"),
-    );
-    assert!(!curve_cache_has_ordered_knots(&geometry));
 }
 
 #[test]

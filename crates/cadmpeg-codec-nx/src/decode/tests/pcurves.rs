@@ -589,7 +589,9 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let SurfaceGeometry::Nurbs(candidate) = &mut candidate else {
         unreachable!();
     };
-    candidate.control_points_mut()[3].z += 0.000_5;
+    candidate
+        .edit_control_points(|points| points[3].z += 0.000_5)
+        .unwrap();
 
     let fit = certified_offset_cache_fit(
         &support,
@@ -831,9 +833,14 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for v in 0..3 {
-        surface.control_points_mut()[2 * 3 + v] = surface.control_points()[3 + v];
-    }
+    let replacement = (0..3)
+        .map(|v| surface.control_points()[3 + v])
+        .collect::<Vec<_>>();
+    surface
+        .edit_control_points(|points| {
+            points[6..9].copy_from_slice(&replacement);
+        })
+        .unwrap();
     assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
 }
 
@@ -843,9 +850,13 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for v in 0..3 {
-        surface.control_points_mut()[2 * 3 + v].x = 0.0;
-    }
+    surface
+        .edit_control_points(|points| {
+            for v in 0..3 {
+                points[6 + v].x = 0.0;
+            }
+        })
+        .unwrap();
     assert_eq!(
         certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
@@ -930,11 +941,15 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for point in surface.control_points_mut() {
-        point.x += 1.0e12;
-        point.y -= 2.0e12;
-        point.z += 3.0e12;
-    }
+    surface
+        .edit_control_points(|points| {
+            for point in points {
+                point.x += 1.0e12;
+                point.y -= 2.0e12;
+                point.z += 3.0e12;
+            }
+        })
+        .unwrap();
     let axis_weights = [1.0, 1.01, 1.02];
     surface
         .set_weights(Some(
@@ -1133,10 +1148,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ir.model.loops.push(Loop {
             id: loops[index].clone(),
             face: faces[index].clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![coedges[index].clone()],
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
+                    .expect("valid loop ring"),
+            ),
         });
         ir.model.coedges.push(Coedge {
             id: coedges[index].clone(),
@@ -1415,12 +1430,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                 ],
                 parameter_range: [0.0, 1.0],
@@ -1594,7 +1607,9 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     let SurfaceGeometry::Nurbs(second) = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
-    second.control_points_mut()[1].z = 1.0;
+    second
+        .edit_control_points(|points| points[1].z = 1.0)
+        .unwrap();
     assert!(!coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],

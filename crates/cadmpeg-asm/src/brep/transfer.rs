@@ -176,7 +176,12 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.native
             .namespace_mut("test")
-            .set_arena("body_native_keys", &[HeldRecord { id: "held".into() }])
+            .set_arena(
+                "body_native_keys",
+                &[HeldRecord {
+                    id: "sat:test:held#0".into(),
+                }],
+            )
             .expect("test native record serializes");
         assert!(transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default()).is_err());
         let held: Vec<HeldRecord> = ir
@@ -186,6 +191,6 @@ mod tests {
             .arena_as("body_native_keys")
             .expect("held record remains readable");
         assert_eq!(held.len(), 1);
-        assert_eq!(held[0].id, "held");
+        assert_eq!(held[0].id, "sat:test:held#0");
     }
 }

@@ -877,10 +877,10 @@ impl<'a> Builder<'a> {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids,
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             self.bind_topology(
                 TextShapeKind::Wire,

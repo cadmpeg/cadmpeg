@@ -79,7 +79,9 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!((radius - 5.0).abs() < 1.0e-12);
     assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
     let mut approximate = exact_circle_directrix();
-    approximate.control_points_mut()[3].x += 1.0e-5;
+    approximate
+        .edit_control_points(|points| points[3].x += 1.0e-5)
+        .unwrap();
     assert!(rational_four_arc_circle(&approximate).is_none());
 }
 
@@ -143,9 +145,13 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
 #[test]
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let mut scaled = exact_circle_directrix();
-    for weight in scaled.weights_mut().unwrap() {
-        *weight *= 7.0;
-    }
+    scaled
+        .edit_weights(|weights| {
+            for weight in weights {
+                *weight *= 7.0;
+            }
+        })
+        .unwrap();
     assert!(rational_four_arc_circle(&scaled).is_some());
 
     let mut elevated = degree_elevated_circle();
@@ -162,7 +168,9 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         ),
         Some(SurfaceGeometry::Cylinder { .. })
     ));
-    elevated.control_points_mut()[5].x += 1.0e-5;
+    elevated
+        .edit_control_points(|points| points[5].x += 1.0e-5)
+        .unwrap();
     assert!(rational_four_arc_circle(&elevated).is_none());
 }
 
@@ -238,18 +246,24 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
     else {
         unreachable!()
     };
-    spine.control_points_mut()[1].x = 2.1;
+    spine
+        .edit_control_points(|points| points[1].x = 2.1)
+        .unwrap();
     assert!(analytic_procedural_surface(&definition).is_none());
 }
 
 #[test]
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     let mut circle = exact_circle_directrix();
-    for point in circle.control_points_mut() {
-        point.x -= 2.0;
-        point.y -= 3.0;
-        point.z -= 3.0;
-    }
+    circle
+        .edit_control_points(|points| {
+            for point in points {
+                point.x -= 2.0;
+                point.y -= 3.0;
+                point.z -= 3.0;
+            }
+        })
+        .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
             Some(plane(
@@ -723,10 +737,14 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
             face: FaceId::mint("test:model:face#0").expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: Vec::new(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         }],
         ..AsmBrep::default()
     };

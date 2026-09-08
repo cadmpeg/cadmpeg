@@ -290,15 +290,22 @@ pub fn bind_topology_selections(
                 }
             }
             FeatureDefinition::Loft {
-                sections, guides, ..
+                sections, guidance, ..
             } => {
                 for section in sections {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
                         resolve_profile_ref(profile, &face_ids);
                     }
                 }
-                for path in guides {
-                    resolve_path_ref(path, &edge_ids, &curve_ids);
+                match guidance {
+                    cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                        for path in guides {
+                            resolve_path_ref(path, &edge_ids, &curve_ids);
+                        }
+                    }
+                    cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                        resolve_path_ref(centerline, &edge_ids, &curve_ids);
+                    }
                 }
             }
             FeatureDefinition::Fillet { groups } => {

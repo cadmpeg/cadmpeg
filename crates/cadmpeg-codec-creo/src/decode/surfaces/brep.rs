@@ -1853,10 +1853,10 @@ pub(in super::super) fn transfer_native_brep(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face.clone(),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                        coedges: coedge_ids.clone(),
-                        vertex_uses: Vec::new(),
-                    },
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                        cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                            .expect("valid loop ring"),
+                    ),
                 });
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                     let id = coedge_ids[index].clone();

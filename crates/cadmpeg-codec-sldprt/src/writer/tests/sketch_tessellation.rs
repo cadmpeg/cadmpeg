@@ -454,9 +454,11 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         let SketchGeometry::Nurbs { curve } = &mut entity.geometry else {
             continue;
         };
-        curve.control_points_mut()[1].v += 250.0;
-        if let Some(weights) = curve.weights_mut() {
-            weights[1] = 0.75;
+        curve
+            .edit_control_points(|points| points[1].v += 250.0)
+            .unwrap();
+        if curve.weights().is_some() {
+            curve.edit_weights(|weights| weights[1] = 0.75).unwrap();
         }
     }
 
@@ -722,20 +724,21 @@ fn semantic_writer_expands_indexed_tessellation() {
     assert_eq!(expanded.channels()[0].count(), 6);
     assert_eq!(expanded.channels()[0].data(), vec![10, 11, 12, 10, 12, 13]);
 
-    let mut attributed = mesh.clone();
-    attributed
-        .triangle_groups
-        .push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
+    let attributed = mesh
+        .clone()
+        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
             source_id: Some("synthetic:test:group#0".into()),
             triangles: vec![0, 1],
-        });
+        }])
+        .expect("valid triangle group partition");
     assert!(matches!(
         crate::writer::sequential_tessellation(&attributed),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 
-    let mut edged = mesh;
-    edged.feature_edges.push([0, 1]);
+    let edged = mesh
+        .with_feature_edges(vec![[0, 1]])
+        .expect("valid feature edge");
     assert!(matches!(
         crate::writer::sequential_tessellation(&edged),
         Err(cadmpeg_core::CodecError::NotImplemented(_))

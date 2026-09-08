@@ -538,9 +538,8 @@ pub fn bind_configuration_suppressed_features(
             configuration.feature_states.insert(
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
-                    suppressed: true,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
                     dependencies: feature.dependencies.clone(),
-                    outputs: Vec::new(),
                     definition: feature.definition.clone(),
                 },
             );

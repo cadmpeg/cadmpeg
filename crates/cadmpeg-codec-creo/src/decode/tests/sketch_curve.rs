@@ -155,7 +155,10 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     assert_eq!(native_properties["verhor"], "2");
     assert_eq!(entities, std::slice::from_ref(&entity));
     assert_eq!(operands[0].native_kind, "segtab_ptr");
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 12);
     segment.kind = crate::feature::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
@@ -321,9 +324,15 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(native_kind, "creo:segtab:radius");
     assert_eq!(native_properties["dimension_ordinal"], "0");
     assert!(entities.is_empty());
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 42);
-    assert_eq!(operands[1].native_field.as_deref(), Some("radius"));
+    assert_eq!(
+        operands[1].field.as_ref().map(|field| field.name.as_str()),
+        Some("radius")
+    );
     assert_eq!(operands[1].object_index, 0);
     let circle_entity = SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string());
     let retained_without_parameter = section_segment_radius_constraints_for_emitted(
@@ -460,9 +469,15 @@ fn dimension_identity_includes_its_feature_definition() {
             "creo:featdefs:sketch_entity#917:42".to_string()
         )]
     );
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 42);
-    assert_eq!(operands[1].native_field.as_deref(), Some("radius2"));
+    assert_eq!(
+        operands[1].field.as_ref().map(|field| field.name.as_str()),
+        Some("radius2")
+    );
     assert_eq!(operands[1].object_index, 7);
     definition
         .segments

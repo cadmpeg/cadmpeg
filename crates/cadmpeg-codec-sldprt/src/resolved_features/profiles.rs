@@ -2199,9 +2199,15 @@ fn transform_sketch_block_geometry(
         },
         SketchGeometry::Nurbs { curve } => {
             let mut curve = curve.clone();
-            for pole in curve.control_points_mut() {
-                *pole = point(*pole)?;
-            }
+            let transformed = curve
+                .control_points()
+                .iter()
+                .copied()
+                .map(point)
+                .collect::<Option<Vec<_>>>()?;
+            curve
+                .edit_control_points(|points| points.copy_from_slice(&transformed))
+                .ok()?;
             SketchGeometry::Nurbs { curve }
         }
         SketchGeometry::Text {

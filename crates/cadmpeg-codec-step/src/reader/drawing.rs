@@ -336,7 +336,10 @@ fn add_source_typed_targets(
             serde_json::Value::String(format!("#{id}")),
         );
         fields.insert("source_type".into(), serde_json::Value::String(source_type));
-        native_targets.push(NativeRecord::new(identity.clone(), fields));
+        native_targets.push(
+            NativeRecord::new(identity.clone(), fields)
+                .expect("opaque_record_id checked the identity"),
+        );
         target_identities.insert(id, BTreeSet::from([identity]));
     }
     if native_targets.is_empty() {

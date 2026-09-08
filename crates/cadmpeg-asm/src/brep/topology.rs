@@ -19,8 +19,7 @@ use super::geometry::{
     analytic_procedural_surface, coedge_pcurve_ref, decode_curve, decode_surface,
     is_analytic_curve, is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
-    reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition, sense_at,
-    vertex_point_ref,
+    reverse_procedural_curve_definition, sense_at, vertex_point_ref,
 };
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
@@ -343,7 +342,7 @@ pub(crate) fn walk_reachable_topology(
                                                 )
                                                 .map(|(mut curve, native_chart)| {
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
-                                                        reverse_nurbs_pcurve(&mut curve);
+                                                        curve.reverse_parameterization();
                                                     }
                                                     (curve, native_chart)
                                                 })
@@ -363,7 +362,7 @@ pub(crate) fn walk_reachable_topology(
                                                 surface.head(),
                                                 &surface.tokens,
                                                 &mut decoded,
-                                            );
+                                            )?;
                                         }
                                     }
                                     pcurve_ranges_on_domain(&decoded, edge)
@@ -426,7 +425,7 @@ pub(crate) fn walk_reachable_topology(
                                                 // edge's stored range is on the
                                                 // reversed parameterization.
                                                 if record_reversed(crec) {
-                                                    reverse_nurbs_curve(&mut curve);
+                                                    curve.reverse_parameterization();
                                                 }
                                                 curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
@@ -710,7 +709,7 @@ fn keep_wire_edge(
             ) {
                 let mut curve = decoded.curve;
                 if record_reversed(curve_record) {
-                    reverse_nurbs_curve(&mut curve);
+                    curve.reverse_parameterization();
                 }
                 entry.insert(CurveGeometry::Nurbs(curve));
                 procedural_curve_defs.insert(

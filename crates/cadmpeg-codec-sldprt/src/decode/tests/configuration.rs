@@ -394,9 +394,8 @@ fn configuration_suppression_and_override_references_are_coherent() {
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {
-                suppressed: true,
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
                 dependencies: Vec::new(),
-                outputs: Vec::new(),
                 definition,
             },
         )]),

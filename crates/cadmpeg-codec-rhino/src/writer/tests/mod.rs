@@ -151,10 +151,10 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face,
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids.clone(),
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.surfaces.push(Surface {
         id: surface,
@@ -258,10 +258,10 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face,
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids.clone(),
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     for index in 0..points.len() {
         let next_index = (index + 1) % points.len();
@@ -419,18 +419,18 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     ir.model.loops.push(Loop {
         id: loop_ids[0].clone(),
         face: face_ids[0].clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids[0..4].to_vec(),
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids[0..4].to_vec(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.loops.push(Loop {
         id: loop_ids[1].clone(),
         face: face_ids[1].clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids[4..8].to_vec(),
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids[4..8].to_vec(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     for index in 0..positions.len() {
         ir.model.points.push(Point {
@@ -682,10 +682,13 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         ir.model.loops.push(Loop {
             id: loop_ids[face].clone(),
             face: face_ids[face].clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: coedge_ids[start..start + 3].to_vec(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    coedge_ids[start..start + 3].to_vec(),
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         });
         ir.model.surfaces.push(Surface {
             id: surface_ids[face].clone(),

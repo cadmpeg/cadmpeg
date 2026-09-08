@@ -2416,10 +2416,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     }
     for feature in features.iter_mut() {
         let FeatureDefinition::Loft {
-            sections,
-            guides,
-            centerline,
-            ..
+            sections, guidance, ..
         } = &mut feature.definition
         else {
             continue;
@@ -2432,17 +2429,23 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 *section = LoftSection::Profile(profile.clone());
             }
         }
-        for guide in guides.iter_mut() {
-            let PathRef::Native(native) = guide else {
-                continue;
-            };
-            if let Some(path) = resolved_entity_paths.get(native) {
-                *guide = path.clone();
+        match guidance {
+            cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                for guide in guides.iter_mut() {
+                    let PathRef::Native(native) = guide else {
+                        continue;
+                    };
+                    if let Some(path) = resolved_entity_paths.get(native) {
+                        *guide = path.clone();
+                    }
+                }
             }
-        }
-        if let Some(PathRef::Native(native)) = centerline.as_ref() {
-            if let Some(path) = resolved_entity_paths.get(native) {
-                *centerline = Some(path.clone());
+            cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                if let PathRef::Native(native) = centerline {
+                    if let Some(path) = resolved_entity_paths.get(native) {
+                        *centerline = path.clone();
+                    }
+                }
             }
         }
     }

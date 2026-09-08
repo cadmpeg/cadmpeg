@@ -1725,10 +1725,10 @@ fn plane_face_draft(
         candidate.model_mut().loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![coedge_id],
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(vec![coedge_id], Vec::new())
+                    .expect("valid loop ring"),
+            ),
         });
         loop_ids.push(loop_id);
     }

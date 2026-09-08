@@ -1472,7 +1472,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let coedge = source_less.model.coedges[0].id.clone();
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
-        id: "generated:sketch-curve-link#0".into(),
+        id: "f3d:generated:sketch-curve-link#0".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
         sketch_curve_id: 113,
         ref_b: 0,

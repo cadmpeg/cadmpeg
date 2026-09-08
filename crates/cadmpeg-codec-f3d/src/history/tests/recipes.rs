@@ -989,8 +989,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
-            bodies: vec![body.id.clone()],
-            native: vec![native],
+            members: cadmpeg_ir::features::BodyMembers::try_from_parts(
+                vec![body.id.clone()],
+                vec![native],
+            )
+            .expect("valid body selection rows"),
         }
     );
 

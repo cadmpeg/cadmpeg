@@ -802,18 +802,26 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         Loop {
             id: inner_id,
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: Vec::new(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
         Loop {
             id: outer_id.clone(),
             face: face_id,
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: Vec::new(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
     ];
 
@@ -847,18 +855,26 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         Loop {
             id: inner_id,
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: Vec::new(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
         Loop {
             id: unclassified_id.clone(),
             face: face_id,
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: Vec::new(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
     ];
 

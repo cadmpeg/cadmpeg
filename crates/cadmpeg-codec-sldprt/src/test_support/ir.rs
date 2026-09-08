@@ -23,9 +23,11 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             CurveGeometry::Parabola { vertex, .. } => vertex.x += dx,
             CurveGeometry::Degenerate { point } => point.x += dx,
             CurveGeometry::Nurbs(nurbs) => {
-                for pole in nurbs.control_points_mut() {
-                    pole.x += dx;
-                }
+                let _ = nurbs.edit_control_points(|points| {
+                    for pole in points {
+                        pole.x += dx;
+                    }
+                });
             }
             CurveGeometry::Polyline(polyline) => {
                 for point in polyline.points_mut() {
@@ -58,9 +60,11 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 center.x += dx;
             }
             SurfaceGeometry::Nurbs(nurbs) => {
-                for pole in nurbs.control_points_mut() {
-                    pole.x += dx;
-                }
+                let _ = nurbs.edit_control_points(|points| {
+                    for pole in points {
+                        pole.x += dx;
+                    }
+                });
             }
             SurfaceGeometry::Polygonal(surface) => {
                 for vertex in surface.vertices_mut() {

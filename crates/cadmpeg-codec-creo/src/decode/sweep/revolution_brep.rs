@@ -259,10 +259,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                        coedges: vec![coedge_id.clone()],
-                        vertex_uses: Vec::new(),
-                    },
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                        cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                            .expect("valid loop ring"),
+                    ),
                 });
                 ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),

@@ -1432,6 +1432,8 @@ pub(crate) struct ConsolidatedCurveBindingCounts {
     pub(crate) standard_face_surfaces: usize,
     /// Coedge pcurves bound after the endpoint-lift witness.
     pub(crate) standard_face_pcurves: usize,
+    /// Recharts rejected because the derived pcurve coordinates were non-finite.
+    pub(crate) rechart_numeric_failures: usize,
 }
 
 struct ConsolidatedStandardFaceBinding {
@@ -1682,7 +1684,6 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         let mut sides: [IntcurveSupportSide; 2] = std::array::from_fn(|_| IntcurveSupportSide {
             surface: None,
             pcurve: None,
-            pcurve_parameter_range: None,
         });
         let mut standard_endpoint_loci = None;
         for (side, binding) in resolved.supports.iter().enumerate() {
@@ -1720,8 +1721,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 }
                 sides[side] = IntcurveSupportSide {
                     surface: Some(surface_id.clone()),
-                    pcurve: Some(geometry),
-                    pcurve_parameter_range: None,
+                    pcurve: Some(geometry.into()),
                 };
                 continue;
             }
@@ -1807,8 +1807,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 };
                 sides[side] = IntcurveSupportSide {
                     surface: Some(surface),
-                    pcurve: Some(geometry),
-                    pcurve_parameter_range: None,
+                    pcurve: Some(geometry.into()),
                 };
                 continue;
             }
@@ -1951,8 +1950,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             };
             sides[side] = IntcurveSupportSide {
                 surface: Some(surface),
-                pcurve: Some(geometry),
-                pcurve_parameter_range: None,
+                pcurve: Some(geometry.into()),
             };
         }
         if resolved.endpoint_loci.is_none() {
@@ -1985,7 +1983,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .map(|(index, surface)| (index, SurfaceGeometry::Nurbs(surface.geometry.clone())))
                 .collect();
             let carrier = unique_paired_surface_lift_match(
-                sides[*resolved_side].pcurve.as_ref()?,
+                &sides[*resolved_side].pcurve.as_ref()?.geometry,
                 resolved_geometry,
                 &partner_pcurve,
                 resolved.block.parameters.range,
@@ -1996,8 +1994,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             if let Some(carrier) = carrier {
                 sides[partner] = IntcurveSupportSide {
                     surface: Some(freeform_surface_ids[carrier].clone()),
-                    pcurve: Some(partner_pcurve),
-                    pcurve_parameter_range: None,
+                    pcurve: Some(partner_pcurve.into()),
                 };
                 partner_support_blocks.insert(resolved.block.pcurves[0].pos);
                 Some((*resolved_side, carrier))
@@ -2032,7 +2029,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     .iter()
                     .map(|side| match &side.pcurve {
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
-                            pcurve,
+                            &pcurve.geometry,
                             resolved.block.parameters.range,
                         )
                         .map(Some),
@@ -2040,7 +2037,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     })
                     .collect::<Option<Vec<_>>>()?;
                 for (side, pcurve) in sides.iter_mut().zip(reversed_pcurves) {
-                    side.pcurve = pcurve;
+                    side.pcurve = pcurve.map(Into::into);
                 }
             }
             let (_, _, _, standard_surfaces) = &identity;
@@ -2108,7 +2105,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         })?
                         .geometry;
                     let partner_pcurve = match &sides[partner].pcurve {
-                        Some(pcurve) => pcurve.clone(),
+                        Some(pcurve) => pcurve.geometry.clone(),
                         None => {
                             // The free side stores its jet in its own carrier's
                             // chart, which is not the standard partner face's
@@ -2143,11 +2140,18 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         .iter()
                         .find(|surface| surface.id == standard_surfaces[*standard_resolved_side])?
                         .geometry;
-                    let resolved_pcurve = rechart_equivalent_surface_pcurve(
-                        sides[resolved_side].pcurve.as_ref()?,
+                    let resolved_pcurve = match rechart_equivalent_surface_pcurve(
+                        &sides[resolved_side].pcurve.as_ref()?.geometry,
                         resolved_geometry,
                         standard_surface_geometry,
-                    )?;
+                    ) {
+                        Ok(Some(pcurve)) => pcurve,
+                        Ok(None) => return None,
+                        Err(RechartFailure::NonFinite) => {
+                            binding_counts.rechart_numeric_failures += 1;
+                            return None;
+                        }
+                    };
                     let standard_geometries = [resolved_pcurve, partner_pcurve];
                     let standard_geometries = if *standard_resolved_side == 0 {
                         standard_geometries
@@ -2262,8 +2266,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     }
                     sides = std::array::from_fn(|side| IntcurveSupportSide {
                         surface: Some(binding.standard_surfaces[side].clone()),
-                        pcurve: Some(binding.edge_pcurves[side].clone()),
-                        pcurve_parameter_range: None,
+                        pcurve: Some(binding.edge_pcurves[side].clone().into()),
                     });
                 }
             }
@@ -2650,13 +2653,18 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
         <= EPS_APEX_ALIGNMENT * scale
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RechartFailure {
+    NonFinite,
+}
+
 fn rechart_equivalent_surface_pcurve(
     pcurve: &PcurveGeometry,
     source: &SurfaceGeometry,
     target: &SurfaceGeometry,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, RechartFailure> {
     if source == target {
-        return Some(pcurve.clone());
+        return Ok(Some(pcurve.clone()));
     }
     let (
         SurfaceGeometry::Cone {
@@ -2670,30 +2678,40 @@ fn rechart_equivalent_surface_pcurve(
         },
     ) = (source, target)
     else {
-        return None;
+        return Ok(None);
     };
     if !same_surface_locus(source, target) {
-        return None;
+        return Ok(None);
     }
     let v_shift = (source_origin.x - target_origin.x) * source_axis.x
         + (source_origin.y - target_origin.y) * source_axis.y
         + (source_origin.z - target_origin.z) * source_axis.z;
     if !v_shift.is_finite() {
-        return None;
+        return Err(RechartFailure::NonFinite);
     }
     match pcurve {
-        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
-            origin: Point2::new(origin.u, origin.v + v_shift),
-            direction: *direction,
-        }),
+        PcurveGeometry::Line { origin, direction } => {
+            let shifted_v = origin.v + v_shift;
+            if !shifted_v.is_finite() {
+                return Err(RechartFailure::NonFinite);
+            }
+            Ok(Some(PcurveGeometry::Line {
+                origin: Point2::new(origin.u, shifted_v),
+                direction: *direction,
+            }))
+        }
         PcurveGeometry::Nurbs { nurbs } => {
             let mut shifted = nurbs.clone();
-            for point in shifted.control_points_mut() {
-                point.v += v_shift;
-            }
-            Some(PcurveGeometry::Nurbs { nurbs: shifted })
+            shifted
+                .edit_control_points(|points| {
+                    for point in points {
+                        point.v += v_shift;
+                    }
+                })
+                .map_err(|_| RechartFailure::NonFinite)?;
+            Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -3031,11 +3049,48 @@ mod tests {
             direction: Point2::new(2.0, -0.5),
         };
         assert_eq!(
-            rechart_equivalent_surface_pcurve(&pcurve, &source, &target),
+            rechart_equivalent_surface_pcurve(&pcurve, &source, &target)
+                .expect("finite pcurve rechart"),
             Some(PcurveGeometry::Line {
                 origin: Point2::new(0.25, 5.0),
                 direction: Point2::new(2.0, -0.5),
             })
+        );
+    }
+
+    #[test]
+    fn equivalent_cone_rechart_reports_overflow_for_finite_nurbs_poles() {
+        let cone = |origin, radius| SurfaceGeometry::Cone {
+            origin,
+            axis: Vector3::new(-1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let shift = f64::MAX * 0.5;
+        let source = cone(
+            Point3::new(-shift / std::f64::consts::FRAC_PI_4.tan(), 0.0, 0.0),
+            shift,
+        );
+        let target = cone(Point3::new(0.0, 0.0, 0.0), 0.0);
+        assert!(same_surface_locus(&source, &target));
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    Point2::new(0.0, f64::MAX * 0.75),
+                    Point2::new(1.0, f64::MAX * 0.75),
+                ],
+                None,
+                false,
+            )
+            .expect("finite NURBS fixture"),
+        };
+        assert_eq!(
+            rechart_equivalent_surface_pcurve(&pcurve, &source, &target),
+            Err(RechartFailure::NonFinite),
         );
     }
 
@@ -3136,10 +3191,10 @@ mod tests {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id,
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: vec![coedge_id.clone()],
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
@@ -3169,7 +3224,6 @@ mod tests {
                         sides: std::array::from_fn(|side| IntcurveSupportSide {
                             surface: Some(support_ids[side].clone()),
                             pcurve: None,
-                            pcurve_parameter_range: None,
                         }),
                         parameter_range: [0.0, 1.0],
                         discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -3210,7 +3264,11 @@ mod tests {
             1
         );
         let start = cadmpeg_ir::eval::pcurve_uv(
-            context.sides[0].pcurve.as_ref().expect("first pcurve"),
+            &context.sides[0]
+                .pcurve
+                .as_ref()
+                .expect("first pcurve")
+                .geometry,
             context.parameter_range[0],
         )
         .expect("reversed pcurve start");
@@ -3259,7 +3317,11 @@ mod tests {
             .iter()
             .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
         let start = cadmpeg_ir::eval::pcurve_uv(
-            context.sides[0].pcurve.as_ref().expect("standard pcurve"),
+            &context.sides[0]
+                .pcurve
+                .as_ref()
+                .expect("standard pcurve")
+                .geometry,
             0.0,
         )
         .expect("standard pcurve start");
@@ -3418,7 +3480,6 @@ mod tests {
                         sides: std::array::from_fn(|side| IntcurveSupportSide {
                             surface: Some(support_ids[side].clone()),
                             pcurve: None,
-                            pcurve_parameter_range: None,
                         }),
                         parameter_range: [0.0, 1.0],
                         discontinuities: std::array::from_fn(|_| Vec::new()),

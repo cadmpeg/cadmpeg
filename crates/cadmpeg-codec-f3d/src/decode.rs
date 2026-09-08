@@ -356,12 +356,13 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -
     use cadmpeg_ir::features::BodySelection;
 
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => !bodies.is_empty(),
-        BodySelection::Historical { bodies, .. }
-        | BodySelection::HistoricalSet { bodies, .. }
-        | BodySelection::HistoricalUnorderedSet { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            !bodies.is_empty()
+        }
+        BodySelection::Historical { bodies, .. } => !bodies.is_empty(),
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
@@ -952,11 +953,16 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 }
         }
         FeatureDefinition::Loft {
-            sections,
-            guides,
-            centerline,
-            ..
+            sections, guidance, ..
         } => {
+            let guidance_incomplete = match guidance {
+                cadmpeg_ir::features::LoftGuidance::Guides(paths) => {
+                    paths.iter().any(|path| !loft_path_is_resolved(path))
+                }
+                cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
+                    !loft_path_is_resolved(path)
+                }
+            };
             sections.len() < 2
                 || sections.iter().any(|section| match section {
                     cadmpeg_ir::features::LoftSection::Profile(profile) => {
@@ -970,10 +976,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         | cadmpeg_ir::features::LoftPointSection::Vertex(_),
                     ) => false,
                 })
-                || guides.iter().any(|path| !loft_path_is_resolved(path))
-                || centerline
-                    .as_ref()
-                    .is_some_and(|path| !loft_path_is_resolved(path))
+                || guidance_incomplete
         }
         FeatureDefinition::FilledSurface {
             boundary,
@@ -1676,10 +1679,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 face_selection(support_faces);
             }
             FeatureDefinition::Loft {
-                sections,
-                guides,
-                centerline,
-                ..
+                sections, guidance, ..
             } => {
                 gaps.profile_selections += sections
                     .iter()
@@ -1691,11 +1691,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         )
                     })
                     .count();
-                gaps.path_selections += guides
-                    .iter()
-                    .chain(centerline.iter())
-                    .filter(|path| !loft_path_is_resolved(path))
-                    .count();
+                gaps.path_selections += match guidance {
+                    cadmpeg_ir::features::LoftGuidance::Guides(paths) => paths
+                        .iter()
+                        .filter(|path| !loft_path_is_resolved(path))
+                        .count(),
+                    cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
+                        usize::from(!loft_path_is_resolved(path))
+                    }
+                };
             }
             FeatureDefinition::Shell {
                 bodies,
@@ -3331,21 +3335,21 @@ fn project_mesh_bodies(
             &body.triangles,
             &mut unresolved,
         );
-        ir.model.tessellations.push(
-            cadmpeg_ir::tessellation::Tessellation::from_decoded(
-                id,
-                body.vertices,
-                body.triangles,
-                Vec::new(),
-                Vec::new(),
-                body.corner_normals,
-                channels,
-            )
-            .map_err(|err| CodecError::Malformed(err.to_string()))?
-            .with_feature_edges(body.feature_edges)
-            .with_triangle_groups(triangle_groups)
-            .with_texture_assignments(texture_assignments),
-        );
+        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_decoded(
+            id,
+            body.vertices,
+            body.triangles,
+            Vec::new(),
+            Vec::new(),
+            body.corner_normals,
+            channels,
+        )
+        .map_err(|err| CodecError::Malformed(err.to_string()))?
+        .with_feature_edges(body.feature_edges)
+        .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
+        .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
+        .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        ir.model.tessellations.push(tessellation);
     }
     if !texture_tables.is_empty() {
         return Err(CodecError::Malformed(

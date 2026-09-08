@@ -983,10 +983,10 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids.clone(),
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.faces.push(Face {
         id: face_id.clone(),
@@ -1026,9 +1026,10 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         coedge_ids[1].clone(),
         coedge_ids[0].clone(),
     ];
-    if let Some((coedges, _)) = ir.model.loops[0].ring_mut() {
-        *coedges = reversed_order.to_vec();
-    }
+    let vertex_uses = ir.model.loops[0].anchored_vertex_uses().to_vec();
+    ir.model.loops[0]
+        .replace_ring(reversed_order.to_vec(), vertex_uses)
+        .expect("reversed loop ring remains valid");
     for coedge_id in &reversed_order {
         let coedge = ir
             .model
@@ -1232,7 +1233,9 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
         let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
-        nurbs.control_points_mut()[0].u += 0.25;
+        nurbs
+            .edit_control_points(|points| points[0].u += 0.25)
+            .unwrap();
     }
 
     let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
@@ -1315,7 +1318,7 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
                 panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
             };
-            nurbs.control_points_mut().reverse();
+            nurbs.edit_control_points(<[_]>::reverse).unwrap();
         }
     }
 

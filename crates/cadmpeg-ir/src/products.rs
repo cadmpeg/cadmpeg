@@ -102,6 +102,24 @@ impl NonEmptyString {
     }
 }
 
+impl PartialEq<str> for NonEmptyString {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for NonEmptyString {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl std::fmt::Display for NonEmptyString {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 impl<'de> Deserialize<'de> for NonEmptyString {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

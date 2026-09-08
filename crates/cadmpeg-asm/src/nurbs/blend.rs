@@ -640,11 +640,15 @@ fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
     cur.take_ident().map(str::to_string)
 }
 
-fn radius_function_geometry(mut function: PcurveNurbs) -> PcurveGeometry {
-    for point in function.control_points_mut() {
-        point.u *= LEN_TO_MM;
-    }
-    PcurveGeometry::Nurbs { nurbs: function }
+fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
+    function
+        .edit_control_points(|points| {
+            for point in points {
+                point.u *= LEN_TO_MM;
+            }
+        })
+        .ok()?;
+    Some(PcurveGeometry::Nurbs { nurbs: function })
 }
 
 fn variable_blend_value(
@@ -701,7 +705,7 @@ fn variable_blend_value(
                 discriminator,
                 parameter,
                 radius,
-                function: radius_function_geometry(function),
+                function: radius_function_geometry(function)?,
                 terminal,
             }
         }
@@ -757,7 +761,7 @@ fn variable_blend_value(
                 discriminator,
                 parameter,
                 radius,
-                function: radius_function_geometry(function),
+                function: radius_function_geometry(function)?,
                 enum_count,
                 enum_tagged,
                 points,

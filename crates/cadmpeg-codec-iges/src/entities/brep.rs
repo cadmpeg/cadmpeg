@@ -1094,10 +1094,13 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        LoopBoundary::Ring {
-                            coedges: coedge_ids,
-                            vertex_uses,
-                        }
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
+                        else {
+                            losses.push(entity_loss(entry, "edge loop has no coedges"));
+                            valid = false;
+                            break;
+                        };
+                        LoopBoundary::Ring(ring)
                     };
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.clone(),

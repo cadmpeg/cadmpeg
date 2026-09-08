@@ -62,12 +62,19 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
-                let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_mut() else {
+                let Some(support) = context.sides[0].pcurve.as_mut() else {
                     panic!("NURBS support lane");
                 };
-                for point in nurbs.control_points_mut() {
-                    point.u += 100.0;
-                }
+                let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                    panic!("NURBS support lane");
+                };
+                nurbs
+                    .edit_control_points(|points| {
+                        for point in points {
+                            point.u += 100.0;
+                        }
+                    })
+                    .unwrap();
             });
         }
     }
@@ -175,7 +182,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         crate::decode::pcurves::endpoint_witness_for_candidate(
             &witnesses,
             &(owner.clone(), side.1.clone()),
-            &pcurve,
+            &pcurve.geometry,
             parameter_range,
         ),
         Some([points[0], points[1]])
@@ -184,7 +191,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         crate::decode::pcurves::endpoint_witness_for_candidate(
             &witnesses,
             &(owner, side.1),
-            &pcurve,
+            &pcurve.geometry,
             [parameter_range[0], parameter_range[1] + 1.0],
         ),
         None
@@ -230,7 +237,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
         parameter_range
             .map(|parameter| {
-                let uv = pcurve_uv(&pcurve, parameter).expect("pcurve endpoint");
+                let uv = pcurve_uv(&pcurve.geometry, parameter).expect("pcurve endpoint");
                 model_surface_point_by_id(&index, &surface, uv.u, uv.v).expect("surface endpoint")
             })
             .to_vec()
@@ -264,7 +271,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
     let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
         &witnesses,
         &(curve_id, surface),
-        &pcurve,
+        &pcurve.geometry,
         parameter_range,
     )
     .expect("complete validation endpoint witness");
@@ -375,12 +382,10 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                         IntcurveSupportSide {
                             surface: Some(offset.clone()),
                             pcurve: None,
-                            pcurve_parameter_range: None,
                         },
                         IntcurveSupportSide {
                             surface: Some(plane),
                             pcurve: None,
-                            pcurve_parameter_range: None,
                         },
                     ],
                     parameter_range: [0.0, 1.0],

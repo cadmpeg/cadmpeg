@@ -1498,15 +1498,24 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
     let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     let surface = &mut carriers[0].geometry;
-    let scale_knots = |knots: &mut [f64]| {
-        let lower = knots[0];
-        let span = knots.last().copied().expect("nonempty knots") - lower;
-        for knot in knots {
-            *knot = (*knot - lower) / span * tiny;
-        }
-    };
-    scale_knots(surface.u_knots_mut());
-    scale_knots(surface.v_knots_mut());
+    surface
+        .edit_u_knots(|knots| {
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        })
+        .unwrap();
+    surface
+        .edit_v_knots(|knots| {
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        })
+        .unwrap();
     let exact = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 1,

@@ -357,6 +357,71 @@ fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), Nur
     }
 }
 
+fn require_finite_points_2(field: &str, points: &[Point2]) -> Result<(), NurbsError> {
+    if points
+        .iter()
+        .all(|point| point.u.is_finite() && point.v.is_finite())
+    {
+        Ok(())
+    } else {
+        Err(NurbsError(format!("{field} contains a non-finite point")))
+    }
+}
+
+fn require_finite_points_3(field: &str, points: &[Point3]) -> Result<(), NurbsError> {
+    if points
+        .iter()
+        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    {
+        Ok(())
+    } else {
+        Err(NurbsError(format!("{field} contains a non-finite point")))
+    }
+}
+
+fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError> {
+    if values.iter().all(|value| value.is_finite()) {
+        Ok(())
+    } else {
+        Err(NurbsError(format!("{field} contains a non-finite value")))
+    }
+}
+
+fn require_nondecreasing_knots(knots: &[f64]) -> Result<(), NurbsError> {
+    require_finite_scalars("knots", knots)?;
+    if knots_nondecreasing(knots) {
+        Ok(())
+    } else {
+        Err(NurbsError("knots must be non-decreasing".into()))
+    }
+}
+
+fn require_3d_weights(weights: &[f64]) -> Result<(), NurbsError> {
+    if weights
+        .iter()
+        .all(|weight| weight.is_finite() && *weight != 0.0)
+    {
+        Ok(())
+    } else {
+        Err(NurbsError(
+            "3D NURBS weights must be finite and non-zero".into(),
+        ))
+    }
+}
+
+fn require_pcurve_weights(weights: &[f64]) -> Result<(), NurbsError> {
+    if weights
+        .iter()
+        .all(|weight| weight.is_finite() && *weight > 0.0)
+    {
+        Ok(())
+    } else {
+        Err(NurbsError(
+            "pcurve NURBS weights must be finite and positive".into(),
+        ))
+    }
+}
+
 fn require_curve_cardinality(
     degree: u32,
     knot_count: usize,
@@ -421,8 +486,12 @@ impl NurbsSurface {
             v_knots.len(),
             checked_knot_count("v", v_count as usize, v_degree)?,
         )?;
+        require_finite_points_3("control_points", &control_points)?;
+        require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError(format!("u_{error}")))?;
+        require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError(format!("v_{error}")))?;
         if let Some(weights) = &weights {
             require_length("weights", weights.len(), pole_count)?;
+            require_3d_weights(weights)?;
         }
         Ok(Self {
             u_degree,
@@ -459,14 +528,22 @@ impl NurbsSurface {
         &self.v_knots
     }
 
-    /// Mutable u-knot values. The cardinality cannot change.
-    pub fn u_knots_mut(&mut self) -> &mut [f64] {
-        &mut self.u_knots
+    /// Atomically edit the u knot vector and preserve its invariants.
+    pub fn edit_u_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let mut values = self.u_knots.clone();
+        edit(&mut values);
+        require_nondecreasing_knots(&values).map_err(|error| NurbsError(format!("u_{error}")))?;
+        self.u_knots = values;
+        Ok(())
     }
 
-    /// Mutable v-knot values. The cardinality cannot change.
-    pub fn v_knots_mut(&mut self) -> &mut [f64] {
-        &mut self.v_knots
+    /// Atomically edit the v knot vector and preserve its invariants.
+    pub fn edit_v_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let mut values = self.v_knots.clone();
+        edit(&mut values);
+        require_nondecreasing_knots(&values).map_err(|error| NurbsError(format!("v_{error}")))?;
+        self.v_knots = values;
+        Ok(())
     }
 
     /// Number of control points along u.
@@ -484,9 +561,16 @@ impl NurbsSurface {
         &self.control_points
     }
 
-    /// Mutable control-point values. The cardinality cannot change.
-    pub fn control_points_mut(&mut self) -> &mut [Point3] {
-        &mut self.control_points
+    /// Atomically edit control points and preserve finite coordinates.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), NurbsError> {
+        let mut values = self.control_points.clone();
+        edit(&mut values);
+        require_finite_points_3("control_points", &values)?;
+        self.control_points = values;
+        Ok(())
     }
 
     /// Rational weights in control-point order.
@@ -494,15 +578,23 @@ impl NurbsSurface {
         self.weights.as_deref()
     }
 
-    /// Mutable rational weight values. The cardinality cannot change.
-    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
-        self.weights.as_deref_mut()
+    /// Atomically edit rational weights and preserve their invariants.
+    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let Some(weights) = &self.weights else {
+            return Err(NurbsError("surface has no rational weights".into()));
+        };
+        let mut values = weights.clone();
+        edit(&mut values);
+        require_3d_weights(&values)?;
+        self.weights = Some(values);
+        Ok(())
     }
 
     /// Replace rational weights after checking pole cardinality.
     pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
         if let Some(values) = &weights {
             require_length("weights", values.len(), self.control_points.len())?;
+            require_3d_weights(values)?;
         }
         self.weights = weights;
         Ok(())
@@ -539,6 +631,7 @@ impl NurbsSurface {
     }
 
     /// Exchange the u and v parameter axes and transpose pole storage.
+    /// The natural normal changes sign; `normal_reversed` remains unchanged.
     pub fn transpose_parameter_axes(&mut self) {
         let old_u = self.u_count as usize;
         let old_v = self.v_count as usize;
@@ -648,6 +741,11 @@ impl NurbsCurve {
             weights.as_ref().map(Vec::len),
             "control_points",
         )?;
+        require_finite_points_3("control_points", &control_points)?;
+        require_nondecreasing_knots(&knots)?;
+        if let Some(weights) = &weights {
+            require_3d_weights(weights)?;
+        }
         Ok(Self {
             degree,
             knots,
@@ -667,9 +765,13 @@ impl NurbsCurve {
         &self.knots
     }
 
-    /// Mutable knot values. The cardinality cannot change.
-    pub fn knots_mut(&mut self) -> &mut [f64] {
-        &mut self.knots
+    /// Atomically edit knot values and preserve their invariants.
+    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let mut values = self.knots.clone();
+        edit(&mut values);
+        require_nondecreasing_knots(&values)?;
+        self.knots = values;
+        Ok(())
     }
 
     /// Control points in parameter order.
@@ -677,9 +779,16 @@ impl NurbsCurve {
         &self.control_points
     }
 
-    /// Mutable control-point values. The cardinality cannot change.
-    pub fn control_points_mut(&mut self) -> &mut [Point3] {
-        &mut self.control_points
+    /// Atomically edit control points and preserve finite coordinates.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), NurbsError> {
+        let mut values = self.control_points.clone();
+        edit(&mut values);
+        require_finite_points_3("control_points", &values)?;
+        self.control_points = values;
+        Ok(())
     }
 
     /// Rational weights in pole order.
@@ -687,15 +796,23 @@ impl NurbsCurve {
         self.weights.as_deref()
     }
 
-    /// Mutable rational weight values. The cardinality cannot change.
-    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
-        self.weights.as_deref_mut()
+    /// Atomically edit rational weights and preserve their invariants.
+    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let Some(weights) = &self.weights else {
+            return Err(NurbsError("curve has no rational weights".into()));
+        };
+        let mut values = weights.clone();
+        edit(&mut values);
+        require_3d_weights(&values)?;
+        self.weights = Some(values);
+        Ok(())
     }
 
     /// Replace rational weights after checking pole cardinality.
     pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
         if let Some(values) = &weights {
             require_length("weights", values.len(), self.control_points.len())?;
+            require_3d_weights(values)?;
         }
         self.weights = weights;
         Ok(())
@@ -709,6 +826,18 @@ impl NurbsCurve {
     /// Set whether the curve is periodic.
     pub fn set_periodic(&mut self, value: bool) {
         self.periodic = value;
+    }
+
+    /// Reverse poles, weights, and the signed knot parameterization together.
+    pub fn reverse_parameterization(&mut self) {
+        self.control_points.reverse();
+        if let Some(weights) = &mut self.weights {
+            weights.reverse();
+        }
+        self.knots.reverse();
+        for knot in &mut self.knots {
+            *knot = -*knot;
+        }
     }
 }
 
@@ -6713,44 +6842,166 @@ pub struct ProceduralCurve {
     legacy_cache_fit_tolerance: Option<f64>,
 }
 
+/// A parameter-space support curve and its optional affine parameter map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SupportPcurve {
+    /// UV curve carried by the support side.
+    pub geometry: PcurveGeometry,
+    /// Directed pcurve interval corresponding to the solved interval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_range: Option<DirectedParameterRange>,
+}
+
+impl SupportPcurve {
+    /// Pair a pcurve geometry with an optional checked parameter interval.
+    #[must_use]
+    pub const fn new(
+        geometry: PcurveGeometry,
+        parameter_range: Option<DirectedParameterRange>,
+    ) -> Self {
+        Self {
+            geometry,
+            parameter_range,
+        }
+    }
+
+    /// Return the mapped pcurve endpoints as an array.
+    #[must_use]
+    pub const fn parameter_range_array(&self) -> Option<[f64; 2]> {
+        match self.parameter_range {
+            Some(range) => Some(range.endpoints()),
+            None => None,
+        }
+    }
+}
+
+impl From<PcurveGeometry> for SupportPcurve {
+    fn from(geometry: PcurveGeometry) -> Self {
+        Self::new(geometry, None)
+    }
+}
+
+/// A finite, non-zero-width directed parameter interval.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct DirectedParameterRange([f64; 2]);
+
+/// Error returned when a directed parameter range cannot be admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterRangeError;
+
+impl std::fmt::Display for ParameterRangeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("parameter range endpoints must be finite and distinct")
+    }
+}
+
+impl std::error::Error for ParameterRangeError {}
+
+impl DirectedParameterRange {
+    /// Construct an interval. Either ascending or descending direction is valid.
+    pub fn new(values: [f64; 2]) -> Result<Self, ParameterRangeError> {
+        if values.iter().all(|value| value.is_finite()) && values[0] != values[1] {
+            Ok(Self(values))
+        } else {
+            Err(ParameterRangeError)
+        }
+    }
+
+    /// Return the directed endpoints.
+    #[must_use]
+    pub const fn endpoints(self) -> [f64; 2] {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for DirectedParameterRange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(<[f64; 2]>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 /// One paired surface and parameter-space curve in an intcurve construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct IntcurveSupportSide {
     /// Supporting surface, absent for the native `null_surface` sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<SurfaceId>,
     /// UV curve on `surface`, absent for the native `nullbs` sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcurve: Option<PcurveGeometry>,
-    /// Ordered native pcurve interval corresponding affinely to the support
-    /// context's solved-curve interval. Absence means both use the same
-    /// parameter directly.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcurve_parameter_range: Option<[f64; 2]>,
+    pub pcurve: Option<SupportPcurve>,
 }
 
 impl IntcurveSupportSide {
+    /// Return the mapped pcurve endpoints as an array.
+    #[must_use]
+    pub fn pcurve_parameter_range(&self) -> Option<[f64; 2]> {
+        self.pcurve
+            .as_ref()
+            .and_then(SupportPcurve::parameter_range_array)
+    }
+
     /// Map one solved-curve parameter into this side's pcurve parameter.
     ///
-    /// Returns `None` when this side has no pcurve or when an explicit affine
-    /// mapping is paired with a zero-width solved interval.
+    /// Returns `None` when this side has no pcurve, an explicit map has an invalid
+    /// solved interval, or the mapped parameter cannot be represented as finite.
     #[must_use]
     pub fn pcurve_parameter(
         &self,
         solved_parameter_range: [f64; 2],
         parameter: f64,
     ) -> Option<f64> {
-        self.pcurve.as_ref()?;
-        let Some(pcurve_range) = self.pcurve_parameter_range else {
+        if !parameter.is_finite() {
+            return None;
+        }
+        let pcurve_range = self
+            .pcurve
+            .as_ref()?
+            .parameter_range
+            .map(DirectedParameterRange::endpoints);
+        let Some(pcurve_range) = pcurve_range else {
             return Some(parameter);
         };
         let solved_span = solved_parameter_range[1] - solved_parameter_range[0];
-        if solved_span == 0.0 {
+        if solved_span == 0.0
+            || solved_parameter_range
+                .iter()
+                .any(|value| !value.is_finite())
+        {
             return None;
         }
-        let fraction = (parameter - solved_parameter_range[0]) / solved_span;
-        Some(pcurve_range[0] + fraction * (pcurve_range[1] - pcurve_range[0]))
+        if parameter == solved_parameter_range[0] {
+            return Some(pcurve_range[0]);
+        }
+        if parameter == solved_parameter_range[1] {
+            return Some(pcurve_range[1]);
+        }
+        let offset = parameter - solved_parameter_range[0];
+        let fraction = if solved_span.is_finite() && offset.is_finite() {
+            offset / solved_span
+        } else {
+            // Halving before subtraction retains finite opposite-sign endpoints.
+            (parameter * 0.5 - solved_parameter_range[0] * 0.5)
+                / (solved_parameter_range[1] * 0.5 - solved_parameter_range[0] * 0.5)
+        };
+        if !fraction.is_finite() {
+            return None;
+        }
+        let mapped = pcurve_range[0] + fraction * (pcurve_range[1] - pcurve_range[0]);
+        if mapped.is_finite() {
+            Some(mapped)
+        } else {
+            let mapped = (1.0 - fraction) * pcurve_range[0] + fraction * pcurve_range[1];
+            mapped.is_finite().then_some(mapped)
+        }
     }
 }
 
@@ -6883,18 +7134,20 @@ impl SpringLayout {
                             SpringSupport::Ranges(_) => None,
                         },
                         pcurve: match first_pcurve {
-                            SpringPcurve::Pcurve(pcurve) => Some(pcurve.clone()),
+                            SpringPcurve::Pcurve(pcurve) => {
+                                Some(SupportPcurve::new(pcurve.clone(), None))
+                            }
                             SpringPcurve::Range(_) => None,
                         },
-                        pcurve_parameter_range: None,
                     },
                     IntcurveSupportSide {
                         surface: match &supports[1] {
                             SpringSupport::Surface(surface) => Some(surface.clone()),
                             SpringSupport::Ranges(_) => None,
                         },
-                        pcurve: second_pcurve.clone(),
-                        pcurve_parameter_range: None,
+                        pcurve: second_pcurve
+                            .clone()
+                            .map(|pcurve| SupportPcurve::new(pcurve, None)),
                     },
                 ],
                 parameter_range: *parameter_range,
@@ -6988,11 +7241,17 @@ mod spring_layout_wire {
             });
         }
         let [first_side, second_side] = wire.context.sides;
-        if first_side.pcurve_parameter_range.is_some()
-            || second_side.pcurve_parameter_range.is_some()
+        if first_side
+            .pcurve
+            .as_ref()
+            .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+            || second_side
+                .pcurve
+                .as_ref()
+                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
         {
             return Err(serde::de::Error::custom(
-                "spring context sides cannot carry pcurve_parameter_range",
+                "spring context sides cannot carry pcurve parameter ranges",
             ));
         }
         let [first_ranges, second_ranges] = wire.surface_parameter_ranges;
@@ -7006,7 +7265,7 @@ mod spring_layout_wire {
         }
         };
         let first_pcurve = match (first_side.pcurve, wire.first_pcurve_parameter_range) {
-            (Some(pcurve), None) => SpringPcurve::Pcurve(pcurve),
+            (Some(pcurve), None) => SpringPcurve::Pcurve(pcurve.geometry),
             (None, Some(range)) => SpringPcurve::Range(range),
             _ => {
                 return Err(serde::de::Error::custom(
@@ -7020,7 +7279,7 @@ mod spring_layout_wire {
                 support(second_side.surface, second_ranges, 1)?,
             ],
             first_pcurve,
-            second_pcurve: second_side.pcurve,
+            second_pcurve: second_side.pcurve.map(|pcurve| pcurve.geometry),
             parameter_range: wire.context.parameter_range,
             discontinuities: wire.context.discontinuities,
             discontinuity_flag: wire.discontinuity_flag,
@@ -8562,6 +8821,12 @@ impl PolarPcurveNurbs {
         if degree == 0 {
             return Err(NurbsError("polar NURBS degree must be positive".into()));
         }
+        require_finite_points_2("radial_control_points", &radial_control_points)?;
+        require_finite_scalars("axial_control_points", &axial_control_points)?;
+        require_nondecreasing_knots(&knots)?;
+        if let Some(weights) = &weights {
+            require_pcurve_weights(weights)?;
+        }
         Ok(Self {
             degree,
             knots,
@@ -8585,9 +8850,13 @@ impl PolarPcurveNurbs {
         &self.knots
     }
 
-    /// Mutable knot values. The cardinality cannot change.
-    pub fn knots_mut(&mut self) -> &mut [f64] {
-        &mut self.knots
+    /// Atomically edit knot values and preserve their invariants.
+    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let mut values = self.knots.clone();
+        edit(&mut values);
+        require_nondecreasing_knots(&values)?;
+        self.knots = values;
+        Ok(())
     }
 
     /// Paired radial and axial poles.
@@ -8595,9 +8864,21 @@ impl PolarPcurveNurbs {
         &self.poles
     }
 
-    /// Mutable paired poles. The cardinality cannot change.
-    pub fn poles_mut(&mut self) -> &mut [PolarNurbsPole] {
-        &mut self.poles
+    /// Atomically edit paired poles and preserve finite coordinates.
+    pub fn edit_poles(
+        &mut self,
+        edit: impl FnOnce(&mut [PolarNurbsPole]),
+    ) -> Result<(), NurbsError> {
+        let mut values = self.poles.clone();
+        edit(&mut values);
+        if values.iter().all(|pole| {
+            pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
+        }) {
+            self.poles = values;
+            Ok(())
+        } else {
+            Err(NurbsError("poles contain a non-finite value".into()))
+        }
     }
 
     /// Rational weights in pole order.
@@ -8605,15 +8886,23 @@ impl PolarPcurveNurbs {
         self.weights.as_deref()
     }
 
-    /// Mutable rational weight values. The cardinality cannot change.
-    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
-        self.weights.as_deref_mut()
+    /// Atomically edit rational weights and preserve their invariants.
+    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let Some(weights) = &self.weights else {
+            return Err(NurbsError("polar pcurve has no rational weights".into()));
+        };
+        let mut values = weights.clone();
+        edit(&mut values);
+        require_pcurve_weights(&values)?;
+        self.weights = Some(values);
+        Ok(())
     }
 
     /// Replace rational weights after checking pole cardinality.
     pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
         if let Some(values) = &weights {
             require_length("weights", values.len(), self.poles.len())?;
+            require_pcurve_weights(values)?;
         }
         self.weights = weights;
         Ok(())
@@ -8622,6 +8911,18 @@ impl PolarPcurveNurbs {
     /// Whether the NURBS parameterization is periodic.
     pub const fn periodic(&self) -> bool {
         self.periodic
+    }
+
+    /// Reverse paired poles, weights, and the signed knot parameterization together.
+    pub fn reverse_parameterization(&mut self) {
+        self.poles.reverse();
+        if let Some(weights) = &mut self.weights {
+            weights.reverse();
+        }
+        self.knots.reverse();
+        for knot in &mut self.knots {
+            *knot = -*knot;
+        }
     }
 }
 
@@ -8692,6 +8993,11 @@ impl PcurveNurbs {
         if degree == 0 {
             return Err(NurbsError("pcurve NURBS degree must be positive".into()));
         }
+        require_finite_points_2("control_points", &control_points)?;
+        require_nondecreasing_knots(&knots)?;
+        if let Some(weights) = &weights {
+            require_pcurve_weights(weights)?;
+        }
         Ok(Self {
             degree,
             knots,
@@ -8702,15 +9008,14 @@ impl PcurveNurbs {
     }
 
     /// Lift each two-dimensional pole into model space without changing knot or weight cardinalities.
-    #[must_use]
-    pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> NurbsCurve {
-        NurbsCurve {
-            degree: self.degree,
-            knots: self.knots.clone(),
-            control_points: self.control_points.iter().copied().map(lift).collect(),
-            weights: self.weights.clone(),
-            periodic: self.periodic,
-        }
+    pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> Result<NurbsCurve, NurbsError> {
+        NurbsCurve::new(
+            self.degree,
+            self.knots.clone(),
+            self.control_points.iter().copied().map(lift).collect(),
+            self.weights.clone(),
+            self.periodic,
+        )
     }
 
     /// Curve degree.
@@ -8723,9 +9028,13 @@ impl PcurveNurbs {
         &self.knots
     }
 
-    /// Mutable knot values. The cardinality cannot change.
-    pub fn knots_mut(&mut self) -> &mut [f64] {
-        &mut self.knots
+    /// Atomically edit knot values and preserve their invariants.
+    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let mut values = self.knots.clone();
+        edit(&mut values);
+        require_nondecreasing_knots(&values)?;
+        self.knots = values;
+        Ok(())
     }
 
     /// Control points in parameter order.
@@ -8733,9 +9042,16 @@ impl PcurveNurbs {
         &self.control_points
     }
 
-    /// Mutable control-point values. The cardinality cannot change.
-    pub fn control_points_mut(&mut self) -> &mut [Point2] {
-        &mut self.control_points
+    /// Atomically edit control points and preserve finite coordinates.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnOnce(&mut [Point2]),
+    ) -> Result<(), NurbsError> {
+        let mut values = self.control_points.clone();
+        edit(&mut values);
+        require_finite_points_2("control_points", &values)?;
+        self.control_points = values;
+        Ok(())
     }
 
     /// Rational weights in pole order.
@@ -8743,15 +9059,23 @@ impl PcurveNurbs {
         self.weights.as_deref()
     }
 
-    /// Mutable rational weight values. The cardinality cannot change.
-    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
-        self.weights.as_deref_mut()
+    /// Atomically edit rational weights and preserve their invariants.
+    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
+        let Some(weights) = &self.weights else {
+            return Err(NurbsError("pcurve has no rational weights".into()));
+        };
+        let mut values = weights.clone();
+        edit(&mut values);
+        require_pcurve_weights(&values)?;
+        self.weights = Some(values);
+        Ok(())
     }
 
     /// Replace rational weights after checking pole cardinality.
     pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
         if let Some(values) = &weights {
             require_length("weights", values.len(), self.control_points.len())?;
+            require_pcurve_weights(values)?;
         }
         self.weights = weights;
         Ok(())
@@ -8760,6 +9084,18 @@ impl PcurveNurbs {
     /// Whether the parameter-space curve is periodic.
     pub const fn periodic(&self) -> bool {
         self.periodic
+    }
+
+    /// Reverse poles, weights, and the signed knot parameterization together.
+    pub fn reverse_parameterization(&mut self) {
+        self.control_points.reverse();
+        if let Some(weights) = &mut self.weights {
+            weights.reverse();
+        }
+        self.knots.reverse();
+        for knot in &mut self.knots {
+            *knot = -*knot;
+        }
     }
 }
 

@@ -740,13 +740,11 @@ pub(crate) fn try_decode_zero_entity(
                                     sides: [
                                         IntcurveSupportSide {
                                             surface: Some(surface.clone()),
-                                            pcurve: Some(pcurve),
-                                            pcurve_parameter_range: None,
+                                            pcurve: Some(pcurve.into()),
                                         },
                                         IntcurveSupportSide {
                                             surface: None,
                                             pcurve: None,
-                                            pcurve_parameter_range: None,
                                         },
                                     ],
                                     parameter_range,

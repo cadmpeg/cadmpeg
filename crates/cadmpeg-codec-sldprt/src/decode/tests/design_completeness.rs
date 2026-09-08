@@ -556,8 +556,9 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
                 cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
                 cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
             ],
-            guides: Vec::new(),
-            centerline: Some(PathRef::Native("centerline".into())),
+            guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Native(
+                "centerline".into(),
+            )),
             op: BooleanOp::NewBody,
             closed: false,
             solid: false,

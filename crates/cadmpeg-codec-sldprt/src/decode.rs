@@ -534,9 +534,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                             .iter()
                             .find(|feature| feature.id == *id)
                             .is_some_and(|feature| {
-                                feature
-                                    .suppressed
-                                    .is_some_and(|suppressed| suppressed != state.suppressed)
+                                feature.suppressed.is_some_and(|suppressed| {
+                                    suppressed != state.evaluation.is_suppressed()
+                                })
                             }))
             })
         })
@@ -748,7 +748,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         EvaluatedFeatureState {
                             feature,
                             dependencies: &state.dependencies,
-                            outputs: &state.outputs,
+                            outputs: state.evaluation.outputs(),
                             definition: &state.definition,
                         }
                     })
@@ -988,12 +988,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. }
-        | BodySelection::HistoricalSet { bodies, .. }
-        | BodySelection::HistoricalUnorderedSet { bodies, .. } => bodies.is_empty(),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. } => bodies.is_empty(),
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
@@ -1299,8 +1298,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             }
             FeatureDefinition::Loft {
                 sections,
-                guides,
-                centerline,
+                guidance,
                 op,
                 ..
             } => {
@@ -1310,8 +1308,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Native(_)) => true,
                         cadmpeg_ir::features::LoftSection::Point(_) => false,
                     })
-                    || guides.iter().any(incomplete_path)
-                    || centerline.as_ref().is_some_and(incomplete_path)
+                    || match guidance {
+                        cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                            guides.iter().any(incomplete_path)
+                        }
+                        cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                            incomplete_path(centerline)
+                        }
+                    }
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
@@ -3788,9 +3792,14 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
             (
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
-                    suppressed: feature.suppressed.unwrap_or(false),
+                    evaluation: if feature.suppressed.unwrap_or(false) {
+                        cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+                    } else {
+                        cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                            outputs: feature.outputs.clone(),
+                        }
+                    },
                     dependencies: feature.dependencies.clone(),
-                    outputs: feature.outputs.clone(),
                     definition: feature.definition.clone(),
                 },
             )
@@ -3866,7 +3875,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         let Some(state) = configuration.feature_states.get_mut(&feature) else {
             continue;
         };
-        if state.suppressed {
+        if state.evaluation.is_suppressed() {
             continue;
         }
         let cadmpeg_ir::features::FeatureDefinition::Hole {

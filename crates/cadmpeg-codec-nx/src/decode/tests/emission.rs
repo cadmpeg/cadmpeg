@@ -711,12 +711,12 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         unreachable!()
     };
     let pcurve = context.sides[1].pcurve.as_ref().unwrap();
-    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         unreachable!()
     };
     assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
+        let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, parameter).unwrap();
         let point =
             cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v).unwrap();
         let angle = std::f64::consts::TAU * parameter;
@@ -796,15 +796,18 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     else {
         unreachable!()
     };
-    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[1].pcurve.as_ref() else {
+    let Some(support) = context.sides[1].pcurve.as_ref() else {
         panic!("adaptive blend-contact transfer did not produce a pcurve")
+    };
+    let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
+        panic!("adaptive blend-contact transfer did not produce a NURBS pcurve")
     };
     let source_pcurve = context.sides[0].pcurve.as_ref().unwrap();
     let target_pcurve = context.sides[1].pcurve.as_ref().unwrap();
     assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let source_uv = cadmpeg_ir::eval::pcurve_uv(source_pcurve, parameter).unwrap();
-        let target_uv = cadmpeg_ir::eval::pcurve_uv(target_pcurve, parameter).unwrap();
+        let source_uv = cadmpeg_ir::eval::pcurve_uv(&source_pcurve.geometry, parameter).unwrap();
+        let target_uv = cadmpeg_ir::eval::pcurve_uv(&target_pcurve.geometry, parameter).unwrap();
         assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
         assert_eq!(source_uv.v, target_uv.v);
     }
@@ -956,15 +959,16 @@ fn cylinder_plane_transfer_fixture(
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(source),
-                        pcurve_parameter_range: None,
-                        pcurve: Some(PcurveGeometry::Line {
-                            origin: Point2::new(0.0, 0.0),
-                            direction: Point2::new(source_pcurve_angle, 0.0),
-                        }),
+                        pcurve: Some(
+                            PcurveGeometry::Line {
+                                origin: Point2::new(0.0, 0.0),
+                                direction: Point2::new(source_pcurve_angle, 0.0),
+                            }
+                            .into(),
+                        ),
                     },
                     IntcurveSupportSide {
                         surface: Some(target.clone()),
-                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                 ],
@@ -1083,12 +1087,10 @@ fn blend_contact_transfer_fixture(
                     sides: [
                         IntcurveSupportSide {
                             surface: Some(contact_surface),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(contact_pcurve),
+                            pcurve: Some(contact_pcurve.into()),
                         },
                         IntcurveSupportSide {
                             surface: Some(other_support.clone()),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -1144,12 +1146,10 @@ fn blend_contact_transfer_fixture(
                     sides: [
                         IntcurveSupportSide {
                             surface: Some(support.clone()),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(source_pcurve.clone()),
+                            pcurve: Some(source_pcurve.clone().into()),
                         },
                         IntcurveSupportSide {
                             surface: Some(target.clone()),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -1264,15 +1264,16 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     sides: [
                         IntcurveSupportSide {
                             surface: Some(source),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(PcurveGeometry::Line {
-                                origin: Point2::new(0.0, 0.0),
-                                direction: Point2::new(1.0, 0.0),
-                            }),
+                            pcurve: Some(
+                                PcurveGeometry::Line {
+                                    origin: Point2::new(0.0, 0.0),
+                                    direction: Point2::new(1.0, 0.0),
+                                }
+                                .into(),
+                            ),
                         },
                         IntcurveSupportSide {
                             surface: Some(target),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -1300,7 +1301,8 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { nurbs } = context.sides[1].pcurve.as_ref().unwrap() else {
+    let PcurveGeometry::Nurbs { nurbs } = &context.sides[1].pcurve.as_ref().unwrap().geometry
+    else {
         unreachable!()
     };
     assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
@@ -1567,12 +1569,10 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                     IntcurveSupportSide {
                         surface: Some(first_support.clone()),
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                     IntcurveSupportSide {
                         surface: Some(second_support.clone()),
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                 ],
                 parameter_range: [0.0, 1.0],

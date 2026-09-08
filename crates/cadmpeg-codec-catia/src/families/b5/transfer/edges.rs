@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SurfaceCurveFamily,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SupportPcurve, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;
@@ -63,13 +63,6 @@ pub(super) fn merge_curve_plan(
     if existing.cache_fit_tolerance.is_none() {
         existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
     }
-}
-
-pub(super) fn curve_cache_has_ordered_knots(geometry: &CurveGeometry) -> bool {
-    let CurveGeometry::Nurbs(curve) = geometry else {
-        return true;
-    };
-    curve.knots().iter().all(|knot| knot.is_finite()) && knots_nondecreasing(curve.knots())
 }
 
 pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
@@ -132,12 +125,16 @@ pub(super) fn b5_edge_support_definition(
     let mut sides = std::array::from_fn(|_| IntcurveSupportSide {
         surface: None,
         pcurve: None,
-        pcurve_parameter_range: None,
     });
     for (side, (surface, pcurve, support_range)) in sides.iter_mut().zip(supports) {
         side.surface = Some(surface_ids.get(surface)?.clone());
-        side.pcurve = Some(pcurves.get(pcurve)?.0.clone());
-        side.pcurve_parameter_range = (*support_range != parameter_range).then_some(*support_range);
+        let mapped_range = (*support_range != parameter_range)
+            .then(|| DirectedParameterRange::new(*support_range).ok())
+            .flatten();
+        side.pcurve = Some(SupportPcurve::new(
+            pcurves.get(pcurve)?.0.clone(),
+            mapped_range,
+        ));
     }
     let context = IntcurveSupportContext {
         sides,
@@ -292,7 +289,7 @@ pub(super) fn emit_edges(
         let curve_id =
             CurveId::mint(format!("catia:b5:curve#{edge_id}")).expect("identity grammar");
         let endpoints = graph.edge_vertices[&edge_id];
-        let mut curve_plan = plan
+        let curve_plan = plan
             .edge_curve_plan
             .remove(&edge_id)
             .unwrap_or_else(|| CurvePlan {
@@ -303,17 +300,7 @@ pub(super) fn emit_edges(
                 edge_tolerance: None,
                 cache_fit_tolerance: None,
             });
-        if !curve_cache_has_ordered_knots(&curve_plan.geometry) {
-            curve_plan = CurvePlan {
-                geometry: CurveGeometry::Unknown {
-                    record: Some(payload.clone()),
-                },
-                parameter_range: None,
-                edge_tolerance: None,
-                cache_fit_tolerance: None,
-            };
-            plan.edge_helix_plan.remove(&edge_id);
-        }
+
         let helix = plan.edge_helix_plan.remove(&edge_id);
         let edge_range = curve_plan.parameter_range;
         let support_curve_range = curve_plan_parameter_range(&curve_plan);

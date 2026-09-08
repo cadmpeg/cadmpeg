@@ -229,7 +229,7 @@ fn check_support_sides(
         };
         let support = context.parameter_range.map(|parameter| {
             side.pcurve_parameter(context.parameter_range, parameter)
-                .and_then(|parameter| pcurve_uv(pcurve, parameter))
+                .and_then(|parameter| pcurve_uv(&pcurve.geometry, parameter))
                 .and_then(|uv| model_surface_point_by_id(index, surface_id, uv.u, uv.v))
         });
         let [Some(support_start), Some(support_end)] = support else {

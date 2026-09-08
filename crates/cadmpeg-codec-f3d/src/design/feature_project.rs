@@ -2683,17 +2683,20 @@ pub fn bind_sketch_feature_geometry(
                 );
             }
             FeatureDefinition::Loft {
-                sections,
-                guides,
-                centerline,
-                ..
+                sections, guidance, ..
             } => {
                 dependencies.extend(sections.iter().filter_map(|section| match section {
                     LoftSection::Profile(profile) => profile_dependency(profile),
                     LoftSection::Point(_) => None,
                 }));
-                dependencies.extend(guides.iter().filter_map(path_dependency));
-                dependencies.extend(centerline.as_ref().and_then(path_dependency));
+                match guidance {
+                    cadmpeg_ir::features::LoftGuidance::Guides(paths) => {
+                        dependencies.extend(paths.iter().filter_map(path_dependency));
+                    }
+                    cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
+                        dependencies.extend(path_dependency(path));
+                    }
+                }
             }
             FeatureDefinition::DatumPoint {
                 construction: Some(construction),
@@ -6209,8 +6212,11 @@ pub(crate) fn project_fixed_loft(
     }
     Some(FeatureDefinition::Loft {
         sections,
-        guides,
-        centerline,
+        guidance: if let Some(centerline) = centerline {
+            cadmpeg_ir::features::LoftGuidance::Centerline(centerline)
+        } else {
+            cadmpeg_ir::features::LoftGuidance::Guides(guides)
+        },
         op: fixed_boolean_operation(*operation),
         closed: false,
         solid: true,

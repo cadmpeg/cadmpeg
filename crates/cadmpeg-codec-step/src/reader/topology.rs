@@ -2389,13 +2389,15 @@ fn build_one(
                         radial.entry(edge_id).or_default().push(coedges.len() - 1);
                         typed.insert(loop_step);
                     }
+                    let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+                    else {
+                        note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
+                        return None;
+                    };
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                            coedges: coedge_ids,
-                            vertex_uses: Vec::new(),
-                        },
+                        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                     });
                     loop_ids.push((is_outer_bound, lid));
                     typed.insert(bound_step);
@@ -2573,13 +2575,14 @@ fn build_one(
                         typed.insert(parent);
                     }
                 }
+                let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
+                    note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
+                    return None;
+                };
                 loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                        coedges: coedge_ids,
-                        vertex_uses: Vec::new(),
-                    },
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                 });
                 loop_ids.push((is_outer_bound, lid));
                 typed.extend([bound_step, loop_step]);

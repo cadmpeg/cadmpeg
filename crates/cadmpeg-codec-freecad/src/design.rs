@@ -2211,9 +2211,11 @@ fn parse_constraints(
                     .filter_map(|(entity, position)| {
                         if *entity < 0 || resolve(*entity, *position).is_none() {
                             Some(SketchNativeOperand {
-                                native_kind: format!("position:{position}"),
-                                native_field: None,
-                                native_role: None,
+                                native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                    "position:{position}"
+                                ))
+                                .expect("source operand kind is nonempty"),
+                                field: None,
                                 object_index: u32::try_from(*entity).unwrap_or(u32::MAX),
                                 native_ref: None,
                             })
@@ -4732,8 +4734,7 @@ fn loft_definition(
             .into_iter()
             .map(cadmpeg_ir::features::LoftSection::Profile)
             .collect(),
-        guides: Vec::new(),
-        centerline: None,
+        guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
         op: operation_boolean(kind),
         closed: bool_selector(properties, "Closed", false)?,
         solid: if part_design {

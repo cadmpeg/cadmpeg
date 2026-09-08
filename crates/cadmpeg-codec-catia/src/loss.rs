@@ -38,6 +38,8 @@ pub enum CatiaLossCode {
     GeometryPlaneParametersInvalid,
     /// Analytic surface records had a non-finite or out-of-range payload.
     GeometryAnalyticPayloadInvalid,
+    /// Equivalent support charts produce non-finite pcurve coordinates.
+    GeometryPcurveRechartNonFinite,
     /// Face-local free-form carriers retain identity without aliased geometry.
     GeometryFaceLocalFreeformNotTransferred,
     /// Revolution carriers retain profile identity without bound directrices.
@@ -93,6 +95,7 @@ impl CatiaLossCode {
         Self::GeometryBrepNotTransferred,
         Self::GeometryPlaneParametersInvalid,
         Self::GeometryAnalyticPayloadInvalid,
+        Self::GeometryPcurveRechartNonFinite,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
         Self::GeometryLineProfileNotTransferred,
@@ -127,6 +130,7 @@ impl CatiaLossCode {
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
             Self::GeometryPlaneParametersInvalid => "geometry.plane-parameters-invalid",
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
+            Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
             }
@@ -192,6 +196,7 @@ impl CatiaLossCode {
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
+            | Self::GeometryPcurveRechartNonFinite
             | Self::GeometryFaceLocalFreeformNotTransferred
             | Self::GeometryRevolutionProfileUnbound
             | Self::GeometryLineProfileNotTransferred => LossTaxonomy::GeometryNotTransferred,
@@ -251,6 +256,7 @@ mod tests {
                 "geometry.brep-not-transferred",
                 "geometry.plane-parameters-invalid",
                 "geometry.analytic-payload-invalid",
+                "geometry.pcurve-rechart-non-finite",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
                 "geometry.line-profile-not-transferred",

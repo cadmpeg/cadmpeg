@@ -14,8 +14,8 @@ use crate::decode::sketch_transfer::loci::{
 use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId,
-    SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis,
+    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::BTreeMap;
 
@@ -86,18 +86,26 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     .items
                     .iter()
                     .map(|item| SketchNativeOperand {
-                        native_kind: "skamp_ptr".to_string(),
-                        native_field: Some("items.entity_id".to_string()),
-                        native_role: Some(item.sense),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr")
+                            .expect("source operand kind is nonempty"),
+                        field: Some(NativeOperandField {
+                            name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id")
+                                .expect("source field name is nonempty"),
+                            role: Some(item.sense),
+                        }),
                         object_index: item.entity_id,
                         native_ref: Some(native_ref.clone()),
                     })
                     .collect::<Vec<_>>();
                 if let Some(equation_id) = joined_equation_id {
                     operands.push(SketchNativeOperand {
-                        native_kind: "triples_ptr".to_string(),
-                        native_field: Some("equation_id".to_string()),
-                        native_role: None,
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("triples_ptr")
+                            .expect("source operand kind is nonempty"),
+                        field: Some(NativeOperandField {
+                            name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
+                                .expect("source field name is nonempty"),
+                            role: None,
+                        }),
                         object_index: equation_id,
                         native_ref: Some(native_ref),
                     });

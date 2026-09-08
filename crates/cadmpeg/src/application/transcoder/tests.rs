@@ -98,10 +98,10 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            "asm-history-0",
-            serde_json::Map::default(),
-        )],
+        vec![
+            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", serde_json::Map::default())
+                .expect("valid native identity"),
+        ],
     );
     ir.finalize();
     ir

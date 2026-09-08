@@ -53,12 +53,10 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
                     sides: [
                         IntcurveSupportSide {
                             surface: Some(incident[0].clone()),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                         IntcurveSupportSide {
                             surface: None,
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -121,7 +119,13 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     else {
         panic!("intersection");
     };
-    assert_eq!(context.sides[1].pcurve.as_ref(), Some(&pcurve_geometry));
+    assert_eq!(
+        context.sides[1]
+            .pcurve
+            .as_ref()
+            .map(|binding| &binding.geometry),
+        Some(&pcurve_geometry)
+    );
 }
 
 #[test]

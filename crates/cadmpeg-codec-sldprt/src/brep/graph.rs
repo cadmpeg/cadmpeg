@@ -187,14 +187,13 @@ impl Brep {
                             .expect("qualified identity");
                     }
                 }
-                cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges,
-                    vertex_uses,
-                } => {
-                    for id in coedges {
+                cadmpeg_ir::topology::LoopBoundary::Ring(ring) => {
+                    let mut coedges = ring.coedges().to_vec();
+                    let mut vertex_uses = ring.vertex_uses().to_vec();
+                    for id in &mut coedges {
                         *id = qualify(id.as_str()).try_into().expect("qualified identity");
                     }
-                    for vertex_use in vertex_uses {
+                    for vertex_use in &mut vertex_uses {
                         vertex_use.vertex = qualify(vertex_use.vertex.as_str())
                             .try_into()
                             .expect("qualified identity");
@@ -207,6 +206,8 @@ impl Brep {
                                 .expect("qualified identity");
                         }
                     }
+                    *ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses)
+                        .expect("qualified loop ring preserves anchors");
                 }
             }
         }
@@ -1602,13 +1603,13 @@ fn decode_graph(
             annotations
                 .note(id_loop(*loop_attr), source_stream, off as u64)
                 .tag("00_0f");
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
+                continue;
+            };
             out.loops.push(Loop {
                 id: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
                 face: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges,
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
     }
@@ -4987,9 +4988,10 @@ fn synthesize_cylinder_seams(
             }
         }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_a) {
-            if let Some((coedges, _)) = lp.ring_mut() {
-                *coedges = ring.to_vec();
-            }
+            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(ring.to_vec(), Vec::new())
+                    .expect("periodic seam ring is nonempty"),
+            );
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
             face.loops = vec![loop_a].into();
@@ -5303,9 +5305,10 @@ fn synthesize_sphere_seams(
             }],
         });
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {
-            if let Some((coedges, _)) = lp.ring_mut() {
-                *coedges = ring;
-            }
+            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(ring, Vec::new())
+                    .expect("sphere seam ring is nonempty"),
+            );
         }
     }
 }
@@ -5890,11 +5893,14 @@ mod tests {
         let lp = |id: &str, face: &str, coedge: &str| Loop {
             id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
             face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
-                    .expect("identity grammar")],
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         };
         let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
             id: CoedgeId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
@@ -6551,10 +6557,10 @@ mod tests {
             loops: vec![Loop {
                 id: loop_id.clone(),
                 face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: vec![coedge_id.clone()],
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             }],
             coedges: vec![Coedge {
                 id: coedge_id,

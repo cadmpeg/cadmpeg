@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
-    SketchGeometry, SketchId, SketchNativeOperand,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchNativeOperand,
 };
 
 use crate::design_feature::{self, DesignFeatureTransfer};
@@ -413,9 +413,15 @@ pub(crate) fn transfer_native_sketch_constraints(
                 entities: candidate.entities,
                 parameter: None,
                 operands: vec![SketchNativeOperand {
-                    native_kind: "ConstraintDYS".to_string(),
-                    native_field: Some(candidate.target_record.clone()),
-                    native_role: None,
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("ConstraintDYS")
+                        .expect("source operand kind is nonempty"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_ir::products::NonEmptyString::new(
+                            candidate.target_record.clone(),
+                        )
+                        .expect("source field name is nonempty"),
+                        role: None,
+                    }),
                     object_index,
                     native_ref: Some(candidate.target_entity_record.clone()),
                 }],
@@ -821,9 +827,13 @@ fn constraint_binding(
         sketch,
         source_object_record: source_record.id.clone(),
         operand: SketchNativeOperand {
-            native_kind,
-            native_field: Some(source_record.id.clone()),
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(native_kind)
+                .expect("source operand kind is nonempty"),
+            field: Some(NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new(source_record.id.clone())
+                    .expect("source field name is nonempty"),
+                role: None,
+            }),
             object_index,
             native_ref: Some(source_entity_record.id.clone()),
         },
@@ -1579,7 +1589,7 @@ mod tests {
         assert_eq!(operands.len(), 1);
         assert_eq!(operands[0].native_kind, "ConstraintDYS");
         assert_eq!(
-            operands[0].native_field.as_deref(),
+            operands[0].field.as_ref().map(|field| field.name.as_str()),
             Some("catia:outer:object-record#constraint-field")
         );
         assert_eq!(
@@ -1673,7 +1683,10 @@ mod tests {
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
         assert_eq!(operands[0].native_kind, "ConstraintField");
-        assert_eq!(operands[0].native_field.as_deref(), Some("source-record"));
+        assert_eq!(
+            operands[0].field.as_ref().map(|field| field.name.as_str()),
+            Some("source-record")
+        );
         assert_eq!(
             operands[0].native_ref.as_deref(),
             Some("catia:outer:entity-record#source")

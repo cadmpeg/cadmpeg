@@ -17,6 +17,8 @@ fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     assert!(elevate_nurbs_to_degree(&mut curve, interval, 3, None));
     assert_eq!(curve.knots().first(), Some(&interval[0]));
     assert_eq!(curve.knots().last(), Some(&interval[1]));
+    assert_eq!(&curve.knots()[..4], &[interval[0]; 4]);
+    assert_eq!(&curve.knots()[4..], &[interval[1]; 4]);
 }
 
 #[test]

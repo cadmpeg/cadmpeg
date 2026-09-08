@@ -312,7 +312,7 @@ mod tests {
         }) else {
             panic!("the pinned record literal is a JSON object");
         };
-        NativeRecord::new("pin:record#0", fields)
+        NativeRecord::new("pin:test:record#0", fields).expect("valid native identity")
     }
 
     fn pinned_native() -> Native {
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn pins_pretty_printed_native_record_bytes() {
         let expected = r#"{
-  "id": "pin:record#0",
+  "id": "pin:test:record#0",
   "alpha": [
     -1,
     0,
@@ -365,7 +365,7 @@ mod tests {
   "pin": {
     "records": [
       {
-        "id": "pin:record#0",
+        "id": "pin:test:record#0",
         "alpha": [
           -1,
           0,
@@ -404,7 +404,7 @@ mod tests {
     fn pins_native_arena_digest() {
         assert_eq!(
             canonical_json_sha256(&pinned_native()),
-            "f5a9aa5fe14fa134b708f3cdc284f6b6fb8b1a869c9297805664a3c6e01d2003"
+            "7249c236a39ac27b8614a9ef11d6b1e1c416e1242d909e6d0e94a96c1d6507d4"
         );
     }
 
@@ -420,7 +420,7 @@ mod tests {
         }) else {
             panic!("the pinned unknown literal is a JSON object");
         };
-        NativeRecord::new(id, fields)
+        NativeRecord::new(id, fields).expect("valid native identity")
     }
 
     fn pinned_document() -> CadIr {
@@ -433,7 +433,7 @@ mod tests {
                 pinned_unknown("pin:test:source-image#0", &[]),
                 pinned_unknown(
                     "pin:test:unknown#0",
-                    &["pin:record#0", "pin:test:unknown#1"],
+                    &["pin:test:record#0", "pin:test:unknown#1"],
                 ),
             ],
         );
@@ -448,11 +448,11 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "c0d73e255c2485e67c444e00b498d0ddd0569869491caadf15dbdd4e38943804"
+            "1820f590514800c5e06ede9ec2589d9596319e2196a253e5f58cc772b3539caf"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
-            "7ef166b92c2a9afa4a9db87a172a390f7776f1fde9ab3a830263e124200fdd67"
+            "f7e3c741c5340b0d21cffef31e21089912d46c1a252aa3bb48cedf547f73d4fa"
         );
     }
 
@@ -540,7 +540,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "2f16a97476ee6fa08027fc36330dabd10af02105432faec25c0a3ef4b0ef2e50"
+            "6bc2ac50b363a3eb6d84daf622a2acb97119f4ea1abba19a241de25872d1e134"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
@@ -644,7 +644,10 @@ mod tests {
         let namespace = ir.native.namespace_mut("other");
         namespace.arenas_mut().insert(
             "records".into(),
-            vec![NativeRecord::new("other:record#0", serde_json::Map::new())],
+            vec![
+                NativeRecord::new("other:test:record#0", serde_json::Map::new())
+                    .expect("valid native identity"),
+            ],
         );
         (ir, source_fidelity)
     }

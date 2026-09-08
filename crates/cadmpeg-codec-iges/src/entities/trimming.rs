@@ -2230,13 +2230,15 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
+                losses.push(entity_loss(entry, "boundary loop contains no coedges"));
+                valid = false;
+                break;
+            };
             candidate.model_mut().loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids,
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             loop_ids.push(loop_id);
         }

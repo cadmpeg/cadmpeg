@@ -21,8 +21,8 @@ fn projection_caches_end_after_history_consumers() {
         topology: Default::default(),
     };
     let state = AsmDeltaState {
-        id: "history:state#2".into(),
-        parent: "history".into(),
+        id: "f3d:test:history-state#2".into(),
+        parent: "f3d:test:history#0".into(),
         byte_offset: 0,
         state_id: 2,
         version_flag: 1,
@@ -44,7 +44,7 @@ fn projection_caches_end_after_history_consumers() {
         transition: Some(transition.clone()),
     };
     let mut histories = [AsmHistory {
-        id: "history".into(),
+        id: "f3d:test:history#0".into(),
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,

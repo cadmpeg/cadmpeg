@@ -180,10 +180,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: vec![cap_coedge.clone()],
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![cap_coedge.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: cap_coedge.clone(),
@@ -250,10 +250,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: vec![coedge.clone()],
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),

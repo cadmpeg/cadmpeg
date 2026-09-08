@@ -4995,8 +4995,15 @@ pub(super) fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64;
             *sine = scale_point(*sine);
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            for control_point in nurbs.control_points_mut() {
-                *control_point = scale_point(*control_point);
+            if nurbs
+                .edit_control_points(|points| {
+                    for control_point in points {
+                        *control_point = scale_point(*control_point);
+                    }
+                })
+                .is_err()
+            {
+                return false;
             }
         }
         PcurveGeometry::Trimmed { basis, .. } => {

@@ -4,9 +4,9 @@
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
-    PcurveGeometry, PcurveNurbs, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    Surface, SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, SupportPcurve, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -1268,7 +1268,10 @@ fn plan_e5_boundary(
             };
             let Some((geometry, range, endpoints)) = e5_pcurve_on_surface(pcurve, decoded_surface)
             else {
-                continue;
+                // A known intersection pcurve that cannot be normalized must
+                // reject the topology route; omitting one side would claim a
+                // closed graph with incomplete carrier geometry.
+                return None;
             };
             let forward = endpoints[0]
                 .distance(*start)
@@ -1355,8 +1358,10 @@ fn plan_e5_boundary(
             IntcurveSupportContext {
                 sides: [left, right].map(|side| IntcurveSupportSide {
                     surface: Some(side.surface.clone()),
-                    pcurve: Some(side.pcurve.clone()),
-                    pcurve_parameter_range: Some(side.pcurve_range),
+                    pcurve: Some(SupportPcurve::new(
+                        side.pcurve.clone(),
+                        DirectedParameterRange::new(side.pcurve_range).ok(),
+                    )),
                 }),
                 parameter_range: left.curve_range,
                 discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -1565,13 +1570,11 @@ fn emit_e5_curves_and_edges(
                             sides: [
                                 IntcurveSupportSide {
                                     surface: Some(surface.clone()),
-                                    pcurve: Some(pcurve.clone()),
-                                    pcurve_parameter_range: None,
+                                    pcurve: Some(SupportPcurve::new(pcurve.clone(), None)),
                                 },
                                 IntcurveSupportSide {
                                     surface: None,
                                     pcurve: None,
-                                    pcurve_parameter_range: None,
                                 },
                             ],
                             parameter_range: *range,
@@ -1829,13 +1832,14 @@ fn emit_e5_faces_loops_coedges(
                 .derived(&loop_id, "face")
                 .derived(&loop_id, "coedges")
                 .derived(&loop_id, "vertex_uses");
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
+            else {
+                return false;
+            };
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids.clone(),
-                    vertex_uses,
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             for member in members {
                 let index = member.serialized_index;
@@ -1988,9 +1992,13 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             };
             let scale = decoded_surface.uv_scale;
-            for point in nurbs.control_points_mut() {
-                *point = Point2::new(point.u * scale[0], point.v * scale[1]);
-            }
+            nurbs
+                .edit_control_points(|points| {
+                    for point in points {
+                        *point = Point2::new(point.u * scale[0], point.v * scale[1]);
+                    }
+                })
+                .ok()?;
             if !nurbs.control_points().iter().copied().all(finite_point2)
                 || !nurbs.knots().iter().copied().all(f64::is_finite)
                 || nurbs
@@ -2373,8 +2381,7 @@ pub(crate) fn e5_occurrence_intersection_context(
     Some(IntcurveSupportContext {
         sides: [left, right].map(|side| IntcurveSupportSide {
             surface: Some(side.0.clone()),
-            pcurve: Some(side.1.clone()),
-            pcurve_parameter_range: None,
+            pcurve: Some(SupportPcurve::new(side.1.clone(), None)),
         }),
         parameter_range: left.2,
         discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -2402,8 +2409,10 @@ fn e5_support_occurrence_intersection_context(
     Some(IntcurveSupportContext {
         sides: [left, right].map(|side| IntcurveSupportSide {
             surface: Some(side.surface.clone()),
-            pcurve: Some(side.pcurve.clone()),
-            pcurve_parameter_range: Some(side.pcurve_range),
+            pcurve: Some(SupportPcurve::new(
+                side.pcurve.clone(),
+                DirectedParameterRange::new(side.pcurve_range).ok(),
+            )),
         }),
         parameter_range: solved_range,
         discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -4027,8 +4036,9 @@ mod route_tests {
 
     #[test]
     fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
+        let large = f64::MAX * 0.75;
         let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(f64::MAX, 0.0, 0.0),
+            origin: Point3::new(large, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
@@ -4041,11 +4051,11 @@ mod route_tests {
             nurbs: PcurveNurbs::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point2::new(f64::MAX, 0.0), Point2::new(f64::MAX, 1.0)],
+                vec![Point2::new(large, 0.0), Point2::new(large, 1.0)],
                 None,
                 false,
             )
-            .expect("valid nonfinite pcurve carrier"),
+            .expect("valid finite pcurve carrier"),
         };
         assert!(e5_boundary_curve(
             &surface,
@@ -4523,13 +4533,13 @@ mod route_tests {
         assert_eq!(context.parameter_range, [10.0, 20.0]);
         assert_eq!(
             context.sides[0]
-                .pcurve_parameter_range
+                .pcurve_parameter_range()
                 .expect("left local range"),
             [100.0, 200.0]
         );
         assert_eq!(
             context.sides[1]
-                .pcurve_parameter_range
+                .pcurve_parameter_range()
                 .expect("right local range"),
             [-5.0, 5.0]
         );

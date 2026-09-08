@@ -46,3 +46,32 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
+    let nurbs = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
+            Point3::new(f64::MAX, 0.0, 0.0),
+            Point3::new(f64::MAX, 1.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let geometry = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Nurbs(nurbs)),
+        transform,
+    };
+    let before = geometry.clone();
+    let error = crate::writer::flatten_curve(&geometry).unwrap_err();
+    assert!(error.to_string().contains("non-finite"));
+    assert_eq!(geometry, before);
+}

@@ -402,7 +402,7 @@ fn patch_asm_geometry(
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                native_curve.reverse_parameterization();
                 asm_edits.patch_nurbs_curve(
                     bytes,
                     record,

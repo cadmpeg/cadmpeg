@@ -797,7 +797,10 @@ fn local_tool_combine_is_census_invariant(
     tools: &BodySelection,
     bodies: &BTreeSet<BodyId>,
 ) -> bool {
-    let Some([target]) = explicit_body_selection(target) else {
+    let Some(selected_target) = explicit_body_selection(target) else {
+        return false;
+    };
+    let [target] = selected_target.as_slice() else {
         return false;
     };
     let BodySelection::Local {
@@ -911,13 +914,19 @@ fn apply_complete_body_combine(
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
-    let (Some([target]), Some(tools)) = (
+    let (Some(targets), Some(tools)) = (
         explicit_body_selection(target),
         explicit_body_selection(tools),
     ) else {
         return Err((
             feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    let [target] = targets.as_slice() else {
+        return Err((
+            feature_boundary(feature),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     };
     if feature.outputs.as_slice() != std::slice::from_ref(target)
@@ -931,7 +940,7 @@ fn apply_complete_body_combine(
     }
     if !keep_tools {
         for tool in tools {
-            bodies.remove(tool);
+            bodies.remove(&tool);
         }
     }
     Ok(())
@@ -970,7 +979,7 @@ fn apply_complete_body_replacement(
         ));
     }
     for input in inputs {
-        bodies.remove(input);
+        bodies.remove(&input);
     }
     bodies.extend(feature.outputs.iter().cloned());
     Ok(())
@@ -1010,7 +1019,7 @@ fn apply_complete_body_retention(
     match mode {
         BodyRetentionMode::DeleteSelected => {
             for body in selected {
-                bodies.remove(body);
+                bodies.remove(&body);
             }
         }
         BodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
@@ -1100,7 +1109,7 @@ fn apply_complete_body_pattern(
         .checked_mul(occurrence_count.saturating_sub(1));
     if expected_outputs != Some(feature.outputs.len())
         || seed_bodies.iter().collect::<BTreeSet<_>>().len() != seed_bodies.len()
-        || seed_bodies.iter().any(|body| !bodies.contains(*body))
+        || seed_bodies.iter().any(|body| !bodies.contains(body))
         || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
         || feature.outputs.iter().any(|output| bodies.contains(output))
     {
@@ -1113,11 +1122,10 @@ fn apply_complete_body_pattern(
     Ok(())
 }
 
-fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
+fn explicit_body_selection(selection: &BodySelection) -> Option<Vec<BodyId>> {
     let bodies = match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => bodies,
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.clone(),
+        BodySelection::ResolvedSet { members } => members.bodies().cloned().collect(),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
@@ -1224,9 +1232,10 @@ mod tests {
                 (
                     feature.id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                            outputs: feature.outputs.clone(),
+                        },
                         dependencies: feature.dependencies.clone(),
-                        outputs: feature.outputs.clone(),
                         definition: feature.definition.clone(),
                     },
                 )
@@ -1678,8 +1687,7 @@ mod tests {
         let definitions = [
             FeatureDefinition::Loft {
                 sections: Vec::new(),
-                guides: Vec::new(),
-                centerline: None,
+                guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
                 op: BooleanOp::NewBody,
                 closed: false,
                 solid: true,

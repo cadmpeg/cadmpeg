@@ -261,6 +261,9 @@ pub(in super::super) fn transfer_saved_spline_curves(
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
+            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
+                continue;
+            };
             annotate(
                 annotations,
                 &curve_id,
@@ -271,7 +274,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             );
             ir.model.curves.push(Curve {
                 id: curve_id,
-                geometry: CurveGeometry::Nurbs(placed_section_nurbs(transform, &nurbs)),
+                geometry: CurveGeometry::Nurbs(placed),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("FeatDefs:saved_spline#{suffix}"),
@@ -599,8 +602,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(section_curve) = saved_spline_nurbs(spline) else {
                 continue;
             };
-            let placed = placed_section_nurbs(transform, &section_curve);
-            let directrix = translated_nurbs_curve(&placed, lower_translation);
+            let Some(placed) = placed_section_nurbs(transform, &section_curve) else {
+                continue;
+            };
+            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
+                continue;
+            };
             let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
                 continue;
             };

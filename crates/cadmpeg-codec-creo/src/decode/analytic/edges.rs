@@ -228,7 +228,7 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
         let CurveGeometry::Nurbs(nurbs) = geometry else {
             return None;
         };
-        reverse_nonperiodic_nurbs(nurbs, intrinsic_range);
+        reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
         let sum = intrinsic_range[0] + intrinsic_range[1];
         return Some([sum - first, sum - second]);
     }
@@ -246,26 +246,26 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
             let CurveGeometry::Nurbs(nurbs) = geometry else {
                 return None;
             };
-            reverse_nonperiodic_nurbs(nurbs, intrinsic_range);
+            reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
             Some(range)
         }
         _ => None,
     }
 }
 
-fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) {
+fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<()> {
     let sum = range[0] + range[1];
-    nurbs.control_points_mut().reverse();
-    if let Some(weights) = nurbs.weights_mut() {
-        weights.reverse();
-    }
-    let knots = nurbs
-        .knots()
-        .iter()
-        .rev()
-        .map(|knot| sum - knot)
-        .collect::<Vec<_>>();
-    nurbs.knots_mut().copy_from_slice(&knots);
+    let mut reversed = nurbs.clone();
+    reversed.reverse_parameterization();
+    reversed
+        .edit_knots(|knots| {
+            for knot in knots {
+                *knot += sum;
+            }
+        })
+        .ok()?;
+    *nurbs = reversed;
+    Some(())
 }
 
 pub fn full_periodic_nurbs_edge_parameter_range(
@@ -676,4 +676,27 @@ pub fn full_periodic_conic_edge_parameter_range(
         .atan2(dot(relative, x_axis) / radii[0])
         .rem_euclid(std::f64::consts::TAU);
     Some([start, start + std::f64::consts::TAU])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reverse_nonperiodic_nurbs;
+    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn reversing_nurbs_rejects_overflow_without_mutating_the_carrier() {
+        let original = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("finite NURBS fixture");
+        let mut reversed = original.clone();
+
+        assert!(reverse_nonperiodic_nurbs(&mut reversed, [f64::MAX, f64::MAX]).is_none());
+        assert_eq!(reversed, original);
+    }
 }

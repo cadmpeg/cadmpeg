@@ -278,16 +278,16 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     ir.model.loops.push(IrLoop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![coedge_id.clone()],
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.coedges.push(Coedge {
         id: coedge_id.clone(),
         owner_loop: loop_id.clone(),
         edge: edge_id.clone(),
-        radial_next: coedge_id,
+        radial_next: coedge_id.clone(),
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
@@ -302,10 +302,10 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         id: loop_id.clone(),
         face: FaceId::mint("test:model:entity#creo:ambiguous:face".to_string())
             .expect("identity grammar"),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     assert!(bodies_containing_edges(&duplicate_loop, std::slice::from_ref(&edge_id)).is_empty());
 

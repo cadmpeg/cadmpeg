@@ -88,7 +88,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
             "user_strings".into(),
             serde_json::json!([{ "key": "name", "value": "value" }]),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
@@ -138,7 +138,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
             "mesh_modifiers".into(),
             serde_json::json!({ "displacement": { "on": true } }),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
@@ -192,7 +192,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
                 "color": [10, 20, 30, 40]
             }]),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
     }
 
     let mut output = vec![0xaa];

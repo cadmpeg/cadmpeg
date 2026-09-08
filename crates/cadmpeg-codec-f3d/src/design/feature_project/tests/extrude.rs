@@ -1543,11 +1543,9 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
                     profiles: vec![5],
                 }),
             ],
-            guides: vec![PathRef::SpatialSketchSelection {
-                sketch: spatial_sketch,
-                selections: vec!["f3d:native:guide".into()],
-            }],
-            centerline: Some(PathRef::Sketch(planar_sketch)),
+            guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Sketch(
+                planar_sketch,
+            )),
             op: BooleanOp::Join,
             closed: false,
             solid: true,

@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
@@ -18,23 +19,30 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement, SpatialSketchGeometr
 use cadmpeg_ir::transform::{Transform, Transform2};
 
 /// Scale all neutral model lengths from the source unit into millimeters.
-pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
+pub(super) fn normalize_model_lengths(
+    ir: &mut CadIr,
+    length_scale_mm: f64,
+) -> Result<(), CodecError> {
     if !length_scale_mm.is_finite() || length_scale_mm <= 0.0 || length_scale_mm == 1.0 {
-        return;
+        return Ok(());
     }
 
     let pcurve_scales = pcurve_scales(ir, length_scale_mm);
     for pcurve in &mut ir.model.pcurves {
         if let Some(scales) = pcurve_scales.get(&pcurve.id) {
-            let _ = scale_pcurve_geometry(&mut pcurve.geometry, *scales);
+            if !scale_pcurve_geometry(&mut pcurve.geometry, *scales) {
+                return Err(CodecError::NotImplemented(format!(
+                    "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
+                )));
+            }
         }
     }
 
     for surface in &mut ir.model.surfaces {
-        scale_surface_geometry(&mut surface.geometry, length_scale_mm);
+        scale_surface_geometry(&mut surface.geometry, length_scale_mm)?;
     }
     for curve in &mut ir.model.curves {
-        scale_curve_geometry(&mut curve.geometry, length_scale_mm);
+        scale_curve_geometry(&mut curve.geometry, length_scale_mm)?;
     }
     for procedural in &mut ir.model.procedural_surfaces {
         procedural.edit_definition(|definition| {
@@ -128,7 +136,7 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
         }
     }
     for entity in &mut ir.model.sketch_entities {
-        scale_sketch_geometry(&mut entity.geometry, length_scale_mm);
+        scale_sketch_geometry(&mut entity.geometry, length_scale_mm)?;
     }
     for sketch in &mut ir.model.spatial_sketches {
         for profile in &mut sketch.profiles {
@@ -136,7 +144,7 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
         }
     }
     for entity in &mut ir.model.spatial_sketch_entities {
-        scale_spatial_sketch_geometry(&mut entity.geometry, length_scale_mm);
+        scale_spatial_sketch_geometry(&mut entity.geometry, length_scale_mm)?;
     }
     for constraint in &mut ir.model.sketch_constraints {
         scale_sketch_constraint_definition(&mut constraint.definition, length_scale_mm);
@@ -144,6 +152,7 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
     for constraint in &mut ir.model.spatial_sketch_constraints {
         scale_spatial_sketch_constraint_definition(&mut constraint.definition, length_scale_mm);
     }
+    Ok(())
 }
 
 fn scale_optional(value: &mut Option<f64>, scale: f64) {
@@ -1003,7 +1012,7 @@ fn scale_pattern_kind(pattern: &mut cadmpeg_ir::features::PatternKind, scale: f6
     }
 }
 
-fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) {
+fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
         SurfaceGeometry::Plane { origin, .. } => scale_point3(origin, scale),
         SurfaceGeometry::Cylinder { origin, radius, .. } => {
@@ -1029,9 +1038,17 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) {
             *minor_radius *= scale;
         }
         SurfaceGeometry::Nurbs(surface) => {
-            for point in surface.control_points_mut() {
-                scale_point3(point, scale);
-            }
+            surface
+                .edit_control_points(|points| {
+                    for point in points {
+                        scale_point3(point, scale);
+                    }
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "Creo surface unit normalization produced invalid NURBS control points: {error}"
+                    ))
+                })?;
         }
         SurfaceGeometry::Polygonal(surface) => {
             for point in surface.vertices_mut() {
@@ -1042,14 +1059,15 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) {
         SurfaceGeometry::Transformed {
             basis, transform, ..
         } => {
-            scale_surface_geometry(basis, scale);
+            scale_surface_geometry(basis, scale)?;
             scale_transform_translation(transform, scale);
         }
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {}
     }
+    Ok(())
 }
 
-fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) {
+fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Line { origin, .. } => scale_point3(origin, scale),
         CurveGeometry::Circle { center, radius, .. } => {
@@ -1086,9 +1104,17 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) {
         }
         CurveGeometry::Degenerate { point } => scale_point3(point, scale),
         CurveGeometry::Nurbs(curve) => {
-            for point in curve.control_points_mut() {
-                scale_point3(point, scale);
-            }
+            curve
+                .edit_control_points(|points| {
+                    for point in points {
+                        scale_point3(point, scale);
+                    }
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "Creo curve unit normalization produced invalid NURBS control points: {error}"
+                    ))
+                })?;
         }
         CurveGeometry::Polyline(polyline) => {
             for point in polyline.points_mut() {
@@ -1099,13 +1125,14 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) {
         CurveGeometry::Transformed {
             basis, transform, ..
         } => {
-            scale_curve_geometry(basis, scale);
+            scale_curve_geometry(basis, scale)?;
             scale_transform_translation(transform, scale);
         }
         CurveGeometry::Composite { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Unknown { .. } => {}
     }
+    Ok(())
 }
 
 fn scale_procedural_surface_definition(
@@ -1381,8 +1408,15 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
             *sine = scale_point(*sine);
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            for point in nurbs.control_points_mut() {
-                *point = scale_point(*point);
+            if nurbs
+                .edit_control_points(|points| {
+                    for point in points {
+                        *point = scale_point(*point);
+                    }
+                })
+                .is_err()
+            {
+                return false;
             }
         }
         PcurveGeometry::Trimmed { basis, .. } => {
@@ -1420,7 +1454,7 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
     true
 }
 
-fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) {
+fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
         SketchGeometry::Point { position } => scale_point2(position, scale),
         SketchGeometry::Line { start, end } => {
@@ -1461,9 +1495,17 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) {
             focal_length.0 *= scale;
         }
         SketchGeometry::Nurbs { curve } => {
-            for point in curve.control_points_mut() {
-                scale_point2(point, scale);
-            }
+            curve
+                .edit_control_points(|points| {
+                    for point in points {
+                        scale_point2(point, scale);
+                    }
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "Creo sketch unit normalization produced invalid NURBS control points: {error}"
+                    ))
+                })?;
         }
         SketchGeometry::Text {
             height, placement, ..
@@ -1475,9 +1517,13 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) {
         }
         SketchGeometry::ExternalReference { .. } | SketchGeometry::Native { .. } => {}
     }
+    Ok(())
 }
 
-fn scale_spatial_sketch_geometry(geometry: &mut SpatialSketchGeometry, scale: f64) {
+fn scale_spatial_sketch_geometry(
+    geometry: &mut SpatialSketchGeometry,
+    scale: f64,
+) -> Result<(), CodecError> {
     match geometry {
         SpatialSketchGeometry::Point { position } => scale_point3(position, scale),
         SpatialSketchGeometry::Line { start, end } => {
@@ -1490,9 +1536,17 @@ fn scale_spatial_sketch_geometry(geometry: &mut SpatialSketchGeometry, scale: f6
             radius.0 *= scale;
         }
         SpatialSketchGeometry::Nurbs { curve } => {
-            for point in curve.control_points_mut() {
-                scale_point3(point, scale);
-            }
+            curve
+                .edit_control_points(|points| {
+                    for point in points {
+                        scale_point3(point, scale);
+                    }
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "Creo spatial sketch unit normalization produced invalid NURBS control points: {error}"
+                    ))
+                })?;
         }
         SpatialSketchGeometry::NurbsSurface { surface } => {
             for point in surface.control_points_mut() {
@@ -1501,6 +1555,7 @@ fn scale_spatial_sketch_geometry(geometry: &mut SpatialSketchGeometry, scale: f6
         }
         SpatialSketchGeometry::Native { .. } => {}
     }
+    Ok(())
 }
 
 fn scale_sketch_constraint_definition(
@@ -1602,7 +1657,7 @@ mod tests {
                 pmi: None,
                 native_ref: None,
             });
-        normalize_model_lengths(&mut ir, 25.4);
+        normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
 
         let FeatureDefinition::Extrude { start, extent, .. } = &ir.model.features[0].definition
         else {
@@ -1631,6 +1686,33 @@ mod tests {
             panic!("test parameter changed family");
         };
         assert_close(length.0, 127.0);
+    }
+
+    #[test]
+    fn rejects_nurbs_unit_overflow_without_committing_nonfinite_poles() {
+        let curve_id = cadmpeg_ir::ids::CurveId::mint("test:model:entity#overflow-curve")
+            .expect("identity grammar");
+        let curve = cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("finite NURBS fixture");
+        let mut ir = CadIr::empty();
+        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: curve_id,
+            geometry: CurveGeometry::Nurbs(curve),
+            source_object: None,
+        });
+
+        let error = normalize_model_lengths(&mut ir, 25.4).expect_err("overflow must refuse");
+        assert!(matches!(error, CodecError::Malformed(_)));
+        let CurveGeometry::Nurbs(curve) = &ir.model.curves[0].geometry else {
+            panic!("test curve changed family");
+        };
+        assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
 
     #[test]
@@ -1772,7 +1854,7 @@ mod tests {
         .unwrap();
         ir.model.add_procedural_curve(curve_id, curve).unwrap();
 
-        normalize_model_lengths(&mut ir, 25.4);
+        normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
@@ -1856,8 +1938,8 @@ mod tests {
             radius: 5.0,
         };
 
-        scale_surface_geometry(&mut surface, 25.4);
-        scale_curve_geometry(&mut curve, 25.4);
+        scale_surface_geometry(&mut surface, 25.4).expect("finite surface scaling");
+        scale_curve_geometry(&mut curve, 25.4).expect("finite curve scaling");
 
         let SurfaceGeometry::Cylinder {
             origin,

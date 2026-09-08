@@ -3580,10 +3580,10 @@ fn stage_extrusion_caps(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: vec![coedge_id.clone()],
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             loop_ids.push(loop_id.clone());
             for id in [
@@ -4181,10 +4181,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().loops.push(Loop {
             id: id.clone(),
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges,
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).expect("valid loop ring"),
+            ),
         });
         staged.draft.model_mut().faces[loop_record.face as usize]
             .loops
@@ -4481,7 +4480,7 @@ fn scale_plane_pcurves(
                         pole.v *= scale;
                     }
                 })
-                .map_err(|error| crate::curves::error(0, error.to_string()))?;
+                .map_err(|error| crate::curves::error(0, &error.to_string()))?;
         }
     }
     Ok(())

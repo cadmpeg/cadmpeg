@@ -295,8 +295,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_loft(
         &self,
         sections: &Vec<LoftSection>,
-        guides: &Vec<PathRef>,
-        centerline: &Option<PathRef>,
+        guidance: &cadmpeg_ir::features::LoftGuidance,
         op: &BooleanOp,
         closed: &bool,
         solid: &bool,
@@ -310,9 +309,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let record_sources = self.record_sources;
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
+        let cadmpeg_ir::features::LoftGuidance::Guides(guides) = guidance else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes unsupported loft result semantics",
+                feature.id
+            )));
+        };
         Ok({
-            if centerline.is_some()
-                || !solid
+            if !solid
                 || *ruled
                 || *linearize
                 || max_degree.is_some()

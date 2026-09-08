@@ -8,9 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
-    SketchPlacement,
+    NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchNativeOperand, SketchPlacement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1443,9 +1443,13 @@ fn native_operand(
     reference: PmDcReference,
 ) -> SketchNativeOperand {
     SketchNativeOperand {
-        native_kind: "record_reference".into(),
-        native_field: Some(field.into()),
-        native_role: None,
+        native_kind: cadmpeg_ir::products::NonEmptyString::new("record_reference")
+            .expect("source operand kind is nonempty"),
+        field: Some(NativeOperandField {
+            name: cadmpeg_ir::products::NonEmptyString::new(field)
+                .expect("source field name is nonempty"),
+            role: None,
+        }),
         object_index: reference.index,
         native_ref: reference.index.checked_sub(1).map(|ordinal| {
             format!(

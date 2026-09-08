@@ -87,9 +87,14 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 fn offset_support_binds_by_native_domain_knot_limits() {
     let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     let mut decoy = carriers[0].clone();
-    for knot in decoy.geometry.v_knots_mut() {
-        *knot += 10.0;
-    }
+    decoy
+        .geometry
+        .edit_v_knots(|knots| {
+            for knot in knots {
+                *knot += 10.0;
+            }
+        })
+        .unwrap();
     carriers.push(decoy);
     let surface = &carriers[0].geometry;
     let offset = crate::families::b2::records::B2OffsetSupport {

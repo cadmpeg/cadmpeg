@@ -2076,13 +2076,13 @@ fn has_core_tessellation_channels(
 pub(super) fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
-    if !mesh.triangle_groups.is_empty() || !mesh.texture_assignments.is_empty() {
+    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT display tessellation triangle groups and texture assignments are not writable"
                 .into(),
         ));
     }
-    if !mesh.feature_edges.is_empty() {
+    if !mesh.feature_edges().is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));

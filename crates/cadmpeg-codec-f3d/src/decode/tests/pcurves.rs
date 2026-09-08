@@ -1010,7 +1010,9 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    nurbs.control_points_mut()[0].u = -0.75;
+    nurbs
+        .edit_control_points(|points| points[0].u = -0.75)
+        .unwrap();
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
@@ -1038,8 +1040,10 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     else {
         panic!("expected rational pcurve")
     };
-    nurbs.control_points_mut()[0].u = -0.25;
-    nurbs.weights_mut().expect("expected rational weights")[1] = 0.75;
+    nurbs
+        .edit_control_points(|points| points[0].u = -0.25)
+        .unwrap();
+    nurbs.edit_weights(|weights| weights[1] = 0.75).unwrap();
     let expected = edited.model.pcurves[0].clone();
 
     let mut regenerated = Vec::new();
@@ -1065,9 +1069,15 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
-    nurbs.control_points_mut()[0].u = -0.75;
-    nurbs.control_points_mut()[1].v = 3.5;
-    nurbs.knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+    nurbs
+        .edit_control_points(|points| {
+            points[0].u = -0.75;
+            points[1].v = 3.5;
+        })
+        .unwrap();
+    nurbs
+        .edit_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
+        .unwrap();
     let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
         panic!("decoded fixture uses general pcurve metadata")
     };

@@ -268,17 +268,14 @@ pub(super) fn oriented_nurbs_range(
     let mut range = endpoint_parameters;
     if range[0] > range[1] {
         let sum = domain_start + domain_end;
-        let knots = curve
-            .knots()
-            .iter()
-            .rev()
-            .map(|knot| sum - knot)
-            .collect::<Vec<_>>();
-        curve.knots_mut().copy_from_slice(&knots);
-        curve.control_points_mut().reverse();
-        if let Some(weights) = curve.weights_mut() {
-            weights.reverse();
-        }
+        curve.reverse_parameterization();
+        curve
+            .edit_knots(|knots| {
+                for knot in knots {
+                    *knot += sum;
+                }
+            })
+            .ok()?;
         range = [sum - range[0], sum - range[1]];
     }
     if !range[0].is_finite()

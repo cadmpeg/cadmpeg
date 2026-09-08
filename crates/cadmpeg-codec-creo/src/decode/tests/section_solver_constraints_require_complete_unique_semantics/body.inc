@@ -524,13 +524,13 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".to_string(),
+                native_kind: "line".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Native {
-                native_kind: "arc".to_string(),
+                native_kind: "arc".into(),
             },
         ),
     ]);
@@ -801,7 +801,7 @@ offset: 30,
     let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
         SketchGeometry::Native {
-            native_kind: "bounded_curve".to_string(),
+            native_kind: "bounded_curve".into(),
         },
     )]);
     let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
@@ -1055,13 +1055,13 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: "point".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: "point".into(),
             },
         ),
     ]);
@@ -1083,7 +1083,7 @@ offset: 30,
     let missing_point_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
         SketchGeometry::Native {
-            native_kind: "point".to_string(),
+            native_kind: "point".into(),
         },
     )]);
     assert!(matches!(
@@ -1217,7 +1217,7 @@ offset: 30,
         (
             native_endpoint.clone(),
             SketchGeometry::Native {
-                native_kind: "solver_only_section_entity".to_string(),
+                native_kind: "solver_only_section_entity".into(),
             },
         ),
         (
@@ -1297,7 +1297,7 @@ offset: 30,
     unresolved_arc_geometry.insert(
         SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
         SketchGeometry::Native {
-            native_kind: "arc".to_string(),
+            native_kind: "arc".into(),
         },
     );
     let inactive = section_skamp_constraints_for_geometry(
@@ -1336,7 +1336,7 @@ offset: 30,
     unresolved_arc_geometry.insert(
         SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
         SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".to_string(),
+            native_kind: "solver_only_section_entity".into(),
         },
     );
     assert_eq!(
@@ -1481,13 +1481,13 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".to_string(),
+                native_kind: "line".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: "circle".into(),
             },
         ),
     ]);
@@ -1550,19 +1550,19 @@ offset: 30,
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:97".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: "point".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:98".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: "circle".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: "circle".into(),
             },
         ),
     ]);
@@ -2566,7 +2566,7 @@ offset: 30,
             Some(&BTreeMap::from([(
                 SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "point".to_string(),
+                    native_kind: "point".into(),
                 },
             )])),
         ),
@@ -2884,7 +2884,7 @@ offset: 30,
                 (
                     SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "point".to_string(),
+                        native_kind: "point".into(),
                     },
                 ),
             ])),
@@ -2943,7 +2943,7 @@ offset: 30,
             Some(&BTreeMap::from([(
                 SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "line".to_string(),
+                    native_kind: "line".into(),
                 },
             )])),
         )[0]
@@ -2966,7 +2966,7 @@ offset: 30,
                 (
                     SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "line".to_string(),
+                        native_kind: "line".into(),
                     },
                 ),
             ])),
@@ -3119,7 +3119,7 @@ offset: 30,
     assert_eq!(
         constraints[2].0.definition,
         SketchConstraintDefinition::Native {
-            native_kind: "creo:skamp:7".to_string(),
+            native_kind: "creo:skamp:7".into(),
             native_state: Some(1),
             native_flags: Some(0),
             native_properties: std::collections::BTreeMap::new(),
@@ -3128,9 +3128,8 @@ offset: 30,
             )],
             parameter: None,
             operands: vec![SketchNativeOperand {
-                native_kind: "skamp_ptr".to_string(),
-                native_field: Some("items.entity_id".to_string()),
-                native_role: Some(4),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr").expect("source operand kind is nonempty"),
+                field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
                 object_index: 12,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -3156,9 +3155,8 @@ offset: 30,
             ..
         } if entities.is_empty()
             && operands == &[SketchNativeOperand {
-                native_kind: "skamp_ptr".to_string(),
-                native_field: Some("items.entity_id".to_string()),
-                native_role: Some(4),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr").expect("source operand kind is nonempty"),
+                field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
                 object_index: 999,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }]
@@ -4140,7 +4138,7 @@ offset: 30,
         );
         assert!(operands
             .iter()
-            .all(|operand| operand.native_field.is_some()));
+            .all(|operand| operand.field.is_some()));
     }
     let mut duplicate_measured_segment = distance_definition.clone();
     let duplicate = duplicate_measured_segment
@@ -4230,7 +4228,7 @@ offset: 30,
             ..
         } if native_kind == "creo:relation:0"
             && operands.first().is_some_and(|operand| operand.object_index == 8)
-            && operands.iter().any(|operand| operand.native_field.as_deref() == Some("c[3]"))
+            && operands.iter().any(|operand| operand.field.as_ref().map(|field| field.name.as_str()) == Some("c[3]"))
     ));
     let mut legacy_radius_definition = definition.clone();
     let ([first_point, second_point], center) = legacy_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
@@ -5027,7 +5025,7 @@ offset: 30,
     assert_eq!(
         relations[0].0.definition,
         SketchConstraintDefinition::Native {
-            native_kind: "creo:relation:99".to_string(),
+            native_kind: "creo:relation:99".into(),
             native_state: Some(1),
             native_flags: None,
             native_properties: std::collections::BTreeMap::from([
@@ -5037,9 +5035,8 @@ offset: 30,
             entities: Vec::new(),
             parameter: Some(ParameterId::mint("creo:featdefs:parameter#917:42".to_string(),).expect("identity grammar")),
             operands: vec![SketchNativeOperand {
-                native_kind: "relat_ptr".to_string(),
-                native_field: None,
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("relat_ptr").expect("source operand kind is nonempty"),
+                field: None,
                 object_index: 8,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -5071,7 +5068,7 @@ offset: 30,
     assert_eq!(
         operands
             .iter()
-            .map(|operand| (operand.native_field.as_deref(), operand.object_index))
+            .map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.object_index))
             .collect::<Vec<_>>(),
         vec![
             (None, 8),

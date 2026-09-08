@@ -675,17 +675,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SketchGeometry::Nurbs { curve } => {
-                if curve.knots().iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(curve.knots())
-                    || curve.control_points().iter().any(|point| !finite2(*point))
-                    || curve
-                        .weights()
-                        .is_some_and(|weights| weights.iter().any(|weight| nonpositive(*weight)))
-                {
-                    finding(findings, Check::ParameterDomain, id, "invalid sketch NURBS");
-                }
-            }
+            SketchGeometry::Nurbs { .. } => {}
             SketchGeometry::Text {
                 text,
                 font_family,
@@ -1823,12 +1813,11 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 !native_kind.is_empty()
                     && (!entities.is_empty() || !operands.is_empty())
                     && operands.iter().all(|operand| {
-                        !operand.native_kind.is_empty()
+                        !operand.native_kind.as_str().is_empty()
                             && operand
-                                .native_field
+                                .field
                                 .as_ref()
-                                .is_none_or(|field| !field.is_empty())
-                            && (operand.native_role.is_none() || operand.native_field.is_some())
+                                .is_none_or(|field| !field.name.as_str().is_empty())
                     })
             }
             _ => true,

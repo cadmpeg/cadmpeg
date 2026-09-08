@@ -132,7 +132,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![
         PersistentDesignLink {
-            id: "generated:persistent-design-link#0".into(),
+            id: "f3d:generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "311".into(),
 
@@ -141,7 +141,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             is_current: false,
         },
         PersistentDesignLink {
-            id: "generated:persistent-design-link#1".into(),
+            id: "f3d:generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "322".into(),
 
@@ -152,7 +152,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     ];
     native.persistent_subentity_tags = vec![
         PersistentSubentityTag {
-            id: "generated:persistent-subentity-tag#0".into(),
+            id: "f3d:generated:persistent-subentity-tag#0".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 1,
             token: "8".into(),
@@ -160,7 +160,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "generated:persistent-subentity-tag#1".into(),
+            id: "f3d:generated:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Edge(edge_id.clone()),
             selector: 2,
             token: "-1".into(),
@@ -168,7 +168,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "generated:persistent-subentity-tag#2".into(),
+            id: "f3d:generated:persistent-subentity-tag#2".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 3,
             token: "42".into(),
@@ -177,7 +177,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         },
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
-        id: "generated:sketch-curve-link#0".into(),
+        id: "f3d:generated:sketch-curve-link#0".into(),
         target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
         ref_b: 0,
@@ -195,7 +195,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     .into_iter()
     .enumerate()
     .map(|(ordinal, (target, unix_microseconds))| CreationTimestamp {
-        id: format!("generated:creation-timestamp#{ordinal}"),
+        id: format!("f3d:generated:creation-timestamp#{ordinal}"),
         target,
         record_index: 0,
         unix_microseconds,
@@ -358,7 +358,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     let coedge = source_less.model.coedges[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![PersistentDesignLink {
-        id: "generated:persistent-design-link#0".into(),
+        id: "f3d:generated:persistent-design-link#0".into(),
         target: AttributeTarget::Body(body),
         design_id: "311".into(),
 
@@ -368,7 +368,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     }];
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
-            id: format!("generated:sketch-curve-link#{ordinal}"),
+            id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
             target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
             ref_b: 0,
@@ -597,7 +597,8 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
-    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
+    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
+        .expect("valid native identity");
     let error = F3dCodec
         .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

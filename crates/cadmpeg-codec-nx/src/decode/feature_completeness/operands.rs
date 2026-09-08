@@ -607,9 +607,10 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => selection_ids_are_incomplete(bodies),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            selection_ids_are_incomplete(bodies)
+        }
+        BodySelection::ResolvedSet { .. } => false,
         BodySelection::Local { bodies, native } => {
             native.trim().is_empty()
                 || selection_ids_are_incomplete(bodies)
@@ -638,11 +639,12 @@ pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
     }
 }
 
-pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
+pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<Vec<BodyId>> {
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.clone())
+        }
+        BodySelection::ResolvedSet { members } => Some(members.bodies().cloned().collect()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
@@ -656,9 +658,10 @@ pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> 
 
 pub(crate) fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.len())
+        }
+        BodySelection::ResolvedSet { members } => Some(members.len()),
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }

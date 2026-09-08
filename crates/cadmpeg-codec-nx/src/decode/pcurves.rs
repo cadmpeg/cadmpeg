@@ -290,7 +290,7 @@ impl IntersectionIncidenceIndex {
                         else {
                             continue;
                         };
-                        side.pcurve = Some(geometry);
+                        side.pcurve = Some(geometry.into());
                     }
                 });
             }
@@ -1086,10 +1086,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             else {
                 return None;
             };
-            let missing = context
-                .sides
-                .each_ref()
-                .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+            let missing = context.sides.each_ref().map(|side| {
+                pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+            });
             if transfer_budget_exhausted(transfer_budget) {
                 return None;
             }
@@ -1139,10 +1138,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 if transfer_budget_exhausted(transfer_budget) {
                     return None;
                 }
-                let missing = context
-                    .sides
-                    .each_ref()
-                    .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+                let missing = context.sides.each_ref().map(|side| {
+                    pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+                });
                 let target = match missing {
                     [true, false] => 0,
                     [false, true] => 1,
@@ -1171,7 +1169,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     &model_index,
                     owner,
                     source_surface,
-                    source_pcurve,
+                    &source_pcurve.geometry,
                     target_surface,
                     context.parameter_range,
                     tolerance,
@@ -1200,8 +1198,13 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 return false;
             };
-            if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
-                context.sides[side].pcurve = Some(pcurve);
+            if pcurve_requires_completion(
+                context.sides[side]
+                    .pcurve
+                    .as_ref()
+                    .map(|pcurve| &pcurve.geometry),
+            ) {
+                context.sides[side].pcurve = Some(pcurve.into());
                 true
             } else {
                 false
@@ -1327,11 +1330,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             let edge = ir.model.edges.get(*edge_index)?;
             let (supports, endpoints, range, tolerance, tolerant) = match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    if !context
-                        .sides
-                        .iter()
-                        .all(|side| pcurve_requires_completion(side.pcurve.as_ref()))
-                    {
+                    if !context.sides.iter().all(|side| {
+                        pcurve_requires_completion(
+                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+                        )
+                    }) {
                         return None;
                     }
                     (
@@ -1481,13 +1484,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         let completed = procedural.edit_definition(|definition| match definition {
             ProceduralCurveDefinition::Intersection { context, .. }
-                if context
-                    .sides
-                    .iter()
-                    .all(|side| pcurve_requires_completion(side.pcurve.as_ref())) =>
+                if context.sides.iter().all(|side| {
+                    pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+                }) =>
             {
                 for (side, pcurve) in context.sides.iter_mut().zip(pcurves) {
-                    side.pcurve = Some(pcurve);
+                    side.pcurve = Some(pcurve.into());
                 }
                 true
             }
@@ -3688,12 +3690,10 @@ mod tests {
                                 IntcurveSupportSide {
                                     surface: Some(known_surface),
                                     pcurve: None,
-                                    pcurve_parameter_range: None,
                                 },
                                 IntcurveSupportSide {
                                     surface: None,
                                     pcurve: None,
-                                    pcurve_parameter_range: None,
                                 },
                             ],
                             parameter_range: [0.0, 1.0],
@@ -3742,10 +3742,13 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id,
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![CoedgeId::mint("nx:s0:fin#0").expect("identity grammar")],
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![CoedgeId::mint("nx:s0:fin#0").expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         });
         ir.model.edges.push(Edge {
             id: edge_id,
@@ -3782,10 +3785,13 @@ mod tests {
         assert_eq!(context.sides[1].surface, Some(completed_surface));
         assert_eq!(
             context.sides[1].pcurve,
-            Some(PcurveGeometry::Line {
-                origin: Point2::new(0.0, 0.0),
-                direction: Point2::new(1.0, 0.0),
-            })
+            Some(
+                PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                }
+                .into()
+            )
         );
     }
 }

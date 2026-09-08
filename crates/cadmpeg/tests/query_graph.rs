@@ -30,7 +30,7 @@ const SIDECAR: &str = r#"{
 }"#;
 
 const BREP_DOC: &str = r#"{
-  "ir_version": "6",
+  "ir_version": "7",
   "model": {
     "bodies": [{"id": "body#1", "regions": ["region#1"]}],
     "regions": [{"id": "region#1", "shells": ["shell#1"]}],
@@ -40,7 +40,7 @@ const BREP_DOC: &str = r#"{
 }"#;
 
 const GRAPH_DOC: &str = r#"{
-  "ir_version": "6",
+  "ir_version": "7",
   "model": {
     "features": [
       {

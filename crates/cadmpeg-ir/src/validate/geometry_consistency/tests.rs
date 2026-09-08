@@ -5,9 +5,10 @@ use super::*;
 use crate::document::CadIr;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, Pcurve,
-    PcurveGeometry, PcurveMetadata, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    NurbsSurface, Pcurve, PcurveGeometry, PcurveMetadata, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SupportPcurve,
+    Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -68,16 +69,17 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(surface),
-                        pcurve: Some(PcurveGeometry::Line {
-                            origin: Point2::new(0.0, 0.0),
-                            direction: Point2::new(1.0, 0.0),
-                        }),
-                        pcurve_parameter_range: Some(mapping),
+                        pcurve: Some(SupportPcurve::new(
+                            PcurveGeometry::Line {
+                                origin: Point2::new(0.0, 0.0),
+                                direction: Point2::new(1.0, 0.0),
+                            },
+                            Some(DirectedParameterRange::new(mapping).unwrap()),
+                        )),
                     },
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                 ],
                 parameter_range: [0.0, 1.0],
@@ -237,12 +239,15 @@ fn untrimmed_surface_curve() -> CadIr {
     ir.model.loops.push(Loop {
         id: "test:model:loop#loop".try_into().expect("valid identity"),
         face: "test:model:face#face".try_into().expect("valid identity"),
-        boundary: crate::topology::LoopBoundary::Ring {
-            coedges: vec!["test:model:coedge#coedge"
-                .try_into()
-                .expect("valid identity")],
-            vertex_uses: Vec::new(),
-        },
+        boundary: crate::topology::LoopBoundary::Ring(
+            crate::topology::LoopRing::new(
+                vec!["test:model:coedge#coedge"
+                    .try_into()
+                    .expect("valid identity")],
+                Vec::new(),
+            )
+            .expect("valid loop ring"),
+        ),
     });
     ir.model.faces.push(Face {
         id: "test:model:face#face".try_into().expect("valid identity"),
@@ -682,7 +687,6 @@ fn edge_endpoint_mismatch_is_flagged() {
                 sides: std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
-                    pcurve_parameter_range: None,
                 }),
                 parameter_range: ir.model.edges[0].param_range.expect("cube edge range"),
                 discontinuities: std::array::from_fn(|_| Vec::new()),

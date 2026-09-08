@@ -303,7 +303,7 @@ impl DesignConfiguration {
     pub fn suppressed_features(&self) -> impl Iterator<Item = &FeatureId> {
         self.feature_states
             .iter()
-            .filter_map(|(feature, state)| state.suppressed.then_some(feature))
+            .filter_map(|(feature, state)| state.evaluation.is_suppressed().then_some(feature))
     }
 }
 
@@ -353,7 +353,7 @@ impl DesignConfigurationReadWire {
                     feature_id.0
                 ));
             };
-            if !state.suppressed {
+            if !state.evaluation.is_suppressed() {
                 return Err(format!(
                     "configuration suppression disagrees with feature state `{}`",
                     feature_id.0
@@ -361,7 +361,7 @@ impl DesignConfigurationReadWire {
             }
         }
         if let Some(feature) = self.feature_states.iter().find_map(|(feature, state)| {
-            (state.suppressed && !listed.contains(feature)).then_some(feature)
+            (state.evaluation.is_suppressed() && !listed.contains(feature)).then_some(feature)
         }) {
             return Err(format!(
                 "configuration feature state `{}` is suppressed but absent from suppressed_features",
@@ -457,17 +457,67 @@ impl JsonSchema for DesignConfiguration {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ConfigurationFeatureState {
-    /// Whether evaluation of this feature is disabled in the configuration.
-    #[serde(default)]
-    pub suppressed: bool,
+    /// Whether evaluation produced bodies or was suppressed.
+    pub evaluation: ConfigurationEvaluation,
     /// Earlier features consumed during regeneration in source operand order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<FeatureId>,
-    /// Bodies produced or modified in the configuration.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub outputs: Vec<BodyId>,
     /// Evaluated construction semantics in the configuration.
     pub definition: FeatureDefinition,
+}
+
+/// Result of evaluating one feature in a configuration.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ConfigurationEvaluation {
+    /// The feature is suppressed for this configuration.
+    Suppressed,
+    /// The feature is active; the output list may be empty for operations
+    /// whose neutral result is carried by the surrounding topology.
+    Active {
+        /// Bodies produced or modified in the configuration.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        outputs: Vec<BodyId>,
+    },
+}
+
+impl<'de> Deserialize<'de> for ConfigurationEvaluation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+        enum Wire {
+            Suppressed {},
+            Active {
+                #[serde(default)]
+                outputs: Vec<BodyId>,
+            },
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Suppressed {} => Self::Suppressed,
+            Wire::Active { outputs } => Self::Active { outputs },
+        })
+    }
+}
+
+impl ConfigurationEvaluation {
+    /// Whether evaluation of the feature is suppressed.
+    #[must_use]
+    pub const fn is_suppressed(&self) -> bool {
+        matches!(self, Self::Suppressed)
+    }
+
+    /// Bodies produced or modified by an active feature.
+    #[must_use]
+    pub fn outputs(&self) -> &[BodyId] {
+        match self {
+            Self::Suppressed => &[],
+            Self::Active { outputs } => outputs,
+        }
+    }
 }
 
 crate::ids::reference_id_type!(
@@ -1196,6 +1246,28 @@ impl JsonSchema for NativeFeatureKind {
     }
 }
 
+/// Guide semantics of a loft operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "path",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum LoftGuidance {
+    /// Ordered guide trajectories; an empty vector means unguided.
+    Guides(Vec<PathRef>),
+    /// Centerline to which loft sections remain normal.
+    Centerline(PathRef),
+}
+
+impl Default for LoftGuidance {
+    fn default() -> Self {
+        Self::Guides(Vec::new())
+    }
+}
+
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1723,14 +1795,9 @@ pub enum FeatureDefinition {
     /// Loft through an ordered sequence of profile or point sections.
     Loft {
         /// Ordered cross-sections from the loft start to end.
-        #[serde(alias = "profiles")]
         sections: Vec<LoftSection>,
-        /// Optional ordered guide trajectories.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        guides: Vec<PathRef>,
-        /// Optional centerline to which the loft sections remain normal.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        centerline: Option<PathRef>,
+        /// Mutually exclusive guide trajectories or centerline.
+        guidance: LoftGuidance,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
         /// Whether the loft closes from the last section to the first.
@@ -4279,6 +4346,241 @@ pub enum FaceSelection {
     Native(String),
 }
 
+/// Failure to construct a body-selection member set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum BodySelectionError {
+    /// A selection set contains no members.
+    #[error("body selection set must not be empty")]
+    Empty,
+    /// Parallel inputs have different member counts.
+    #[error("body selection rows have mismatched lengths")]
+    MismatchedLengths,
+    /// A body occurs more than once in the set.
+    #[error("body selection set repeats a body")]
+    RepeatedBody,
+    /// A native selection member is empty or contains only whitespace.
+    #[error("body selection member must not be blank")]
+    BlankNativeMember,
+    /// A native member occurs more than once in the set.
+    #[error("body selection set repeats a native member")]
+    RepeatedNativeMember,
+}
+
+/// Body operands resolved by the decoder or retained in native form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct BodyMember<B> {
+    body: B,
+    native: String,
+}
+
+impl<B> BodyMember<B> {
+    /// Construct one body/native selection row.
+    pub fn new(body: B, native: String) -> Result<Self, BodySelectionError> {
+        if native.trim().is_empty() {
+            return Err(BodySelectionError::BlankNativeMember);
+        }
+        Ok(Self { body, native })
+    }
+
+    /// Body identity in this row.
+    #[must_use]
+    pub const fn body(&self) -> &B {
+        &self.body
+    }
+
+    /// Native selection member in this row.
+    #[must_use]
+    pub fn native(&self) -> &str {
+        &self.native
+    }
+}
+
+impl<'de, B> Deserialize<'de> for BodyMember<B>
+where
+    B: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire<B> {
+            body: B,
+            native: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.body, wire.native).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Immutable, checked rows pairing a body identity with its native member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct BodyMembers<B>(Vec<BodyMember<B>>);
+
+impl<B> BodyMembers<B> {
+    /// Construct checked rows from body/native pairs.
+    pub fn try_from_rows(rows: Vec<BodyMember<B>>) -> Result<Self, BodySelectionError>
+    where
+        B: Eq + std::hash::Hash,
+    {
+        if rows.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        let mut bodies = HashSet::with_capacity(rows.len());
+        let mut native = HashSet::with_capacity(rows.len());
+        for row in &rows {
+            if !bodies.insert(&row.body) {
+                return Err(BodySelectionError::RepeatedBody);
+            }
+            if !native.insert(&row.native) {
+                return Err(BodySelectionError::RepeatedNativeMember);
+            }
+        }
+        Ok(Self(rows))
+    }
+
+    /// Construct checked rows from parallel body and native-member vectors.
+    pub fn try_from_parts(bodies: Vec<B>, native: Vec<String>) -> Result<Self, BodySelectionError>
+    where
+        B: Eq + std::hash::Hash,
+    {
+        if bodies.len() != native.len() {
+            return Err(BodySelectionError::MismatchedLengths);
+        }
+        let rows = bodies
+            .into_iter()
+            .zip(native)
+            .map(|(body, native)| BodyMember::new(body, native))
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::try_from_rows(rows)
+    }
+
+    /// Number of paired selection rows.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether this selection has no rows.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Borrow the checked rows in source order.
+    pub fn iter(&self) -> std::slice::Iter<'_, BodyMember<B>> {
+        self.0.iter()
+    }
+
+    /// Borrow the body identities in source order.
+    pub fn bodies(&self) -> impl Iterator<Item = &B> {
+        self.0.iter().map(BodyMember::body)
+    }
+
+    /// Borrow the native members in source order.
+    pub fn native(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(BodyMember::native)
+    }
+}
+
+impl<'a, B> IntoIterator for &'a BodyMembers<B> {
+    type Item = &'a BodyMember<B>;
+    type IntoIter = std::slice::Iter<'a, BodyMember<B>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, B> Deserialize<'de> for BodyMembers<B>
+where
+    B: Deserialize<'de> + Eq + std::hash::Hash,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let rows = Vec::<BodyMember<B>>::deserialize(deserializer)?;
+        Self::try_from_rows(rows).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Checked aggregate for historical selections whose native members have no
+/// established body-to-member correspondence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct HistoricalUnorderedBodySelection {
+    bodies: Vec<HistoricalBodyId>,
+    native: Vec<String>,
+}
+
+impl HistoricalUnorderedBodySelection {
+    /// Construct a checked unordered selection while preserving both orders.
+    pub fn try_from_parts(
+        bodies: Vec<HistoricalBodyId>,
+        native: Vec<String>,
+    ) -> Result<Self, BodySelectionError> {
+        if bodies.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        if bodies.len() != native.len() {
+            return Err(BodySelectionError::MismatchedLengths);
+        }
+        if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
+            return Err(BodySelectionError::RepeatedBody);
+        }
+        if native.iter().any(|member| member.trim().is_empty()) {
+            return Err(BodySelectionError::BlankNativeMember);
+        }
+        if native.iter().collect::<HashSet<_>>().len() != native.len() {
+            return Err(BodySelectionError::RepeatedNativeMember);
+        }
+        Ok(Self { bodies, native })
+    }
+
+    /// Historical body identities in deterministic source order.
+    #[must_use]
+    pub fn bodies(&self) -> &[HistoricalBodyId] {
+        &self.bodies
+    }
+
+    /// Native members in their retained source order.
+    #[must_use]
+    pub fn native(&self) -> &[String] {
+        &self.native
+    }
+
+    /// Number of retained bodies and native members.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.bodies.len()
+    }
+
+    /// Whether the checked aggregate is empty.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.bodies.is_empty()
+    }
+}
+
+impl<'de> Deserialize<'de> for HistoricalUnorderedBodySelection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            bodies: Vec<HistoricalBodyId>,
+            native: Vec<String>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::try_from_parts(wire.bodies, wire.native).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Body operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4297,10 +4599,8 @@ pub enum BodySelection {
     },
     /// Resolved bodies paired with independently retained native selection members.
     ResolvedSet {
-        /// Resolved topological bodies in native member order.
-        bodies: Vec<BodyId>,
-        /// Ordered format-native selection members.
-        native: Vec<String>,
+        /// Checked rows in native member order.
+        members: BodyMembers<BodyId>,
     },
     /// Bodies resolved in the containing feature's input topology.
     Historical {
@@ -4316,20 +4616,16 @@ pub enum BodySelection {
     HistoricalSet {
         /// Input topology containing every selected body.
         state: FeatureInputTopologyId,
-        /// State-local body identities in native member order.
-        bodies: Vec<HistoricalBodyId>,
-        /// Ordered format-native selection members.
-        native: Vec<String>,
+        /// Checked rows in native member order.
+        members: BodyMembers<HistoricalBodyId>,
     },
     /// Bodies resolved collectively in the containing feature's input topology
     /// when no body-to-native-member correspondence is established.
     HistoricalUnorderedSet {
         /// Input topology containing every selected body.
         state: FeatureInputTopologyId,
-        /// State-local body identities in deterministic order.
-        bodies: Vec<HistoricalBodyId>,
-        /// Ordered format-native selection members retained for rewrite.
-        native: Vec<String>,
+        /// Checked aggregate retaining both independent source orders.
+        selection: HistoricalUnorderedBodySelection,
     },
     /// Bodies in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.

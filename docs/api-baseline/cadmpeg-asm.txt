@@ -1,4 +1,4 @@
-# generated at f444fcb0b
+# generated at 5bc6b3e0f
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -55,7 +55,6 @@ pub fn cadmpeg_asm::brep::attributes::unknown_record_id(&cadmpeg_asm::sab::Recor
 pub mod cadmpeg_asm::brep::geometry
 pub fn cadmpeg_asm::brep::geometry::decode_curve(&cadmpeg_asm::sab::Record) -> core::option::Option<cadmpeg_ir::geometry::CurveGeometry>
 pub fn cadmpeg_asm::brep::geometry::decode_surface(&cadmpeg_asm::sab::Record) -> core::option::Option<(cadmpeg_ir::geometry::SurfaceGeometry, bool)>
-pub fn cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut cadmpeg_ir::geometry::NurbsCurve)
 pub mod cadmpeg_asm::brep::records
 pub mod cadmpeg_asm::brep::records::identity
 pub struct cadmpeg_asm::brep::records::identity::NativeRecordNamespace

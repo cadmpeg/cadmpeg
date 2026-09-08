@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "6",
+    "ir_version": "7",
     "source": {
       "format": "f3d",
       "attributes": {
@@ -342,49 +342,53 @@
                 {
                   "surface": "f3d:brep:procedural_curve#19:support0",
                   "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
-                    ],
-                    "control_points": [
-                      {
-                        "u": 2.5,
-                        "v": -5.0
-                      },
-                      {
-                        "u": 7.5,
-                        "v": -15.0
-                      }
-                    ],
-                    "periodic": false
+                    "geometry": {
+                      "kind": "nurbs",
+                      "degree": 1,
+                      "knots": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "control_points": [
+                        {
+                          "u": 2.5,
+                          "v": -5.0
+                        },
+                        {
+                          "u": 7.5,
+                          "v": -15.0
+                        }
+                      ],
+                      "periodic": false
+                    }
                   }
                 },
                 {
                   "surface": "f3d:brep:procedural_curve#19:support1",
                   "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
-                    ],
-                    "control_points": [
-                      {
-                        "u": 2.5,
-                        "v": -5.0
-                      },
-                      {
-                        "u": 7.5,
-                        "v": -15.0
-                      }
-                    ],
-                    "periodic": false
+                    "geometry": {
+                      "kind": "nurbs",
+                      "degree": 1,
+                      "knots": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "control_points": [
+                        {
+                          "u": 2.5,
+                          "v": -5.0
+                        },
+                        {
+                          "u": 7.5,
+                          "v": -15.0
+                        }
+                      ],
+                      "periodic": false
+                    }
                   }
                 }
               ],

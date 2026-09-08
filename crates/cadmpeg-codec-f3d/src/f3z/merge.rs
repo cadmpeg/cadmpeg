@@ -167,7 +167,7 @@ impl MergeSession<'_, '_> {
             parent_ir
                 .model
                 .extend_rewritten(component_ir.model, &mut scope)?;
-            extend_native(&mut parent_ir.native, component_ir.native, &occurrence);
+            extend_native(&mut parent_ir.native, component_ir.native, &occurrence)?;
             merge_annotations(
                 &mut parent_fidelity.annotations,
                 component_fidelity.annotations,
@@ -344,9 +344,13 @@ fn remap_ids(value: &mut Value, occurrence: &str) {
 }
 
 /// Appends all known component-native arenas after occurrence-local rescoping.
-pub(super) fn extend_native(root: &mut Native, mut component: Native, occurrence: &str) {
+pub(super) fn extend_native(
+    root: &mut Native,
+    mut component: Native,
+    occurrence: &str,
+) -> Result<(), CodecError> {
     let Some(mut source) = component.0.remove("f3d") else {
-        return;
+        return Ok(());
     };
     let target = root.namespace_mut("f3d");
     for name in crate::native::F3D_ARENA_NAMES
@@ -363,13 +367,17 @@ pub(super) fn extend_native(root: &mut Native, mut component: Native, occurrence
         let arena = target.arenas_mut().entry(name.to_string()).or_default();
         arena.reserve(records.len());
         for record in records {
-            arena.push(rescope_record(&record, occurrence));
+            arena.push(rescope_record(&record, occurrence)?);
         }
     }
+    Ok(())
 }
 
 /// Rescopes one native record's identity and every identity it references.
-pub(super) fn rescope_record(record: &NativeRecord, occurrence: &str) -> NativeRecord {
+pub(super) fn rescope_record(
+    record: &NativeRecord,
+    occurrence: &str,
+) -> Result<NativeRecord, cadmpeg_ir::native::NativeConvertError> {
     let mut fields = record.fields();
     rescope_json_fields(&mut fields, occurrence);
     let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_owned());

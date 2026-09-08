@@ -186,10 +186,10 @@ pub(super) fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: coedge_ids,
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+                    .expect("valid loop ring"),
+            ),
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -236,10 +236,10 @@ pub(super) fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![coedge_id],
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(vec![coedge_id], Vec::new())
+                    .expect("valid loop ring"),
+            ),
         });
         face_loops.push(loop_id);
     }
@@ -415,7 +415,11 @@ fn generated_sketch_curve(
             let end = control_points[control_points.len() - 1];
             let knots = curve.knots();
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Nurbs(curve.lift(lift)),
+                curve: CurveGeometry::Nurbs(curve.lift(lift).map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "source-less SLDPRT sketch NURBS lift is invalid: {error}"
+                    ))
+                })?),
                 start,
                 end,
                 param_range: [knots[curve.degree() as usize], knots[control_points.len()]],
@@ -907,8 +911,13 @@ fn patch_direct_nurbs(
     request: &CurvePatch,
     curve: &cadmpeg_ir::geometry::PcurveNurbs,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let curve =
-        curve.lift(|point| lift_point(point, request.origin, request.u_axis, request.v_axis));
+    let curve = curve
+        .lift(|point| lift_point(point, request.origin, request.u_axis, request.v_axis))
+        .map_err(|error| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "SLDPRT sketch NURBS lift is invalid: {error}"
+            ))
+        })?;
     if !crate::brep::patch_nurbs_by_attr(body, request.carrier_attr, &curve) {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT sketch NURBS edit changes native storage shape".into(),

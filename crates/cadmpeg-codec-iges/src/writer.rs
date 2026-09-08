@@ -3331,10 +3331,19 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
     let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         return Ok(pcurve);
     };
-    for point in nurbs.control_points_mut() {
-        point.u = point.u.mul_add(u_factor, u_offset);
-        point.v = point.v.mul_add(v_factor, v_offset);
-    }
+    nurbs
+        .edit_control_points(|points| {
+            for point in points {
+                point.u = point.u.mul_add(u_factor, u_offset);
+                point.v = point.v.mul_add(v_factor, v_offset);
+            }
+        })
+        .map_err(|error| {
+            CodecError::malformed(format_args!(
+                "pcurve {} parameter mapping: {error}",
+                pcurve.id
+            ))
+        })?;
     Ok(pcurve)
 }
 
@@ -6012,9 +6021,15 @@ fn apply_rigid_transform(
             point: point(value),
         },
         CurveGeometry::Nurbs(mut nurbs) => {
-            for control_point in nurbs.control_points_mut() {
-                *control_point = point(*control_point);
-            }
+            nurbs
+                .edit_control_points(|points| {
+                    for control_point in points {
+                        *control_point = point(*control_point);
+                    }
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("transformed NURBS curve: {error}"))
+                })?;
             CurveGeometry::Nurbs(nurbs)
         }
         CurveGeometry::Polyline(polyline) => CurveGeometry::Polyline(

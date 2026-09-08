@@ -699,10 +699,12 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
-    let definition = |sections, centerline| FeatureDefinition::Loft {
+    let definition = |sections, centerline: Option<PathRef>| FeatureDefinition::Loft {
         sections,
-        centerline,
-        guides: Vec::new(),
+        guidance: centerline.map_or_else(
+            || cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
+            cadmpeg_ir::features::LoftGuidance::Centerline,
+        ),
         op: BooleanOp::NewBody,
         closed: false,
         solid: true,
@@ -1391,9 +1393,10 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     ir.model.configurations[0].feature_states.insert(
         feature.id.clone(),
         ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                outputs: feature.outputs.clone(),
+            },
             dependencies: feature.dependencies.clone(),
-            outputs: feature.outputs.clone(),
             definition: feature.definition.clone(),
         },
     );
@@ -1454,9 +1457,8 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     ir.model.configurations[0].feature_states.insert(
         suppressed.id.clone(),
         ConfigurationFeatureState {
-            suppressed: true,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
             dependencies: suppressed.dependencies,
-            outputs: Vec::new(),
             definition: suppressed.definition,
         },
     );
@@ -1536,8 +1538,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     ir.model.features[0].definition = FeatureDefinition::Loft {
         sections: Vec::new(),
-        centerline: None,
-        guides: Vec::new(),
+        guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
         op: cadmpeg_ir::features::BooleanOp::Unresolved,
         closed: false,
         solid: false,
@@ -1723,8 +1724,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(
         FeatureDefinition::Loft {
             sections: Vec::new(),
-            centerline: None,
-            guides: Vec::new(),
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             closed: false,
             solid: false,

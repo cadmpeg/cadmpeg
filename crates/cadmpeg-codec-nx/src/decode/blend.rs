@@ -2835,7 +2835,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let Some(side_uv) = pcurve_uv(pcurve, parameter) else {
+        let Some(side_uv) = pcurve_uv(&pcurve.geometry, parameter) else {
             continue;
         };
         let Some(side_point) = decoded_surface_point_inner_with_budget(
@@ -2973,7 +2973,7 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
     let [pcurve] = candidates.as_slice() else {
         return None;
     };
-    Some(*pcurve)
+    Some(&pcurve.geometry)
 }
 
 #[cfg(test)]

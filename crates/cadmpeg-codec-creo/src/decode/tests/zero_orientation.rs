@@ -988,7 +988,7 @@ fn nonplanar_saved_spline_places_as_model_curve() {
     )
     .expect("valid local NURBS");
 
-    let placed = placed_section_nurbs(&transform, &local);
+    let placed = placed_section_nurbs(&transform, &local).expect("finite placed NURBS");
 
     assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
     assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));
@@ -1352,9 +1352,13 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     )
     .is_none());
     let mut coplanar = surface.clone();
-    for point in coplanar.control_points_mut() {
-        point.z = 0.0;
-    }
+    coplanar
+        .edit_control_points(|points| {
+            for point in points {
+                point.z = 0.0;
+            }
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
         PlaneEquation {
@@ -1364,17 +1368,9 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     )
     .is_none());
     coplanar
-        .control_points_mut()
-        .copy_from_slice(surface.control_points());
-    coplanar.weights_mut().expect("weights")[0] = 0.0;
-    assert!(nurbs_plane_boundary_curve(
-        &coplanar,
-        PlaneEquation {
-            origin: [0.0, 1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-        },
-    )
-    .is_none());
+        .edit_control_points(|points| points.copy_from_slice(surface.control_points()))
+        .expect("finite fixture geometry preserves NURBS invariants");
+    assert!(coplanar.edit_weights(|weights| weights[0] = 0.0).is_err());
 }
 
 #[test]
@@ -1431,15 +1427,27 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     assert_eq!(shared.weights(), Some(&[3.0, 4.0][..]));
 
     let mut reversed = second.clone();
-    reversed.control_points_mut().swap(0, 1);
-    reversed.control_points_mut().swap(2, 3);
-    reversed.weights_mut().expect("weights").swap(0, 1);
-    reversed.weights_mut().expect("weights").swap(2, 3);
+    reversed
+        .edit_control_points(|points| {
+            points.swap(0, 1);
+            points.swap(2, 3);
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
+    reversed
+        .edit_weights(|weights| {
+            weights.swap(0, 1);
+            weights.swap(2, 3);
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &reversed).is_some());
 
     let mut same_side = second.clone();
-    same_side.control_points_mut()[2] = Point3::new(-2.0, 0.0, 0.0);
-    same_side.control_points_mut()[3] = Point3::new(-2.0, 0.0, 1.0);
+    same_side
+        .edit_control_points(|points| {
+            points[2] = Point3::new(-2.0, 0.0, 0.0);
+            points[3] = Point3::new(-2.0, 0.0, 1.0);
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &same_side).is_none());
 
     let mut periodic_transverse = second.clone();
@@ -1447,7 +1455,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     assert!(shared_extrusion_generator_curve(&first, &periodic_transverse).is_none());
 
     let mut different_boundary = second;
-    different_boundary.control_points_mut()[1].x = 0.1;
+    different_boundary
+        .edit_control_points(|points| points[1].x = 0.1)
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &different_boundary).is_none());
 }
 

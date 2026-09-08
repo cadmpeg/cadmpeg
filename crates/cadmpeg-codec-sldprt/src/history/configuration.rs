@@ -3,8 +3,8 @@
 
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
-    Angle, ConfigurationBodies, DatumPlaneReference, DesignConfiguration, FaceSelection,
-    FeatureDefinition, FeatureId, Length, LinearTermination, ParameterValue,
+    Angle, ConfigurationBodies, ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
+    FaceSelection, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterValue,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -17,6 +17,26 @@ use crate::history::parameters::{
 use crate::history::project::project_features;
 
 const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9: f64 = 1.0e-9;
+
+fn apply_configuration_state(
+    feature: &mut cadmpeg_ir::features::Feature,
+    state: &cadmpeg_ir::features::ConfigurationFeatureState,
+) {
+    feature.suppressed = Some(state.evaluation.is_suppressed());
+    feature.dependencies.clone_from(&state.dependencies);
+    state.evaluation.outputs().clone_into(&mut feature.outputs);
+    feature.definition.clone_from(&state.definition);
+}
+
+fn configuration_evaluation(feature: &cadmpeg_ir::features::Feature) -> ConfigurationEvaluation {
+    if feature.suppressed.unwrap_or(false) {
+        ConfigurationEvaluation::Suppressed
+    } else {
+        ConfigurationEvaluation::Active {
+            outputs: feature.outputs.clone(),
+        }
+    }
+}
 
 /// Which side of the codec drives the history-enrichment prefix.
 ///
@@ -262,9 +282,14 @@ pub(crate) fn project_configuration_design_states(
                 (
                     feature.id,
                     cadmpeg_ir::features::ConfigurationFeatureState {
-                        suppressed: feature.suppressed.unwrap_or(false),
+                        evaluation: if feature.suppressed.unwrap_or(false) {
+                            cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+                        } else {
+                            cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                                outputs: feature.outputs,
+                            }
+                        },
                         dependencies: feature.dependencies,
-                        outputs: feature.outputs,
                         definition: feature.definition,
                     },
                 )
@@ -301,10 +326,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             let Some(state) = states.get(&feature.id) else {
                 continue;
             };
-            feature.suppressed = Some(state.suppressed);
-            feature.dependencies.clone_from(&state.dependencies);
-            feature.outputs.clone_from(&state.outputs);
-            feature.definition.clone_from(&state.definition);
+            apply_configuration_state(feature, state);
         }
         crate::resolved_features::projections::project_compact_edge_selections(
             &mut features,
@@ -345,10 +367,7 @@ pub(crate) fn bind_configuration_topology_selections(
                 .filter_map(|feature| {
                     let state = states.get(&feature.id)?;
                     let mut feature = feature.clone();
-                    feature.suppressed = Some(state.suppressed);
-                    feature.dependencies.clone_from(&state.dependencies);
-                    feature.outputs.clone_from(&state.outputs);
-                    feature.definition.clone_from(&state.definition);
+                    apply_configuration_state(&mut feature, state);
                     Some(feature)
                 })
                 .collect::<Vec<_>>()
@@ -382,9 +401,9 @@ pub(crate) fn bind_configuration_topology_selections(
             let Some(state) = states.get_mut(&feature.id) else {
                 continue;
             };
+            state.evaluation = configuration_evaluation(&feature);
             state.definition = feature.definition;
             state.dependencies = feature.dependencies;
-            state.outputs = feature.outputs;
         }
     }
 }
@@ -432,10 +451,7 @@ pub(crate) fn project_configuration_sketch_states(
             .filter_map(|feature| {
                 let state = states.get(&feature.id)?;
                 let mut feature = feature.clone();
-                feature.suppressed = Some(state.suppressed);
-                feature.dependencies.clone_from(&state.dependencies);
-                feature.outputs.clone_from(&state.outputs);
-                feature.definition.clone_from(&state.definition);
+                apply_configuration_state(&mut feature, state);
                 Some(feature)
             })
             .collect::<Vec<_>>();
@@ -669,9 +685,8 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            state.suppressed = feature.suppressed.unwrap_or(false);
+            state.evaluation = configuration_evaluation(&feature);
             state.dependencies = feature.dependencies;
-            state.outputs = feature.outputs;
             state.definition = feature.definition;
         }
     }
@@ -1072,10 +1087,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
             .filter_map(|base_feature| {
                 let state = configuration.feature_states.get(&base_feature.id)?;
                 let mut feature = base_feature.clone();
-                feature.suppressed = Some(state.suppressed);
-                feature.dependencies.clone_from(&state.dependencies);
-                feature.outputs.clone_from(&state.outputs);
-                feature.definition.clone_from(&state.definition);
+                apply_configuration_state(&mut feature, state);
                 Some(feature)
             })
             .collect::<Vec<_>>();

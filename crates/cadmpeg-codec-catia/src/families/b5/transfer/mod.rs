@@ -33,7 +33,7 @@ mod vertices;
 
 use edges::{
     b5_supports_agree, b5_supports_follow_curve, b5_supports_follow_edge, b5_vertex_point,
-    curve_cache_has_ordered_knots, merge_curve_plan, orient_b5_supports_to_edge,
+    merge_curve_plan, orient_b5_supports_to_edge,
 };
 use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
@@ -434,15 +434,13 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             }) {
                 supports.push((loop_.surface, pcurve_id, support_range));
             }
-            let lifted = lifted_curve_geometry(pcurve, surface)
-                .or_else(|| {
-                    let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
-                    else {
-                        return None;
-                    };
-                    nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
-                })
-                .filter(curve_cache_has_ordered_knots);
+            let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
+                let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
+                else {
+                    return None;
+                };
+                nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
+            });
             if let Some(geometry) = lifted {
                 let endpoints = graph.edge_vertices[&edge_id];
                 let (Some(edge_start), Some(edge_end)) = (
@@ -1000,9 +998,13 @@ fn curve_on_parameter_range(
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Nurbs(mut curve) => {
-            for knot in curve.knots_mut() {
-                *knot = target[0] + (*knot - source[0]) * target_per_source;
-            }
+            curve
+                .edit_knots(|knots| {
+                    for knot in knots {
+                        *knot = target[0] + (*knot - source[0]) * target_per_source;
+                    }
+                })
+                .ok()?;
             Some(CurveGeometry::Nurbs(curve))
         }
         CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {

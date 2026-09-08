@@ -18,7 +18,8 @@ fn model_entity_wins_when_native_id_collides() {
         vec![NativeRecord::new(
             id.clone(),
             Map::from_iter([("native_only".into(), Value::Bool(true))]),
-        )],
+        )
+        .expect("valid native identity")],
     );
     ir.native.0.insert("collision".into(), namespace);
     let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
@@ -51,9 +52,10 @@ fn native_topology_link_must_resolve() {
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "sketch_curve_links".into(),
         vec![NativeRecord::new(
-            "native:link#0",
+            "native:test:link#0",
             serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
-        )],
+        )
+        .expect("valid native identity")],
     );
     ir.native.finalize();
     assert!(validate_neutral(&ir, Vec::new())

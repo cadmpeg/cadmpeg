@@ -169,8 +169,12 @@ fn decode_retains_generated_helix_construction() {
     else {
         panic!("expected helix NURBS cache")
     };
-    edited_cache.control_points_mut()[1].x = 17.0;
-    edited_cache.control_points_mut()[1].z = -2.0;
+    edited_cache
+        .edit_control_points(|points| {
+            points[1].x = 17.0;
+            points[1].z = -2.0;
+        })
+        .unwrap();
     *solved_cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(edited_cache),
     )
@@ -1099,11 +1103,14 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         assert!(result.ir().model.surfaces.iter().any(|surface| {
             surface.id == *surface_id && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
         }));
-        assert!(matches!(side.pcurve, Some(PcurveGeometry::Nurbs { .. })));
+        assert!(matches!(
+            side.pcurve.as_ref().map(|binding| &binding.geometry),
+            Some(PcurveGeometry::Nurbs { .. })
+        ));
     }
     assert!(matches!(
-        context.sides[1].pcurve,
-        Some(PcurveGeometry::Nurbs { ref nurbs }) if nurbs.weights().is_some()
+        context.sides[1].pcurve.as_ref().map(|binding| &binding.geometry),
+        Some(PcurveGeometry::Nurbs { nurbs }) if nurbs.weights().is_some()
     ));
 
     let mut retained = result.ir().clone();
@@ -1211,10 +1218,13 @@ fn generated_mixed_offset_supports_write_source_less() {
         };
         context.sides[1].surface = None;
         context.sides[1].pcurve = None;
-        context.sides[0].pcurve = Some(cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-            direction: cadmpeg_ir::math::Point2::new(3.0, -1.0),
-        });
+        context.sides[0].pcurve = Some(
+            cadmpeg_ir::geometry::PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                direction: cadmpeg_ir::math::Point2::new(3.0, -1.0),
+            }
+            .into(),
+        );
         context.sides[0]
             .surface
             .clone()
@@ -1245,19 +1255,22 @@ fn generated_mixed_offset_supports_write_source_less() {
     assert!(context.sides[1].surface.is_none() && context.sides[1].pcurve.is_none());
     assert_eq!(
         context.sides[0].pcurve,
-        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                    cadmpeg_ir::math::Point2::new(4.0, 1.0),
-                ],
-                None,
-                false,
-            )
-            .unwrap(),
-        })
+        Some(
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                        cadmpeg_ir::math::Point2::new(4.0, 1.0),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            }
+            .into()
+        )
     );
     let actual_surface = round_trip
         .ir()

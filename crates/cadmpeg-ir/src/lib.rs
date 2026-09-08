@@ -88,11 +88,12 @@ pub use diff::{
 pub use document::{ArenaName, CadIr, CensusKey, SourceMeta, IR_VERSION};
 pub use draft::ModelDraft;
 pub use features::{
-    BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
-    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies, ConfigurationId,
-    ConfigurationName, CurveProjectionDirection, CurveProjectionDirectionState,
-    DesignConfiguration, DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId,
-    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
+    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies,
+    ConfigurationEvaluation, ConfigurationId, ConfigurationName, CurveProjectionDirection,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
+    FeatureDefinition, FeatureId, LoftGuidance, ParameterId, ParameterPmi, ParameterValue,
+    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
 pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
@@ -125,9 +126,9 @@ pub use report::{
     WritePath, SHARED_LOSS_NAMESPACE,
 };
 pub use sketches::{
-    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
+    NativeOperandField, Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition,
+    SketchConstraintId, SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
     SketchPlacement, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };

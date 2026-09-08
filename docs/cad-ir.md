@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"6"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"7"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -37,6 +37,8 @@ Entity IDs have the grammar:
 ```
 
 `format` identifies the producing codec or `synthetic`. `scope` identifies the containing source object or stream. `kind` names the entity class. `key` is the source persistent key when one exists and otherwise a positional ordinal.
+
+Each namespace component and the key are nonempty. An ID has exactly three colon-separated namespace components before one `#`, and contains no whitespace. These syntax rules also apply to native record IDs.
 
 IDs are globally unique across neutral and native arenas. A codec produces identical IDs for identical input bytes when run at the same codec version. When the source supplies persistent identity, IDs stay stable across unrelated arena insertion. Each ID-bearing arena is sorted lexicographically by ID. Features also carry an `ordinal` for construction order. Array order remains ID order.
 
@@ -88,7 +90,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
 
 ### Loop and radial rings
 
-A loop is either a nonempty `coedges` ring or one unanchored vertex use. For every edge loop, `coedges` contains exactly one simple cycle. Each coedge's `next` and `previous` links are reciprocal and remain within that loop. Pole-vertex uses in an edge loop identify their preceding member with `after`; multiple uses after one coedge retain vector order. A vertex loop contains no coedges and exactly one vertex use whose `after` is absent.
+A loop is either a nonempty `coedges` ring of distinct coedge identities or one unanchored vertex use. For every edge loop, `coedges` contains exactly one simple cycle. Each coedge's `next` and `previous` links are reciprocal and remain within that loop. Pole-vertex uses in an edge loop identify their preceding member with `after`; multiple uses after one coedge retain vector order. A vertex loop contains no coedges and exactly one vertex use whose `after` is absent.
 
 All coedges that use an edge form one closed radial ring through `radial_next`. Every member references the same edge:
 
@@ -134,7 +136,9 @@ Decoders convert kernel conventions at decode:
 - Fusion ellipse phases are normalized to the major-direction origin and marked `derived`.
 - Kernel full-circle intervals are re-anchored to `[0, 2π]` and marked `derived`.
 
-NURBS surfaces store degrees, full knot vectors, pole counts, u-major control points, optional per-pole weights, periodicity flags, and whether the carrier's oriented normal is opposite `Pu × Pv`. NURBS curves store degree, full knot vector, ordered control points, optional weights, and periodicity.
+NURBS surfaces store degrees, full knot vectors, pole counts, u-major control points, optional per-pole weights, periodicity flags, and whether the carrier's oriented normal is opposite `Pu × Pv`. NURBS curves store degree, full knot vector, ordered control points, optional weights, and periodicity. Knot values are finite and nondecreasing. Control-point coordinates are finite. Each knot vector has its pole count plus its degree plus one values. A present weight vector has one weight per pole. Three-dimensional NURBS weights are finite and nonzero; negative weights are permitted. Pcurve and polar NURBS weights are finite and positive.
+
+An intersection-curve support side has an optional pcurve binding. A binding contains its pcurve geometry and an optional explicit mapping range. The range endpoints are finite and distinct. Endpoint order defines mapping direction and may decrease. Supporting-surface presence is independent of pcurve presence.
 
 ## Procedural carriers
 
@@ -179,6 +183,14 @@ Neutral definitions include directly stored geometry, solid and surface construc
 
 Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. Extents are one-sided, two-sided, or symmetric around the profile plane. Each side carries a one-sided termination law: unresolved, blind, through-all, through-next, to-first, to-last, to-face, to-vertex, offset-from-face, to-shape, or angular. A symmetric side is mirrored across the profile plane; its blind length or angular travel states the total travel split evenly around the plane. An extrusion side additionally carries an optional draft angle, measured from the profile plane outward along that side's travel, and an optional signed offset from its terminating geometry; an absent draft leaves that side's walls parallel. Revolution sides carry termination laws only. Holes travel on one side only and state a bare termination law. Boolean operations are join, cut, intersect, or new-body. Profiles reference unresolved, native, sketch, or solved-face identity. Paths reference unresolved, native, sketch, edge, or curve identity. Projected curves retain unresolved directionality independently of an absent explicit direction vector. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Edge fillets use constant or sampled variable radii. Full-round fillets keep a center-face selection and two side-face selections; each side is explicit, automatic, or unresolved. Chamfers use distance, two distances, or distance-angle and retain reference-side reversal only when resolved. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
+Ordered resolved and historical body sets store nonempty member rows. Each row pairs one body identity with one nonblank native member string. Body identities and native member strings are unique within the set. Historical unordered sets retain separate body and native-member collections with equal nonzero counts and unique members; no positional correspondence is implied.
+
+A configuration feature evaluation is `suppressed` or `active`. A suppressed evaluation has no outputs. An active evaluation owns its output list, which may be empty. Dependencies and the feature definition remain present independently of the evaluation state.
+
+Loft guidance is a guide-path list or one centerline path. An empty guide-path list means unguided. Guide paths and a centerline cannot coexist.
+
+A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.
+
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. The neutral definition keeps its own meaning.
 
 `source_content` retains the ordered mixed content of a feature. Parameter items
@@ -206,7 +218,8 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. A binding's optional `visible` field is `None` when the source provides no binding-level visibility value and is `false` when that binding is explicitly hidden; binding visibility does not change visibility on a shared geometry carrier. Drawings preserve page, view, and annotation entities. A drawing's optional `visible` field is `None` when the source provides no drawing-level visibility value and is `false` when that drawing entity is explicitly hidden; drawing visibility does not change visibility on its relationships or contents. PMI annotations preserve semantic and graphical annotation entities. A PMI annotation's optional `visible` field is `None` when the source provides no annotation-level visibility value and is `false` when that annotation occurrence is explicitly hidden; annotation visibility does not change visibility on a shared geometry or tessellation carrier. Presentation layers group model or presentation items. A layer's optional `visible` field is `None` when the source provides no layer-level visibility value and is `false` when the layer is explicitly hidden; layer visibility does not change visibility on its assigned items. Attributes attach source-native values to supported targets.
 
-`Tessellation.triangles` preserves source winding. `feature_edges` is the
+`Tessellation.triangles` preserves source winding. Each triangle index addresses
+`vertices`. `feature_edges` is the
 source-classified undirected feature-edge set. The list is lexicographically
 sorted. Each pair is strictly ascending, unique, and indexes `vertices`; an
 ordinary triangulation edge is absent unless the source classifies it as a
@@ -257,7 +270,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "6"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "7"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -271,7 +284,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "6",
+  "ir_version": "7",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

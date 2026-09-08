@@ -3,7 +3,6 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
-use crate::geometry::knots_nondecreasing;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
 const EPS_HELIX_RADIUS: f64 = 1.0e-9;
@@ -76,89 +75,16 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(mesh.id.clone()),
             });
         }
-        if !mesh.triangle_groups.is_empty() {
-            let mut memberships =
-                std::iter::repeat_n(0u32, mesh.triangles().len()).collect::<Vec<_>>();
-            let mut source_ids = std::collections::BTreeSet::new();
-            let valid = mesh.triangle_groups.iter().all(|group| {
-                !group.triangles.is_empty()
-                    && group
-                        .triangles
-                        .windows(2)
-                        .all(|ordinals| ordinals[0] < ordinals[1])
-                    && group.triangles.iter().all(|ordinal| {
-                        usize::try_from(*ordinal)
-                            .ok()
-                            .and_then(|ordinal| memberships.get_mut(ordinal))
-                            .is_some_and(|count| {
-                                *count += 1;
-                                true
-                            })
-                    })
-                    && group.source_id.as_ref().is_none_or(|source_id| {
-                        !source_id.is_empty() && source_ids.insert(source_id.as_str())
-                    })
-            }) && memberships.iter().all(|count| *count == 1);
-            if !valid {
-                findings.push(Finding {
-                    check: Check::Tessellation,
-                    severity: Severity::Error,
-                    message: "contains an invalid tessellation triangle-group partition".into(),
-                    entity: Some(mesh.id.clone()),
-                });
-            }
-        }
-        if !mesh.texture_assignments.is_empty() {
-            let mut memberships =
-                std::iter::repeat_n(0u32, mesh.triangles().len()).collect::<Vec<_>>();
-            let mut source_ids = std::collections::BTreeSet::new();
-            let mut anonymous_textures = std::collections::BTreeSet::new();
-            let valid = mesh.texture_assignments.iter().all(|assignment| {
-                !assignment.triangles.is_empty()
-                    && match assignment.source_id.as_deref() {
-                        Some(source_id) => !source_id.is_empty() && source_ids.insert(source_id),
-                        None => anonymous_textures.insert(&assignment.texture),
-                    }
-                    && ir
-                        .model
-                        .assets
-                        .iter()
-                        .any(|asset| asset.id == assignment.texture)
-                    && assignment
-                        .triangles
-                        .windows(2)
-                        .all(|ordinals| ordinals[0] < ordinals[1])
-                    && assignment.triangles.iter().all(|ordinal| {
-                        usize::try_from(*ordinal)
-                            .ok()
-                            .and_then(|ordinal| memberships.get_mut(ordinal))
-                            .is_some_and(|count| {
-                                *count += 1;
-                                true
-                            })
-                    })
-            }) && memberships.iter().all(|count| *count <= 1);
-            if !valid {
-                findings.push(Finding {
-                    check: Check::Tessellation,
-                    severity: Severity::Error,
-                    message: "contains invalid tessellation texture assignments".into(),
-                    entity: Some(mesh.id.clone()),
-                });
-            }
-        }
-        if mesh.feature_edges.iter().any(|edge| {
-            edge[0] >= edge[1]
-                || usize::try_from(edge[1]).map_or(true, |index| index >= mesh.vertices().len())
-        }) || mesh
-            .feature_edges
-            .windows(2)
-            .any(|edges| edges[0] >= edges[1])
-        {
+        if mesh.texture_assignments().iter().any(|assignment| {
+            !ir.model
+                .assets
+                .iter()
+                .any(|asset| asset.id == assignment.texture)
+        }) {
             findings.push(Finding {
                 check: Check::Tessellation,
                 severity: Severity::Error,
-                message: "contains an invalid tessellation feature edge".into(),
+                message: "references a missing tessellation texture asset".into(),
                 entity: Some(mesh.id.clone()),
             });
         }
@@ -182,14 +108,6 @@ fn orthonormal(left: &Vector3, right: &Vector3) -> bool {
 
 fn point3_finite(point: &crate::math::Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-}
-
-fn nurbs_weights_valid(weights: Option<&[f64]>) -> bool {
-    weights.is_none_or(|weights| {
-        weights
-            .iter()
-            .all(|weight| weight.is_finite() && *weight != 0.0)
-    })
 }
 
 fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bool {
@@ -386,19 +304,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SurfaceGeometry::Nurbs(n) => {
-                let valid = n.control_points().iter().all(point3_finite)
-                    && nurbs_weights_valid(n.weights());
-                if !valid {
-                    bounds_err(
-                        findings,
-                        s.id.as_str(),
-                        "NURBS surface poles or weights are invalid",
-                    );
-                }
-                check_knots(findings, s.id.as_str(), n.u_knots(), "u");
-                check_knots(findings, s.id.as_str(), n.v_knots(), "v");
-            }
+            SurfaceGeometry::Nurbs(_) => {}
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Polygonal(surface) => {
                 if !valid_polygonal_surface(surface) {
@@ -1738,18 +1644,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, c.id.as_str(), "composite curve has no segments");
                 }
             }
-            CurveGeometry::Nurbs(n) => {
-                let valid = n.control_points().iter().all(point3_finite)
-                    && nurbs_weights_valid(n.weights());
-                if !valid {
-                    bounds_err(
-                        findings,
-                        c.id.as_str(),
-                        "NURBS curve poles or weights are invalid",
-                    );
-                }
-                check_knots(findings, c.id.as_str(), n.knots(), "");
-            }
+            CurveGeometry::Nurbs(_) => {}
             CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Polyline(polyline) => {
                 if !valid_polyline(polyline) {
@@ -1772,154 +1667,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for pcurve in &ir.model.pcurves {
-        let point_finite = |point: &crate::math::Point2| point.u.is_finite() && point.v.is_finite();
-        let direction_valid = |direction: &crate::math::Point2| {
-            point_finite(direction) && direction.u.hypot(direction.v) > 0.0
-        };
-        let valid = match &pcurve.geometry {
-            crate::geometry::PcurveGeometry::Line { origin, direction } => {
-                point_finite(origin) && direction_valid(direction)
-            }
-            crate::geometry::PcurveGeometry::Circle {
-                center,
-                x_axis,
-                y_axis,
-                radius,
-            } => {
-                point_finite(center)
-                    && direction_valid(x_axis)
-                    && direction_valid(y_axis)
-                    && !nonpositive(*radius)
-            }
-            crate::geometry::PcurveGeometry::Ellipse {
-                center,
-                x_axis,
-                y_axis,
-                major_radius,
-                minor_radius,
-            } => {
-                point_finite(center)
-                    && direction_valid(x_axis)
-                    && direction_valid(y_axis)
-                    && !nonpositive(*major_radius)
-                    && !nonpositive(*minor_radius)
-            }
-            crate::geometry::PcurveGeometry::Harmonic {
-                center,
-                cosine,
-                sine,
-            }
-            | crate::geometry::PcurveGeometry::Hyperbolic {
-                center,
-                cosine,
-                sine,
-            } => {
-                point_finite(center)
-                    && point_finite(cosine)
-                    && point_finite(sine)
-                    && (direction_valid(cosine) || direction_valid(sine))
-            }
-            crate::geometry::PcurveGeometry::Parabola {
-                vertex,
-                x_axis,
-                y_axis,
-                focal_distance,
-            } => {
-                point_finite(vertex)
-                    && direction_valid(x_axis)
-                    && direction_valid(y_axis)
-                    && focal_distance.is_finite()
-                    && *focal_distance > 0.0
-            }
-            crate::geometry::PcurveGeometry::Hyperbola {
-                center,
-                x_axis,
-                y_axis,
-                major_radius,
-                minor_radius,
-            } => {
-                point_finite(center)
-                    && direction_valid(x_axis)
-                    && direction_valid(y_axis)
-                    && !nonpositive(*major_radius)
-                    && !nonpositive(*minor_radius)
-            }
-            crate::geometry::PcurveGeometry::Trimmed {
-                basis,
-                parameter_range,
-                ..
-            } => {
-                parameter_range.iter().all(|value| value.is_finite())
-                    && parameter_range[0] <= parameter_range[1]
-                    && pcurve_basis_is_valid(basis)
-            }
-            crate::geometry::PcurveGeometry::Offset { basis, distance } => {
-                distance.is_finite() && pcurve_basis_is_valid(basis)
-            }
-            crate::geometry::PcurveGeometry::PolarHarmonic {
-                radial_center,
-                radial_cos,
-                radial_sin,
-                axial_origin,
-                axial_cos,
-                axial_sin,
-            } => {
-                point_finite(radial_center)
-                    && point_finite(radial_cos)
-                    && point_finite(radial_sin)
-                    && (direction_valid(radial_cos) || direction_valid(radial_sin))
-                    && axial_origin.is_finite()
-                    && axial_cos.is_finite()
-                    && axial_sin.is_finite()
-            }
-            crate::geometry::PcurveGeometry::PolarNurbs { nurbs } => {
-                nurbs
-                    .poles()
-                    .iter()
-                    .all(|pole| point_finite(&pole.radial) && pole.axial.is_finite())
-                    && nurbs.weights().is_none_or(|weights| {
-                        weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
-                    })
-            }
-            crate::geometry::PcurveGeometry::SphericalGreatCircle {
-                azimuth_origin,
-                azimuth_rate,
-                plane_phase,
-                plane_slope,
-            } => {
-                [azimuth_origin, azimuth_rate, plane_phase, plane_slope]
-                    .into_iter()
-                    .all(|value| value.is_finite())
-                    && *azimuth_rate != 0.0
-            }
-            crate::geometry::PcurveGeometry::Nurbs { nurbs } => {
-                nurbs.control_points().iter().all(point_finite)
-                    && nurbs.weights().is_none_or(|weights| {
-                        weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
-                    })
-            }
-            crate::geometry::PcurveGeometry::Transformed {
-                basis,
-                transform: _,
-            } => pcurve_basis_is_valid(basis),
-        };
-        if !valid {
+        if !pcurve_basis_is_valid(&pcurve.geometry) {
             bounds_err(findings, pcurve.id.as_str(), "pcurve geometry is invalid");
-        }
-        let nurbs_knots = match &pcurve.geometry {
-            crate::geometry::PcurveGeometry::Nurbs { nurbs } => Some(nurbs.knots()),
-            crate::geometry::PcurveGeometry::PolarNurbs { nurbs } => Some(nurbs.knots()),
-            _ => None,
-        };
-        if let Some(knots) = nurbs_knots {
-            if knots.iter().any(|knot| !knot.is_finite()) {
-                bounds_err(findings, pcurve.id.as_str(), "pcurve knots must be finite");
-            }
-            check_knots(findings, pcurve.id.as_str(), knots, "");
         }
         if pcurve
             .parameter_range()
@@ -2178,8 +1927,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             procedural.definition()
         {
             if !support_context_is_finite(context)
-                || !support_side_mapping_is_finite(third)
-                || (third.pcurve_parameter_range.is_some()
+                || (third
+                    .pcurve
+                    .as_ref()
+                    .is_some_and(|pcurve| pcurve.parameter_range.is_some())
                     && context.parameter_range[0] == context.parameter_range[1])
             {
                 bounds_err(
@@ -2457,19 +2208,7 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && (direction(radial_cos) || direction(radial_sin))
                 && finite(&[*axial_origin, *axial_cos, *axial_sin])
         }
-        PcurveGeometry::PolarNurbs { nurbs } => {
-            finite(nurbs.knots())
-                && knots_nondecreasing(nurbs.knots())
-                && nurbs
-                    .poles()
-                    .iter()
-                    .all(|pole| point(&pole.radial) && pole.axial.is_finite())
-                && nurbs.weights().is_none_or(|weights| {
-                    weights
-                        .iter()
-                        .all(|weight| weight.is_finite() && *weight > 0.0)
-                })
-        }
+        PcurveGeometry::PolarNurbs { .. } => true,
         PcurveGeometry::SphericalGreatCircle {
             azimuth_origin,
             azimuth_rate,
@@ -2479,16 +2218,7 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
             finite(&[*azimuth_origin, *azimuth_rate, *plane_phase, *plane_slope])
                 && *azimuth_rate != 0.0
         }
-        PcurveGeometry::Nurbs { nurbs } => {
-            finite(nurbs.knots())
-                && knots_nondecreasing(nurbs.knots())
-                && nurbs.control_points().iter().all(point)
-                && nurbs.weights().is_none_or(|weights| {
-                    weights
-                        .iter()
-                        .all(|weight| weight.is_finite() && *weight > 0.0)
-                })
-        }
+        PcurveGeometry::Nurbs { .. } => true,
         PcurveGeometry::Trimmed {
             basis,
             parameter_range,
@@ -2551,9 +2281,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
                 && minor_radius.is_finite()
                 && *minor_radius != 0.0
         }
-        SurfaceGeometry::Nurbs(n) => {
-            knots_nondecreasing(n.u_knots()) && knots_nondecreasing(n.v_knots())
-        }
+        SurfaceGeometry::Nurbs(_) => true,
         SurfaceGeometry::Polygonal(surface) => valid_polygonal_surface(surface),
         SurfaceGeometry::Transformed {
             basis,
@@ -2597,7 +2325,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Degenerate { point } => {
             [point.x, point.y, point.z].into_iter().all(f64::is_finite)
         }
-        CurveGeometry::Nurbs(n) => knots_nondecreasing(n.knots()),
+        CurveGeometry::Nurbs(_) => true,
         CurveGeometry::Polyline(polyline) => valid_polyline(polyline),
         CurveGeometry::Transformed {
             basis,
@@ -2643,40 +2371,16 @@ fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) 
         .all(|value| value.is_finite())
         && context.parameter_range[0] <= context.parameter_range[1]
         && (context.parameter_range[0] != context.parameter_range[1]
-            || context
-                .sides
-                .iter()
-                .all(|side| side.pcurve_parameter_range.is_none()))
-        && context.sides.iter().all(support_side_mapping_is_finite)
+            || context.sides.iter().all(|side| {
+                side.pcurve
+                    .as_ref()
+                    .is_none_or(|pcurve| pcurve.parameter_range.is_none())
+            }))
         && context
             .discontinuities
             .iter()
             .flatten()
             .all(|value| value.is_finite())
-}
-
-fn support_side_mapping_is_finite(side: &crate::geometry::IntcurveSupportSide) -> bool {
-    side.pcurve_parameter_range.is_none_or(|range| {
-        side.pcurve.is_some() && range.iter().all(|value| value.is_finite()) && range[0] != range[1]
-    })
-}
-
-pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {
-    let issue = if knots.iter().any(|knot| !knot.is_finite()) {
-        Some("knot vector contains a non-finite value")
-    } else if !knots_nondecreasing(knots) {
-        Some("knot vector is not non-decreasing")
-    } else {
-        None
-    };
-    if let Some(issue) = issue {
-        let label = if dir.is_empty() {
-            issue.to_string()
-        } else {
-            format!("{dir}-{issue}")
-        };
-        bounds_err(findings, id, &label);
-    }
 }
 
 pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {

@@ -774,7 +774,7 @@ fn semantic_writer_round_trips_typed_loft() {
         &decoded.ir().model.features[5].definition,
         FeatureDefinition::Loft {
             sections,
-            guides,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             op: BooleanOp::NewBody,
             closed: false,
             ..
@@ -789,7 +789,7 @@ fn semantic_writer_round_trips_typed_loft() {
         let mut ir_edit = decoded.ir_mut();
         let FeatureDefinition::Loft {
             sections,
-            guides,
+            guidance,
             op,
             closed,
             ..
@@ -798,7 +798,9 @@ fn semantic_writer_round_trips_typed_loft() {
             panic!("typed loft");
         };
         sections.swap(0, 2);
-        *guides = vec![PathRef::Native(native_refs[4].clone())];
+        *guidance = cadmpeg_ir::features::LoftGuidance::Guides(vec![PathRef::Native(
+            native_refs[4].clone(),
+        )]);
         *op = BooleanOp::Join;
         *closed = true;
         ir_edit.model.features[5].dependencies = vec![
@@ -845,7 +847,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Loft {
             ref sections,
-            ref guides,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(ref guides),
             op: BooleanOp::Unresolved,
             closed: false,
             ..
@@ -903,7 +905,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Loft {
             sections,
-            guides,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             op: BooleanOp::Join,
             closed: false,
             ..

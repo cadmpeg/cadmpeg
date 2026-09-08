@@ -952,12 +952,6 @@ fn surface_boundary_is_closed(
     homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
 }
 
-fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
-    let first = *knots.first()?;
-    let last = *knots.last()?;
-    Some(knots.iter().rev().map(|knot| first + last - knot).collect())
-}
-
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cosine = angle.cos();
     let sine = angle.sin();
@@ -1346,14 +1340,22 @@ pub(super) fn project(
             continue;
         }
         if direction_flag == 1 {
-            second.control_points_mut().reverse();
-            let Some(knots) = reverse_knots(second.knots()) else {
-                losses.push(entity_loss(entry, "second rail knot vector is empty"));
+            let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
+            second.reverse_parameterization();
+            if second
+                .edit_knots(|knots| {
+                    for knot in knots {
+                        *knot += knot_sum;
+                    }
+                })
+                .is_err()
+            {
+                losses.push(
+                    IgesLossCode::NurbsTransformNonFinite
+                        .note("IGES reversed second rail knots are non-finite")
+                        .with_provenance(entry.loss_provenance()),
+                );
                 continue;
-            };
-            second.knots_mut().copy_from_slice(&knots);
-            if let Some(weights) = second.weights_mut() {
-                weights.reverse();
             }
         }
         let Some(surface) = ruled_surface_carrier(&first, &second, ctx) else {
@@ -1557,10 +1559,21 @@ pub(super) fn project(
                 source_parameter_interval(geometry, cached_interval)
             });
         let mut placed_directrix = directrix;
-        if entry.transform != 0 {
-            for point in placed_directrix.control_points_mut() {
-                *point = transform.point(*point);
-            }
+        if entry.transform != 0
+            && placed_directrix
+                .edit_control_points(|points| {
+                    for point in points {
+                        *point = transform.point(*point);
+                    }
+                })
+                .is_err()
+        {
+            losses.push(
+                IgesLossCode::NurbsTransformNonFinite
+                    .note("IGES placement produces non-finite directrix poles")
+                    .with_provenance(entry.loss_provenance()),
+            );
+            continue;
         }
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             placed_directrix.degree(),
@@ -1930,8 +1943,20 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             let mut placed_generatrix = placed_generatrix
                 .expect("a transformed revolution retains its generatrix until placement");
-            for point in placed_generatrix.control_points_mut() {
-                *point = transform.point(*point);
+            if placed_generatrix
+                .edit_control_points(|points| {
+                    for point in points {
+                        *point = transform.point(*point);
+                    }
+                })
+                .is_err()
+            {
+                losses.push(
+                    IgesLossCode::NurbsTransformNonFinite
+                        .note("IGES placement produces non-finite generatrix poles")
+                        .with_provenance(entry.loss_provenance()),
+                );
+                continue;
             }
             procedural_directrix = CurveId::mint(format!(
                 "iges:model:curve#D{}-placed-generatrix",

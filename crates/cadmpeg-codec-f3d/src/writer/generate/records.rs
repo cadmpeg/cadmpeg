@@ -85,7 +85,7 @@ pub(crate) fn native_tolerant_coedge_extension(
             };
             let mut native_curve = curve.clone();
             if *curve_reversed {
-                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                native_curve.reverse_parameterization();
             }
             native_ref(records, -1);
             native_i64(records, 1);

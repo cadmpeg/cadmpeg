@@ -522,13 +522,14 @@ pub(super) fn emit_faces(
             if boundary_role != LoopBoundaryRole::Unspecified {
                 annotations.derived(&loop_id, "boundary_role");
             }
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
+            else {
+                return false;
+            };
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids.clone(),
-                    vertex_uses,
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             for member in orientation.member_order() {
                 let edge = loop_.members[member].edge;

@@ -557,7 +557,10 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
         panic!("typed intersection");
     };
     let [Some(PcurveGeometry::Nurbs { nurbs: first }), Some(PcurveGeometry::Nurbs { nurbs: second })] =
-        context.sides.clone().map(|side| side.pcurve)
+        context
+            .sides
+            .clone()
+            .map(|side| side.pcurve.map(|binding| binding.geometry))
     else {
         panic!("two ext11 pcurves");
     };
@@ -694,21 +697,22 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                     sides: [
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: Some(surface),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(PcurveGeometry::Nurbs {
-                                nurbs: PcurveNurbs::new(
-                                    1,
-                                    vec![0.0, 0.0, 1.0, 1.0],
-                                    vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
-                                    None,
-                                    false,
-                                )
-                                .expect("valid support pcurve"),
-                            }),
+                            pcurve: Some(
+                                PcurveGeometry::Nurbs {
+                                    nurbs: PcurveNurbs::new(
+                                        1,
+                                        vec![0.0, 0.0, 1.0, 1.0],
+                                        vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
+                                        None,
+                                        false,
+                                    )
+                                    .expect("valid support pcurve"),
+                                }
+                                .into(),
+                            ),
                         },
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: None,
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -969,12 +973,10 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                         IntcurveSupportSide {
                             surface: Some(surface_id),
                             pcurve: None,
-                            pcurve_parameter_range: None,
                         },
                         IntcurveSupportSide {
                             surface: None,
                             pcurve: None,
-                            pcurve_parameter_range: None,
                         },
                     ],
                     parameter_range: [0.0, 1.0],
@@ -1032,7 +1034,10 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     else {
         panic!("intersection");
     };
-    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_ref() else {
+    let Some(support) = context.sides[0].pcurve.as_ref() else {
+        panic!("serialized seed completed the NURBS lane");
+    };
+    let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
         panic!("serialized seed completed the NURBS lane");
     };
     assert_eq!(nurbs.control_points(), parameters);
@@ -1129,7 +1134,6 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                         .clone()
                         .map(|surface| IntcurveSupportSide {
                             surface: Some(surface),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         }),
                     parameter_range: [0.0, 5.0],
@@ -1167,7 +1171,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     for (side, surface) in procedural_surfaces.iter().enumerate() {
         for (parameter, expected) in parameters.iter().zip(&points) {
             let uv = cadmpeg_ir::eval::pcurve_uv(
-                context.sides[side].pcurve.as_ref().unwrap(),
+                &context.sides[side].pcurve.as_ref().unwrap().geometry,
                 *parameter,
             )
             .unwrap();
@@ -1495,13 +1499,20 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_mut() else {
+            let Some(support) = context.sides[0].pcurve.as_mut() else {
                 panic!("NURBS support lane");
             };
-            nurbs.control_points_mut()[1] = Point2::new(
-                crate::decode::MISSING_TOLERANCE,
-                crate::decode::MISSING_TOLERANCE,
-            );
+            let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                panic!("NURBS support lane");
+            };
+            nurbs
+                .edit_control_points(|points| {
+                    points[1] = Point2::new(
+                        crate::decode::MISSING_TOLERANCE,
+                        crate::decode::MISSING_TOLERANCE,
+                    );
+                })
+                .unwrap();
         });
     }
     let pending = vec![(
@@ -1525,7 +1536,10 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     else {
         panic!("typed intersection");
     };
-    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_ref() else {
+    let Some(support) = context.sides[0].pcurve.as_ref() else {
+        panic!("NURBS support lane");
+    };
+    let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
         panic!("NURBS support lane");
     };
     assert!(nurbs.control_points().iter().all(|point| {
@@ -1550,12 +1564,19 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_mut() else {
+            let Some(support) = context.sides[0].pcurve.as_mut() else {
                 panic!("NURBS support lane");
             };
-            for point in nurbs.control_points_mut() {
-                point.u += 100.0;
-            }
+            let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                panic!("NURBS support lane");
+            };
+            nurbs
+                .edit_control_points(|points| {
+                    for point in points {
+                        point.u += 100.0;
+                    }
+                })
+                .unwrap();
         });
     }
     let pending = vec![(
@@ -1646,16 +1667,17 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                     sides: [
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: Some(offsets[0].clone()),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: Some(offsets[1].clone()),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(PcurveGeometry::Line {
-                                origin: Point2::new(1.0, 2.0),
-                                direction: Point2::new(3.0, 4.0),
-                            }),
+                            pcurve: Some(
+                                PcurveGeometry::Line {
+                                    origin: Point2::new(1.0, 2.0),
+                                    direction: Point2::new(3.0, 4.0),
+                                }
+                                .into(),
+                            ),
                         },
                     ],
                     parameter_range: [0.0, 1.0],

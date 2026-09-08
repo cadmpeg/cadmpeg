@@ -192,13 +192,16 @@ pub fn unit_cube() -> CadIr {
             id: loop_id.clone().try_into().expect("valid identity"),
             face: FaceId::mint(format!("synthetic:cube:face#{name}"))
                 .expect("fixed namespace and face name"),
-            boundary: crate::topology::LoopBoundary::Ring {
-                coedges: coedge_ids
-                    .iter()
-                    .map(|c| CoedgeId::mint(c.clone()).expect("valid identity"))
-                    .collect(),
-                vertex_uses: Vec::new(),
-            },
+            boundary: crate::topology::LoopBoundary::Ring(
+                crate::topology::LoopRing::new(
+                    coedge_ids
+                        .iter()
+                        .map(|c| CoedgeId::mint(c.clone()).expect("valid identity"))
+                        .collect(),
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         });
         ir.model.faces.push(Face {
             id: FaceId::mint(format!("synthetic:cube:face#{name}"))

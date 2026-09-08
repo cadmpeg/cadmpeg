@@ -20,7 +20,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const REL_DOC: &str = r#"{
-  "ir_version": "6",
+  "ir_version": "7",
   "model": {
     "features": [
       {

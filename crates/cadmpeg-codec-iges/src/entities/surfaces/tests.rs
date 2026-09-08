@@ -1563,13 +1563,15 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     )
     .expect("valid rational boundary");
     let mut scaled = first.clone();
-    scaled.weights_mut().unwrap().fill(2.0);
+    scaled.edit_weights(|weights| weights.fill(2.0)).unwrap();
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(true)
     );
 
-    scaled.control_points_mut()[1].x = 1.1;
+    scaled
+        .edit_control_points(|points| points[1].x = 1.1)
+        .unwrap();
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(false)

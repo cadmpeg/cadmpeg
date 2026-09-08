@@ -5141,7 +5141,7 @@ pub(crate) fn native_procedural_curve(
         native_intcurve_support_context(bytes, target, context)?;
         native_i64(bytes, *selector);
         native_embedded_surface(bytes, &surface.geometry)?;
-        let pcurve = native_support_pcurve(&surface.geometry, pcurve)?;
+        let pcurve = native_support_pcurve(&surface.geometry, &pcurve.geometry)?;
         native_nurbs_pcurve_block(bytes, &pcurve)?;
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
@@ -5685,7 +5685,7 @@ fn native_intcurve_support_context(
     if context
         .sides
         .iter()
-        .any(|side| side.pcurve_parameter_range.is_some())
+        .any(|side| side.pcurve_parameter_range().is_some())
     {
         return Err(CodecError::NotImplemented(
             "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
@@ -5722,9 +5722,9 @@ fn native_intcurve_support_context(
                             "intcurve references missing support {surface_id}"
                         ))
                     })?;
-                native_support_pcurve(&surface.geometry, pcurve)?
+                native_support_pcurve(&surface.geometry, &pcurve.geometry)?
             } else {
-                pcurve.clone()
+                pcurve.geometry.clone()
             };
             native_nurbs_pcurve_block(bytes, &native)?;
         } else {
@@ -5760,7 +5760,7 @@ fn native_law_version_context(
     if context
         .sides
         .iter()
-        .any(|side| side.pcurve_parameter_range.is_some())
+        .any(|side| side.pcurve_parameter_range().is_some())
     {
         return Err(CodecError::NotImplemented(
             "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
@@ -5797,9 +5797,9 @@ fn native_law_version_context(
                             "law intcurve references missing support {surface_id}"
                         ))
                     })?;
-                native_support_pcurve(&surface.geometry, pcurve)?
+                native_support_pcurve(&surface.geometry, &pcurve.geometry)?
             } else {
-                pcurve.clone()
+                pcurve.geometry.clone()
             };
             native_nurbs_pcurve_block(bytes, &native)?;
         } else {
@@ -6195,9 +6195,9 @@ fn native_cache_first_curve_context(
                             "cache-first intcurve references missing support {surface_id}"
                         ))
                     })?;
-                native_support_pcurve(&surface.geometry, pcurve)?
+                native_support_pcurve(&surface.geometry, &pcurve.geometry)?
             } else {
-                pcurve.clone()
+                pcurve.geometry.clone()
             };
             native_nurbs_pcurve_block(bytes, &native)?;
         } else {

@@ -122,7 +122,6 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
     let mut ir = unit_cube();
     let sketch_id = SketchId("synthetic:test:sketch#0".into());
     let circle_id = SketchEntityId("synthetic:test:sketch-entity#0".into());
-    let nurbs_id = SketchEntityId("synthetic:test:sketch-entity#1".into());
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -139,30 +138,14 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         }]],
         native_ref: None,
     });
-    ir.model.sketch_entities.extend([
-        SketchEntity::new(
-            circle_id.clone(),
-            sketch_id.clone(),
-            SketchGeometry::Circle {
-                center: Point2::new(0.0, 0.0),
-                radius: Length(-1.0),
-            },
-        ),
-        SketchEntity::new(
-            nurbs_id,
-            sketch_id.clone(),
-            SketchGeometry::Nurbs {
-                curve: crate::geometry::PcurveNurbs::new(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                    Some(vec![0.0, 0.0]),
-                    false,
-                )
-                .unwrap(),
-            },
-        ),
-    ]);
+    ir.model.sketch_entities.push(SketchEntity::new(
+        circle_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(-1.0),
+        },
+    ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("synthetic:test:sketch-constraint#0".into()),
         sketch: sketch_id,
@@ -190,10 +173,6 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::Bounds
             && finding.entity.as_deref() == Some("synthetic:test:sketch-entity#0")
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::ParameterDomain
-            && finding.entity.as_deref() == Some("synthetic:test:sketch-entity#1")
     }));
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::Counts
@@ -321,7 +300,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         else {
             unreachable!("test result is a NURBS")
         };
-        curve.control_points_mut().reverse();
+        curve.reverse_parameterization();
     }
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
         &ir.model.sketch_entities[source_ordinal].geometry,
@@ -338,12 +317,10 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     else {
         unreachable!("test result is a NURBS")
     };
-    curve.control_points_mut().reverse();
+    curve.reverse_parameterization();
     curve
-        .control_points_mut()
-        .last_mut()
-        .expect("result endpoint")
-        .u += 0.01;
+        .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+        .unwrap();
     assert!(offset_mismatch(&validate_neutral(&ir, Vec::new())));
 }
 
@@ -481,9 +458,9 @@ fn sketch_constraint_native_ref_must_resolve() {
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
-                    native_kind: "test".into(),
-                    native_field: None,
-                    native_role: None,
+                    native_kind: crate::products::NonEmptyString::new("test")
+                        .expect("source operand kind is nonempty"),
+                    field: None,
                     object_index: 0,
                     native_ref: Some("native:missing-operand#0".into()),
                 }],
@@ -545,18 +522,6 @@ fn sketch_constraint_native_ref_must_resolve() {
         unreachable!("test constraint is native")
     };
     assert!(native_properties.is_empty());
-    let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
-        &mut ir.model.sketch_constraints[0].definition
-    else {
-        unreachable!("test constraint is native")
-    };
-    operands[0].native_role = Some(7);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == Check::Counts && finding.entity.as_deref() == Some(id.0.as_str())
-        }));
 }
 
 #[test]

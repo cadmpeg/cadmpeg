@@ -364,12 +364,13 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         assert_eq!(actual.normals(), ir.model.tessellations[0].normals());
     }
 
-    ir.model.tessellations[0].triangle_groups.push(
-        cadmpeg_ir::tessellation::TessellationTriangleGroup {
+    ir.model.tessellations[0] = ir.model.tessellations[0]
+        .clone()
+        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
             source_id: Some("synthetic:test:group#0".into()),
             triangles: vec![0],
-        },
-    );
+        }])
+        .expect("valid triangle group partition");
     assert!(matches!(
         RhinoCodec.plan(
             EncodeInput::new(&ir, None),
@@ -679,10 +680,13 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         .arenas_mut()
         .entry("materials".into())
         .or_default()
-        .push(cadmpeg_ir::NativeRecord::new(
-            "rhino:presentation:material#unsupported",
-            serde_json::Map::new(),
-        ));
+        .push(
+            cadmpeg_ir::NativeRecord::new(
+                "rhino:presentation:material#unsupported",
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity"),
+        );
 
     let mut output = vec![0xaa];
     let error = RhinoCodec

@@ -2813,13 +2813,13 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if !mesh.feature_edges.is_empty() || !mesh.corner_normals().is_empty() {
+    if !mesh.feature_edges().is_empty() || !mesh.corner_normals().is_empty() {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} uses feature edges or corner normals not yet writable",
             mesh.id
         )));
     }
-    if !mesh.triangle_groups.is_empty() || !mesh.texture_assignments.is_empty() {
+    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} uses triangle groups or texture assignments not yet writable",
             mesh.id

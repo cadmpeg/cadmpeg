@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "6",
+    "ir_version": "7",
     "source": {
       "format": "f3d",
       "attributes": {
@@ -430,7 +430,9 @@
             "operands": [
               {
                 "native_kind": "construction_recipe",
-                "native_field": "recipe",
+                "field": {
+                  "name": "recipe"
+                },
                 "object_index": 1305,
                 "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243"
               }
@@ -471,22 +473,30 @@
             "operands": [
               {
                 "native_kind": "point",
-                "native_field": "member",
+                "field": {
+                  "name": "member"
+                },
                 "object_index": 100
               },
               {
                 "native_kind": "point",
-                "native_field": "member",
+                "field": {
+                  "name": "member"
+                },
                 "object_index": 200
               },
               {
                 "native_kind": "point",
-                "native_field": "return",
+                "field": {
+                  "name": "return"
+                },
                 "object_index": 200
               },
               {
                 "native_kind": "point",
-                "native_field": "return",
+                "field": {
+                  "name": "return"
+                },
                 "object_index": 100
               }
             ]
@@ -509,22 +519,30 @@
             "operands": [
               {
                 "native_kind": "point",
-                "native_field": "member",
+                "field": {
+                  "name": "member"
+                },
                 "object_index": 300
               },
               {
                 "native_kind": "point",
-                "native_field": "member",
+                "field": {
+                  "name": "member"
+                },
                 "object_index": 400
               },
               {
                 "native_kind": "point",
-                "native_field": "return",
+                "field": {
+                  "name": "return"
+                },
                 "object_index": 400
               },
               {
                 "native_kind": "point",
-                "native_field": "return",
+                "field": {
+                  "name": "return"
+                },
                 "object_index": 300
               }
             ]

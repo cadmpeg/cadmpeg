@@ -163,17 +163,17 @@ pub struct Tessellation {
     pub chordal_deflection: Option<f64>,
     /// Native source-object identity and effective display metadata.
     pub source_object: Option<SourceObjectAssociation>,
-    pub(crate) vertices: Vec<Point3>,
-    pub(crate) triangles: Vec<[u32; 3]>,
+    vertices: Vec<Point3>,
+    triangles: Vec<[u32; 3]>,
     /// Undirected geometric feature edges.
-    pub feature_edges: Vec<[u32; 2]>,
-    pub(crate) topology: TessellationTopology,
-    pub(crate) shading: TessellationNormals,
+    feature_edges: Vec<[u32; 2]>,
+    topology: TessellationTopology,
+    shading: TessellationNormals,
     /// Source face or region groups as an ordered partition of the triangle ordinals.
-    pub triangle_groups: Vec<TessellationTriangleGroup>,
+    triangle_groups: Vec<TessellationTriangleGroup>,
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
-    pub texture_assignments: Vec<TessellationTextureAssignment>,
-    pub(crate) channels: Vec<TessellationChannel>,
+    texture_assignments: Vec<TessellationTextureAssignment>,
+    channels: Vec<TessellationChannel>,
 }
 
 /// One source-defined group in a tessellation triangle partition.
@@ -334,6 +334,101 @@ fn require_channel_indices(
     Ok(())
 }
 
+fn require_feature_edges(
+    vertices: &[Point3],
+    feature_edges: &[[u32; 2]],
+) -> Result<(), TessellationError> {
+    if feature_edges.iter().any(|edge| {
+        edge[0] >= edge[1] || usize::try_from(edge[1]).map_or(true, |index| index >= vertices.len())
+    }) || feature_edges.windows(2).any(|edges| edges[0] >= edges[1])
+    {
+        return Err(tessellation_error(
+            "contains an invalid tessellation feature edge",
+        ));
+    }
+    Ok(())
+}
+
+fn require_triangle_groups(
+    triangles: &[[u32; 3]],
+    triangle_groups: &[TessellationTriangleGroup],
+) -> Result<(), TessellationError> {
+    if triangle_groups.is_empty() {
+        return Ok(());
+    }
+    let mut memberships = std::iter::repeat_n(false, triangles.len()).collect::<Vec<_>>();
+    let mut source_ids = std::collections::BTreeSet::new();
+    let valid = triangle_groups.iter().all(|group| {
+        !group.triangles.is_empty()
+            && group
+                .triangles
+                .windows(2)
+                .all(|ordinals| ordinals[0] < ordinals[1])
+            && group.triangles.iter().all(|ordinal| {
+                usize::try_from(*ordinal)
+                    .ok()
+                    .and_then(|ordinal| memberships.get_mut(ordinal))
+                    .is_some_and(|visited| {
+                        if *visited {
+                            return false;
+                        }
+                        *visited = true;
+                        true
+                    })
+            })
+            && group.source_id.as_ref().is_none_or(|source_id| {
+                !source_id.is_empty() && source_ids.insert(source_id.as_str())
+            })
+    }) && memberships.iter().all(|visited| *visited);
+    if !valid {
+        return Err(tessellation_error(
+            "contains an invalid tessellation triangle-group partition",
+        ));
+    }
+    Ok(())
+}
+
+fn require_texture_assignments(
+    triangles: &[[u32; 3]],
+    texture_assignments: &[TessellationTextureAssignment],
+) -> Result<(), TessellationError> {
+    if texture_assignments.is_empty() {
+        return Ok(());
+    }
+    let mut memberships = std::iter::repeat_n(false, triangles.len()).collect::<Vec<_>>();
+    let mut source_ids = std::collections::BTreeSet::new();
+    let mut anonymous_textures = std::collections::BTreeSet::new();
+    let valid = texture_assignments.iter().all(|assignment| {
+        !assignment.triangles.is_empty()
+            && match assignment.source_id.as_deref() {
+                Some(source_id) => !source_id.is_empty() && source_ids.insert(source_id),
+                None => anonymous_textures.insert(&assignment.texture),
+            }
+            && assignment
+                .triangles
+                .windows(2)
+                .all(|ordinals| ordinals[0] < ordinals[1])
+            && assignment.triangles.iter().all(|ordinal| {
+                usize::try_from(*ordinal)
+                    .ok()
+                    .and_then(|ordinal| memberships.get_mut(ordinal))
+                    .is_some_and(|visited| {
+                        if *visited {
+                            return false;
+                        }
+                        *visited = true;
+                        true
+                    })
+            })
+    });
+    if !valid {
+        return Err(tessellation_error(
+            "contains invalid tessellation texture assignments",
+        ));
+    }
+    Ok(())
+}
+
 impl Tessellation {
     /// Build a tessellation whose shading, strip topology, and channels agree.
     pub fn new(
@@ -437,11 +532,6 @@ impl Tessellation {
         &self.triangles
     }
 
-    /// Mutable triangle indices. The cardinality cannot change.
-    pub fn triangles_mut(&mut self) -> &mut [[u32; 3]] {
-        &mut self.triangles
-    }
-
     /// Triangle storage selected by the source mesh.
     #[must_use]
     pub fn topology(&self) -> &TessellationTopology {
@@ -503,9 +593,22 @@ impl Tessellation {
         &self.channels
     }
 
-    /// Mutable channel table. The channel count cannot change.
-    pub fn channels_mut(&mut self) -> &mut [TessellationChannel] {
-        &mut self.channels
+    /// Undirected geometric feature edges in source order.
+    #[must_use]
+    pub fn feature_edges(&self) -> &[[u32; 2]] {
+        &self.feature_edges
+    }
+
+    /// Source face or region groups in triangle-order partition order.
+    #[must_use]
+    pub fn triangle_groups(&self) -> &[TessellationTriangleGroup] {
+        &self.triangle_groups
+    }
+
+    /// Source texture resources assigned to triangle ordinals.
+    #[must_use]
+    pub fn texture_assignments(&self) -> &[TessellationTextureAssignment] {
+        &self.texture_assignments
     }
 
     /// Set the owning body.
@@ -537,27 +640,33 @@ impl Tessellation {
     }
 
     /// Set the geometric feature edges.
-    #[must_use]
-    pub fn with_feature_edges(mut self, feature_edges: Vec<[u32; 2]>) -> Self {
+    pub fn with_feature_edges(
+        mut self,
+        feature_edges: Vec<[u32; 2]>,
+    ) -> Result<Self, TessellationError> {
+        require_feature_edges(&self.vertices, &feature_edges)?;
         self.feature_edges = feature_edges;
-        self
+        Ok(self)
     }
 
     /// Set the triangle-group partition.
-    #[must_use]
-    pub fn with_triangle_groups(mut self, triangle_groups: Vec<TessellationTriangleGroup>) -> Self {
+    pub fn with_triangle_groups(
+        mut self,
+        triangle_groups: Vec<TessellationTriangleGroup>,
+    ) -> Result<Self, TessellationError> {
+        require_triangle_groups(&self.triangles, &triangle_groups)?;
         self.triangle_groups = triangle_groups;
-        self
+        Ok(self)
     }
 
     /// Set the texture assignments.
-    #[must_use]
     pub fn with_texture_assignments(
         mut self,
         texture_assignments: Vec<TessellationTextureAssignment>,
-    ) -> Self {
+    ) -> Result<Self, TessellationError> {
+        require_texture_assignments(&self.triangles, &texture_assignments)?;
         self.texture_assignments = texture_assignments;
-        self
+        Ok(self)
     }
 }
 
@@ -696,10 +805,9 @@ impl TryFrom<TessellationWire> for Tessellation {
         mesh.faces = wire.faces;
         mesh.chordal_deflection = wire.chordal_deflection;
         mesh.source_object = wire.source_object;
-        mesh.feature_edges = wire.feature_edges;
-        mesh.triangle_groups = wire.triangle_groups;
-        mesh.texture_assignments = wire.texture_assignments;
-        Ok(mesh)
+        mesh = mesh.with_feature_edges(wire.feature_edges)?;
+        mesh = mesh.with_triangle_groups(wire.triangle_groups)?;
+        mesh.with_texture_assignments(wire.texture_assignments)
     }
 }
 
@@ -781,3 +889,6 @@ impl JsonSchema for TessellationChannel {
         TessellationChannelWire::json_schema(generator)
     }
 }
+
+#[cfg(test)]
+mod tests;

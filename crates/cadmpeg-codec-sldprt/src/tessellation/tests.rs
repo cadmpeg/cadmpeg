@@ -323,10 +323,9 @@ fn add_face(
     model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids,
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+        ),
     });
     model.faces.push(Face {
         id: face_id.clone(),
@@ -382,9 +381,13 @@ fn test_nurbs_surface() -> NurbsSurface {
 
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
-    for point in surface.control_points_mut() {
-        point.z = 0.0;
-    }
+    surface
+        .edit_control_points(|points| {
+            for point in points {
+                point.z = 0.0;
+            }
+        })
+        .unwrap();
     surface
 }
 
@@ -514,10 +517,9 @@ fn add_cylindrical_patch_face(
     model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids,
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+        ),
     });
     model.faces.push(Face {
         id: face_id.clone(),

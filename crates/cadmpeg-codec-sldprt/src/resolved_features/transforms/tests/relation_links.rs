@@ -52,16 +52,20 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
         operands,
         vec![
             SketchNativeOperand {
-                native_kind: "sldprt:marker-constraint-owner".into(),
-                native_field: None,
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                    "sldprt:marker-constraint-owner"
+                )
+                .expect("source operand kind is nonempty"),
+                field: None,
                 object_index: 7,
                 native_ref: Some(owner.id),
             },
             SketchNativeOperand {
-                native_kind: "sldprt:marker-constraint-owner".into(),
-                native_field: None,
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                    "sldprt:marker-constraint-owner"
+                )
+                .expect("source operand kind is nonempty"),
+                field: None,
                 object_index: 8,
                 native_ref: Some(point.id),
             },
@@ -651,16 +655,20 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             parameter: None,
             operands: vec![
                 SketchNativeOperand {
-                    native_kind: "sldprt:marker-local-id".into(),
-                    native_field: None,
-                    native_role: None,
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
+                    field: None,
                     object_index: 3,
                     native_ref: Some("same-marker".into()),
                 },
                 SketchNativeOperand {
-                    native_kind: "sldprt:marker-local-id".into(),
-                    native_field: None,
-                    native_role: None,
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
+                    field: None,
                     object_index: 3,
                     native_ref: Some("same-marker".into()),
                 },

@@ -195,7 +195,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         .set_arena("design_sketch_placements", &[placement])
         .expect("store component native");
     let mut root = Native::default();
-    extend_native(&mut root, component, "role/occurrence-0");
+    extend_native(&mut root, component, "role/occurrence-0").unwrap();
 
     let merged: Vec<DesignSketchPlacement> = root
         .namespace("f3d")
@@ -222,9 +222,10 @@ fn occurrence_merge_remaps_native_record_map_keys_and_nested_payloads() {
         .as_object()
         .expect("object payload")
         .clone(),
-    );
+    )
+    .expect("valid native identity");
 
-    let rescoped = rescope_record(&record, "role/occurrence-0");
+    let rescoped = rescope_record(&record, "role/occurrence-0").unwrap();
 
     assert_eq!(
         rescoped.id(),

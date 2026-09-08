@@ -33,8 +33,8 @@ use crate::decode::sketch_transfer::loci::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair,
-    SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis,
+    SketchDistancePair, SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -69,16 +69,20 @@ pub(in super::super) fn native_section_segment_verhor_definition(
     verhor: u32,
 ) -> SketchConstraintDefinition {
     SketchConstraintDefinition::Native {
-        native_kind: "creo:segtab:verhor".to_string(),
+        native_kind: "creo:segtab:verhor".into(),
         native_state: None,
         native_flags: None,
         native_properties: BTreeMap::from([("verhor".to_string(), verhor.to_string())]),
         entities: vec![entity],
         parameter: None,
         operands: vec![SketchNativeOperand {
-            native_kind: "segtab_ptr".to_string(),
-            native_field: Some("ext_id".to_string()),
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("segtab_ptr")
+                .expect("source operand kind is nonempty"),
+            field: Some(NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new("ext_id")
+                    .expect("source field name is nonempty"),
+                role: None,
+            }),
             object_index: external_id,
             native_ref: Some(sketch_native_ref(sketch)),
         }],
@@ -481,16 +485,24 @@ pub(in super::super) fn native_section_segment_radius_definition(
         parameter: None,
         operands: vec![
             SketchNativeOperand {
-                native_kind: "segtab_ptr".to_string(),
-                native_field: Some("ext_id".to_string()),
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("segtab_ptr")
+                    .expect("source operand kind is nonempty"),
+                field: Some(NativeOperandField {
+                    name: cadmpeg_ir::products::NonEmptyString::new("ext_id")
+                        .expect("source field name is nonempty"),
+                    role: None,
+                }),
                 object_index: external_id,
                 native_ref: Some(sketch_native_ref(sketch)),
             },
             SketchNativeOperand {
-                native_kind: "dimension_ordinal".to_string(),
-                native_field: Some(field.to_string()),
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension_ordinal")
+                    .expect("source operand kind is nonempty"),
+                field: Some(NativeOperandField {
+                    name: cadmpeg_ir::products::NonEmptyString::new(field)
+                        .expect("source field name is nonempty"),
+                    role: None,
+                }),
                 object_index: dimension_ordinal,
                 native_ref: Some(sketch_native_ref(sketch)),
             },
@@ -1253,18 +1265,28 @@ pub(in super::super) fn section_equation_native_constraints(
                 );
             }
             let mut operands = vec![SketchNativeOperand {
-                native_kind: "eqtn_arr".to_string(),
-                native_field: Some("equation_id".to_string()),
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("eqtn_arr")
+                    .expect("source operand kind is nonempty"),
+                field: Some(NativeOperandField {
+                    name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
+                        .expect("source field name is nonempty"),
+                    role: None,
+                }),
                 object_index: equation.equation_id,
                 native_ref: Some(native_ref.clone()),
             }];
             operands.extend(equation.arguments.iter().enumerate().filter_map(
                 |(slot, argument)| {
                     argument.map(|object_index| SketchNativeOperand {
-                        native_kind: "var_arr".to_string(),
-                        native_field: Some(format!("arguments[{slot}]")),
-                        native_role: None,
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("var_arr")
+                            .expect("source operand kind is nonempty"),
+                        field: Some(NativeOperandField {
+                            name: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                "arguments[{slot}]"
+                            ))
+                            .expect("source field name is nonempty"),
+                            role: None,
+                        }),
                         object_index,
                         native_ref: Some(native_ref.clone()),
                     })
@@ -1638,18 +1660,22 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
     let mut operands = Vec::new();
     if unique_relation_id {
         operands.push(SketchNativeOperand {
-            native_kind: "relat_ptr".to_string(),
-            native_field: None,
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("relat_ptr")
+                .expect("source operand kind is nonempty"),
+            field: None,
             object_index: relation.relation_id,
             native_ref: Some(native_ref.clone()),
         });
     }
     if let Some(incidence) = joined_incidence {
         operands.push(SketchNativeOperand {
-            native_kind: "skamp_ptr".to_string(),
-            native_field: Some("triples_ptr.skamp_id".to_string()),
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr")
+                .expect("source operand kind is nonempty"),
+            field: Some(NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new("triples_ptr.skamp_id")
+                    .expect("source field name is nonempty"),
+                role: None,
+            }),
             object_index: incidence.id,
             native_ref: Some(native_ref.clone()),
         });
@@ -1657,9 +1683,13 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
     if let Some(equation_id) = joined_relation_incidence_link.and_then(|(join, _)| join.equation_id)
     {
         operands.push(SketchNativeOperand {
-            native_kind: "triples_ptr".to_string(),
-            native_field: Some("equation_id".to_string()),
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("triples_ptr")
+                .expect("source operand kind is nonempty"),
+            field: Some(NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
+                    .expect("source field name is nonempty"),
+                role: None,
+            }),
             object_index: equation_id,
             native_ref: Some(native_ref.clone()),
         });
@@ -1668,9 +1698,15 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
         for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
             operands.extend(values.into_iter().enumerate().filter_map(|(slot, value)| {
                 value.map(|object_index| SketchNativeOperand {
-                    native_kind: "relat_ptr".to_string(),
-                    native_field: Some(format!("{vector}[{slot}]")),
-                    native_role: None,
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("relat_ptr")
+                        .expect("source operand kind is nonempty"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_ir::products::NonEmptyString::new(format!(
+                            "{vector}[{slot}]"
+                        ))
+                        .expect("source field name is nonempty"),
+                        role: None,
+                    }),
                     object_index,
                     native_ref: Some(native_ref.clone()),
                 })

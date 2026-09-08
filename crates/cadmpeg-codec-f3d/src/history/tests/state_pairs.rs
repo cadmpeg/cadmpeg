@@ -1224,10 +1224,13 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     brep.loops.push(Loop {
         id: LoopId::mint(id(5)).expect("identity grammar"),
         face: FaceId::mint(id(4)).expect("identity grammar"),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![CoedgeId::mint(id(6)).expect("identity grammar")],
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(
+                vec![CoedgeId::mint(id(6)).expect("identity grammar")],
+                Vec::new(),
+            )
+            .expect("valid loop ring"),
+        ),
     });
     brep.coedges.push(Coedge {
         id: CoedgeId::mint(id(6)).expect("identity grammar"),

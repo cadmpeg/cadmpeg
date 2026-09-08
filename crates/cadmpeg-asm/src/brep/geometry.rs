@@ -8,7 +8,7 @@ use crate::nurbs::proc_surface::{
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
@@ -446,32 +446,6 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
         .unwrap_or(false)
 }
 
-/// Reparameterize a cached B-spline to its record's reversed sense,
-/// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
-pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
-    curve.control_points_mut().reverse();
-    if let Some(weights) = curve.weights_mut() {
-        weights.reverse();
-    }
-    curve.knots_mut().reverse();
-    for knot in curve.knots_mut() {
-        *knot = -*knot;
-    }
-}
-
-/// Reparameterize a referenced pcurve to its opposite orientation, preserving
-/// its UV chart while negating the parameterization.
-pub(crate) fn reverse_nurbs_pcurve(curve: &mut cadmpeg_ir::geometry::PcurveNurbs) {
-    curve.control_points_mut().reverse();
-    if let Some(weights) = curve.weights_mut() {
-        weights.reverse();
-    }
-    curve.knots_mut().reverse();
-    for knot in curve.knots_mut() {
-        *knot = -*knot;
-    }
-}
-
 /// Reverse a curve carrier to its opposite orientation, `C'(t) = C(-t)`.
 /// Lines negate their direction, conics negate their plane normal (flipping
 /// the angular sweep while keeping the zero-angle direction), and B-splines
@@ -484,7 +458,7 @@ pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
         CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
             *axis = Vector3::new(-axis.x, -axis.y, -axis.z);
         }
-        CurveGeometry::Nurbs(curve) => reverse_nurbs_curve(curve),
+        CurveGeometry::Nurbs(curve) => curve.reverse_parameterization(),
         _ => {}
     }
 }

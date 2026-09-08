@@ -144,7 +144,11 @@ pub(crate) fn build_geometry_report(
                 context
                     .sides
                     .iter()
-                    .filter(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+                    .filter(|side| {
+                        pcurve_requires_completion(
+                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+                        )
+                    })
                     .count(),
             )
         })

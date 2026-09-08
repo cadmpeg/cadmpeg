@@ -1088,11 +1088,12 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             pcurves: Vec::new(),
             use_curve: None,
         });
+    let mut coedges = source_less.model.loops[0].coedges().to_vec();
+    coedges.push(coedge_id);
+    let vertex_uses = source_less.model.loops[0].anchored_vertex_uses().to_vec();
     source_less.model.loops[0]
-        .ring_mut()
-        .expect("source-less fixture loop is a ring")
-        .0
-        .push(coedge_id);
+        .replace_ring(coedges, vertex_uses)
+        .expect("source-less fixture loop remains a valid ring");
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1456,10 +1457,10 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         source_less.model.loops.push(Loop {
             id: loops[index].clone(),
             face: face.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![coedges[index].clone()],
-                vertex_uses: Vec::new(),
-            },
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
+                    .expect("valid loop ring"),
+            ),
         });
         source_less.model.coedges.push(Coedge {
             id: coedges[index].clone(),

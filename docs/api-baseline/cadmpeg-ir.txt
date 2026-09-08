@@ -1,4 +1,4 @@
-# generated at f444fcb0b
+# generated at 5bc6b3e0f
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -1009,12 +1009,10 @@ pub cadmpeg_ir::features::BodySelection::Historical::bodies: alloc::vec::Vec<cad
 pub cadmpeg_ir::features::BodySelection::Historical::native: alloc::string::String
 pub cadmpeg_ir::features::BodySelection::Historical::state: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::features::BodySelection::HistoricalSet
-pub cadmpeg_ir::features::BodySelection::HistoricalSet::bodies: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalBodyId>
-pub cadmpeg_ir::features::BodySelection::HistoricalSet::native: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::features::BodySelection::HistoricalSet::members: cadmpeg_ir::features::BodyMembers<cadmpeg_ir::ids::HistoricalBodyId>
 pub cadmpeg_ir::features::BodySelection::HistoricalSet::state: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::features::BodySelection::HistoricalUnorderedSet
-pub cadmpeg_ir::features::BodySelection::HistoricalUnorderedSet::bodies: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalBodyId>
-pub cadmpeg_ir::features::BodySelection::HistoricalUnorderedSet::native: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::features::BodySelection::HistoricalUnorderedSet::selection: cadmpeg_ir::features::HistoricalUnorderedBodySelection
 pub cadmpeg_ir::features::BodySelection::HistoricalUnorderedSet::state: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::features::BodySelection::Local
 pub cadmpeg_ir::features::BodySelection::Local::bodies: alloc::vec::Vec<alloc::string::String>
@@ -1025,9 +1023,14 @@ pub cadmpeg_ir::features::BodySelection::Resolved
 pub cadmpeg_ir::features::BodySelection::Resolved::bodies: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
 pub cadmpeg_ir::features::BodySelection::Resolved::native: alloc::string::String
 pub cadmpeg_ir::features::BodySelection::ResolvedSet
-pub cadmpeg_ir::features::BodySelection::ResolvedSet::bodies: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
-pub cadmpeg_ir::features::BodySelection::ResolvedSet::native: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::features::BodySelection::ResolvedSet::members: cadmpeg_ir::features::BodyMembers<cadmpeg_ir::ids::BodyId>
 pub cadmpeg_ir::features::BodySelection::Unresolved
+pub enum cadmpeg_ir::features::BodySelectionError
+pub cadmpeg_ir::features::BodySelectionError::BlankNativeMember
+pub cadmpeg_ir::features::BodySelectionError::Empty
+pub cadmpeg_ir::features::BodySelectionError::MismatchedLengths
+pub cadmpeg_ir::features::BodySelectionError::RepeatedBody
+pub cadmpeg_ir::features::BodySelectionError::RepeatedNativeMember
 pub enum cadmpeg_ir::features::BodyTrimSide
 pub cadmpeg_ir::features::BodyTrimSide::Forward
 pub cadmpeg_ir::features::BodyTrimSide::Reverse
@@ -1124,6 +1127,15 @@ impl<'a> core::iter::traits::collect::IntoIterator for &'a cadmpeg_ir::features:
 pub type &'a cadmpeg_ir::features::ConfigurationBodies::IntoIter = core::slice::iter::Iter<'a, cadmpeg_ir::ids::BodyId>
 pub type &'a cadmpeg_ir::features::ConfigurationBodies::Item = &'a cadmpeg_ir::ids::BodyId
 pub fn &'a cadmpeg_ir::features::ConfigurationBodies::into_iter(self) -> Self::IntoIter
+pub enum cadmpeg_ir::features::ConfigurationEvaluation
+pub cadmpeg_ir::features::ConfigurationEvaluation::Active
+pub cadmpeg_ir::features::ConfigurationEvaluation::Active::outputs: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
+pub cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+impl cadmpeg_ir::features::ConfigurationEvaluation
+pub const fn cadmpeg_ir::features::ConfigurationEvaluation::is_suppressed(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationEvaluation::outputs(&self) -> &[cadmpeg_ir::ids::BodyId]
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::ConfigurationEvaluation
+pub fn cadmpeg_ir::features::ConfigurationEvaluation::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub enum cadmpeg_ir::features::ConfigurationName
 pub cadmpeg_ir::features::ConfigurationName::Resolved(alloc::string::String)
 pub cadmpeg_ir::features::ConfigurationName::Unresolved
@@ -1486,9 +1498,8 @@ pub cadmpeg_ir::features::FeatureDefinition::LineSegment::end: cadmpeg_ir::math:
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment::start: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::Loft
 pub cadmpeg_ir::features::FeatureDefinition::Loft::allow_multi_profile_faces: core::option::Option<bool>
-pub cadmpeg_ir::features::FeatureDefinition::Loft::centerline: core::option::Option<cadmpeg_ir::features::PathRef>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::closed: bool
-pub cadmpeg_ir::features::FeatureDefinition::Loft::guides: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
+pub cadmpeg_ir::features::FeatureDefinition::Loft::guidance: cadmpeg_ir::features::LoftGuidance
 pub cadmpeg_ir::features::FeatureDefinition::Loft::linearize: bool
 pub cadmpeg_ir::features::FeatureDefinition::Loft::max_degree: core::option::Option<u32>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::op: cadmpeg_ir::features::BooleanOp
@@ -1889,6 +1900,11 @@ pub cadmpeg_ir::features::LinearTermination::ToShape::target: cadmpeg_ir::featur
 pub cadmpeg_ir::features::LinearTermination::ToVertex
 pub cadmpeg_ir::features::LinearTermination::ToVertex::vertex: cadmpeg_ir::features::VertexSelection
 pub cadmpeg_ir::features::LinearTermination::Unresolved
+pub enum cadmpeg_ir::features::LoftGuidance
+pub cadmpeg_ir::features::LoftGuidance::Centerline(cadmpeg_ir::features::PathRef)
+pub cadmpeg_ir::features::LoftGuidance::Guides(alloc::vec::Vec<cadmpeg_ir::features::PathRef>)
+impl core::default::Default for cadmpeg_ir::features::LoftGuidance
+pub fn cadmpeg_ir::features::LoftGuidance::default() -> Self
 pub enum cadmpeg_ir::features::LoftPointSection
 pub cadmpeg_ir::features::LoftPointSection::Native(alloc::string::String)
 pub cadmpeg_ir::features::LoftPointSection::Point(cadmpeg_ir::math::Point3)
@@ -2402,6 +2418,28 @@ pub cadmpeg_ir::features::BinderOffset::open_result: bool
 pub struct cadmpeg_ir::features::BinderSource
 pub cadmpeg_ir::features::BinderSource::subelements: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::features::BinderSource::target: cadmpeg_ir::features::BinderTarget
+pub struct cadmpeg_ir::features::BodyMember<B>
+impl<B> cadmpeg_ir::features::BodyMember<B>
+pub const fn cadmpeg_ir::features::BodyMember<B>::body(&self) -> &B
+pub fn cadmpeg_ir::features::BodyMember<B>::native(&self) -> &str
+pub fn cadmpeg_ir::features::BodyMember<B>::new(B, alloc::string::String) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError>
+impl<'de, B> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::BodyMember<B> where B: serde_core::de::Deserialize<'de>
+pub fn cadmpeg_ir::features::BodyMember<B>::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub struct cadmpeg_ir::features::BodyMembers<B>(_)
+impl<B> cadmpeg_ir::features::BodyMembers<B>
+pub fn cadmpeg_ir::features::BodyMembers<B>::bodies(&self) -> impl core::iter::traits::iterator::Iterator<Item = &B>
+pub const fn cadmpeg_ir::features::BodyMembers<B>::is_empty(&self) -> bool
+pub fn cadmpeg_ir::features::BodyMembers<B>::iter(&self) -> core::slice::iter::Iter<'_, cadmpeg_ir::features::BodyMember<B>>
+pub const fn cadmpeg_ir::features::BodyMembers<B>::len(&self) -> usize
+pub fn cadmpeg_ir::features::BodyMembers<B>::native(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
+pub fn cadmpeg_ir::features::BodyMembers<B>::try_from_parts(alloc::vec::Vec<B>, alloc::vec::Vec<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError> where B: core::cmp::Eq + core::hash::Hash
+pub fn cadmpeg_ir::features::BodyMembers<B>::try_from_rows(alloc::vec::Vec<cadmpeg_ir::features::BodyMember<B>>) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError> where B: core::cmp::Eq + core::hash::Hash
+impl<'a, B> core::iter::traits::collect::IntoIterator for &'a cadmpeg_ir::features::BodyMembers<B>
+pub type &'a cadmpeg_ir::features::BodyMembers<B>::IntoIter = core::slice::iter::Iter<'a, cadmpeg_ir::features::BodyMember<B>>
+pub type &'a cadmpeg_ir::features::BodyMembers<B>::Item = &'a cadmpeg_ir::features::BodyMember<B>
+pub fn &'a cadmpeg_ir::features::BodyMembers<B>::into_iter(self) -> Self::IntoIter
+impl<'de, B> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::BodyMembers<B> where B: serde_core::de::Deserialize<'de> + core::cmp::Eq + core::hash::Hash
+pub fn cadmpeg_ir::features::BodyMembers<B>::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::features::ChamferGroup
 pub cadmpeg_ir::features::ChamferGroup::edges: cadmpeg_ir::features::EdgeSelection
 pub cadmpeg_ir::features::ChamferGroup::spec: cadmpeg_ir::features::ChamferSpec
@@ -2416,8 +2454,7 @@ pub cadmpeg_ir::features::CoilConstruction::taper: cadmpeg_ir::features::Angle
 pub struct cadmpeg_ir::features::ConfigurationFeatureState
 pub cadmpeg_ir::features::ConfigurationFeatureState::definition: cadmpeg_ir::features::FeatureDefinition
 pub cadmpeg_ir::features::ConfigurationFeatureState::dependencies: alloc::vec::Vec<cadmpeg_ir::features::FeatureId>
-pub cadmpeg_ir::features::ConfigurationFeatureState::outputs: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
-pub cadmpeg_ir::features::ConfigurationFeatureState::suppressed: bool
+pub cadmpeg_ir::features::ConfigurationFeatureState::evaluation: cadmpeg_ir::features::ConfigurationEvaluation
 pub struct cadmpeg_ir::features::ConfigurationId(_)
 impl cadmpeg_ir::features::ConfigurationId
 pub fn cadmpeg_ir::features::ConfigurationId::as_str(&self) -> &str
@@ -2606,6 +2643,15 @@ pub const fn cadmpeg_ir::features::HelixPitch::get(self) -> cadmpeg_ir::features
 pub fn cadmpeg_ir::features::HelixPitch::new(cadmpeg_ir::features::Length) -> core::option::Option<Self>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::HelixPitch
 pub fn cadmpeg_ir::features::HelixPitch::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub struct cadmpeg_ir::features::HistoricalUnorderedBodySelection
+impl cadmpeg_ir::features::HistoricalUnorderedBodySelection
+pub fn cadmpeg_ir::features::HistoricalUnorderedBodySelection::bodies(&self) -> &[cadmpeg_ir::ids::HistoricalBodyId]
+pub const fn cadmpeg_ir::features::HistoricalUnorderedBodySelection::is_empty(&self) -> bool
+pub const fn cadmpeg_ir::features::HistoricalUnorderedBodySelection::len(&self) -> usize
+pub fn cadmpeg_ir::features::HistoricalUnorderedBodySelection::native(&self) -> &[alloc::string::String]
+pub fn cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(alloc::vec::Vec<cadmpeg_ir::ids::HistoricalBodyId>, alloc::vec::Vec<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::HistoricalUnorderedBodySelection
+pub fn cadmpeg_ir::features::HistoricalUnorderedBodySelection::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::features::HoleProfileFilter
 pub cadmpeg_ir::features::HoleProfileFilter::arcs: bool
 pub cadmpeg_ir::features::HoleProfileFilter::circles: bool
@@ -3097,6 +3143,8 @@ pub cadmpeg_ir::geometry::PcurveGeometry::Trimmed::parameter_range: [f64; 2]
 pub cadmpeg_ir::geometry::PcurveGeometry::Trimmed::same_sense: bool
 impl cadmpeg_ir::geometry::PcurveGeometry
 pub fn cadmpeg_ir::geometry::PcurveGeometry::line_parameters(&self) -> core::option::Option<(cadmpeg_ir::math::Point2, cadmpeg_ir::math::Point2)>
+impl core::convert::From<cadmpeg_ir::geometry::PcurveGeometry> for cadmpeg_ir::geometry::SupportPcurve
+pub fn cadmpeg_ir::geometry::SupportPcurve::from(cadmpeg_ir::geometry::PcurveGeometry) -> Self
 pub enum cadmpeg_ir::geometry::PcurveMetadata
 pub cadmpeg_ir::geometry::PcurveMetadata::AsmInline(cadmpeg_ir::geometry::PcurveInlineForm)
 pub cadmpeg_ir::geometry::PcurveMetadata::General(cadmpeg_ir::geometry::PcurveGeneralForm)
@@ -3800,6 +3848,12 @@ pub struct cadmpeg_ir::geometry::DeformableVectorFrame
 pub cadmpeg_ir::geometry::DeformableVectorFrame::flags: [bool; 3]
 pub cadmpeg_ir::geometry::DeformableVectorFrame::parameter: f64
 pub cadmpeg_ir::geometry::DeformableVectorFrame::vectors: [cadmpeg_ir::math::Vector3; 4]
+pub struct cadmpeg_ir::geometry::DirectedParameterRange(_)
+impl cadmpeg_ir::geometry::DirectedParameterRange
+pub const fn cadmpeg_ir::geometry::DirectedParameterRange::endpoints(self) -> [f64; 2]
+pub fn cadmpeg_ir::geometry::DirectedParameterRange::new([f64; 2]) -> core::result::Result<Self, cadmpeg_ir::geometry::ParameterRangeError>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::DirectedParameterRange
+pub fn cadmpeg_ir::geometry::DirectedParameterRange::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::geometry::G2BlendConstruction
 pub cadmpeg_ir::geometry::G2BlendConstruction::center_curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::G2BlendConstruction::center_flag: i64
@@ -3843,11 +3897,11 @@ pub cadmpeg_ir::geometry::IntcurveSupportContext::discontinuities: [alloc::vec::
 pub cadmpeg_ir::geometry::IntcurveSupportContext::parameter_range: [f64; 2]
 pub cadmpeg_ir::geometry::IntcurveSupportContext::sides: [cadmpeg_ir::geometry::IntcurveSupportSide; 2]
 pub struct cadmpeg_ir::geometry::IntcurveSupportSide
-pub cadmpeg_ir::geometry::IntcurveSupportSide::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveGeometry>
-pub cadmpeg_ir::geometry::IntcurveSupportSide::pcurve_parameter_range: core::option::Option<[f64; 2]>
+pub cadmpeg_ir::geometry::IntcurveSupportSide::pcurve: core::option::Option<cadmpeg_ir::geometry::SupportPcurve>
 pub cadmpeg_ir::geometry::IntcurveSupportSide::surface: core::option::Option<cadmpeg_ir::ids::SurfaceId>
 impl cadmpeg_ir::geometry::IntcurveSupportSide
 pub fn cadmpeg_ir::geometry::IntcurveSupportSide::pcurve_parameter(&self, [f64; 2], f64) -> core::option::Option<f64>
+pub fn cadmpeg_ir::geometry::IntcurveSupportSide::pcurve_parameter_range(&self) -> core::option::Option<[f64; 2]>
 pub struct cadmpeg_ir::geometry::LawCurveVersionForm
 pub cadmpeg_ir::geometry::LawCurveVersionForm::parameter_range: [core::option::Option<f64>; 2]
 pub cadmpeg_ir::geometry::LawCurveVersionForm::post_enum: i64
@@ -3913,16 +3967,17 @@ pub cadmpeg_ir::geometry::NetSurfaceConstruction::sections: alloc::boxed::Box<[c
 pub struct cadmpeg_ir::geometry::NurbsCurve
 impl cadmpeg_ir::geometry::NurbsCurve
 pub fn cadmpeg_ir::geometry::NurbsCurve::control_points(&self) -> &[cadmpeg_ir::math::Point3]
-pub fn cadmpeg_ir::geometry::NurbsCurve::control_points_mut(&mut self) -> &mut [cadmpeg_ir::math::Point3]
 pub const fn cadmpeg_ir::geometry::NurbsCurve::degree(&self) -> u32
+pub fn cadmpeg_ir::geometry::NurbsCurve::edit_control_points(&mut self, impl core::ops::function::FnOnce(&mut [cadmpeg_ir::math::Point3])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::NurbsCurve::edit_knots(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::NurbsCurve::edit_weights(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::NurbsCurve::knots(&self) -> &[f64]
-pub fn cadmpeg_ir::geometry::NurbsCurve::knots_mut(&mut self) -> &mut [f64]
 pub fn cadmpeg_ir::geometry::NurbsCurve::new(u32, alloc::vec::Vec<f64>, alloc::vec::Vec<cadmpeg_ir::math::Point3>, core::option::Option<alloc::vec::Vec<f64>>, bool) -> core::result::Result<Self, cadmpeg_ir::geometry::NurbsError>
 pub const fn cadmpeg_ir::geometry::NurbsCurve::periodic(&self) -> bool
+pub fn cadmpeg_ir::geometry::NurbsCurve::reverse_parameterization(&mut self)
 pub fn cadmpeg_ir::geometry::NurbsCurve::set_periodic(&mut self, bool)
 pub fn cadmpeg_ir::geometry::NurbsCurve::set_weights(&mut self, core::option::Option<alloc::vec::Vec<f64>>) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::NurbsCurve::weights(&self) -> core::option::Option<&[f64]>
-pub fn cadmpeg_ir::geometry::NurbsCurve::weights_mut(&mut self) -> core::option::Option<&mut [f64]>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::NurbsCurve
 pub fn cadmpeg_ir::geometry::NurbsCurve::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::geometry::NurbsError(_)
@@ -3932,7 +3987,10 @@ pub fn cadmpeg_ir::geometry::NurbsError::fmt(&self, &mut core::fmt::Formatter<'_
 pub struct cadmpeg_ir::geometry::NurbsSurface
 impl cadmpeg_ir::geometry::NurbsSurface
 pub fn cadmpeg_ir::geometry::NurbsSurface::control_points(&self) -> &[cadmpeg_ir::math::Point3]
-pub fn cadmpeg_ir::geometry::NurbsSurface::control_points_mut(&mut self) -> &mut [cadmpeg_ir::math::Point3]
+pub fn cadmpeg_ir::geometry::NurbsSurface::edit_control_points(&mut self, impl core::ops::function::FnOnce(&mut [cadmpeg_ir::math::Point3])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::NurbsSurface::edit_u_knots(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::NurbsSurface::edit_v_knots(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::NurbsSurface::edit_weights(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::NurbsSurface::new(u32, u32, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, u32, u32, alloc::vec::Vec<cadmpeg_ir::math::Point3>, core::option::Option<alloc::vec::Vec<f64>>, bool, bool, bool) -> core::result::Result<Self, cadmpeg_ir::geometry::NurbsError>
 pub const fn cadmpeg_ir::geometry::NurbsSurface::normal_reversed(&self) -> bool
 pub fn cadmpeg_ir::geometry::NurbsSurface::set_normal_reversed(&mut self, bool)
@@ -3943,17 +4001,18 @@ pub fn cadmpeg_ir::geometry::NurbsSurface::transpose_parameter_axes(&mut self)
 pub const fn cadmpeg_ir::geometry::NurbsSurface::u_count(&self) -> u32
 pub const fn cadmpeg_ir::geometry::NurbsSurface::u_degree(&self) -> u32
 pub fn cadmpeg_ir::geometry::NurbsSurface::u_knots(&self) -> &[f64]
-pub fn cadmpeg_ir::geometry::NurbsSurface::u_knots_mut(&mut self) -> &mut [f64]
 pub const fn cadmpeg_ir::geometry::NurbsSurface::u_periodic(&self) -> bool
 pub const fn cadmpeg_ir::geometry::NurbsSurface::v_count(&self) -> u32
 pub const fn cadmpeg_ir::geometry::NurbsSurface::v_degree(&self) -> u32
 pub fn cadmpeg_ir::geometry::NurbsSurface::v_knots(&self) -> &[f64]
-pub fn cadmpeg_ir::geometry::NurbsSurface::v_knots_mut(&mut self) -> &mut [f64]
 pub const fn cadmpeg_ir::geometry::NurbsSurface::v_periodic(&self) -> bool
 pub fn cadmpeg_ir::geometry::NurbsSurface::weights(&self) -> core::option::Option<&[f64]>
-pub fn cadmpeg_ir::geometry::NurbsSurface::weights_mut(&mut self) -> core::option::Option<&mut [f64]>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::NurbsSurface
 pub fn cadmpeg_ir::geometry::NurbsSurface::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub struct cadmpeg_ir::geometry::ParameterRangeError
+impl core::error::Error for cadmpeg_ir::geometry::ParameterRangeError
+impl core::fmt::Display for cadmpeg_ir::geometry::ParameterRangeError
+pub fn cadmpeg_ir::geometry::ParameterRangeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_ir::geometry::ParametricSurfaceCurveFlags
 pub cadmpeg_ir::geometry::ParametricSurfaceCurveFlags::flag: bool
 pub cadmpeg_ir::geometry::ParametricSurfaceCurveFlags::second_flag: core::option::Option<bool>
@@ -3985,16 +4044,17 @@ pub cadmpeg_ir::geometry::PcurveInlineForm::wrapper_reversed: bool
 pub struct cadmpeg_ir::geometry::PcurveNurbs
 impl cadmpeg_ir::geometry::PcurveNurbs
 pub fn cadmpeg_ir::geometry::PcurveNurbs::control_points(&self) -> &[cadmpeg_ir::math::Point2]
-pub fn cadmpeg_ir::geometry::PcurveNurbs::control_points_mut(&mut self) -> &mut [cadmpeg_ir::math::Point2]
 pub const fn cadmpeg_ir::geometry::PcurveNurbs::degree(&self) -> u32
+pub fn cadmpeg_ir::geometry::PcurveNurbs::edit_control_points(&mut self, impl core::ops::function::FnOnce(&mut [cadmpeg_ir::math::Point2])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::PcurveNurbs::edit_knots(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::PcurveNurbs::edit_weights(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::PcurveNurbs::knots(&self) -> &[f64]
-pub fn cadmpeg_ir::geometry::PcurveNurbs::knots_mut(&mut self) -> &mut [f64]
-pub fn cadmpeg_ir::geometry::PcurveNurbs::lift(&self, impl core::ops::function::FnMut(cadmpeg_ir::math::Point2) -> cadmpeg_ir::math::Point3) -> cadmpeg_ir::geometry::NurbsCurve
+pub fn cadmpeg_ir::geometry::PcurveNurbs::lift(&self, impl core::ops::function::FnMut(cadmpeg_ir::math::Point2) -> cadmpeg_ir::math::Point3) -> core::result::Result<cadmpeg_ir::geometry::NurbsCurve, cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::PcurveNurbs::new(u32, alloc::vec::Vec<f64>, alloc::vec::Vec<cadmpeg_ir::math::Point2>, core::option::Option<alloc::vec::Vec<f64>>, bool) -> core::result::Result<Self, cadmpeg_ir::geometry::NurbsError>
 pub const fn cadmpeg_ir::geometry::PcurveNurbs::periodic(&self) -> bool
+pub fn cadmpeg_ir::geometry::PcurveNurbs::reverse_parameterization(&mut self)
 pub fn cadmpeg_ir::geometry::PcurveNurbs::set_weights(&mut self, core::option::Option<alloc::vec::Vec<f64>>) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::PcurveNurbs::weights(&self) -> core::option::Option<&[f64]>
-pub fn cadmpeg_ir::geometry::PcurveNurbs::weights_mut(&mut self) -> core::option::Option<&mut [f64]>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::PcurveNurbs
 pub fn cadmpeg_ir::geometry::PcurveNurbs::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::geometry::PolarNurbsPole
@@ -4003,15 +4063,16 @@ pub cadmpeg_ir::geometry::PolarNurbsPole::radial: cadmpeg_ir::math::Point2
 pub struct cadmpeg_ir::geometry::PolarPcurveNurbs
 impl cadmpeg_ir::geometry::PolarPcurveNurbs
 pub const fn cadmpeg_ir::geometry::PolarPcurveNurbs::degree(&self) -> u32
+pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::edit_knots(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::edit_poles(&mut self, impl core::ops::function::FnOnce(&mut [cadmpeg_ir::geometry::PolarNurbsPole])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
+pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::edit_weights(&mut self, impl core::ops::function::FnOnce(&mut [f64])) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::knots(&self) -> &[f64]
-pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::knots_mut(&mut self) -> &mut [f64]
 pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::new(u32, alloc::vec::Vec<f64>, alloc::vec::Vec<cadmpeg_ir::math::Point2>, alloc::vec::Vec<f64>, core::option::Option<alloc::vec::Vec<f64>>, bool) -> core::result::Result<Self, cadmpeg_ir::geometry::NurbsError>
 pub const fn cadmpeg_ir::geometry::PolarPcurveNurbs::periodic(&self) -> bool
 pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::poles(&self) -> &[cadmpeg_ir::geometry::PolarNurbsPole]
-pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::poles_mut(&mut self) -> &mut [cadmpeg_ir::geometry::PolarNurbsPole]
+pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::reverse_parameterization(&mut self)
 pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::set_weights(&mut self, core::option::Option<alloc::vec::Vec<f64>>) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
 pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::weights(&self) -> core::option::Option<&[f64]>
-pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::weights_mut(&mut self) -> core::option::Option<&mut [f64]>
 impl serde_core::ser::Serialize for cadmpeg_ir::geometry::PolarPcurveNurbs
 pub fn cadmpeg_ir::geometry::PolarPcurveNurbs::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::PolarPcurveNurbs
@@ -4261,6 +4322,14 @@ impl serde_core::ser::Serialize for cadmpeg_ir::geometry::SolvedSurfaceGeometry
 pub fn cadmpeg_ir::geometry::SolvedSurfaceGeometry::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::SolvedSurfaceGeometry
 pub fn cadmpeg_ir::geometry::SolvedSurfaceGeometry::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub struct cadmpeg_ir::geometry::SupportPcurve
+pub cadmpeg_ir::geometry::SupportPcurve::geometry: cadmpeg_ir::geometry::PcurveGeometry
+pub cadmpeg_ir::geometry::SupportPcurve::parameter_range: core::option::Option<cadmpeg_ir::geometry::DirectedParameterRange>
+impl cadmpeg_ir::geometry::SupportPcurve
+pub const fn cadmpeg_ir::geometry::SupportPcurve::new(cadmpeg_ir::geometry::PcurveGeometry, core::option::Option<cadmpeg_ir::geometry::DirectedParameterRange>) -> Self
+pub const fn cadmpeg_ir::geometry::SupportPcurve::parameter_range_array(&self) -> core::option::Option<[f64; 2]>
+impl core::convert::From<cadmpeg_ir::geometry::PcurveGeometry> for cadmpeg_ir::geometry::SupportPcurve
+pub fn cadmpeg_ir::geometry::SupportPcurve::from(cadmpeg_ir::geometry::PcurveGeometry) -> Self
 pub struct cadmpeg_ir::geometry::Surface
 pub cadmpeg_ir::geometry::Surface::geometry: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_ir::geometry::Surface::id: cadmpeg_ir::ids::SurfaceId
@@ -4949,6 +5018,7 @@ pub cadmpeg_ir::native::catalogue::FamilyRow::phase: cadmpeg_ir::native::catalog
 pub type cadmpeg_ir::native::catalogue::EmitFn<M, A, N, E> = fn(&M, &cadmpeg_ir::native::catalogue::FamilyRow<M, A, N, E>, &mut N) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub type cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E> = fn(&M, &cadmpeg_ir::native::catalogue::FamilyRow<M, A, N, E>, core::option::Option<&'static str>, &mut A)
 pub enum cadmpeg_ir::native::NativeConvertError
+pub cadmpeg_ir::native::NativeConvertError::InvalidIdentity(cadmpeg_ir::ids::IdentityError)
 pub cadmpeg_ir::native::NativeConvertError::InvalidOwner(alloc::string::String)
 pub cadmpeg_ir::native::NativeConvertError::MissingId
 pub cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(alloc::string::String)
@@ -4978,7 +5048,7 @@ impl cadmpeg_ir::native::NativeRecord
 pub fn cadmpeg_ir::native::NativeRecord::field(&self, &str) -> core::option::Option<serde_json::value::Value>
 pub fn cadmpeg_ir::native::NativeRecord::fields(&self) -> serde_json::map::Map<alloc::string::String, serde_json::value::Value>
 pub fn cadmpeg_ir::native::NativeRecord::id(&self) -> &str
-pub fn cadmpeg_ir::native::NativeRecord::new(impl core::convert::Into<alloc::string::String>, serde_json::map::Map<alloc::string::String, serde_json::value::Value>) -> Self
+pub fn cadmpeg_ir::native::NativeRecord::new(impl core::convert::Into<alloc::string::String>, serde_json::map::Map<alloc::string::String, serde_json::value::Value>) -> core::result::Result<Self, cadmpeg_ir::native::NativeConvertError>
 impl core::cmp::PartialEq for cadmpeg_ir::native::NativeRecord
 pub fn cadmpeg_ir::native::NativeRecord::eq(&self, &Self) -> bool
 impl serde_core::ser::Serialize for cadmpeg_ir::native::NativeRecord
@@ -5409,6 +5479,12 @@ pub struct cadmpeg_ir::products::NonEmptyString(_)
 impl cadmpeg_ir::products::NonEmptyString
 pub fn cadmpeg_ir::products::NonEmptyString::as_str(&self) -> &str
 pub fn cadmpeg_ir::products::NonEmptyString::new(impl core::convert::Into<alloc::string::String>) -> core::option::Option<Self>
+impl core::cmp::PartialEq<&str> for cadmpeg_ir::products::NonEmptyString
+pub fn cadmpeg_ir::products::NonEmptyString::eq(&self, &&str) -> bool
+impl core::cmp::PartialEq<str> for cadmpeg_ir::products::NonEmptyString
+pub fn cadmpeg_ir::products::NonEmptyString::eq(&self, &str) -> bool
+impl core::fmt::Display for cadmpeg_ir::products::NonEmptyString
+pub fn cadmpeg_ir::products::NonEmptyString::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::NonEmptyString
 pub fn cadmpeg_ir::products::NonEmptyString::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::products::Occurrence
@@ -6359,6 +6435,9 @@ pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::surface: cadmpeg_ir::geometry::BsplineSurface
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Point
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Point::position: cadmpeg_ir::math::Point3
+pub struct cadmpeg_ir::sketches::NativeOperandField
+pub cadmpeg_ir::sketches::NativeOperandField::name: cadmpeg_ir::products::NonEmptyString
+pub cadmpeg_ir::sketches::NativeOperandField::role: core::option::Option<u32>
 pub struct cadmpeg_ir::sketches::OffsetParameter
 pub cadmpeg_ir::sketches::OffsetParameter::id: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::sketches::OffsetParameter::negated: bool
@@ -6459,10 +6538,9 @@ pub fn cadmpeg_ir::sketches::SketchId::as_str(&self) -> &str
 impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchId
 pub fn cadmpeg_ir::sketches::SketchId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::sketches::SketchNativeOperand
-pub cadmpeg_ir::sketches::SketchNativeOperand::native_field: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::sketches::SketchNativeOperand::native_kind: alloc::string::String
+pub cadmpeg_ir::sketches::SketchNativeOperand::field: core::option::Option<cadmpeg_ir::sketches::NativeOperandField>
+pub cadmpeg_ir::sketches::SketchNativeOperand::native_kind: cadmpeg_ir::products::NonEmptyString
 pub cadmpeg_ir::sketches::SketchNativeOperand::native_ref: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::sketches::SketchNativeOperand::native_role: core::option::Option<u32>
 pub cadmpeg_ir::sketches::SketchNativeOperand::object_index: u32
 pub struct cadmpeg_ir::sketches::SketchOffsetPair
 pub cadmpeg_ir::sketches::SketchOffsetPair::result: cadmpeg_ir::sketches::SketchEntityId
@@ -6772,34 +6850,32 @@ pub struct cadmpeg_ir::tessellation::Tessellation
 pub cadmpeg_ir::tessellation::Tessellation::body: core::option::Option<cadmpeg_ir::ids::BodyId>
 pub cadmpeg_ir::tessellation::Tessellation::chordal_deflection: core::option::Option<f64>
 pub cadmpeg_ir::tessellation::Tessellation::faces: alloc::vec::Vec<cadmpeg_ir::ids::FaceId>
-pub cadmpeg_ir::tessellation::Tessellation::feature_edges: alloc::vec::Vec<[u32; 2]>
 pub cadmpeg_ir::tessellation::Tessellation::id: alloc::string::String
 pub cadmpeg_ir::tessellation::Tessellation::source_object: core::option::Option<cadmpeg_ir::SourceObjectAssociation>
-pub cadmpeg_ir::tessellation::Tessellation::texture_assignments: alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationTextureAssignment>
-pub cadmpeg_ir::tessellation::Tessellation::triangle_groups: alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationTriangleGroup>
 impl cadmpeg_ir::tessellation::Tessellation
 pub fn cadmpeg_ir::tessellation::Tessellation::channels(&self) -> &[cadmpeg_ir::tessellation::TessellationChannel]
-pub fn cadmpeg_ir::tessellation::Tessellation::channels_mut(&mut self) -> &mut [cadmpeg_ir::tessellation::TessellationChannel]
 pub fn cadmpeg_ir::tessellation::Tessellation::corner_normals(&self) -> &[cadmpeg_ir::math::Vector3]
 pub fn cadmpeg_ir::tessellation::Tessellation::corner_normals_mut(&mut self) -> core::option::Option<&mut [cadmpeg_ir::math::Vector3]>
+pub fn cadmpeg_ir::tessellation::Tessellation::feature_edges(&self) -> &[[u32; 2]]
 pub fn cadmpeg_ir::tessellation::Tessellation::from_decoded(impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_ir::math::Point3>, alloc::vec::Vec<[u32; 3]>, alloc::vec::Vec<u32>, alloc::vec::Vec<cadmpeg_ir::math::Vector3>, alloc::vec::Vec<cadmpeg_ir::math::Vector3>, alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationChannel>) -> core::result::Result<Self, cadmpeg_ir::tessellation::TessellationError>
 pub fn cadmpeg_ir::tessellation::Tessellation::new(impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_ir::math::Point3>, alloc::vec::Vec<[u32; 3]>, cadmpeg_ir::tessellation::TessellationTopology, cadmpeg_ir::tessellation::TessellationNormals, alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationChannel>) -> core::result::Result<Self, cadmpeg_ir::tessellation::TessellationError>
 pub fn cadmpeg_ir::tessellation::Tessellation::normals(&self) -> &[cadmpeg_ir::math::Vector3]
 pub fn cadmpeg_ir::tessellation::Tessellation::normals_mut(&mut self) -> core::option::Option<&mut [cadmpeg_ir::math::Vector3]>
 pub fn cadmpeg_ir::tessellation::Tessellation::shading(&self) -> &cadmpeg_ir::tessellation::TessellationNormals
 pub fn cadmpeg_ir::tessellation::Tessellation::strip_lengths(&self) -> &[u32]
+pub fn cadmpeg_ir::tessellation::Tessellation::texture_assignments(&self) -> &[cadmpeg_ir::tessellation::TessellationTextureAssignment]
 pub fn cadmpeg_ir::tessellation::Tessellation::topology(&self) -> &cadmpeg_ir::tessellation::TessellationTopology
+pub fn cadmpeg_ir::tessellation::Tessellation::triangle_groups(&self) -> &[cadmpeg_ir::tessellation::TessellationTriangleGroup]
 pub fn cadmpeg_ir::tessellation::Tessellation::triangles(&self) -> &[[u32; 3]]
-pub fn cadmpeg_ir::tessellation::Tessellation::triangles_mut(&mut self) -> &mut [[u32; 3]]
 pub fn cadmpeg_ir::tessellation::Tessellation::vertices(&self) -> &[cadmpeg_ir::math::Point3]
 pub fn cadmpeg_ir::tessellation::Tessellation::vertices_mut(&mut self) -> &mut [cadmpeg_ir::math::Point3]
 pub fn cadmpeg_ir::tessellation::Tessellation::with_body(self, core::option::Option<cadmpeg_ir::ids::BodyId>) -> Self
 pub fn cadmpeg_ir::tessellation::Tessellation::with_chordal_deflection(self, core::option::Option<f64>) -> Self
 pub fn cadmpeg_ir::tessellation::Tessellation::with_faces(self, alloc::vec::Vec<cadmpeg_ir::ids::FaceId>) -> Self
-pub fn cadmpeg_ir::tessellation::Tessellation::with_feature_edges(self, alloc::vec::Vec<[u32; 2]>) -> Self
+pub fn cadmpeg_ir::tessellation::Tessellation::with_feature_edges(self, alloc::vec::Vec<[u32; 2]>) -> core::result::Result<Self, cadmpeg_ir::tessellation::TessellationError>
 pub fn cadmpeg_ir::tessellation::Tessellation::with_source_object(self, core::option::Option<cadmpeg_ir::SourceObjectAssociation>) -> Self
-pub fn cadmpeg_ir::tessellation::Tessellation::with_texture_assignments(self, alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationTextureAssignment>) -> Self
-pub fn cadmpeg_ir::tessellation::Tessellation::with_triangle_groups(self, alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationTriangleGroup>) -> Self
+pub fn cadmpeg_ir::tessellation::Tessellation::with_texture_assignments(self, alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationTextureAssignment>) -> core::result::Result<Self, cadmpeg_ir::tessellation::TessellationError>
+pub fn cadmpeg_ir::tessellation::Tessellation::with_triangle_groups(self, alloc::vec::Vec<cadmpeg_ir::tessellation::TessellationTriangleGroup>) -> core::result::Result<Self, cadmpeg_ir::tessellation::TessellationError>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::tessellation::Tessellation
 pub fn cadmpeg_ir::tessellation::Tessellation::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::tessellation::Tessellation::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -6836,9 +6912,7 @@ pub cadmpeg_ir::topology::BodyKind::Sheet
 pub cadmpeg_ir::topology::BodyKind::Solid
 pub cadmpeg_ir::topology::BodyKind::Wire
 pub enum cadmpeg_ir::topology::LoopBoundary
-pub cadmpeg_ir::topology::LoopBoundary::Ring
-pub cadmpeg_ir::topology::LoopBoundary::Ring::coedges: alloc::vec::Vec<cadmpeg_ir::ids::CoedgeId>
-pub cadmpeg_ir::topology::LoopBoundary::Ring::vertex_uses: alloc::vec::Vec<cadmpeg_ir::topology::AnchoredVertexUse>
+pub cadmpeg_ir::topology::LoopBoundary::Ring(cadmpeg_ir::topology::LoopRing)
 pub cadmpeg_ir::topology::LoopBoundary::Vertex
 pub cadmpeg_ir::topology::LoopBoundary::Vertex::pcurves: alloc::vec::Vec<cadmpeg_ir::topology::PcurveUse>
 pub cadmpeg_ir::topology::LoopBoundary::Vertex::vertex: cadmpeg_ir::ids::VertexId
@@ -6969,7 +7043,7 @@ pub fn cadmpeg_ir::topology::Loop::boundary_role_in(&self, &[cadmpeg_ir::topolog
 pub fn cadmpeg_ir::topology::Loop::coedges(&self) -> &[cadmpeg_ir::ids::CoedgeId]
 pub fn cadmpeg_ir::topology::Loop::next_coedge(&self, &cadmpeg_ir::ids::CoedgeId) -> core::option::Option<&cadmpeg_ir::ids::CoedgeId>
 pub fn cadmpeg_ir::topology::Loop::previous_coedge(&self, &cadmpeg_ir::ids::CoedgeId) -> core::option::Option<&cadmpeg_ir::ids::CoedgeId>
-pub fn cadmpeg_ir::topology::Loop::ring_mut(&mut self) -> core::option::Option<(&mut alloc::vec::Vec<cadmpeg_ir::ids::CoedgeId>, &mut alloc::vec::Vec<cadmpeg_ir::topology::AnchoredVertexUse>)>
+pub fn cadmpeg_ir::topology::Loop::replace_ring(&mut self, alloc::vec::Vec<cadmpeg_ir::ids::CoedgeId>, alloc::vec::Vec<cadmpeg_ir::topology::AnchoredVertexUse>) -> core::result::Result<(), cadmpeg_ir::topology::LoopRingError>
 pub fn cadmpeg_ir::topology::Loop::ring_neighbors_of(&self, &cadmpeg_ir::topology::Coedge) -> core::option::Option<(cadmpeg_ir::ids::CoedgeId, cadmpeg_ir::ids::CoedgeId)>
 pub fn cadmpeg_ir::topology::Loop::singular_vertex(&self) -> core::option::Option<(&cadmpeg_ir::ids::VertexId, &[cadmpeg_ir::topology::PcurveUse])>
 pub fn cadmpeg_ir::topology::Loop::vertex_occurrences(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&cadmpeg_ir::ids::VertexId, core::option::Option<&cadmpeg_ir::ids::CoedgeId>, &[cadmpeg_ir::topology::PcurveUse])>
@@ -6986,6 +7060,15 @@ impl serde_core::ser::Serialize for cadmpeg_ir::topology::Loop
 pub fn cadmpeg_ir::topology::Loop::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::topology::Loop
 pub fn cadmpeg_ir::topology::Loop::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub struct cadmpeg_ir::topology::LoopRing
+impl cadmpeg_ir::topology::LoopRing
+pub fn cadmpeg_ir::topology::LoopRing::coedges(&self) -> &[cadmpeg_ir::ids::CoedgeId]
+pub fn cadmpeg_ir::topology::LoopRing::new(alloc::vec::Vec<cadmpeg_ir::ids::CoedgeId>, alloc::vec::Vec<cadmpeg_ir::topology::AnchoredVertexUse>) -> core::result::Result<Self, cadmpeg_ir::topology::LoopRingError>
+pub fn cadmpeg_ir::topology::LoopRing::vertex_uses(&self) -> &[cadmpeg_ir::topology::AnchoredVertexUse]
+pub struct cadmpeg_ir::topology::LoopRingError(_)
+impl core::error::Error for cadmpeg_ir::topology::LoopRingError
+impl core::fmt::Display for cadmpeg_ir::topology::LoopRingError
+pub fn cadmpeg_ir::topology::LoopRingError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_ir::topology::PcurveUse
 pub cadmpeg_ir::topology::PcurveUse::isoparametric: core::option::Option<bool>
 pub cadmpeg_ir::topology::PcurveUse::parameter_range: core::option::Option<[f64; 2]>
@@ -7210,12 +7293,10 @@ pub cadmpeg_ir::BodySelection::Historical::bodies: alloc::vec::Vec<cadmpeg_ir::i
 pub cadmpeg_ir::BodySelection::Historical::native: alloc::string::String
 pub cadmpeg_ir::BodySelection::Historical::state: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::BodySelection::HistoricalSet
-pub cadmpeg_ir::BodySelection::HistoricalSet::bodies: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalBodyId>
-pub cadmpeg_ir::BodySelection::HistoricalSet::native: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::BodySelection::HistoricalSet::members: cadmpeg_ir::features::BodyMembers<cadmpeg_ir::ids::HistoricalBodyId>
 pub cadmpeg_ir::BodySelection::HistoricalSet::state: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::BodySelection::HistoricalUnorderedSet
-pub cadmpeg_ir::BodySelection::HistoricalUnorderedSet::bodies: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalBodyId>
-pub cadmpeg_ir::BodySelection::HistoricalUnorderedSet::native: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::BodySelection::HistoricalUnorderedSet::selection: cadmpeg_ir::features::HistoricalUnorderedBodySelection
 pub cadmpeg_ir::BodySelection::HistoricalUnorderedSet::state: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::BodySelection::Local
 pub cadmpeg_ir::BodySelection::Local::bodies: alloc::vec::Vec<alloc::string::String>
@@ -7226,8 +7307,7 @@ pub cadmpeg_ir::BodySelection::Resolved
 pub cadmpeg_ir::BodySelection::Resolved::bodies: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
 pub cadmpeg_ir::BodySelection::Resolved::native: alloc::string::String
 pub cadmpeg_ir::BodySelection::ResolvedSet
-pub cadmpeg_ir::BodySelection::ResolvedSet::bodies: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
-pub cadmpeg_ir::BodySelection::ResolvedSet::native: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::BodySelection::ResolvedSet::members: cadmpeg_ir::features::BodyMembers<cadmpeg_ir::ids::BodyId>
 pub cadmpeg_ir::BodySelection::Unresolved
 pub enum cadmpeg_ir::BodyTrimSide
 pub cadmpeg_ir::BodyTrimSide::Forward
@@ -7342,6 +7422,15 @@ impl<'a> core::iter::traits::collect::IntoIterator for &'a cadmpeg_ir::features:
 pub type &'a cadmpeg_ir::features::ConfigurationBodies::IntoIter = core::slice::iter::Iter<'a, cadmpeg_ir::ids::BodyId>
 pub type &'a cadmpeg_ir::features::ConfigurationBodies::Item = &'a cadmpeg_ir::ids::BodyId
 pub fn &'a cadmpeg_ir::features::ConfigurationBodies::into_iter(self) -> Self::IntoIter
+pub enum cadmpeg_ir::ConfigurationEvaluation
+pub cadmpeg_ir::ConfigurationEvaluation::Active
+pub cadmpeg_ir::ConfigurationEvaluation::Active::outputs: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
+pub cadmpeg_ir::ConfigurationEvaluation::Suppressed
+impl cadmpeg_ir::features::ConfigurationEvaluation
+pub const fn cadmpeg_ir::features::ConfigurationEvaluation::is_suppressed(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationEvaluation::outputs(&self) -> &[cadmpeg_ir::ids::BodyId]
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::ConfigurationEvaluation
+pub fn cadmpeg_ir::features::ConfigurationEvaluation::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub enum cadmpeg_ir::ConfigurationName
 pub cadmpeg_ir::ConfigurationName::Resolved(alloc::string::String)
 pub cadmpeg_ir::ConfigurationName::Unresolved
@@ -7666,9 +7755,8 @@ pub cadmpeg_ir::FeatureDefinition::LineSegment::end: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::LineSegment::start: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::Loft
 pub cadmpeg_ir::FeatureDefinition::Loft::allow_multi_profile_faces: core::option::Option<bool>
-pub cadmpeg_ir::FeatureDefinition::Loft::centerline: core::option::Option<cadmpeg_ir::features::PathRef>
 pub cadmpeg_ir::FeatureDefinition::Loft::closed: bool
-pub cadmpeg_ir::FeatureDefinition::Loft::guides: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
+pub cadmpeg_ir::FeatureDefinition::Loft::guidance: cadmpeg_ir::features::LoftGuidance
 pub cadmpeg_ir::FeatureDefinition::Loft::linearize: bool
 pub cadmpeg_ir::FeatureDefinition::Loft::max_degree: core::option::Option<u32>
 pub cadmpeg_ir::FeatureDefinition::Loft::op: cadmpeg_ir::features::BooleanOp
@@ -7934,6 +8022,11 @@ pub cadmpeg_ir::JointOperands::Pair
 pub cadmpeg_ir::JointOperands::Pair::connectors: [cadmpeg_ir::products::JointConnector; 2]
 pub cadmpeg_ir::JointOperands::Pair::kind: cadmpeg_ir::products::PairedJointKind
 pub cadmpeg_ir::JointOperands::Pair::offset_frames: core::option::Option<[cadmpeg_ir::transform::Transform; 2]>
+pub enum cadmpeg_ir::LoftGuidance
+pub cadmpeg_ir::LoftGuidance::Centerline(cadmpeg_ir::features::PathRef)
+pub cadmpeg_ir::LoftGuidance::Guides(alloc::vec::Vec<cadmpeg_ir::features::PathRef>)
+impl core::default::Default for cadmpeg_ir::features::LoftGuidance
+pub fn cadmpeg_ir::features::LoftGuidance::default() -> Self
 pub enum cadmpeg_ir::LossCategory
 pub cadmpeg_ir::LossCategory::Attribute
 pub cadmpeg_ir::LossCategory::DesignIntent
@@ -8019,6 +8112,7 @@ pub fn cadmpeg_ir::LossKind::from(cadmpeg_ir::LossTaxonomy) -> Self
 impl core::fmt::Display for cadmpeg_ir::LossTaxonomy
 pub fn cadmpeg_ir::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::NativeConvertError
+pub cadmpeg_ir::NativeConvertError::InvalidIdentity(cadmpeg_ir::ids::IdentityError)
 pub cadmpeg_ir::NativeConvertError::InvalidOwner(alloc::string::String)
 pub cadmpeg_ir::NativeConvertError::MissingId
 pub cadmpeg_ir::NativeConvertError::MissingRetainedSourceRecord(alloc::string::String)
@@ -8625,6 +8719,28 @@ pub struct cadmpeg_ir::AttributeChange
 pub cadmpeg_ir::AttributeChange::key: alloc::string::String
 pub cadmpeg_ir::AttributeChange::left: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::AttributeChange::right: core::option::Option<alloc::string::String>
+pub struct cadmpeg_ir::BodyMember<B>
+impl<B> cadmpeg_ir::features::BodyMember<B>
+pub const fn cadmpeg_ir::features::BodyMember<B>::body(&self) -> &B
+pub fn cadmpeg_ir::features::BodyMember<B>::native(&self) -> &str
+pub fn cadmpeg_ir::features::BodyMember<B>::new(B, alloc::string::String) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError>
+impl<'de, B> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::BodyMember<B> where B: serde_core::de::Deserialize<'de>
+pub fn cadmpeg_ir::features::BodyMember<B>::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub struct cadmpeg_ir::BodyMembers<B>(_)
+impl<B> cadmpeg_ir::features::BodyMembers<B>
+pub fn cadmpeg_ir::features::BodyMembers<B>::bodies(&self) -> impl core::iter::traits::iterator::Iterator<Item = &B>
+pub const fn cadmpeg_ir::features::BodyMembers<B>::is_empty(&self) -> bool
+pub fn cadmpeg_ir::features::BodyMembers<B>::iter(&self) -> core::slice::iter::Iter<'_, cadmpeg_ir::features::BodyMember<B>>
+pub const fn cadmpeg_ir::features::BodyMembers<B>::len(&self) -> usize
+pub fn cadmpeg_ir::features::BodyMembers<B>::native(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
+pub fn cadmpeg_ir::features::BodyMembers<B>::try_from_parts(alloc::vec::Vec<B>, alloc::vec::Vec<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError> where B: core::cmp::Eq + core::hash::Hash
+pub fn cadmpeg_ir::features::BodyMembers<B>::try_from_rows(alloc::vec::Vec<cadmpeg_ir::features::BodyMember<B>>) -> core::result::Result<Self, cadmpeg_ir::features::BodySelectionError> where B: core::cmp::Eq + core::hash::Hash
+impl<'a, B> core::iter::traits::collect::IntoIterator for &'a cadmpeg_ir::features::BodyMembers<B>
+pub type &'a cadmpeg_ir::features::BodyMembers<B>::IntoIter = core::slice::iter::Iter<'a, cadmpeg_ir::features::BodyMember<B>>
+pub type &'a cadmpeg_ir::features::BodyMembers<B>::Item = &'a cadmpeg_ir::features::BodyMember<B>
+pub fn &'a cadmpeg_ir::features::BodyMembers<B>::into_iter(self) -> Self::IntoIter
+impl<'de, B> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::BodyMembers<B> where B: serde_core::de::Deserialize<'de> + core::cmp::Eq + core::hash::Hash
+pub fn cadmpeg_ir::features::BodyMembers<B>::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::CadIr
 pub cadmpeg_ir::CadIr::model: cadmpeg_ir::document::Model
 pub cadmpeg_ir::CadIr::native: cadmpeg_ir::native::Native
@@ -9008,12 +9124,15 @@ pub fn cadmpeg_ir::native::NativeNamespace::arenas(&self) -> &alloc::collections
 pub fn cadmpeg_ir::native::NativeNamespace::arenas_mut(&mut self) -> &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena<T: serde_core::ser::Serialize>(&mut self, impl core::convert::Into<alloc::string::String>, &[T]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, impl core::convert::Into<alloc::string::String>, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
+pub struct cadmpeg_ir::NativeOperandField
+pub cadmpeg_ir::NativeOperandField::name: cadmpeg_ir::products::NonEmptyString
+pub cadmpeg_ir::NativeOperandField::role: core::option::Option<u32>
 pub struct cadmpeg_ir::NativeRecord
 impl cadmpeg_ir::native::NativeRecord
 pub fn cadmpeg_ir::native::NativeRecord::field(&self, &str) -> core::option::Option<serde_json::value::Value>
 pub fn cadmpeg_ir::native::NativeRecord::fields(&self) -> serde_json::map::Map<alloc::string::String, serde_json::value::Value>
 pub fn cadmpeg_ir::native::NativeRecord::id(&self) -> &str
-pub fn cadmpeg_ir::native::NativeRecord::new(impl core::convert::Into<alloc::string::String>, serde_json::map::Map<alloc::string::String, serde_json::value::Value>) -> Self
+pub fn cadmpeg_ir::native::NativeRecord::new(impl core::convert::Into<alloc::string::String>, serde_json::map::Map<alloc::string::String, serde_json::value::Value>) -> core::result::Result<Self, cadmpeg_ir::native::NativeConvertError>
 impl core::cmp::PartialEq for cadmpeg_ir::native::NativeRecord
 pub fn cadmpeg_ir::native::NativeRecord::eq(&self, &Self) -> bool
 impl serde_core::ser::Serialize for cadmpeg_ir::native::NativeRecord
@@ -9040,6 +9159,12 @@ pub struct cadmpeg_ir::NonEmptyString(_)
 impl cadmpeg_ir::products::NonEmptyString
 pub fn cadmpeg_ir::products::NonEmptyString::as_str(&self) -> &str
 pub fn cadmpeg_ir::products::NonEmptyString::new(impl core::convert::Into<alloc::string::String>) -> core::option::Option<Self>
+impl core::cmp::PartialEq<&str> for cadmpeg_ir::products::NonEmptyString
+pub fn cadmpeg_ir::products::NonEmptyString::eq(&self, &&str) -> bool
+impl core::cmp::PartialEq<str> for cadmpeg_ir::products::NonEmptyString
+pub fn cadmpeg_ir::products::NonEmptyString::eq(&self, &str) -> bool
+impl core::fmt::Display for cadmpeg_ir::products::NonEmptyString
+pub fn cadmpeg_ir::products::NonEmptyString::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::NonEmptyString
 pub fn cadmpeg_ir::products::NonEmptyString::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::Occurrence
@@ -9282,10 +9407,9 @@ pub fn cadmpeg_ir::sketches::SketchId::as_str(&self) -> &str
 impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchId
 pub fn cadmpeg_ir::sketches::SketchId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::SketchNativeOperand
-pub cadmpeg_ir::SketchNativeOperand::native_field: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::SketchNativeOperand::native_kind: alloc::string::String
+pub cadmpeg_ir::SketchNativeOperand::field: core::option::Option<cadmpeg_ir::sketches::NativeOperandField>
+pub cadmpeg_ir::SketchNativeOperand::native_kind: cadmpeg_ir::products::NonEmptyString
 pub cadmpeg_ir::SketchNativeOperand::native_ref: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::SketchNativeOperand::native_role: core::option::Option<u32>
 pub cadmpeg_ir::SketchNativeOperand::object_index: u32
 pub struct cadmpeg_ir::SourceDiff
 pub cadmpeg_ir::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>

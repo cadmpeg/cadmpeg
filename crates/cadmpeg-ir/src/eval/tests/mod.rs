@@ -416,7 +416,9 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
-    surface.control_points_mut()[3].z = 1.0;
+    surface
+        .edit_control_points(|points| points[3].z = 1.0)
+        .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
     let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord)

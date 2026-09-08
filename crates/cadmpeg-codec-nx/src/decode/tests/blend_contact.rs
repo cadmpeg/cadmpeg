@@ -954,13 +954,11 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     sides: [
                         IntcurveSupportSide {
                             surface: Some(support_offset),
-                            pcurve: Some(contact_pcurve.clone()),
-                            pcurve_parameter_range: None,
+                            pcurve: Some(contact_pcurve.clone().into()),
                         },
                         IntcurveSupportSide {
                             surface: Some(other),
-                            pcurve: Some(contact_pcurve),
-                            pcurve_parameter_range: None,
+                            pcurve: Some(contact_pcurve.into()),
                         },
                     ],
                     parameter_range: [0.0, 1.0],
@@ -1182,19 +1180,23 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(first_spine_side),
-                        pcurve_parameter_range: None,
-                        pcurve: Some(PcurveGeometry::Line {
-                            origin: Point2::new(0.0, -2.0),
-                            direction: Point2::new(1.0, 0.0),
-                        }),
+                        pcurve: Some(
+                            PcurveGeometry::Line {
+                                origin: Point2::new(0.0, -2.0),
+                                direction: Point2::new(1.0, 0.0),
+                            }
+                            .into(),
+                        ),
                     },
                     IntcurveSupportSide {
                         surface: Some(second_spine_side),
-                        pcurve_parameter_range: None,
-                        pcurve: Some(PcurveGeometry::Line {
-                            origin: Point2::new(0.0, 2.0),
-                            direction: Point2::new(1.0, 0.0),
-                        }),
+                        pcurve: Some(
+                            PcurveGeometry::Line {
+                                origin: Point2::new(0.0, 2.0),
+                                direction: Point2::new(1.0, 0.0),
+                            }
+                            .into(),
+                        ),
                     },
                 ],
                 parameter_range: [0.0, 10.0],
@@ -1309,10 +1311,13 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
-            context.sides[0].pcurve = Some(PcurveGeometry::Offset {
-                distance: 0.1,
-                basis: Box::new(context.sides[0].pcurve.take().unwrap()),
-            });
+            context.sides[0].pcurve = Some(
+                PcurveGeometry::Offset {
+                    distance: 0.1,
+                    basis: Box::new(context.sides[0].pcurve.take().unwrap().geometry),
+                }
+                .into(),
+            );
         });
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
@@ -1389,15 +1394,16 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     sides: [
                         IntcurveSupportSide {
                             surface: Some(first.clone()),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(PcurveGeometry::Line {
-                                origin: Point2::new(0.0, -2.0),
-                                direction: Point2::new(1.0, 0.0),
-                            }),
+                            pcurve: Some(
+                                PcurveGeometry::Line {
+                                    origin: Point2::new(0.0, -2.0),
+                                    direction: Point2::new(1.0, 0.0),
+                                }
+                                .into(),
+                            ),
                         },
                         IntcurveSupportSide {
                             surface: Some(surface.clone()),
-                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -1425,7 +1431,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { nurbs } = context.sides[1].pcurve.as_ref().unwrap() else {
+    let PcurveGeometry::Nurbs { nurbs } = &context.sides[1].pcurve.as_ref().unwrap().geometry
+    else {
         unreachable!()
     };
     assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));

@@ -1121,10 +1121,15 @@ pub(crate) fn bind_feature_body_selections(
                 direct_tool_bodies.push(body);
             }
             if historical_tool_bodies.len() == native_tools.len() {
+                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
+                    historical_tool_bodies,
+                    native_tools,
+                ) else {
+                    continue;
+                };
                 *tools = BodySelection::HistoricalSet {
                     state: input_state,
-                    bodies: historical_tool_bodies,
-                    native: native_tools,
+                    members,
                 };
             } else if direct_tool_bodies.len() == native_tools.len() {
                 *tools = if native_tools.len() == 1 {
@@ -1133,10 +1138,13 @@ pub(crate) fn bind_feature_body_selections(
                         native: native_tools.remove(0),
                     }
                 } else {
-                    BodySelection::ResolvedSet {
-                        bodies: direct_tool_bodies,
-                        native: native_tools,
-                    }
+                    let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
+                        direct_tool_bodies,
+                        native_tools,
+                    ) else {
+                        continue;
+                    };
+                    BodySelection::ResolvedSet { members }
                 };
             } else {
                 let tool_record_indices = operation
@@ -1153,13 +1161,20 @@ pub(crate) fn bind_feature_body_selections(
                     body_recipe_operands,
                     inputs.construction_recipes,
                 ) {
+                    let Ok(selection) =
+                        cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(
+                            tool_slots
+                                .into_iter()
+                                .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
+                                .collect(),
+                            native_tools,
+                        )
+                    else {
+                        continue;
+                    };
                     *tools = BodySelection::HistoricalUnorderedSet {
                         state: input_state,
-                        bodies: tool_slots
-                            .into_iter()
-                            .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                            .collect(),
-                        native: native_tools,
+                        selection,
                     };
                     continue;
                 }
@@ -1172,13 +1187,20 @@ pub(crate) fn bind_feature_body_selections(
                     if let Some(tool_slots) =
                         pattern_combine_tool_slots(pattern_bodies, body, native_tools.len())
                     {
+                        let Ok(selection) =
+                            cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(
+                                tool_slots
+                                    .into_iter()
+                                    .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
+                                    .collect(),
+                                native_tools,
+                            )
+                        else {
+                            continue;
+                        };
                         *tools = BodySelection::HistoricalUnorderedSet {
                             state: input_state,
-                            bodies: tool_slots
-                                .into_iter()
-                                .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                                .collect(),
-                            native: native_tools,
+                            selection,
                         };
                     }
                 }
@@ -1790,10 +1812,10 @@ fn bind_direct_body_recipe_body_selection(
         }
         selected.push(body);
     }
-    *selection = BodySelection::ResolvedSet {
-        bodies: selected,
-        native: native_members,
-    };
+    if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(selected, native_members)
+    {
+        *selection = BodySelection::ResolvedSet { members };
+    }
 }
 
 fn direct_body_recipe_candidate(
@@ -2464,8 +2486,14 @@ pub(crate) fn bind_feature_path_selections(
                 groups,
                 operands,
             ),
-            FeatureDefinition::Loft { guides, .. } => {
-                for path in guides {
+            FeatureDefinition::Loft { guidance, .. } => {
+                let paths = match guidance {
+                    cadmpeg_ir::features::LoftGuidance::Guides(paths) => paths,
+                    cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
+                        std::slice::from_mut(path)
+                    }
+                };
+                for path in paths {
                     bind_entity_selection_path(
                         path,
                         &feature_id,

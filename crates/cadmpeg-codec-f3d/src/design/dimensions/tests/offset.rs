@@ -184,10 +184,8 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
         unreachable!("test result is a NURBS")
     };
     curve
-        .control_points_mut()
-        .last_mut()
-        .expect("result endpoint")
-        .u += 0.01;
+        .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+        .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
@@ -416,32 +414,50 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     let mut operands = sources
         .iter()
         .map(|entity| SketchNativeOperand {
-            native_kind: "curve".into(),
-            native_field: Some("locus".into()),
-            native_role: Some(1),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("curve")
+                .expect("source operand kind is nonempty"),
+            field: Some(cadmpeg_ir::sketches::NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new("locus")
+                    .expect("source field name is nonempty"),
+                role: Some(1),
+            }),
             object_index: record_index(entity),
             native_ref: entity.native_ref.clone(),
         })
-        .chain(results.iter().map(|entity| SketchNativeOperand {
-            native_kind: "curve".into(),
-            native_field: Some("locus".into()),
-            native_role: Some(0),
-            object_index: record_index(entity),
-            native_ref: entity.native_ref.clone(),
+        .chain(results.iter().map(|entity| {
+            SketchNativeOperand {
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("curve")
+                    .expect("source operand kind is nonempty"),
+                field: Some(cadmpeg_ir::sketches::NativeOperandField {
+                    name: cadmpeg_ir::products::NonEmptyString::new("locus")
+                        .expect("source field name is nonempty"),
+                    role: Some(0),
+                }),
+                object_index: record_index(entity),
+                native_ref: entity.native_ref.clone(),
+            }
         }))
         .collect::<Vec<_>>();
     operands.push(SketchNativeOperand {
-        native_kind: "record".into(),
-        native_field: Some("owner".into()),
-        native_role: Some(0),
+        native_kind: cadmpeg_ir::products::NonEmptyString::new("record")
+            .expect("source operand kind is nonempty"),
+        field: Some(cadmpeg_ir::sketches::NativeOperandField {
+            name: cadmpeg_ir::products::NonEmptyString::new("owner")
+                .expect("source field name is nonempty"),
+            role: Some(0),
+        }),
         object_index: 100,
         native_ref: Some(format!("{stream}:design-entity#100")),
     });
     operands.extend(sources.iter().zip(&results).flat_map(|(source, result)| {
         [source, result].map(|entity| SketchNativeOperand {
-            native_kind: "curve".into(),
-            native_field: Some("return".into()),
-            native_role: None,
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("curve")
+                .expect("source operand kind is nonempty"),
+            field: Some(cadmpeg_ir::sketches::NativeOperandField {
+                name: cadmpeg_ir::products::NonEmptyString::new("return")
+                    .expect("source field name is nonempty"),
+                role: None,
+            }),
             object_index: record_index(entity),
             native_ref: entity.native_ref.clone(),
         })
@@ -530,7 +546,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     )
     .is_none());
     let mut wrong_operand_kind = operands.clone();
-    wrong_operand_kind[0].native_kind = "point".into();
+    wrong_operand_kind[0].native_kind = cadmpeg_ir::products::NonEmptyString::new("point").unwrap();
     assert!(spatial_counted_offset_dimension_definition(
         "Linear Dimension-1",
         Some(0x20),

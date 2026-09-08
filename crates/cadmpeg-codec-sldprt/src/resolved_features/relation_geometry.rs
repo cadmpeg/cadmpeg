@@ -310,9 +310,11 @@ pub(crate) fn project_spatial_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            native_field: None,
-                            native_role: None,
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                operand_kind_name(operand.kind),
+                            )
+                            .expect("source operand kind is nonempty"),
+                            field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
                         })
@@ -2374,9 +2376,11 @@ pub(crate) fn project_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            native_field: None,
-                            native_role: None,
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                operand_kind_name(operand.kind),
+                            )
+                            .expect("source operand kind is nonempty"),
+                            field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
                         })

@@ -196,7 +196,7 @@ pub(in super::super) fn revolved_brep_surface(
     if matches!(geometry, SketchGeometry::Nurbs { .. }) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
         return Some(SurfaceGeometry::Nurbs(revolved_nurbs_surface(
-            &placed_section_nurbs(transform, &directrix),
+            &placed_section_nurbs(transform, &directrix)?,
             axis,
         )?));
     }

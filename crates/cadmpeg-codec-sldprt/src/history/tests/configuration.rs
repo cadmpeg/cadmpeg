@@ -329,18 +329,20 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             (
                 feature_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: unresolved,
                 },
             ),
             (
                 spatial_feature_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: FeatureDefinition::SpatialSketch { sketch: None },
                 },
             ),
@@ -563,18 +565,20 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                 (
                     feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                            outputs: Vec::new(),
+                        },
                         dependencies: Vec::new(),
-                        outputs: Vec::new(),
                         definition: FeatureDefinition::SpatialSketch { sketch: None },
                     },
                 ),
                 (
                     planar_state_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                            outputs: Vec::new(),
+                        },
                         dependencies: Vec::new(),
-                        outputs: Vec::new(),
                         definition: FeatureDefinition::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                         },
@@ -646,9 +650,10 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     configuration.feature_states.insert(
         feature_id.clone(),
         ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                outputs: Vec::new(),
+            },
             dependencies: Vec::new(),
-            outputs: Vec::new(),
             definition: FeatureDefinition::SpatialSketch { sketch: None },
         },
     );
@@ -728,18 +733,20 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             (
                 producer_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: FeatureDefinition::StoredGeometry,
                 },
             ),
             (
                 consumer_id.clone(),
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: unresolved,
                 },
             ),
@@ -985,9 +992,10 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     configuration.feature_states.insert(
         id.clone(),
         ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                outputs: Vec::new(),
+            },
             dependencies: Vec::new(),
-            outputs: Vec::new(),
             definition: local_definition,
         },
     );
@@ -1474,9 +1482,10 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     ir.model.configurations[0].feature_states.insert(
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                outputs: Vec::new(),
+            },
             dependencies: Vec::new(),
-            outputs: Vec::new(),
             definition: definition(),
         },
     );
@@ -1570,9 +1579,10 @@ fn configuration_frame_alias_binds_without_body_membership() {
     ir.model.configurations[0].feature_states.insert(
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState {
-            suppressed: false,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                outputs: Vec::new(),
+            },
             dependencies: Vec::new(),
-            outputs: Vec::new(),
             definition: definition(),
         },
     );

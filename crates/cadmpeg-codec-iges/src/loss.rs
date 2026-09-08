@@ -56,6 +56,8 @@ loss_codes! {
     EntityOutsideEnvelope => "entity.outside-envelope",
     /// An entity was not projected; the instance message names the reason.
     EntityNotProjected => "entity.not-projected",
+    /// A NURBS coordinate or parameter transformation produced a non-finite value.
+    NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
     BoundaryPcurveOutsideSupportDomain => "topology.boundary-pcurve-outside-support-domain",
     /// A Directory Entry pointer did not resolve to the expected target.
@@ -122,6 +124,7 @@ impl IgesLossCode {
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
+            | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
@@ -166,9 +169,9 @@ impl IgesLossCode {
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
-            Self::CompositeCarrierDegraded | Self::GlobalLengthUnitUnresolved => {
-                LossTaxonomy::GeometryNotTransferred
-            }
+            Self::CompositeCarrierDegraded
+            | Self::GlobalLengthUnitUnresolved
+            | Self::NurbsTransformNonFinite => LossTaxonomy::GeometryNotTransferred,
             Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
@@ -221,6 +224,7 @@ mod tests {
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
+                "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",

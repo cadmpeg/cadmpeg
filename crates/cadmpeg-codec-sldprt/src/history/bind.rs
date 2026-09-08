@@ -460,7 +460,7 @@ pub(crate) fn bind_definition_sketch(
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
         FeatureDefinition::Loft {
-            sections, guides, ..
+            sections, guidance, ..
         } => {
             let mut profile_bound = false;
             for section in sections {
@@ -469,8 +469,15 @@ pub(crate) fn bind_definition_sketch(
                 }
             }
             let mut guide_bound = false;
-            for path in guides {
-                guide_bound |= bind_path(path);
+            match guidance {
+                cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                    for path in guides {
+                        guide_bound |= bind_path(path);
+                    }
+                }
+                cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                    guide_bound = bind_path(centerline);
+                }
             }
             profile_bound || guide_bound
         }

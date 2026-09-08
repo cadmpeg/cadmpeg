@@ -1829,7 +1829,7 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         let mut representation_items = Vec::new();
         for mesh in &ir.model.tessellations {
-            if !mesh.feature_edges.is_empty() {
+            if !mesh.feature_edges().is_empty() {
                 self.loss(
                     StepLossCode::TessellationFeatureEdges,
                     format!(
@@ -1847,7 +1847,7 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !mesh.triangle_groups.is_empty() {
+            if !mesh.triangle_groups().is_empty() {
                 self.loss(
                     StepLossCode::TessellationTriangleGroups,
                     format!(
@@ -1856,7 +1856,7 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !mesh.texture_assignments.is_empty() {
+            if !mesh.texture_assignments().is_empty() {
                 self.loss(
                     StepLossCode::TessellationTextureAssignments,
                     format!(

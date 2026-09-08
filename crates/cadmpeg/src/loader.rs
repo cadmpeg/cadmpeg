@@ -203,7 +203,9 @@ mod tests {
         fields.insert("schema_version".to_owned(), Value::String("3".to_owned()));
         ir.native.namespace_mut("fcstd").arenas_mut().insert(
             "document".to_owned(),
-            vec![NativeRecord::new("document", fields)],
+            vec![
+                NativeRecord::new("fcstd:test:document#0", fields).expect("valid native identity"),
+            ],
         );
         std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
 

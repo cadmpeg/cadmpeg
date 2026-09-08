@@ -69,16 +69,22 @@ fn historical_body_overlap_ignores_set_ordering_form() {
     };
     let overlapping = BodySelection::HistoricalUnorderedSet {
         state: state.clone(),
-        bodies: vec![
-            HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-            HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-        ],
-        native: vec!["tool-a".into(), "tool-b".into()],
+        selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
+            vec![
+                HistoricalBodyId::mint("test:body:2").expect("valid identity"),
+                HistoricalBodyId::mint("test:body:4").expect("valid identity"),
+            ],
+            vec!["tool-a".into(), "tool-b".into()],
+        )
+        .expect("valid unordered historical body selection"),
     };
     let disjoint = BodySelection::HistoricalSet {
         state,
-        bodies: vec![HistoricalBodyId::mint("test:body:5").expect("valid identity")],
-        native: vec!["tool".into()],
+        members: crate::features::BodyMembers::try_from_parts(
+            vec![HistoricalBodyId::mint("test:body:5").expect("valid identity")],
+            vec!["tool".into()],
+        )
+        .expect("valid historical body selection rows"),
     };
 
     assert!(body_selections_overlap(&target, &overlapping));
@@ -920,9 +926,10 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         feature_states: BTreeMap::from([(
             extrude.clone(),
             ConfigurationFeatureState {
-                suppressed: false,
+                evaluation: crate::features::ConfigurationEvaluation::Active {
+                    outputs: Vec::new(),
+                },
                 dependencies: Vec::new(),
-                outputs: Vec::new(),
                 definition: ir.model.features[1].definition.clone(),
             },
         )]),
@@ -1312,9 +1319,10 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             (
                 feature,
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: crate::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: ir.model.features[index].definition.clone(),
                 },
             )

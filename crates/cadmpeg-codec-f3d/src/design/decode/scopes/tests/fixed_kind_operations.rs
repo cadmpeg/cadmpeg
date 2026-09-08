@@ -1069,8 +1069,11 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
-            if sections.len() == 2 && guides.is_empty()
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
+            ..
+        }) if sections.len() == 2 && guides.is_empty()
     ));
     let guided_role_41 = [
         loft_group(0, DesignOperandRole::PROFILE),
@@ -1087,8 +1090,11 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
-            if sections.len() == 3 && guides.len() == 1
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
+            ..
+        }) if sections.len() == 3 && guides.len() == 1
     ));
     let role_shape = |groups: &[DesignConstructionOperandGroup]| {
         groups
@@ -1211,8 +1217,11 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
             &[],
         ),
-        Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
-            if sections.len() == 3 && guides.is_empty()
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
+            ..
+        }) if sections.len() == 3 && guides.is_empty()
     ));
     let centered = [
         loft_group(0, DesignOperandRole::ROLE_0X43),
@@ -1230,10 +1239,11 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
-            guides,
-            centerline: Some(cadmpeg_ir::features::PathRef::Native(centerline)),
+            guidance: cadmpeg_ir::features::LoftGuidance::Centerline(
+                cadmpeg_ir::features::PathRef::Native(centerline),
+            ),
             ..
-        }) if sections.len() == 2 && guides.is_empty() && centerline == "stream:loft-group-2"
+        }) if sections.len() == 2 && centerline == "stream:loft-group-2"
     ));
     let mixed = [
         loft_group(0, DesignOperandRole::ROLE_0X43),
@@ -1271,8 +1281,7 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
-            guides,
-            centerline: None,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
             ..
         }) if matches!(sections.as_slice(), [
             cadmpeg_ir::features::LoftSection::Point(

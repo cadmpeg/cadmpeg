@@ -499,10 +499,9 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     source_less.model.loops.push(cadmpeg_ir::topology::Loop {
         id: loop_id.clone(),
         face: face_id,
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: coedge_ids,
-            vertex_uses: Vec::new(),
-        },
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+        ),
     });
     source_less.model.faces[0].loops.push(loop_id);
 

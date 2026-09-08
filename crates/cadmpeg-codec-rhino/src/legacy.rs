@@ -1773,13 +1773,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 });
                 global_trim += 1;
             }
+            let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+                .map_err(|error| CodecError::Malformed(error.to_string()))?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                    coedges: coedge_ids,
-                    vertex_uses: Vec::new(),
-                },
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             face_loops.push(loop_id);
         }
