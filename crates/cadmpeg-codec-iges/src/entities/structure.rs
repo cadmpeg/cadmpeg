@@ -399,7 +399,7 @@ fn has_association_back_pointer(
     trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
             _ => None,
         })
         .is_some_and(|groups| {
@@ -417,7 +417,7 @@ fn has_property_pointer(
     trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
             _ => None,
         })
         .is_some_and(|groups| {
@@ -436,7 +436,7 @@ fn legacy_primary_end_valid(
         || trailing_pointer_analysis
             .get(&record.directory_sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                 _ => None,
             })
             .is_some_and(|groups| groups.token_start == primary_end)
@@ -2096,7 +2096,9 @@ pub(super) fn project(
                         let groups = trailing_pointer_analysis
                             .get(&owner_record.directory_sequence)
                             .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+                                TrailingPointerAnalysis::Unambiguous(groups) => {
+                                    Some(groups.as_groups())
+                                }
                                 _ => None,
                             });
                         let has_basic = groups.as_ref().is_some_and(|groups| {
@@ -2171,7 +2173,9 @@ pub(super) fn project(
                         trailing_pointer_analysis
                             .get(&owner_record.directory_sequence)
                             .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+                                TrailingPointerAnalysis::Unambiguous(groups) => {
+                                    Some(groups.as_groups())
+                                }
                                 _ => None,
                             })
                             .is_some_and(|groups| {

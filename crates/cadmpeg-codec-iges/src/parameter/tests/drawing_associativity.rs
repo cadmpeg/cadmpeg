@@ -59,7 +59,7 @@ fn type208_and_210_table_boundaries_precede_valid_generic_alternatives() {
             .into_iter()
             .filter(|candidate| {
                 groups_for_candidate(&record, &directory, *candidate)
-                    .is_some_and(|groups| groups.fully_valid())
+                    .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
             .collect::<Vec<_>>();

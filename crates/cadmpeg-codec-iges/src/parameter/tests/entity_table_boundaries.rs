@@ -1497,7 +1497,7 @@ fn type406_form11_entity_table_boundary_follows_nested_value_counts() {
             let generic_valid_candidate_count = structural_pointer_group_candidates(&record)
                 .iter()
                 .filter_map(|candidate| groups_for_candidate(&record, &directory, *candidate))
-                .filter(super::super::TrailingPointerGroups::fully_valid)
+                .filter_map(super::super::TrailingPointerGroups::fully_valid)
                 .count();
             assert_eq!(generic_valid_candidate_count, 2);
         }
@@ -1799,7 +1799,7 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
     let generic_valid_candidate_count = structural_pointer_group_candidates(&record)
         .iter()
         .filter_map(|candidate| groups_for_candidate(&record, &directory, *candidate))
-        .filter(super::super::TrailingPointerGroups::fully_valid)
+        .filter_map(super::super::TrailingPointerGroups::fully_valid)
         .count();
     assert_eq!(generic_valid_candidate_count, 2);
 

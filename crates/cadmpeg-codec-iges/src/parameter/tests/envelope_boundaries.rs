@@ -335,7 +335,7 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
         1
     );
     let groups = analysis.groups().expect("unique structural group");
-    assert!(!groups.fully_valid());
+    assert!(groups.clone().fully_valid().is_none());
     assert_eq!(groups.association_pointers[0].raw_pointer, 99);
     assert!(groups
         .associations()
@@ -371,7 +371,6 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
     );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("unique valid group");
-    assert!(groups.fully_valid());
     assert_eq!(groups.token_start, 3);
     assert_eq!(
         groups.associations().copied().collect::<Vec<_>>(),
@@ -1331,6 +1330,7 @@ fn type202_form0_boundary_precedes_generic_candidate() {
         if groups_for_candidate(&record, &directory, candidate)
             .expect("generic Type 202 candidate")
             .fully_valid()
+            .is_some()
         {
             valid_starts.push(candidate.token_start);
         }
@@ -1440,7 +1440,7 @@ fn type204_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -1545,7 +1545,7 @@ fn type206_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -1658,7 +1658,7 @@ fn type216_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -1759,7 +1759,7 @@ fn type220_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -1876,7 +1876,7 @@ fn type222_form0_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();

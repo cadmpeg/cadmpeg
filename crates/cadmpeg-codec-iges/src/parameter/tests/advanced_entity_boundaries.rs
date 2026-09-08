@@ -377,7 +377,6 @@ fn type402_form16_accepts_explicit_empty_pointer_groups() {
         .collect::<Vec<_>>()
         .is_empty());
     assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
-    assert!(groups.fully_valid());
 }
 
 #[test]

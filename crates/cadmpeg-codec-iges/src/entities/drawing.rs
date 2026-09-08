@@ -157,7 +157,7 @@ fn conflicting_drawing_property_forms(
     let Some(groups) = trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
             _ => None,
         })
     else {
@@ -509,7 +509,7 @@ pub(super) fn project(
                                     .get(&view_record.directory_sequence)
                                     .and_then(|analysis| match analysis {
                                         TrailingPointerAnalysis::Unambiguous(groups) => {
-                                            Some(groups)
+                                            Some(groups.as_groups())
                                         }
                                         _ => None,
                                     })
