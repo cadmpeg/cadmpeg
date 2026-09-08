@@ -1041,12 +1041,8 @@ fn spatial_sketch_paths_round_trip_through_json() {
 }
 
 fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection {
-    crate::sketches::SketchPatternDirection {
-        direction: axis,
-        spacing: crate::features::Length(2.0),
-        distance: None,
-        count_parameter: None,
-    }
+    crate::sketches::SketchPatternDirection::new(axis, crate::features::Length(2.0), None, None)
+        .unwrap()
 }
 
 #[test]
@@ -2201,4 +2197,57 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
     let mut duplicate = wire;
     duplicate["instances"][1]["entities"] = duplicate["instances"][0]["entities"].clone();
     assert!(serde_json::from_value::<SketchCircularPattern>(duplicate).is_err());
+}
+
+#[test]
+fn rectangular_pattern_admission_checks_directions_and_distinct_members() {
+    use crate::features::Length;
+    use crate::sketches::{
+        SketchEntityId, SketchPatternDirection, SketchPatternInstance, SketchRectangularPattern,
+    };
+
+    for direction in [
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [f64::NAN, 1.0],
+        [1.0, f64::INFINITY],
+    ] {
+        assert!(SketchPatternDirection::new(direction, Length(1.0), None, None).is_none());
+    }
+    for spacing in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(SketchPatternDirection::new([1.0, 0.0], Length(spacing), None, None).is_none());
+    }
+    let first = SketchPatternDirection::new([1.0, 0.0], Length(-2.0), None, None).unwrap();
+    let second = SketchPatternDirection::new([0.0, 1.0], Length(0.0), None, None).unwrap();
+    let instance = SketchPatternInstance {
+        entities: vec![SketchEntityId::mint("test:test:sketch-entity#seed").unwrap()],
+    };
+    assert!(SketchRectangularPattern::new(
+        [first.clone(), first.clone()],
+        vec![vec![instance.clone()]]
+    )
+    .is_none());
+    assert!(SketchRectangularPattern::new(
+        [first.clone(), second.clone()],
+        vec![vec![instance.clone(), instance.clone()]]
+    )
+    .is_none());
+    let duplicate = SketchPatternInstance {
+        entities: vec![instance.entities[0].clone(), instance.entities[0].clone()],
+    };
+    assert!(
+        SketchRectangularPattern::new([first.clone(), second.clone()], vec![vec![duplicate]])
+            .is_none()
+    );
+    let pattern = SketchRectangularPattern::new([first, second], vec![vec![instance]]).unwrap();
+    let wire = serde_json::to_value(&pattern).unwrap();
+    assert_eq!(
+        serde_json::from_value::<SketchRectangularPattern>(wire.clone()).unwrap(),
+        pattern
+    );
+    for direction in [[0.0, 0.0], [2.0, 0.0], [0.0, 1.0]] {
+        let mut invalid = wire.clone();
+        invalid["directions"][0]["direction"] = serde_json::json!(direction);
+        assert!(serde_json::from_value::<SketchRectangularPattern>(invalid).is_err());
+    }
 }

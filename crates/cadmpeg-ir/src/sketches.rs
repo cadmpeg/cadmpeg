@@ -1628,13 +1628,51 @@ mod offset_parameter_wire {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
-    pub direction: [f64; 2],
+    direction: [f64; 2],
     /// Adjacent-instance spacing along `direction`.
-    pub spacing: Length,
+    spacing: Length,
     /// Driving distance parameter and the distance form it controls.
     pub distance: Option<SketchPatternDistance>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
     pub count_parameter: Option<ParameterId>,
+}
+
+const EPS_PATTERN_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_PATTERN_DIRECTION_ORTHOGONALITY: f64 = 1.0e-9;
+
+impl SketchPatternDirection {
+    /// Admit a finite unit direction and finite signed spacing.
+    pub fn new(
+        direction: [f64; 2],
+        spacing: Length,
+        distance: Option<SketchPatternDistance>,
+        count_parameter: Option<ParameterId>,
+    ) -> Option<Self> {
+        if !spacing.0.is_finite()
+            || !direction.iter().all(|value| value.is_finite())
+            || (direction[0].hypot(direction[1]) - 1.0).abs() > EPS_PATTERN_DIRECTION_UNIT
+        {
+            return None;
+        }
+        Some(Self {
+            direction,
+            spacing,
+            distance,
+            count_parameter,
+        })
+    }
+
+    /// Unit direction in sketch coordinates.
+    #[must_use]
+    pub fn direction(&self) -> [f64; 2] {
+        self.direction
+    }
+
+    /// Adjacent-instance signed spacing.
+    #[must_use]
+    pub fn spacing(&self) -> Length {
+        self.spacing
+    }
 }
 
 /// Distance form controlled by a rectangular-pattern parameter.
@@ -1700,6 +1738,19 @@ impl SketchRectangularPattern {
                 .iter()
                 .flatten()
                 .any(|instance| instance.entities.len() != entity_arity)
+        {
+            return None;
+        }
+        let dot = directions[0].direction[0] * directions[1].direction[0]
+            + directions[0].direction[1] * directions[1].direction[1];
+        let mut entities = std::collections::HashSet::new();
+        if dot.abs() > EPS_PATTERN_DIRECTION_ORTHOGONALITY
+            || rows.iter().flatten().any(|instance| {
+                instance
+                    .entities
+                    .iter()
+                    .any(|entity| !entities.insert(entity))
+            })
         {
             return None;
         }
@@ -1855,12 +1906,8 @@ impl SketchPatternDirectionWire {
                 return Err("spacing_parameter and span_parameter are mutually exclusive")
             }
         };
-        Ok(SketchPatternDirection {
-            direction: self.direction,
-            spacing: self.spacing,
-            distance,
-            count_parameter: self.count_parameter,
-        })
+        SketchPatternDirection::new(self.direction, self.spacing, distance, self.count_parameter)
+            .ok_or("pattern direction must be finite and unit, with finite spacing")
     }
 }
 

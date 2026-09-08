@@ -377,12 +377,12 @@ fn rectangular_pattern_directions(
                         cadmpeg_ir::sketches::SketchPatternDistance::Span(parameter)
                     }
                 });
-            Some(cadmpeg_ir::sketches::SketchPatternDirection {
-                direction: source.direction,
-                spacing: cadmpeg_ir::features::Length(spacing),
+            cadmpeg_ir::sketches::SketchPatternDirection::new(
+                source.direction,
+                cadmpeg_ir::features::Length(spacing),
                 distance,
-                count_parameter: source.count_parameter.clone(),
-            })
+                source.count_parameter.clone(),
+            )
         })
         .collect::<Option<Vec<_>>>()?
         .try_into()
@@ -415,17 +415,17 @@ fn exact_rectangular_pattern_instances(
                 .filter(|indices| {
                     let translation = Point2::new(
                         f64::from(indices[0])
-                            * directions[0].spacing.0
-                            * directions[0].direction[0]
+                            * directions[0].spacing().0
+                            * directions[0].direction()[0]
                             + f64::from(indices[1])
-                                * directions[1].spacing.0
-                                * directions[1].direction[0],
+                                * directions[1].spacing().0
+                                * directions[1].direction()[0],
                         f64::from(indices[0])
-                            * directions[0].spacing.0
-                            * directions[0].direction[1]
+                            * directions[0].spacing().0
+                            * directions[0].direction()[1]
                             + f64::from(indices[1])
-                                * directions[1].spacing.0
-                                * directions[1].direction[1],
+                                * directions[1].spacing().0
+                                * directions[1].direction()[1],
                     );
                     seed.iter().zip(instance).all(|(source, result)| {
                         translated_sketch_geometry_matches(
@@ -1121,8 +1121,8 @@ mod tests {
             panic!("rectangular pattern did not resolve");
         };
         let directions = pattern.directions();
-        assert_eq!(directions[0].spacing.0, 15.0);
-        assert_eq!(directions[1].spacing.0, 0.0);
+        assert_eq!(directions[0].spacing().0, 15.0);
+        assert_eq!(directions[1].spacing().0, 0.0);
         assert!(matches!(
             directions[0].distance,
             Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing(_))
@@ -1145,7 +1145,7 @@ mod tests {
             panic!("total-span rectangular pattern did not resolve");
         };
         let directions = pattern.directions();
-        assert_eq!(directions[0].spacing.0, 15.0);
+        assert_eq!(directions[0].spacing().0, 15.0);
         assert!(matches!(
             directions[0].distance,
             Some(cadmpeg_ir::sketches::SketchPatternDistance::Span(_))
@@ -1207,7 +1207,7 @@ mod tests {
                 panic!("two-instance rectangular pattern did not resolve");
             };
             let directions = pattern.directions();
-            assert_eq!(directions[0].spacing.0, 15.0);
+            assert_eq!(directions[0].spacing().0, 15.0);
             match distance_form {
                 RectangularPatternDistanceForm::AdjacentSpacing => {
                     assert!(matches!(
