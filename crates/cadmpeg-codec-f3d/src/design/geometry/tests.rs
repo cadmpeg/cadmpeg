@@ -3,7 +3,7 @@
 use super::*;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{Angle, Length, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::{Angle, Length, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
@@ -150,10 +150,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
 
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
-        Some(SketchProfileRegion::Loops {
-            outer: 0,
-            holes: Vec::new(),
-        })
+        Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
     );
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
@@ -241,24 +238,15 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
 
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
-        Some(SketchProfileRegion::Loops {
-            outer: 0,
-            holes: vec![1],
-        })
+        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
-        Some(SketchProfileRegion::Loops {
-            outer: 1,
-            holes: vec![2],
-        })
+        Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
     );
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
-        Some(SketchProfileRegion::Loops {
-            outer: 2,
-            holes: Vec::new(),
-        })
+        Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
     );
     assert_eq!(
         region_containing_points(
@@ -267,10 +255,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
         ),
-        Some(SketchProfileRegion::Loops {
-            outer: 0,
-            holes: vec![1],
-        })
+        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6),
@@ -361,10 +346,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
 
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
-        Some(SketchProfileRegion::Loops {
-            outer: 0,
-            holes: vec![1],
-        })
+        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
 }
 
@@ -461,13 +443,6 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     assert_eq!(outer_boundary.len(), 2);
     assert!(outer_boundary.iter().any(|use_| use_.entity == line_id));
     assert!(outer_boundary.iter().any(|use_| use_.entity == arc_id));
-    assert!(outer_boundary.iter().all(|use_| matches!(
-        use_,
-        SketchProfileBoundaryUse {
-            parameter_range: [start, end],
-            ..
-        } if start != end
-    )));
 }
 
 #[test]
@@ -559,10 +534,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         ],
         native_ref: None,
     };
-    let expected = SketchProfileRegion::Loops {
-        outer: 0,
-        holes: vec![1],
-    };
+    let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
 
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,),
@@ -570,10 +542,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     );
     assert_eq!(
         region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
-        Some(SketchProfileRegion::Loops {
-            outer: 1,
-            holes: Vec::new(),
-        })
+        Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
     );
 }
 

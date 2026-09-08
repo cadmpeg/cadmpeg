@@ -847,16 +847,17 @@ pub(crate) fn merge_resolved_profile_selections(
         ProfileRef::SketchRegions {
             sketch: selected,
             regions,
-        } if selected == sketch => Some(ResolvedProfileSelection::Regions(regions.clone())),
+        } if selected == sketch => Some(ResolvedProfileSelection::Regions(
+            regions.as_slice().to_vec(),
+        )),
         _ => None,
     }))? {
         ResolvedProfileSelection::Loops(profiles) => {
             Some(ProfileRef::sketch_profiles(sketch.clone(), profiles).ok()?)
         }
-        ResolvedProfileSelection::Regions(regions) => Some(ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions,
-        }),
+        ResolvedProfileSelection::Regions(regions) => {
+            Some(ProfileRef::sketch_regions(sketch.clone(), regions).ok()?)
+        }
     }
 }
 
@@ -942,10 +943,10 @@ pub(crate) fn resolved_extrude_profile_selection(
             ProfileRef::sketch_profiles(sketch_id.clone(), profiles)
                 .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
         }
-        Some(ResolvedProfileSelection::Regions(regions)) => ProfileRef::SketchRegions {
-            sketch: sketch_id.clone(),
-            regions,
-        },
+        Some(ResolvedProfileSelection::Regions(regions)) => {
+            ProfileRef::sketch_regions(sketch_id.clone(), regions)
+                .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
+        }
         None => ProfileRef::sketch_selection(sketch_id.clone(), vec![group.id.clone()])
             .unwrap_or_else(|_| ProfileRef::Native(group.id.clone())),
     }
@@ -1383,8 +1384,8 @@ pub(crate) fn transition_inserted_profile_selection(
     }
     let mut regions = selections.iter().filter_map(|selection| match selection {
         ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
-            [SketchProfileRegion::Loops { outer, holes }] if !holes.is_empty() => {
-                Some((*outer, holes.as_slice()))
+            [SketchProfileRegion::Loops(loops)] if !loops.holes().is_empty() => {
+                Some((loops.outer(), loops.holes()))
             }
             _ => None,
         },
@@ -1400,10 +1401,7 @@ pub(crate) fn transition_inserted_profile_selection(
             ResolvedProfileSelection::Regions(regions)
                 if matches!(
                     regions.as_slice(),
-                    [SketchProfileRegion::Loops {
-                        outer: candidate_outer,
-                        holes: candidate_holes,
-                    }] if *candidate_outer == outer && candidate_holes.as_slice() == holes
+                    [SketchProfileRegion::Loops(loops)] if loops.outer() == outer && loops.holes() == holes
                 ) => {}
             ResolvedProfileSelection::Loops(loops)
                 if !loops.is_empty()
@@ -1416,12 +1414,12 @@ pub(crate) fn transition_inserted_profile_selection(
             _ => return None,
         }
     }
-    has_boundary_support.then(|| {
-        ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
-            outer,
-            holes: holes.to_vec(),
-        }])
-    })
+    if !has_boundary_support {
+        return None;
+    }
+    Some(ResolvedProfileSelection::Regions(vec![
+        SketchProfileRegion::loops(outer, holes.to_vec()).ok()?,
+    ]))
 }
 
 pub(crate) fn historical_face_points(
@@ -1622,7 +1620,7 @@ fn region_with_boundary_selection_members(
     let [region] = regions.first()? else {
         return None;
     };
-    let SketchProfileRegion::Loops { outer, holes } = region else {
+    let SketchProfileRegion::Loops(loops) = region else {
         return None;
     };
     if regions
@@ -1631,8 +1629,8 @@ fn region_with_boundary_selection_members(
     {
         return None;
     }
-    let boundary = std::iter::once(*outer)
-        .chain(holes.iter().copied())
+    let boundary = std::iter::once(loops.outer())
+        .chain(loops.holes().iter().copied())
         .collect::<HashSet<_>>();
     let member_matches = |member: &DesignExtrudeSelectionMember,
                           selection: &Option<ResolvedProfileSelection>| {
@@ -1652,12 +1650,7 @@ fn region_with_boundary_selection_members(
         .iter()
         .zip(selections)
         .all(|(member, selection)| member_matches(member, selection))
-        .then(|| {
-            ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
-                outer: *outer,
-                holes: holes.clone(),
-            }])
-        })
+        .then(|| ResolvedProfileSelection::Regions(vec![region.clone()]))
 }
 
 fn resolved_selection_member_profiles(

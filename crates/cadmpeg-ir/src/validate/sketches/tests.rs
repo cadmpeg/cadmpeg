@@ -670,13 +670,11 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "invalid-region",
         2,
-        ProfileRef::SketchRegions {
-            sketch: sketch_id.clone(),
-            regions: vec![SketchProfileRegion::Loops {
-                outer: 0,
-                holes: vec![0, 0],
-            }],
-        },
+        ProfileRef::sketch_regions(
+            sketch_id.clone(),
+            vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
+        )
+        .unwrap(),
     ));
     let selected_entity = SketchEntityId("synthetic:test:entity#missing".into());
     ir.model.features.push(feature(

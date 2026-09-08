@@ -50,10 +50,7 @@ pub(crate) fn arrangement_region_containing_points(
     });
     let boundary = boundary_matches.next();
     if boundary.is_some() && boundary_matches.next().is_none() {
-        return Some(SketchProfileRegion::Trimmed {
-            outer_boundary: boundary?.boundary.clone(),
-            hole_boundaries: Vec::new(),
-        });
+        return Some(SketchProfileRegion::trimmed(boundary?.boundary.clone(), Vec::new()).ok()?);
     }
     let mut interior_matches = faces.iter().filter(|face| {
         points.iter().all(|point| {
@@ -65,13 +62,10 @@ pub(crate) fn arrangement_region_containing_points(
         })
     });
     let interior = interior_matches.next()?;
-    interior_matches
-        .next()
-        .is_none()
-        .then(|| SketchProfileRegion::Trimmed {
-            outer_boundary: interior.boundary.clone(),
-            hole_boundaries: Vec::new(),
-        })
+    if interior_matches.next().is_some() {
+        return None;
+    }
+    Some(SketchProfileRegion::trimmed(interior.boundary.clone(), Vec::new()).ok()?)
 }
 
 pub(crate) fn sketch_arrangement_faces(
@@ -121,7 +115,7 @@ pub(crate) fn sketch_arrangement_faces(
         }
         pending.push(SketchProfileBoundaryUse {
             entity: entity.id().clone(),
-            parameter_range: range,
+            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
             reversed: use_.reversed,
         });
     }
@@ -183,7 +177,7 @@ pub(crate) fn sketch_arrangement_faces(
             let range = [start, end];
             pending.push(SketchProfileBoundaryUse {
                 entity: use_.entity.clone(),
-                parameter_range: range,
+                parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
                 reversed: use_.reversed,
             });
         }
@@ -195,7 +189,7 @@ pub(crate) fn sketch_arrangement_faces(
             .find(|entity| entity.id() == &boundary.entity)?;
         let parameters = arrangement_split_parameters(
             &entity.geometry,
-            boundary.parameter_range,
+            boundary.parameter_range.endpoints(),
             &nodes,
             tolerance,
         )?;
@@ -204,7 +198,8 @@ pub(crate) fn sketch_arrangement_faces(
             split_pending.push((
                 SketchProfileBoundaryUse {
                     entity: boundary.entity.clone(),
-                    parameter_range: range,
+                    parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range)
+                        .ok()?,
                     reversed: boundary.reversed,
                 },
                 profile_use_polyline(entity, range, boundary.reversed, tolerance)?,
@@ -492,7 +487,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
         .weights()
         .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
         || sketch_geometry_parameter_range(&nurbs_entity.geometry)
-            != Some(nurbs.boundary.parameter_range)
+            != Some(nurbs.boundary.parameter_range.endpoints())
     {
         return false;
     }
@@ -574,7 +569,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     let Some(domain) = sketch_geometry_parameter_range(&nurbs_entity.geometry) else {
         return false;
     };
-    if nurbs.boundary.parameter_range != domain {
+    if nurbs.boundary.parameter_range.endpoints() != domain {
         return false;
     }
     let shared = nodes[shared_nodes[0]];
@@ -907,7 +902,7 @@ fn arrangement_edges_coincident(
     use cadmpeg_ir::sketches::SketchGeometry;
 
     if left.boundary.entity == right.boundary.entity
-        && left.boundary.parameter_range == right.boundary.parameter_range
+        && left.boundary.parameter_range.endpoints() == right.boundary.parameter_range.endpoints()
     {
         return true;
     }
@@ -927,7 +922,9 @@ fn arrangement_edges_coincident(
         (SketchGeometry::Line { .. }, SketchGeometry::Line { .. }) => {
             let left_midpoint = sketch_geometry_point(
                 &left_entity.geometry,
-                (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
+                (left.boundary.parameter_range.endpoints()[0]
+                    + left.boundary.parameter_range.endpoints()[1])
+                    * 0.5,
             );
             left_midpoint
                 .zip(right.polyline.last().copied())
@@ -957,17 +954,25 @@ fn arrangement_edges_coincident(
         ) => {
             point_distance(*left_center, *right_center) <= tolerance
                 && (left_radius.get() - right_radius.get()).abs() <= tolerance
-                && ((left.boundary.parameter_range[1] - left.boundary.parameter_range[0]).abs()
-                    - (right.boundary.parameter_range[1] - right.boundary.parameter_range[0]).abs())
+                && ((left.boundary.parameter_range.endpoints()[1]
+                    - left.boundary.parameter_range.endpoints()[0])
+                    .abs()
+                    - (right.boundary.parameter_range.endpoints()[1]
+                        - right.boundary.parameter_range.endpoints()[0])
+                        .abs())
                 .abs()
                     <= tolerance / left_radius.get()
                 && sketch_geometry_point(
                     &left_entity.geometry,
-                    (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
+                    (left.boundary.parameter_range.endpoints()[0]
+                        + left.boundary.parameter_range.endpoints()[1])
+                        * 0.5,
                 )
                 .zip(sketch_geometry_point(
                     &right_entity.geometry,
-                    (right.boundary.parameter_range[0] + right.boundary.parameter_range[1]) * 0.5,
+                    (right.boundary.parameter_range.endpoints()[0]
+                        + right.boundary.parameter_range.endpoints()[1])
+                        * 0.5,
                 ))
                 .is_some_and(|(left, right)| point_distance(left, right) <= tolerance)
         }
@@ -1045,15 +1050,15 @@ fn arrangement_edge_tubes(
             certified_arc_tubes(
                 *center,
                 radius.get(),
-                edge.boundary.parameter_range[0],
-                edge.boundary.parameter_range[1],
+                edge.boundary.parameter_range.endpoints()[0],
+                edge.boundary.parameter_range.endpoints()[1],
                 target_error,
             )
         }
         SketchGeometry::Nurbs { curve }
             if !curve.periodic()
                 && sketch_geometry_parameter_range(&entity.geometry)
-                    == Some(edge.boundary.parameter_range) =>
+                    == Some(edge.boundary.parameter_range.endpoints()) =>
         {
             certified_nurbs_tubes(curve, target_error)
         }
@@ -1079,8 +1084,8 @@ fn arrangement_analytic_segment(
             Some(ProfileBoundarySegment::Arc {
                 center: *center,
                 radius: radius.get(),
-                start_angle: edge.boundary.parameter_range[0],
-                end_angle: edge.boundary.parameter_range[1],
+                start_angle: edge.boundary.parameter_range.endpoints()[0],
+                end_angle: edge.boundary.parameter_range.endpoints()[1],
             })
         }
         _ => None,
@@ -1227,11 +1232,15 @@ fn point_on_profile_boundary_use(
     match &entity.geometry {
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
             let angle = (point.v - center.v).atan2(point.u - center.u);
-            directed_angle_parameter(angle, use_.parameter_range[0], use_.parameter_range[1])
-                .is_some_and(|parameter| {
-                    parameter >= -tolerance / radius.get()
-                        && parameter <= 1.0 + tolerance / radius.get()
-                })
+            directed_angle_parameter(
+                angle,
+                use_.parameter_range.endpoints()[0],
+                use_.parameter_range.endpoints()[1],
+            )
+            .is_some_and(|parameter| {
+                parameter >= -tolerance / radius.get()
+                    && parameter <= 1.0 + tolerance / radius.get()
+            })
         }
         _ => true,
     }
@@ -1315,13 +1324,16 @@ pub(crate) fn region_containing_points(
     };
     let closure_matches = (0..boundaries.len()).filter_map(region).collect::<Vec<_>>();
     if let [(outer, holes)] = closure_matches.as_slice() {
-        return Some(SketchProfileRegion::Loops {
-            outer: u32::try_from(*outer).ok()?,
-            holes: holes
-                .iter()
-                .map(|hole| u32::try_from(*hole).ok())
-                .collect::<Option<Vec<_>>>()?,
-        });
+        return Some(
+            SketchProfileRegion::loops(
+                u32::try_from(*outer).ok()?,
+                holes
+                    .iter()
+                    .map(|hole| u32::try_from(*hole).ok())
+                    .collect::<Option<Vec<_>>>()?,
+            )
+            .ok()?,
+        );
     }
     if projected.iter().any(|point| {
         sketch.profiles.iter().any(|profile| {
@@ -1362,10 +1374,7 @@ pub(crate) fn region_containing_points(
         .into_iter()
         .map(|candidate| u32::try_from(candidate).ok())
         .collect::<Option<Vec<_>>>()?;
-    Some(SketchProfileRegion::Loops {
-        outer: u32::try_from(outer).ok()?,
-        holes,
-    })
+    Some(SketchProfileRegion::loops(u32::try_from(outer).ok()?, holes).ok()?)
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.

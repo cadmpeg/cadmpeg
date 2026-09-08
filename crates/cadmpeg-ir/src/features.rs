@@ -5299,6 +5299,7 @@ selection_field_deserializer!(deserialize_selection_profiles, "profiles");
 selection_field_deserializer!(deserialize_selection_entities, "entities");
 selection_field_deserializer!(deserialize_selection_selections, "selections");
 selection_field_deserializer!(deserialize_selection_curves, "curves");
+selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
 
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7181,38 +7182,171 @@ pub struct SketchProfileBoundaryUse {
     /// Sketch entity supplying the curve geometry.
     pub entity: crate::sketches::SketchEntityId,
     /// Parameter endpoints on the source curve, ordered in the entity's stored direction.
-    pub parameter_range: [f64; 2],
+    #[serde(deserialize_with = "deserialize_profile_parameter_range")]
+    pub parameter_range: crate::geometry::DirectedParameterRange,
     /// Whether boundary traversal opposes the interval's stored direction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reversed: bool,
 }
 
+/// Whole-loop region with distinct holes that exclude its outer loop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchProfileLoopsWire")]
+pub struct SketchProfileLoops {
+    outer: u32,
+    #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
+    holes: DistinctMembers<u32>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchProfileLoopsWire {
+    outer: u32,
+    #[serde(default)]
+    holes: Vec<u32>,
+}
+
+impl SketchProfileLoops {
+    /// Admits an outer loop and distinct hole loops that exclude it.
+    pub fn new(outer: u32, holes: Vec<u32>) -> Result<Self, &'static str> {
+        let holes = DistinctMembers::try_from(holes).map_err(|_| "holes must be distinct")?;
+        if holes.contains(&outer) {
+            return Err("holes must not contain outer");
+        }
+        Ok(Self { outer, holes })
+    }
+
+    /// The exterior-loop index.
+    pub fn outer(&self) -> u32 {
+        self.outer
+    }
+
+    /// The hole-loop indices in source order.
+    pub fn holes(&self) -> &[u32] {
+        self.holes.as_slice()
+    }
+}
+
+impl TryFrom<SketchProfileLoopsWire> for SketchProfileLoops {
+    type Error = &'static str;
+    fn try_from(wire: SketchProfileLoopsWire) -> Result<Self, Self::Error> {
+        Self::new(wire.outer, wire.holes)
+    }
+}
+
 /// One connected planar region bounded by solved sketch curves.
-///
-/// Whole-loop regions retain compact profile indices. Arrangement regions
-/// carry exact trimmed curve uses when their boundary switches source loops at
-/// intersections. The untagged representation preserves the established JSON
-/// shape of whole-loop regions.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
 pub enum SketchProfileRegion {
     /// Exterior and holes are complete entries in the sketch profile table.
-    Loops {
-        /// Exterior-loop index in the referenced sketch's profile-loop table.
-        outer: u32,
-        /// Immediate child loops removed from the exterior interior.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        holes: Vec<u32>,
-    },
+    Loops(SketchProfileLoops),
     /// Boundary rings switch source curves at arrangement intersections.
     Trimmed {
         /// Directed exterior boundary ring.
-        outer_boundary: Vec<SketchProfileBoundaryUse>,
+        outer_boundary: NonEmptyMembers<SketchProfileBoundaryUse>,
         /// Directed hole boundary rings.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
+        hole_boundaries: Vec<NonEmptyMembers<SketchProfileBoundaryUse>>,
     },
+}
+
+#[derive(Deserialize)]
+struct SketchProfileRegionReadWire {
+    #[serde(default)]
+    outer: Option<u32>,
+    #[serde(default)]
+    holes: Vec<u32>,
+    #[serde(default)]
+    outer_boundary: Option<Vec<SketchProfileBoundaryUse>>,
+    #[serde(default)]
+    hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
+}
+
+impl SketchProfileRegion {
+    /// Admits a whole-loop region with distinct holes that exclude the exterior loop.
+    pub fn loops(outer: u32, holes: Vec<u32>) -> Result<Self, &'static str> {
+        SketchProfileLoops::new(outer, holes).map(Self::Loops)
+    }
+
+    /// Admits a trimmed region whose exterior and hole rings are nonempty.
+    pub fn trimmed(
+        outer_boundary: Vec<SketchProfileBoundaryUse>,
+        hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::Trimmed {
+            outer_boundary: outer_boundary
+                .try_into()
+                .map_err(|_| "outer_boundary must not be empty")?,
+            hole_boundaries: hole_boundaries
+                .into_iter()
+                .map(|ring| {
+                    ring.try_into()
+                        .map_err(|_| "hole_boundaries must not contain an empty ring")
+                })
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchProfileRegion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SketchProfileRegionReadWire::deserialize(deserializer)?;
+        if let Some(outer) = wire.outer {
+            Self::loops(outer, wire.holes).map_err(serde::de::Error::custom)
+        } else if let Some(outer_boundary) = wire.outer_boundary {
+            Self::trimmed(outer_boundary, wire.hole_boundaries).map_err(serde::de::Error::custom)
+        } else {
+            Err(serde::de::Error::custom(
+                "region requires outer or outer_boundary",
+            ))
+        }
+    }
+}
+
+/// Nonempty distinct profile regions in source selection order.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SketchProfileRegions(Vec<SketchProfileRegion>);
+
+impl TryFrom<Vec<SketchProfileRegion>> for SketchProfileRegions {
+    type Error = &'static str;
+    fn try_from(regions: Vec<SketchProfileRegion>) -> Result<Self, Self::Error> {
+        if regions.is_empty() {
+            return Err("regions must not be empty");
+        }
+        if regions
+            .iter()
+            .enumerate()
+            .any(|(index, region)| regions[..index].contains(region))
+        {
+            return Err("regions must be distinct");
+        }
+        Ok(Self(regions))
+    }
+}
+
+impl SketchProfileRegions {
+    /// The selected regions in source order.
+    pub fn as_slice(&self) -> &[SketchProfileRegion] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SketchProfileRegions {
+    type Target = [SketchProfileRegion];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchProfileRegions {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<SketchProfileRegion>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 /// Cross-section orientation law along a sweep path.
@@ -7531,7 +7665,7 @@ pub enum ProfileRef {
         /// Sketch containing every referenced boundary loop.
         sketch: crate::sketches::SketchId,
         /// Connected regions in source selection order.
-        regions: Vec<SketchProfileRegion>,
+        regions: SketchProfileRegions,
     },
     /// Exact ordered sketch entities forming an open or closed profile.
     SketchEntities {
@@ -7681,6 +7815,17 @@ pub enum PathRef {
 }
 
 impl ProfileRef {
+    /// Admits nonempty distinct profile regions in one sketch.
+    pub fn sketch_regions(
+        sketch: crate::sketches::SketchId,
+        regions: Vec<SketchProfileRegion>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::SketchRegions {
+            sketch,
+            regions: regions.try_into()?,
+        })
+    }
+
     /// Admits distinct profile indices in one planar sketch.
     pub fn sketch_profiles(
         sketch: crate::sketches::SketchId,
