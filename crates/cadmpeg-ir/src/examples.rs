@@ -342,27 +342,18 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
                 },
             ],
             vec![
-                SubdEdge {
-                    vertices: [0, 1],
-                    sharpness: [0.25, 0.75],
-                    tag: SubdEdgeTag::Crease,
-                    knot_interval: None,
-                    sector_coefficients: [0.125, 0.875],
-                },
-                SubdEdge {
-                    vertices: [1, 2],
-                    sharpness: [0.0, 0.5],
-                    tag: SubdEdgeTag::SmoothX,
-                    knot_interval: None,
-                    sector_coefficients: [0.25, 0.75],
-                },
-                SubdEdge {
-                    vertices: [2, 0],
-                    sharpness: [1.0, 0.0],
-                    tag: SubdEdgeTag::Smooth,
-                    knot_interval: None,
-                    sector_coefficients: [0.5, 0.5],
-                },
+                SubdEdge::new(
+                    [0, 1],
+                    [0.25, 0.75],
+                    SubdEdgeTag::Crease,
+                    None,
+                    [0.125, 0.875],
+                )
+                .expect("valid example edge"),
+                SubdEdge::new([1, 2], [0.0, 0.5], SubdEdgeTag::SmoothX, None, [0.25, 0.75])
+                    .expect("valid example edge"),
+                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5])
+                    .expect("valid example edge"),
             ],
             vec![SubdFace::new(vec![
                 SubdEdgeUse {

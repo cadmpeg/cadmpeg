@@ -1150,8 +1150,8 @@ fn materialize(
             let tag = edge
                 .tag
                 .ok_or_else(|| malformed(0, "invalid materialized SubD edge tag"))?;
-            Ok(SubdEdge {
-                vertices: [
+            SubdEdge::new(
+                [
                     *vertex_indices
                         .get(&edge.vertices[0].archive_id)
                         .ok_or_else(|| malformed(0, "missing SubD edge endpoint"))?,
@@ -1159,11 +1159,12 @@ fn materialize(
                         .get(&edge.vertices[1].archive_id)
                         .ok_or_else(|| malformed(0, "missing SubD edge endpoint"))?,
                 ],
-                sharpness: edge.sharpness,
+                edge.sharpness,
                 tag,
-                knot_interval: None,
-                sector_coefficients: edge.sector_coefficients,
-            })
+                None,
+                edge.sector_coefficients,
+            )
+            .map_err(|error| malformed(0, &error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let faces = level

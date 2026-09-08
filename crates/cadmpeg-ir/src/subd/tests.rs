@@ -37,27 +37,9 @@ fn subd_round_trip_and_directed_ring_validation() {
                 },
             ],
             vec![
-                SubdEdge {
-                    vertices: [0, 1],
-                    sharpness: [0.0, 0.25],
-                    tag: SubdEdgeTag::Smooth,
-                    knot_interval: None,
-                    sector_coefficients: [1.0, 1.0],
-                },
-                SubdEdge {
-                    vertices: [1, 2],
-                    sharpness: [0.25, 0.0],
-                    tag: SubdEdgeTag::SmoothX,
-                    knot_interval: None,
-                    sector_coefficients: [1.0, 1.0],
-                },
-                SubdEdge {
-                    vertices: [2, 0],
-                    sharpness: [0.0, 0.0],
-                    tag: SubdEdgeTag::Smooth,
-                    knot_interval: None,
-                    sector_coefficients: [1.0, 1.0],
-                },
+                SubdEdge::new([0, 1], [0.0, 0.25], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
+                SubdEdge::new([1, 2], [0.25, 0.0], SubdEdgeTag::SmoothX, None, [1.0, 1.0]).unwrap(),
+                SubdEdge::new([2, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
             ],
             vec![SubdFace::new(vec![
                 SubdEdgeUse {
@@ -221,12 +203,8 @@ fn triangle_cage() -> crate::subd::SubdCage {
         .collect(),
         [[0, 1], [1, 2], [2, 0]]
             .into_iter()
-            .map(|vertices| SubdEdge {
-                vertices,
-                sharpness: [0.0, 0.0],
-                tag: SubdEdgeTag::Smooth,
-                knot_interval: None,
-                sector_coefficients: [0.0, 0.0],
+            .map(|vertices| {
+                SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).unwrap()
             })
             .collect(),
         vec![SubdFace::new(
@@ -276,7 +254,7 @@ fn face_admission_requires_three_edge_uses() {
 
 #[test]
 fn cage_admission_requires_valid_edge_indices_and_closed_directed_rings() {
-    for endpoints in [[0, 0], [0, 3]] {
+    for endpoints in [[0, 3], [3, 0]] {
         let mut wire = serde_json::to_value(triangle_cage()).unwrap();
         wire["edges"][0]["vertices"] = serde_json::json!(endpoints);
         rejects_cage_wire(wire);
@@ -372,4 +350,84 @@ fn cage_symmetry_references_stay_in_range() {
     rejects_cage_wire(wire.clone());
     wire["symmetries"][0]["vertex_pairs"] = serde_json::json!([[1, 1]]);
     assert!(serde_json::from_value::<super::SubdCage>(wire).is_ok());
+}
+
+#[test]
+fn edge_admission_requires_distinct_endpoints() {
+    assert!(SubdEdge::new([0, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err());
+    let mut wire = serde_json::to_value(&triangle_cage().edges()[0]).unwrap();
+    wire["vertices"] = serde_json::json!([0, 0]);
+    assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+    assert!(SubdEdge::new(
+        [u32::MAX, 0],
+        [0.0, 0.0],
+        SubdEdgeTag::Smooth,
+        None,
+        [0.0, 0.0]
+    )
+    .is_ok());
+}
+
+#[test]
+fn edge_numeric_admission_rejects_invalid_controls() {
+    let base = serde_json::to_value(&triangle_cage().edges()[0]).unwrap();
+    for invalid in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for index in 0..2 {
+            let mut sharpness = [0.0, 0.0];
+            sharpness[index] = invalid;
+            assert!(
+                SubdEdge::new([0, 1], sharpness, SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err()
+            );
+            let mut wire = base.clone();
+            wire["sharpness"] = serde_json::json!(sharpness);
+            assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+        }
+    }
+    for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(SubdEdge::new(
+            [0, 1],
+            [0.0, 0.0],
+            SubdEdgeTag::Smooth,
+            Some(invalid),
+            [0.0, 0.0]
+        )
+        .is_err());
+    }
+    for invalid in [0.0, -1.0] {
+        let mut wire = base.clone();
+        wire["knot_interval"] = invalid.into();
+        assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+    }
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for index in 0..2 {
+            let mut coefficients = [0.0, 0.0];
+            coefficients[index] = invalid;
+            assert!(
+                SubdEdge::new([0, 1], [0.0, 0.0], SubdEdgeTag::Smooth, None, coefficients).is_err()
+            );
+            let mut wire = base.clone();
+            wire["sector_coefficients"] = serde_json::json!(coefficients);
+            assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+        }
+    }
+}
+
+#[test]
+fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
+    for interval in [None, Some(f64::MIN_POSITIVE), Some(f64::MAX)] {
+        let edge = SubdEdge::new(
+            [1, 0],
+            [0.0, f64::MAX],
+            SubdEdgeTag::SmoothX,
+            interval,
+            [-2.0, 3.0],
+        )
+        .unwrap();
+        assert_eq!(edge.vertices(), [1, 0]);
+        assert_eq!(edge.sharpness(), [0.0, f64::MAX]);
+        assert_eq!(edge.knot_interval(), interval);
+        assert_eq!(edge.sector_coefficients(), [-2.0, 3.0]);
+        let wire = serde_json::to_value(&edge).unwrap();
+        assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
+    }
 }
