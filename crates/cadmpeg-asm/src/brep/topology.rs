@@ -134,7 +134,7 @@ pub(crate) fn keep_faces_and_carriers(
             procedural_surface_defs
                 .get(&surf_ref)
                 .is_some_and(|procedural| {
-                    procedural.legacy_cache_fit_tolerance().is_none()
+                    procedural.cache_fit_tolerance().is_none()
                         && procedural_surface_definition_is_exact_carrier(procedural.definition())
                 });
         // A non-analytic surface may still carry a decodable B-spline face
@@ -989,3 +989,6 @@ pub(crate) fn region_chain(
     }
     out
 }
+
+#[cfg(test)]
+mod tests;
