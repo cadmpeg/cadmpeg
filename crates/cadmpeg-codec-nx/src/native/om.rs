@@ -37,7 +37,7 @@ use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
 pub(crate) mod roll_forward;
 use crate::om::IndexedStore;
-use roll_forward::OmRollForwardStateGroup;
+use roll_forward::OmRollForwardStateTable;
 pub(crate) mod state_slot_lane;
 use state_slot_lane::OmOperationStateSlotLane;
 pub(crate) mod state_status;
@@ -331,48 +331,37 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
 }
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
-pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGroup> {
+pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateTable> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, link)| {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+        .filter_map(|(section_ordinal, link)| {
+            let (entry, section) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
                     == link.location.section_offset()
-            }) else {
-                return Vec::new();
-            };
-            let Some(table) = section.operation_state_group_table() else {
-                return Vec::new();
-            };
+            })?;
+            let table = section.operation_state_group_table()?;
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
             let table_end_offset = entry_offset + table.end_offset() as u64;
             let table_footer = table.footer();
-            table
+            let frames = table
                 .into_groups()
                 .into_iter()
-                .enumerate()
-                .filter_map(move |(ordinal, group)| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some(OmRollForwardStateGroup {
-                        id: format!(
-                            "nx:feature-history:roll-forward-state-group#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        frame: group.into_absolute(entry_offset)?,
-                        table_footer,
-                        source_entry: entry.name.clone(),
-                        table_end_offset,
-                    })
-                })
-                .collect()
+                .filter_map(|group| group.into_absolute(entry_offset))
+                .collect();
+            Some(OmRollForwardStateTable::from_frames(
+                section_ordinal,
+                link.id,
+                entry.name.clone(),
+                table_footer,
+                table_end_offset,
+                frames,
+            ))
         })
         .collect()
 }

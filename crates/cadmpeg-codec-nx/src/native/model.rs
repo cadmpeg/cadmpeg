@@ -49,7 +49,7 @@ use crate::native::om::display_color::{rm_display_color_assignments, RmDisplayCo
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
 use crate::native::om::object_uuid::{object_uuid_values, ObjectUuidValue};
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::roll_forward::OmRollForwardStateTable;
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use crate::parasolid::Stream;
@@ -312,7 +312,7 @@ pub(crate) struct OmRecords {
     pub(crate) audit_trail_rows: Vec<OmAuditTrailRow>,
     pub(crate) operation_state_journal_groups: Vec<OmOperationStateJournalGroup>,
     pub(crate) operation_state_counters: Vec<OmOperationStateCounter>,
-    pub(crate) operation_state_groups: Vec<OmRollForwardStateGroup>,
+    pub(crate) operation_state_groups: Vec<OmRollForwardStateTable>,
     pub(crate) operation_state_messages: Vec<OmOperationStateMessage>,
     pub(crate) operation_state_statuses: Vec<OmOperationStateStatus>,
     pub(crate) operation_state_slot_lanes: Vec<OmOperationStateSlotLane>,
