@@ -243,13 +243,13 @@ impl From<Class25ScalarMarker> for u8 {
     into = "Class25ScalarSegmentWire"
 )]
 pub enum Class25ScalarSegment {
-    M82Five([f64; 5]),
-    M82Six([f64; 6]),
-    M82Seven([f64; 7]),
-    M83Eight([f64; 8]),
-    M83Nine([f64; 9]),
-    M89([f64; 20]),
-    M8b([f64; 24]),
+    M82Five(Box<[f64; 5]>),
+    M82Six(Box<[f64; 6]>),
+    M82Seven(Box<[f64; 7]>),
+    M83Eight(Box<[f64; 8]>),
+    M83Nine(Box<[f64; 9]>),
+    M89(Box<[f64; 20]>),
+    M8b(Box<[f64; 24]>),
 }
 #[derive(Serialize, Deserialize)]
 struct Class25ScalarSegmentWire {
@@ -260,27 +260,27 @@ impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
     type Error = String;
     fn try_from(wire: Class25ScalarSegmentWire) -> Result<Self, Self::Error> {
         match (wire.marker, wire.trailing.as_slice()) {
-            (Class25ScalarMarker::M82, lane) if lane.len() == 5 => Ok(Self::M82Five(
+            (Class25ScalarMarker::M82, lane) if lane.len() == 5 => Ok(Self::M82Five(Box::new(
                 lane.try_into().map_err(|_| "trailing arity")?,
-            )),
-            (Class25ScalarMarker::M82, lane) if lane.len() == 6 => {
-                Ok(Self::M82Six(lane.try_into().map_err(|_| "trailing arity")?))
-            }
-            (Class25ScalarMarker::M82, lane) if lane.len() == 7 => Ok(Self::M82Seven(
+            ))),
+            (Class25ScalarMarker::M82, lane) if lane.len() == 6 => Ok(Self::M82Six(Box::new(
                 lane.try_into().map_err(|_| "trailing arity")?,
-            )),
-            (Class25ScalarMarker::M83, lane) if lane.len() == 8 => Ok(Self::M83Eight(
+            ))),
+            (Class25ScalarMarker::M82, lane) if lane.len() == 7 => Ok(Self::M82Seven(Box::new(
                 lane.try_into().map_err(|_| "trailing arity")?,
-            )),
-            (Class25ScalarMarker::M83, lane) if lane.len() == 9 => Ok(Self::M83Nine(
+            ))),
+            (Class25ScalarMarker::M83, lane) if lane.len() == 8 => Ok(Self::M83Eight(Box::new(
                 lane.try_into().map_err(|_| "trailing arity")?,
-            )),
-            (Class25ScalarMarker::M89, lane) if lane.len() == 20 => {
-                Ok(Self::M89(lane.try_into().map_err(|_| "trailing arity")?))
-            }
-            (Class25ScalarMarker::M8b, lane) if lane.len() == 24 => {
-                Ok(Self::M8b(lane.try_into().map_err(|_| "trailing arity")?))
-            }
+            ))),
+            (Class25ScalarMarker::M83, lane) if lane.len() == 9 => Ok(Self::M83Nine(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M89, lane) if lane.len() == 20 => Ok(Self::M89(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M8b, lane) if lane.len() == 24 => Ok(Self::M8b(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
             _ => Err("trailing arity does not match marker".into()),
         }
     }
@@ -1906,15 +1906,18 @@ mod tests {
                     "persistent_lead": lead, "leading": [0.0, 0.0, 0.0, 0.0, 0.0],
                     "marker": marker, "trailing": vec![0.0; count]
                 });
-                let record: ConsolidatedEdgeDefinitionData =
-                    serde_json::from_value(wire.clone()).unwrap();
-                assert_eq!(serde_json::to_value(record).unwrap(), wire);
+                let record: ConsolidatedEdgeDefinitionData = serde_json::from_value(wire.clone())
+                    .expect("admitted class-25 marker and tail");
+                assert_eq!(
+                    serde_json::to_value(record).expect("serialize class-25 record"),
+                    wire
+                );
             }
         }
         let wire = serde_json::json!({"kind": "scalar25", "operands": [1, 2, 3], "persistent_lead": 12, "values": []});
         assert!(
             serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire)
-                .unwrap_err()
+                .expect_err("unknown persistent lead must fail admission")
                 .to_string()
                 .contains("persistent_lead")
         );
