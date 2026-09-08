@@ -265,7 +265,7 @@ pub(crate) fn patch_payload(
             .map_err(cadmpeg_core::CodecError::malformed)?
             .write(native_value);
         IntegerPatchSlot::read(payload, record.offset, "valPrecision")
-            .and_then(|slot| slot.write(i64::from(semantic.precision)))
+            .and_then(|slot| slot.write(semantic.precision))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (field, value) in [
             ("isBasic", semantic.basic),

@@ -903,7 +903,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
     let mut payload = pmi_semantic_payload();
     let record = parse_payload(&payload, &mut Vec::new()).remove(0);
     let offset = record.precision_offset as usize;
-    payload.splice(offset..offset + 1, [0xcd, 0x00, 0x03]);
+    payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
