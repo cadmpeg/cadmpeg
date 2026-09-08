@@ -108,8 +108,8 @@ pub(crate) fn sketch_arrangement_faces(
     };
     for use_ in candidate_uses {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        if matches!(entity.geometry, SketchGeometry::Circle { .. }) {
-            circles.push((use_, entity));
+        if let SketchGeometry::Circle { center, radius } = entity.geometry {
+            circles.push((use_, center, radius));
             continue;
         }
         let range = sketch_geometry_parameter_range(&entity.geometry)?;
@@ -125,10 +125,7 @@ pub(crate) fn sketch_arrangement_faces(
             reversed: use_.reversed,
         });
     }
-    for (use_, entity) in circles {
-        let SketchGeometry::Circle { center, radius } = entity.geometry else {
-            unreachable!("circle collection contains only circles")
-        };
+    for (use_, center, radius) in circles {
         if !radius.0.is_finite() || radius.0 <= tolerance {
             return None;
         }
