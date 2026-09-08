@@ -362,6 +362,8 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                 None,
                 false,
             )
+            .unwrap()
+            .try_into()
             .unwrap(),
         },
     ]

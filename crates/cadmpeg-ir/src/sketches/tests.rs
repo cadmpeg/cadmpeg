@@ -1501,3 +1501,66 @@ fn native_operand_requires_nonempty_names_and_keeps_the_role_inside_the_field() 
         assert_eq!(serde_json::to_value(operand).unwrap(), wire);
     }
 }
+
+#[test]
+fn spatial_nurbs_rejects_general_curve_context_mismatches() {
+    use crate::geometry::NurbsCurve;
+    use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
+
+    let negative = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![-1.0, -1.0]),
+        false,
+    )
+    .unwrap();
+    let degree_zero = NurbsCurve::new(
+        0,
+        vec![0.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    for (curve, field) in [(negative, "weights"), (degree_zero, "degree")] {
+        assert!(SpatialSketchNurbsCurve::try_from(curve.clone())
+            .unwrap_err()
+            .contains(field));
+        let mut wire = serde_json::to_value(&curve).unwrap();
+        wire["kind"] = "nurbs".into();
+        assert!(serde_json::from_value::<SpatialSketchGeometry>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
+    }
+}
+
+#[test]
+fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
+    use crate::geometry::NurbsCurve;
+    use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
+
+    let curve = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 2.0]),
+        false,
+    )
+    .unwrap();
+    let mut wire = serde_json::to_value(&curve).unwrap();
+    wire["kind"] = "nurbs".into();
+    let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
+    let before = curve.clone();
+    assert!(curve
+        .edit_control_points(|points| points[0].x = f64::NAN)
+        .is_err());
+    assert_eq!(curve, before);
+    let geometry = SpatialSketchGeometry::Nurbs { curve };
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<SpatialSketchGeometry>(wire).unwrap(),
+        geometry
+    );
+}

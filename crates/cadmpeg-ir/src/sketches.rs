@@ -785,6 +785,54 @@ pub enum SpatialSketchConstraintDefinition {
     },
 }
 
+/// NURBS curve with positive degree and positive rational weights.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SpatialSketchNurbsCurve(crate::geometry::NurbsCurve);
+
+impl TryFrom<crate::geometry::NurbsCurve> for SpatialSketchNurbsCurve {
+    type Error = &'static str;
+
+    fn try_from(curve: crate::geometry::NurbsCurve) -> Result<Self, Self::Error> {
+        if curve.degree() == 0 {
+            return Err("spatial sketch NURBS degree must be at least one");
+        }
+        if curve
+            .weights()
+            .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+        {
+            return Err("spatial sketch NURBS weights must be positive");
+        }
+        Ok(Self(curve))
+    }
+}
+
+impl<'de> Deserialize<'de> for SpatialSketchNurbsCurve {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(crate::geometry::NurbsCurve::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl std::ops::Deref for SpatialSketchNurbsCurve {
+    type Target = crate::geometry::NurbsCurve;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl SpatialSketchNurbsCurve {
+    /// Atomically edit control points and preserve finite coordinates.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), crate::geometry::NurbsError> {
+        self.0.edit_control_points(edit)
+    }
+}
+
 /// Solved model-space spatial-sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -832,7 +880,7 @@ pub enum SpatialSketchGeometry {
     Nurbs {
         /// Checked model-space knot, pole, and weight payload.
         #[serde(flatten)]
-        curve: crate::geometry::NurbsCurve,
+        curve: SpatialSketchNurbsCurve,
     },
     /// Polynomial tensor-product B-spline surface embedded in model space.
     NurbsSurface {
