@@ -879,25 +879,19 @@ pub(crate) fn parse_thread_payload(
         }
         _ => return None,
     };
-    if !([major_diameter, minor_diameter, pitch, pitch_diameter]
-        .into_iter()
-        .all(|value| value.is_finite() && value > 0.0)
-        && minor_diameter < pitch_diameter
-        && pitch_diameter < major_diameter)
-    {
-        return None;
-    }
     Some(DesignThreadConstruction {
         form,
         designation_offset: u64::try_from(designation_at).ok()?,
-        designation,
+        designation: cadmpeg_ir::NonEmptyString::new(designation)?,
         nominal_size,
-        profile,
-        major_diameter,
-        minor_diameter,
-        pitch,
-        pitch_diameter,
+        profile: cadmpeg_ir::NonEmptyString::new(profile)?,
+        pitch: crate::records::feature::DesignPositiveScalar::new(pitch)?,
         face_group_record_indices,
+        diameters: crate::records::feature::DesignThreadDiameters::new(
+            major_diameter,
+            minor_diameter,
+            pitch_diameter,
+        )?,
     })
 }
 

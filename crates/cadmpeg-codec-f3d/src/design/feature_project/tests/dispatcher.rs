@@ -678,17 +678,16 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
-            designation: "M3.5x0.6".into(),
+            designation: cadmpeg_ir::NonEmptyString::new("M3.5x0.6").unwrap(),
             nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),
             )
             .expect("nominal size"),
-            profile: "GB Metric profile".into(),
-            major_diameter: 0.35995,
-            minor_diameter: 0.293,
-            pitch: 0.06,
-            pitch_diameter: 0.3166,
+            profile: cadmpeg_ir::NonEmptyString::new("GB Metric profile").unwrap(),
+            pitch: crate::records::feature::DesignPositiveScalar::new(0.06).unwrap(),
             face_group_record_indices: vec![701],
+            diameters: crate::records::feature::DesignThreadDiameters::new(0.35995, 0.293, 0.3166)
+                .unwrap(),
         });
     }
     thread.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);

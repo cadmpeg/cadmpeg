@@ -2846,8 +2846,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .checked_sub(scope.byte_offset),
                         Some(38 | 42)
                     )
-                    && !construction.designation.is_empty()
-                    && !construction.profile.is_empty()
                     && match construction.form {
                         records::feature::DesignThreadForm::Compact(Some(reference)) => {
                             reference.offset > construction.designation_offset
@@ -2860,16 +2858,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         | records::feature::DesignThreadForm::StandardLegacy
                         | records::feature::DesignThreadForm::CompactLegacy => true,
                     }
-                    && [
-                        construction.major_diameter,
-                        construction.minor_diameter,
-                        construction.pitch,
-                        construction.pitch_diameter,
-                    ]
-                    .into_iter()
-                    .all(|value| value.is_finite() && value > 0.0)
-                    && construction.minor_diameter < construction.pitch_diameter
-                    && construction.pitch_diameter < construction.major_diameter
                     && construction
                         .face_group_record_indices
                         .iter()
