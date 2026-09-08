@@ -59,12 +59,13 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .iter()
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("view");
-    let crate::native::DrawingRole::Page {
+    let crate::native::TechDrawKind::Page {
         views,
         template: page_template,
-    } = &page.role
+        ..
+    } = &page.kind
     else {
-        panic!("page record is not DrawingRole::Page");
+        panic!("page record is not TechDrawKind::Page");
     };
     assert_eq!(
         page_template.as_deref(),
@@ -558,4 +559,21 @@ fn rejects_invalid_drawing_numeric_admission() {
             ))
         ));
     }
+}
+
+#[test]
+fn drawing_page_roundtrip_preserves_kind_and_payload() {
+    let record = crate::native::DrawingRecord {
+        id: "page".into(),
+        object: "page".into(),
+        kind: crate::native::TechDrawKind::try_new("TechDraw::DrawPage".into(), Vec::new(), None)
+            .unwrap(),
+        sources: Vec::new(),
+        relationships: Default::default(),
+        parameters: Default::default(),
+        side_entries: Vec::new(),
+    };
+    let wire = serde_json::to_value(&record).unwrap();
+    let restored: crate::native::DrawingRecord = serde_json::from_value(wire).unwrap();
+    assert_eq!(record, restored);
 }
