@@ -164,7 +164,9 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
             triangles: vec![0],
         }])
         .expect("valid local texture assignment");
-    invalid_texture.id = "synthetic:test:tessellation#missing-texture".into();
+    invalid_texture.id = "synthetic:test:tessellation#missing-texture"
+        .try_into()
+        .unwrap();
 
     let mut ir = unit_cube();
     ir.model.assets.push(Asset {

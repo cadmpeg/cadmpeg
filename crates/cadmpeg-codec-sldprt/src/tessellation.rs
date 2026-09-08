@@ -758,7 +758,7 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
         if let Some(deflection) = chordal_deflection {
             mesh.chordal_deflection = Some(deflection);
         }
-        assigned.push(mesh.id.clone());
+        assigned.push(mesh.id.to_string());
     }
     assigned
 }
@@ -932,7 +932,7 @@ pub(crate) fn assign_persistent_owners(
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
-        let Some(Some(identity)) = bindings_by_mesh.get(&mesh.id) else {
+        let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
             continue;
         };
         let Some(Some(face)) = faces_by_identity.get(identity) else {
@@ -943,7 +943,7 @@ pub(crate) fn assign_persistent_owners(
         };
         mesh.faces.push(face.clone());
         mesh.body = Some(body.clone());
-        assigned.push(mesh.id.clone());
+        assigned.push(mesh.id.to_string());
     }
     assigned
 }

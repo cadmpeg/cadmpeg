@@ -2171,7 +2171,7 @@ pub(super) fn sequential_tessellation(
     )?;
     let triangles = triangles_from_strips(&strip_lengths)?;
     Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
-        mesh.id.clone(),
+        mesh.id.to_string(),
         vertices,
         triangles,
         strip_lengths,

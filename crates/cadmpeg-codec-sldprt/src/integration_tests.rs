@@ -147,8 +147,8 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
         display.ir().model.tessellations[0].body.as_ref(),
         Some(&display.ir().model.bodies[0].id)
     );
-    let tessellation_exactness =
-        &display.source_fidelity().annotations.exactness()[&display.ir().model.tessellations[0].id];
+    let tessellation_exactness = &display.source_fidelity().annotations.exactness()
+        [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
         tessellation_exactness.fields()["body"],
         cadmpeg_ir::Exactness::Derived

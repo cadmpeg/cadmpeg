@@ -10,6 +10,11 @@ use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 
+crate::ids::reference_id_type!(
+    /// Stable tessellation identity.
+    TessellationId
+);
+
 /// Structural error in a tessellation mesh or channel carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TessellationError(String);
@@ -106,7 +111,7 @@ impl ChannelAddressing {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct TessellationWire {
-    id: String,
+    id: TessellationId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     body: Option<BodyId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -154,7 +159,7 @@ struct TessellationChannelWire {
 #[serde(try_from = "TessellationWire", into = "TessellationWire")]
 pub struct Tessellation {
     /// Stable source-derived identifier.
-    pub id: String,
+    pub id: TessellationId,
     /// Body represented by this mesh, when known.
     pub body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
@@ -484,7 +489,7 @@ impl Tessellation {
         }
         require_channel_indices(&triangles, &channels)?;
         Ok(Self {
-            id: id.into(),
+            id: TessellationId::mint(id).map_err(|error| tessellation_error(error.to_string()))?,
             body: None,
             faces: Vec::new(),
             chordal_deflection: None,
@@ -794,7 +799,7 @@ impl TryFrom<TessellationWire> for Tessellation {
         )?;
         let topology = topology_from_parts(&wire.vertices, &wire.triangles, wire.strip_lengths)?;
         let mut mesh = Self::new(
-            wire.id,
+            wire.id.into_string(),
             wire.vertices,
             wire.triangles,
             topology,

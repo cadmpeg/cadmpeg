@@ -139,3 +139,29 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
         value
     );
 }
+
+#[test]
+fn tessellation_identity_admission() {
+    for id in ["", "mesh id", "mesh\nid"] {
+        assert!(TessellationId::mint(id).is_err());
+        rejects_wire_field("id", id);
+        assert!(Tessellation::new(
+            id,
+            Vec::new(),
+            Vec::new(),
+            TessellationTopology::List,
+            TessellationNormals::None,
+            Vec::new(),
+        )
+        .is_err());
+    }
+    let id = TessellationId::mint("test:mesh:tessellation#0").unwrap();
+    assert_eq!(
+        serde_json::to_value(&id).unwrap(),
+        "test:mesh:tessellation#0"
+    );
+    assert_eq!(
+        serde_json::from_value::<TessellationId>(serde_json::to_value(&id).unwrap()).unwrap(),
+        id
+    );
+}

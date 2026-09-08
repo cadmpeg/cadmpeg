@@ -24,7 +24,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "references a missing tessellation body".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh
@@ -36,7 +36,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "references a missing tessellation face".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh
@@ -47,7 +47,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "has an invalid tessellation deflection".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh
@@ -59,7 +59,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "contains a non-finite tessellation vertex".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh
@@ -72,7 +72,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "contains a non-finite tessellation normal".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh.texture_assignments().iter().any(|assignment| {
@@ -85,7 +85,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "references a missing tessellation texture asset".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
     }

@@ -181,7 +181,7 @@ pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>)
         check_source(point.source_object.as_ref(), point.id.as_str(), findings);
     }
     for mesh in &ir.model.tessellations {
-        check_source(mesh.source_object.as_ref(), &mesh.id, findings);
+        check_source(mesh.source_object.as_ref(), mesh.id.as_str(), findings);
     }
     for subd in &ir.model.subds {
         check_source(subd.source_object.as_ref(), subd.id.as_str(), findings);
