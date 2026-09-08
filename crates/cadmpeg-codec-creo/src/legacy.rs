@@ -1538,19 +1538,19 @@ pub enum ValueKind {
     Real,
     /// string value.
     String,
-    /// type_3 value.
+    /// Type-3 value.
     Type3,
-    /// type_4 value.
+    /// Type-4 value.
     Type4,
-    /// type_5 value.
+    /// Type-5 value.
     Type5,
-    /// type_6 value.
+    /// Type-6 value.
     Type6,
-    /// type_7 value.
+    /// Type-7 value.
     Type7,
-    /// type_9 value.
+    /// Type-9 value.
     Type9,
-    /// type_11 value.
+    /// Type-11 value.
     Type11,
 }
 impl ValueKind {
