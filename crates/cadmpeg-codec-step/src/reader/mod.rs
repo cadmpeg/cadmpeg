@@ -914,30 +914,24 @@ fn associate_unowned_direct_carriers(
         let Some(id) = step_id_from_ir(point.id.as_str()) else {
             continue;
         };
-        if ids.contains(&id) {
-            if point.source_object.is_none() {
-                point.source_object = Some(direct_carrier_association(id)?);
-            }
+        if ids.contains(&id) && point.source_object.is_none() {
+            point.source_object = Some(direct_carrier_association(id)?);
         }
     }
     for curve in &mut ir.model.curves {
         let Some(id) = step_id_from_ir(curve.id.as_str()) else {
             continue;
         };
-        if ids.contains(&id) {
-            if curve.source_object.is_none() {
-                curve.source_object = Some(direct_carrier_association(id)?);
-            }
+        if ids.contains(&id) && curve.source_object.is_none() {
+            curve.source_object = Some(direct_carrier_association(id)?);
         }
     }
     for surface in &mut ir.model.surfaces {
         let Some(id) = step_id_from_ir(surface.id.as_str()) else {
             continue;
         };
-        if ids.contains(&id) {
-            if surface.source_object.is_none() {
-                surface.source_object = Some(direct_carrier_association(id)?);
-            }
+        if ids.contains(&id) && surface.source_object.is_none() {
+            surface.source_object = Some(direct_carrier_association(id)?);
         }
     }
     Ok(())
