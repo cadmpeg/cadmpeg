@@ -428,7 +428,6 @@ pub struct CarrierVertexDiagnostic {
     pub pair_intersections: usize,
     pub triple_intersections: usize,
     pub valid_candidates: usize,
-    pub unique_solutions: usize,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -522,7 +521,6 @@ pub fn solve_topological_vertices(
                             pair_intersections: carrier_diagnostics.pair_intersections,
                             triple_intersections: carrier_diagnostics.triple_intersections,
                             valid_candidates: carrier_diagnostics.valid_candidates,
-                            unique_solutions: carrier_diagnostics.unique_solutions,
                         });
                 }
             }
