@@ -243,9 +243,14 @@ def attr_is_test_cfg(attr: str) -> bool:
     body = mask_rust_non_code(match.group(1)).strip()
     # ponytail: recognize test and flat all(..., test, ...) gates only.
     # Retain other expressions as production; extend if new test-only forms occur.
-    return body == "test" or re.fullmatch(
-        r"all\(\s*(?:[^(),]*,\s*)*test\s*(?:,[^()]*)?\)", body
-    ) is not None
+    if body == "test":
+        return True
+    if not body.startswith("all(") or not body.endswith(")"):
+        return False
+    terms = body[4:-1]
+    return "(" not in terms and ")" not in terms and any(
+        term.strip() == "test" for term in terms.split(",")
+    )
 
 
 def path_attr_target(attr: str) -> str | None:

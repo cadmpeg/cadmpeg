@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -53,6 +54,21 @@ class TempSourceCase(unittest.TestCase):
 
 
 class StripCfgTest(unittest.TestCase):
+    def test_long_flat_cfg_does_not_backtrack(self) -> None:
+        # A subprocess deadline also bounds failures if the old regex returns.
+        probe = """
+import runpy, sys
+classify = runpy.run_path(sys.argv[1])["attr_is_test_cfg"]
+prefix = "#[cfg(all(" + " ," * 10000
+assert not classify(prefix + "))]")
+assert classify(prefix + "test))]")
+assert not classify('#[cfg(all(any(test, feature = "x")))]')
+"""
+        subprocess.run(
+            [sys.executable, "-c", probe, str(SCRIPT)],
+            check=True, timeout=5, capture_output=True, text=True,
+        )
+
     def test_strips_cfg_test_mod_body(self) -> None:
         text = (
             "fn prod() { from_le_bytes(); }\n"
