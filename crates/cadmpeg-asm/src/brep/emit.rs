@@ -761,7 +761,7 @@ fn emit_loft_surface(
         },
         EmbeddedLoftLayout::Revision(form, intervals) => ProceduralSurfaceDefinition::Loft {
             sections,
-            revision_form: Some(form),
+            revision_form: Some(*form),
             parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals },
             closures: [0; 2],
             singularities: [0; 2],

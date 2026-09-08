@@ -853,7 +853,7 @@ pub enum EmbeddedLoftLayout {
     },
     /// The revision form and optional interval bounds.
     Revision(
-        cadmpeg_ir::geometry::LoftRevisionForm,
+        Box<cadmpeg_ir::geometry::LoftRevisionForm>,
         [[Option<f64>; 2]; 2],
     ),
 }
@@ -1848,14 +1848,14 @@ fn revision_loft(
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             layout: EmbeddedLoftLayout::Revision(
-                cadmpeg_ir::geometry::LoftRevisionForm {
+                Box::new(cadmpeg_ir::geometry::LoftRevisionForm {
                     revision,
                     flags,
                     ints,
                     cache: cache.into_form(),
                     discontinuities,
                     tail_flag,
-                },
+                }),
                 wrap_ranges,
             ),
         }),
