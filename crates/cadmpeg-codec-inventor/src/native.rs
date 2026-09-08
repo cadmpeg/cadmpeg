@@ -792,7 +792,7 @@ pub(crate) struct SegmentMetaRecord {
 pub(crate) struct MetaSectionRecord {
     pub(crate) id: String,
     pub(crate) token: String,
-    pub(crate) number: u8,
+    pub(crate) number: crate::records::MetaSectionNumber,
     pub(crate) discriminator: u32,
     pub(crate) payload_len: u64,
     pub(crate) payload_sha256: String,
