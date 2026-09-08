@@ -51,7 +51,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
             coordinate_pairs: &coordinate_pairs,
         },
         &mut annotations,
-        stream.clone(),
+        &stream,
     )
     .expect("one complete coordinate pair retains a native sketch graph");
 
@@ -114,7 +114,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream.clone(),
+        &stream,
     )
     .expect("one complete fixed point retains a native sketch graph");
 

@@ -461,7 +461,7 @@ fn attach_rm_appearances(
             annotations,
             &mut appearances,
             definition,
-            annotation_stream.clone(),
+            &annotation_stream,
         );
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-color#{}",
@@ -511,7 +511,7 @@ fn attach_rm_appearances(
             annotations,
             &mut appearances,
             definition,
-            annotation_stream.clone(),
+            &annotation_stream,
         );
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-face-color#{}",
@@ -541,7 +541,7 @@ fn ensure_rm_color_appearance(
     annotations: &mut AnnotationBuilder,
     appearances: &mut BTreeMap<String, AppearanceId>,
     definition: &crate::native::om::PartColorDefinition,
-    annotation_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> AppearanceId {
     appearances
         .entry(definition.id.clone())
@@ -552,7 +552,7 @@ fn ensure_rm_color_appearance(
             ))
             .expect("identity grammar");
             annotations
-                .note(id.as_str(), &annotation_stream, definition.source_offset)
+                .note(id.as_str(), annotation_stream, definition.source_offset)
                 .tag("RMFASTLOAD_COLOR_APPEARANCE");
             annotations.derived(id.as_str(), "name");
             annotations.derived(id.as_str(), "schema");
@@ -1044,7 +1044,7 @@ fn attach_initial_segment_bodies(
     ir: &mut CadIr,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<FeatureId> {
     let bindings_by_body = ir
         .model
@@ -1077,7 +1077,7 @@ fn attach_initial_segment_bodies(
         .map(|(ordinal, binding)| (format!("segment_body_binding.{ordinal}"), binding.clone()))
         .collect();
     annotations
-        .note(&id, &stream, 0)
+        .note(&id, stream, 0)
         .tag("FEATURE_HISTORY_INPUT");
     annotations.derived(&id, "definition");
     ir.model.features.push(Feature {
@@ -1264,8 +1264,7 @@ fn attach_feature_operations(
         data_blocks,
     );
     let stream = annotations.stream("nx:container");
-    let initial_body_id =
-        attach_initial_segment_bodies(ir, body_bindings, annotations, stream.clone());
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
@@ -3499,7 +3498,7 @@ fn attach_feature_operations(
                             .map_or([].as_slice(), Vec::as_slice),
                     },
                     annotations,
-                    stream.clone(),
+                    &stream,
                 )
             })
             .flatten();
@@ -3895,7 +3894,7 @@ fn attach_sketch_graph(
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<SketchId> {
     let operation_groups = sources
         .point_groups
@@ -3979,12 +3978,12 @@ fn attach_sketch_graph(
                 _ => "SKETCH_NATIVE",
             };
             annotations
-                .note(entity.id().0.as_str(), &stream, *source_offset)
+                .note(entity.id().0.as_str(), stream, *source_offset)
                 .tag(tag);
             annotations.exactness(entity.id().0.as_str(), Exactness::ByteExact);
         }
         annotations
-            .note(&sketch_id.0, &stream, label.source_offset)
+            .note(&sketch_id.0, stream, label.source_offset)
             .tag("SKETCH");
         annotations.exactness(&sketch_id.0, Exactness::Derived);
         ir.model
@@ -4141,7 +4140,7 @@ fn attach_sketch_graph(
         match &entity.geometry {
             SketchGeometry::Point { .. } => {
                 annotations
-                    .note(entity.id().0.as_str(), &stream, *source_offset)
+                    .note(entity.id().0.as_str(), stream, *source_offset)
                     .tag("SKETCH_POINT");
                 annotations.exactness(entity.id().0.as_str(), Exactness::Derived);
             }
@@ -4152,7 +4151,7 @@ fn attach_sketch_graph(
                     "SKETCH_NATIVE"
                 };
                 annotations
-                    .note(entity.id().0.as_str(), &stream, *source_offset)
+                    .note(entity.id().0.as_str(), stream, *source_offset)
                     .tag(tag);
                 annotations.exactness(entity.id().0.as_str(), Exactness::ByteExact);
             }
@@ -4160,7 +4159,7 @@ fn attach_sketch_graph(
         }
     }
     annotations
-        .note(&sketch_id.0, &stream, label.source_offset)
+        .note(&sketch_id.0, stream, label.source_offset)
         .tag("SKETCH");
     annotations.exactness(&sketch_id.0, Exactness::Derived);
     ir.model
