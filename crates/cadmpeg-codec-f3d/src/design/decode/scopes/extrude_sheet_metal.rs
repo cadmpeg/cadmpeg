@@ -2295,11 +2295,9 @@ pub(crate) fn exact_edge_flange_operation(
 #[derive(Clone, Copy)]
 struct LegacyEdgeFlangeLayout {
     frame_length: usize,
-    reference_count: usize,
     bend_position_offset: usize,
     edge_count_offset: usize,
-    edge_wrapper_offsets: &'static [usize],
-    edge_group_offsets: &'static [usize],
+    edge_columns: &'static [(usize, usize)],
     settings_offset: usize,
     height_datum_offset: usize,
     angle_owner_offset: usize,
@@ -2310,21 +2308,36 @@ struct LegacyEdgeFlangeLayout {
     result_trailer_start: usize,
     result_separator_offset: usize,
     aggregate_group_offset: usize,
-    aggregate_operand_count: usize,
-    width_owner_count: usize,
     auxiliary_reference_count: usize,
     width_mode: DesignEdgeWidthMode,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource,
     result_trailers: &'static [u32],
 }
 
+impl LegacyEdgeFlangeLayout {
+    fn width_owner_count(self) -> usize {
+        match self.width_mode {
+            DesignEdgeWidthMode::FullEdge => 0,
+            DesignEdgeWidthMode::Symmetric => 1,
+            DesignEdgeWidthMode::TwoSides => 2,
+            DesignEdgeWidthMode::SymmetricPerEdge => self.edge_columns.len(),
+            DesignEdgeWidthMode::TwoSidesPerEdge => 2 * self.edge_columns.len(),
+        }
+    }
+
+    fn reference_count(self) -> usize {
+        4 + 4 * self.edge_columns.len() + self.width_owner_count() + self.auxiliary_reference_count
+    }
+}
+
 const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 494,
-    reference_count: 8,
     bend_position_offset: edge_flange_legacy::BEND_POSITION,
     edge_count_offset: edge_flange_legacy::EDGE_COUNT,
-    edge_wrapper_offsets: &[edge_flange_legacy::EDGE_WRAPPER_REFERENCE],
-    edge_group_offsets: &[edge_flange_legacy::EDGE_GROUP_REFERENCE],
+    edge_columns: &[(
+        edge_flange_legacy::EDGE_WRAPPER_REFERENCE,
+        edge_flange_legacy::EDGE_GROUP_REFERENCE,
+    )],
     settings_offset: edge_flange_legacy::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_legacy::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_legacy::ANGLE_OWNER_REFERENCE,
@@ -2335,8 +2348,6 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
     result_trailer_start: edge_flange_legacy::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_legacy::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_legacy::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 1,
-    width_owner_count: 0,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2345,16 +2356,17 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
 
 const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 591,
-    reference_count: 12,
     bend_position_offset: edge_flange_multi::BEND_POSITION,
     edge_count_offset: edge_flange_multi::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_multi::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_multi::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_multi::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_multi::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_multi::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_multi::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_multi::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_multi::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_multi::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_multi::HEIGHT_DATUM,
@@ -2366,8 +2378,6 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
     result_trailer_start: edge_flange_multi::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_multi::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_multi::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 0,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2376,16 +2386,17 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
 
 const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 669,
-    reference_count: 16,
     bend_position_offset: edge_flange_325_per_edge::BEND_POSITION,
     edge_count_offset: edge_flange_325_per_edge::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_325_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_325_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_325_per_edge::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_325_per_edge::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_325_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_325_per_edge::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_325_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_325_per_edge::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_325_per_edge::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_325_per_edge::HEIGHT_DATUM,
@@ -2397,8 +2408,6 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailer_start: edge_flange_325_per_edge::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_325_per_edge::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_325_per_edge::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 4,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2407,16 +2416,17 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
 
 const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 643,
-    reference_count: 14,
     bend_position_offset: edge_flange_364_width::BEND_POSITION,
     edge_count_offset: edge_flange_364_width::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_364_width::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_364_width::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_364_width::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_364_width::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_364_width::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_364_width::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_364_width::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_364_width::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_364_width::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_364_width::HEIGHT_DATUM,
@@ -2428,8 +2438,6 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
     result_trailer_start: edge_flange_364_width::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_364_width::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_364_width::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 2,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::SymmetricPerEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2438,16 +2446,17 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
 
 const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 801,
-    reference_count: 28,
     bend_position_offset: edge_flange_286_per_edge::BEND_POSITION,
     edge_count_offset: edge_flange_286_per_edge::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_286_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_286_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_286_per_edge::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_286_per_edge::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_286_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_286_per_edge::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_286_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_286_per_edge::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_286_per_edge::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_286_per_edge::HEIGHT_DATUM,
@@ -2459,8 +2468,6 @@ const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailer_start: edge_flange_286_per_edge::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_286_per_edge::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_286_per_edge::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 4,
     auxiliary_reference_count: 12,
     width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeOffset,
@@ -2469,11 +2476,9 @@ const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
 
 const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 483,
-    reference_count: 8,
     bend_position_offset: 80,
     edge_count_offset: 84,
-    edge_wrapper_offsets: &[88],
-    edge_group_offsets: &[196],
+    edge_columns: &[(88, 196)],
     settings_offset: 99,
     height_datum_offset: 110,
     angle_owner_offset: 114,
@@ -2484,8 +2489,6 @@ const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailer_start: 165,
     result_separator_offset: 169,
     aggregate_group_offset: 173,
-    aggregate_operand_count: 1,
-    width_owner_count: 0,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2500,8 +2503,8 @@ fn legacy_edge_flange_operation_at(
     references: &[u32],
     layout: LegacyEdgeFlangeLayout,
 ) -> Option<DesignEdgeFlangeOperation> {
-    let edge_count = layout.edge_wrapper_offsets.len();
-    if references.len() != layout.reference_count
+    let edge_count = layout.edge_columns.len();
+    if references.len() != layout.reference_count()
         || paired_at.checked_sub(start)? != layout.frame_length
         || View::u32_le_at(bytes, start.checked_add(layout.edge_count_offset)?)?
             != u32::try_from(edge_count).ok()?
@@ -2515,9 +2518,9 @@ fn legacy_edge_flange_operation_at(
         Some(index)
     };
     let edge_wrapper_record_indices = layout
-        .edge_wrapper_offsets
+        .edge_columns
         .iter()
-        .map(|offset| {
+        .map(|(offset, _)| {
             claim(
                 marked_record_reference(bytes, start.checked_add(*offset)?)?,
                 &mut unclaimed,
@@ -2576,9 +2579,9 @@ fn legacy_edge_flange_operation_at(
         &mut unclaimed,
     )?;
     let edge_group_record_indices = layout
-        .edge_group_offsets
+        .edge_columns
         .iter()
-        .map(|offset| {
+        .map(|(_, offset)| {
             claim(
                 marked_record_reference(bytes, start.checked_add(*offset)?)?,
                 &mut unclaimed,
@@ -2589,26 +2592,14 @@ fn legacy_edge_flange_operation_at(
         .iter()
         .map(|record_index| claim(record_index.checked_add(3)?, &mut unclaimed))
         .collect::<Option<Vec<_>>>()?;
-    if unclaimed.len()
-        != layout.aggregate_operand_count
-            + layout.width_owner_count
-            + layout.auxiliary_reference_count
-    {
-        return None;
-    }
-    let aggregate_operand_start = unclaimed
-        .len()
-        .checked_sub(layout.aggregate_operand_count)?;
+    let aggregate_operand_start = layout.width_owner_count() + layout.auxiliary_reference_count;
     let aggregate_operand_record_indices = unclaimed.split_off(aggregate_operand_start);
     let width_distance_owner_record_indices = unclaimed
-        .drain(..layout.width_owner_count)
+        .drain(..layout.width_owner_count())
         .collect::<Vec<_>>();
     let auxiliary_reference_record_indices = unclaimed;
     let width_distance_owner_record_indices_by_edge =
         if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
-            if width_distance_owner_record_indices.len() != edge_count.checked_mul(2)? {
-                return None;
-            }
             width_distance_owner_record_indices
                 .chunks_exact(2)
                 .map(|pair| [pair[0], pair[1]])
