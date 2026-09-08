@@ -2246,13 +2246,21 @@ mod tests {
             "endpoint_of": list.clone(), "center_of": list.clone(),
             "state": null, "associations": null
         });
-        let point: PmDcSketchEntityKind = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(point).unwrap(), wire);
+        let point: PmDcSketchEntityKind =
+            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+        assert_eq!(
+            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            wire
+        );
         wire["state"] = serde_json::json!(0);
         assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
         wire["associations"] = list;
-        let point: PmDcSketchEntityKind = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(point).unwrap(), wire);
+        let point: PmDcSketchEntityKind =
+            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+        assert_eq!(
+            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            wire
+        );
         wire["state"] = serde_json::Value::Null;
         assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
     }
