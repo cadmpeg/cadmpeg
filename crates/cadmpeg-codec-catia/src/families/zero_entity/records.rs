@@ -1559,23 +1559,26 @@ fn zero_entity_model_curve_construction(
         start_radius * transverse.y,
         start_radius * transverse.z,
     );
-    Some(ProceduralCurveDefinition::Helix {
-        angle_range: [start.u, end.u],
-        center: Point3::new(
-            origin.x + start.v * half_angle.cos() * axis.x,
-            origin.y + start.v * half_angle.cos() * axis.y,
-            origin.z + start.v * half_angle.cos() * axis.z,
-        ),
-        major,
-        minor,
-        pitch: cadmpeg_ir::math::Vector3::new(
-            std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
-            std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
-            std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
-        ),
-        apex_factor: std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
-        axis: *axis,
-    })
+    Some(ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [start.u, end.u],
+            Point3::new(
+                origin.x + start.v * half_angle.cos() * axis.x,
+                origin.y + start.v * half_angle.cos() * axis.y,
+                origin.z + start.v * half_angle.cos() * axis.z,
+            ),
+            major,
+            minor,
+            cadmpeg_ir::math::Vector3::new(
+                std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
+                std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
+                std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
+            ),
+            std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
+            *axis,
+        )
+        .ok()?,
+    ))
 }
 
 fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<Point3> {
@@ -2334,18 +2337,14 @@ mod tests {
             .unwrap(),
         );
         let pcurve = test_pcurve(vec![Point2::new(0.0, 1.0), Point2::new(0.5, 2.0)]);
-        let Some(ProceduralCurveDefinition::Helix {
-            angle_range,
-            center,
-            major,
-            minor,
-            pitch,
-            apex_factor,
-            axis,
-        }) = zero_entity_model_curve_construction(&surface, &pcurve)
+        let Some(ProceduralCurveDefinition::Helix(helix_payload)) =
+            zero_entity_model_curve_construction(&surface, &pcurve)
         else {
             panic!("conical helix")
         };
+        let (&angle_range, &center, &major, &minor, &pitch, &apex_factor, &axis) =
+            helix_payload.parts();
+
         let slope = 2.0;
         let start_radius = 2.0 + half_angle.sin();
         assert_eq!(angle_range, [0.0, 0.5]);

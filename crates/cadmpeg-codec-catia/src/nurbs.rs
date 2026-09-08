@@ -282,18 +282,11 @@ pub(crate) fn reverse_helix_definition(
     definition: &ProceduralCurveDefinition,
     range: [f64; 2],
 ) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = definition
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     if range != *angle_range
         || !range.into_iter().all(f64::is_finite)
         || range[0] >= range[1]
@@ -338,15 +331,18 @@ pub(crate) fn reverse_helix_definition(
         return None;
     }
     Some((
-        ProceduralCurveDefinition::Helix {
-            angle_range: *angle_range,
-            center,
-            major,
-            minor,
-            pitch,
-            apex_factor,
-            axis,
-        },
+        ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                *angle_range,
+                center,
+                major,
+                minor,
+                pitch,
+                apex_factor,
+                axis,
+            )
+            .ok()?,
+        ),
         range,
     ))
 }
@@ -378,18 +374,11 @@ pub(crate) fn circular_helix_cache(
     construction: &ProceduralCurveDefinition,
     requested_tolerance: f64,
 ) -> Option<CircularHelixCache> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = construction
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     let axis_norm = axis.x.hypot(axis.y).hypot(axis.z);
     let radius = major.x.hypot(major.y).hypot(major.z);
     let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
@@ -507,17 +496,11 @@ pub(crate) fn circular_helix_cache(
 }
 
 fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        ..
-    } = construction
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
     };
+    let (angle_range, center, major, minor, pitch, _, _) = helix_payload.parts();
+
     if !angle.is_finite()
         || !angle_range.iter().copied().all(f64::is_finite)
         || angle_range[0] >= angle_range[1]
@@ -887,30 +870,26 @@ mod tests {
     #[test]
     fn reversed_helix_preserves_conical_path() {
         let range = [0.25, 2.0];
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: range,
-            center: Point3::new(1.0, -2.0, 3.0),
-            major: Vector3::new(2.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 2.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 3.0),
-            apex_factor: 0.4,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                range,
+                Point3::new(1.0, -2.0, 3.0),
+                Vector3::new(2.0, 0.0, 0.0),
+                Vector3::new(0.0, 2.0, 0.0),
+                Vector3::new(0.0, 0.0, 3.0),
+                0.4,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
         let (reversed, reversed_range) =
             reverse_helix_definition(&definition, range).expect("reversible helix");
         let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
-            let ProceduralCurveDefinition::Helix {
-                angle_range,
-                center,
-                major,
-                minor,
-                pitch,
-                apex_factor,
-                ..
-            } = definition
-            else {
+            let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
                 panic!("helix definition")
             };
+            let (angle_range, center, major, minor, pitch, apex_factor, _) = helix_payload.parts();
+
             let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
             let scale = 1.0 + apex_factor * fraction;
             center
@@ -993,15 +972,18 @@ mod tests {
     #[test]
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
         let range = [0.125, 1.570_797_917_999_999_6];
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: range,
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(1.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 1.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                range,
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                0.0,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
 
         let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
@@ -1017,15 +999,21 @@ mod tests {
 
     #[test]
     fn circular_helix_frame_validation_is_scale_independent() {
-        let radius = 1e-200;
-        let definition = |minor| ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(radius, 0.0, 0.0),
-            minor,
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
+        const SMALL_ADMITTED_HELIX_RADIUS: f64 = 1.0e-10;
+        let radius = SMALL_ADMITTED_HELIX_RADIUS;
+        let definition = |minor| {
+            ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                    [0.0, 1.0],
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(radius, 0.0, 0.0),
+                    minor,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    0.0,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            )
         };
 
         assert!(
@@ -1042,30 +1030,47 @@ mod tests {
 
     #[test]
     fn circular_helix_cache_rejects_invalid_frame_and_output() {
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(1.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 1.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                0.0,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
         let mut non_axial_pitch = definition.clone();
-        if let ProceduralCurveDefinition::Helix { pitch, .. } = &mut non_axial_pitch {
-            *pitch = Vector3::new(1.0, 0.0, 0.0);
+        if let ProceduralCurveDefinition::Helix(helix_payload) = &mut non_axial_pitch {
+            let (&angle_range, &center, &major, &minor, _, &apex_factor, &axis) =
+                helix_payload.parts();
+            *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                angle_range,
+                center,
+                major,
+                minor,
+                Vector3::new(1.0, 0.0, 0.0),
+                apex_factor,
+                axis,
+            )
+            .unwrap();
         }
         assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4).is_none());
 
-        let overflowing_fit = ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(f64::MAX, 0.0, 0.0),
-            minor: Vector3::new(0.0, f64::MAX, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 0.0),
-            apex_factor: 0.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let overflowing_fit = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(f64::MAX, 0.0, 0.0),
+                Vector3::new(0.0, f64::MAX, 0.0),
+                Vector3::new(0.0, 0.0, 0.0),
+                0.0,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
         assert!(circular_helix_cache(&overflowing_fit, f64::MAX).is_none());
     }
 

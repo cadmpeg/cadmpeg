@@ -112,18 +112,11 @@ fn decode_retains_generated_helix_construction() {
         .procedural_curves
         .first()
         .expect("helix construction");
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = procedural.definition()
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = procedural.definition() else {
         panic!("expected helix construction")
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, Point3::new(10.0, 20.0, 30.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(20.0, 0.0, 0.0));
@@ -134,15 +127,18 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix {
-        angle_range: [-1.0, 7.0],
-        center: Point3::new(12.0, 23.0, 34.0),
-        major: cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
-        minor: cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
-        pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
-        apex_factor: 0.5,
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-    });
+    edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [-1.0, 7.0],
+            Point3::new(12.0, 23.0, 34.0),
+            cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
+            0.5,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+    ));
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.012))
         .unwrap();
@@ -244,7 +240,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
         .expect("helix construction");
     assert!(matches!(
         procedural.definition(),
-        ProceduralCurveDefinition::Helix { .. }
+        ProceduralCurveDefinition::Helix(_)
     ));
     assert_eq!(procedural.cache_fit_tolerance(), None);
     assert!(matches!(

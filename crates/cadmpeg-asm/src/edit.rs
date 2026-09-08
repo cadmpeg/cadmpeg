@@ -545,7 +545,7 @@ impl AsmEditSet {
         definition: &ProceduralCurveDefinition,
     ) -> Result<(), CodecError> {
         match definition {
-            ProceduralCurveDefinition::Helix { .. } => {
+            ProceduralCurveDefinition::Helix(_) => {
                 patch_helix_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::VectorOffset { .. } => {
@@ -857,20 +857,13 @@ fn patch_helix_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = definition
-    else {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return Err(CodecError::Malformed(
             "helix patch received a non-helix definition".into(),
         ));
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {

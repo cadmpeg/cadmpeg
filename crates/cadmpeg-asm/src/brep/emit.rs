@@ -2805,7 +2805,7 @@ fn emit_carrier_curve(
             ProceduralCurveConstruction::Exact => {
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
             }
-            ProceduralCurveConstruction::Helix(helix) => helix.into_definition(),
+            ProceduralCurveConstruction::Helix(helix) => helix.into_definition()?,
             ProceduralCurveConstruction::Unknown(native_kind) => {
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
                     native_kind: Some(native_kind),

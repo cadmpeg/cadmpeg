@@ -596,7 +596,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             curves.insert(curve.as_str());
         }
         match procedural.definition() {
-            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
                 context,
                 primary,

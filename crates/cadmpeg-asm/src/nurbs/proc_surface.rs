@@ -4046,9 +4046,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 }
 
 pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
-    use cadmpeg_ir::geometry::{
-        HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
-    };
+    use cadmpeg_ir::geometry::HelixSurfaceProfile;
 
     let names = ["helix_spl_circ", "helix_spl_line"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
@@ -4084,53 +4082,58 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             return None;
         }
     }
-    let path = HelixPathConstruction {
-        angle_range: path_angle_range,
-        center: Point3::new(
+    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_new(
+        path_angle_range,
+        Point3::new(
             center[0] * LEN_TO_MM,
             center[1] * LEN_TO_MM,
             center[2] * LEN_TO_MM,
         ),
-        major: Vector3::new(
+        Vector3::new(
             major[0] * LEN_TO_MM,
             major[1] * LEN_TO_MM,
             major[2] * LEN_TO_MM,
         ),
-        minor: Vector3::new(
+        Vector3::new(
             minor[0] * LEN_TO_MM,
             minor[1] * LEN_TO_MM,
             minor[2] * LEN_TO_MM,
         ),
-        pitch: Vector3::new(
+        Vector3::new(
             pitch[0] * LEN_TO_MM,
             pitch[1] * LEN_TO_MM,
             pitch[2] * LEN_TO_MM,
         ),
         apex_factor,
         axis,
-    };
+    )
+    .ok()?;
     let profile = if let Some(length) = length {
-        HelixSurfaceProfile::Circle {
-            length,
-            radius: cur.take_f64()? * LEN_TO_MM,
-        }
+        HelixSurfaceProfile::Circle(
+            cadmpeg_ir::geometry::HelixCircleProfile::try_new(length, cur.take_f64()? * LEN_TO_MM)
+                .ok()?,
+        )
     } else {
         let direction = take_frame_vector(&mut cur)?;
-        HelixSurfaceProfile::Line {
-            direction: Vector3::new(
+        HelixSurfaceProfile::Line(
+            cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(
                 direction[0] * LEN_TO_MM,
                 direction[1] * LEN_TO_MM,
                 direction[2] * LEN_TO_MM,
-            ),
-        }
+            ))
+            .ok()?,
+        )
     };
     Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Helix(Box::new(HelixSurfaceConstruction {
-            angle_range,
-            dimension_range,
-            path,
-            profile,
-        })),
+        definition: DecodedProceduralSurfaceDefinition::Helix(Box::new(
+            cadmpeg_ir::geometry::HelixSurfaceConstruction::try_new(
+                angle_range,
+                dimension_range,
+                path,
+                profile,
+            )
+            .ok()?,
+        )),
         cache_fit_tolerance: None,
     })
 }

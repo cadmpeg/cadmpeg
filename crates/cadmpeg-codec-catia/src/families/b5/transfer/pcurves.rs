@@ -635,18 +635,21 @@ pub(super) fn cylinder_helix(
     );
     let tangent = cross(*axis, radial);
     let sweep = delta_angle.abs();
-    let definition = ProceduralCurveDefinition::Helix {
-        angle_range: [0.0, sweep],
-        center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
-        major: vector(scale(radial, *radius)),
-        minor: vector(scale(tangent, radius * delta_angle.signum())),
-        pitch: vector(scale(
-            *axis,
-            delta_height / sweep * 2.0 * std::f64::consts::PI,
-        )),
-        apex_factor: 0.0,
-        axis: vector(*axis),
-    };
+    let definition = ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [0.0, sweep],
+            point3(add(*origin, scale(*axis, endpoints[0][1]))),
+            vector(scale(radial, *radius)),
+            vector(scale(tangent, radius * delta_angle.signum())),
+            vector(scale(
+                *axis,
+                delta_height / sweep * 2.0 * std::f64::consts::PI,
+            )),
+            0.0,
+            vector(*axis),
+        )
+        .ok()?,
+    );
     let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE)?;
     let cache_start = cache.curve.control_points().first()?;
     let cache_end = cache.curve.control_points().last()?;

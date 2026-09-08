@@ -10,15 +10,18 @@ fn helix_fixture() -> (CadIr, CurveId) {
     let construction_id =
         ProceduralCurveId::mint("test:model:entity#helix-evaluation-construction")
             .expect("valid identity");
-    let definition = ProceduralCurveDefinition::Helix {
-        angle_range: [0.25, 2.0],
-        center: Point3::new(1.0, -2.0, 3.0),
-        major: Vector3::new(2.0, 0.0, 0.0),
-        minor: Vector3::new(0.0, 2.0, 0.0),
-        pitch: Vector3::new(0.0, 0.0, 3.0),
-        apex_factor: 0.4,
-        axis: Vector3::new(0.0, 0.0, 1.0),
-    };
+    let definition = ProceduralCurveDefinition::Helix(
+        crate::geometry::HelixCurveConstruction::try_new(
+            [0.25, 2.0],
+            Point3::new(1.0, -2.0, 3.0),
+            Vector3::new(2.0, 0.0, 0.0),
+            Vector3::new(0.0, 2.0, 0.0),
+            Vector3::new(0.0, 0.0, 3.0),
+            0.4,
+            Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+    );
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),

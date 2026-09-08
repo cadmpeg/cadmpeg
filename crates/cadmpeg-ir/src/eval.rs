@@ -3098,18 +3098,11 @@ fn helix_differential(
     definition: &ProceduralCurveDefinition,
     parameter: f64,
 ) -> Option<ModelCurveDifferential> {
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = definition
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     let angle_range = *angle_range;
     let center = *center;
     let major = *major;
@@ -3246,7 +3239,7 @@ fn model_curve_differential_by_id_inner(
                     acceleration: differential.acceleration,
                 });
             }
-            ProceduralCurveDefinition::Helix { .. } => {
+            ProceduralCurveDefinition::Helix(_) => {
                 return helix_differential(procedural.definition(), parameter);
             }
             _ => {}
@@ -3668,7 +3661,7 @@ fn model_curve_point_by_id_inner(
             };
             model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
         }
-        ProceduralCurveDefinition::Helix { .. } => {
+        ProceduralCurveDefinition::Helix(_) => {
             helix_differential(procedural.definition(), parameter)
                 .map(|differential| differential.point)
         }
@@ -3850,7 +3843,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                         .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
                 .then_some(parameter);
             }
-            ProceduralCurveDefinition::Helix { .. } => {
+            ProceduralCurveDefinition::Helix(_) => {
                 return helix_parameter_near_point(
                     index,
                     curve_id,
@@ -4055,9 +4048,11 @@ fn helix_parameter_near_point(
     tolerance: f64,
     definition: &ProceduralCurveDefinition,
 ) -> Option<f64> {
-    let ProceduralCurveDefinition::Helix { angle_range, .. } = definition else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
+    let (angle_range, _, _, _, _, _, _) = helix_payload.parts();
+
     let [start, end] = *angle_range;
     if ![start, end, seed, tolerance]
         .into_iter()

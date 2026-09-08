@@ -183,12 +183,15 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
         let DecodedProceduralSurfaceDefinition::Helix(construction) = decoded.definition else {
             panic!("expected helix surface definition")
         };
-        assert_eq!(construction.path.pitch, Vector3::new(0.0, 0.0, 40.0));
+        let (_, _, path, profile) = construction.parts();
+        let (_, _, _, _, pitch, _, _) = path.parts();
+        assert_eq!(*pitch, Vector3::new(0.0, 0.0, 40.0));
         assert_eq!(
-            construction.profile,
-            cadmpeg_ir::geometry::HelixSurfaceProfile::Line {
-                direction: Vector3::new(50.0, 60.0, 70.0),
-            }
+            *profile,
+            cadmpeg_ir::geometry::HelixSurfaceProfile::Line(
+                cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(50.0, 60.0, 70.0))
+                    .unwrap()
+            )
         );
     }
 }
