@@ -28,7 +28,7 @@ use clap::builder::TypedValueParser;
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
-use numeric::{parse_offset, EndianArgs, ScalarType};
+use numeric::{parse_offset, Endian, ScalarType};
 
 /// Default number of bytes a bare `inspect hex` prints.
 const DEFAULT_HEX_LEN: u64 = 256;
@@ -261,8 +261,9 @@ pub struct ReadArgs {
     /// Byte step between consecutive values; defaults to the scalar width.
     #[arg(long, alias = "step", value_parser = parse_stride)]
     pub stride: Option<NonZeroU64>,
-    #[command(flatten)]
-    pub endian: EndianArgs,
+    /// Byte order for scalar reads.
+    #[arg(long, value_enum, default_value_t = Endian::Le)]
+    pub endian: Endian,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
@@ -535,10 +536,7 @@ pub fn run(command: ByteCommand) -> Result<ExitCode> {
     };
     match tool {
         ByteTool::Hex(args) => hex(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Read(args) => {
-            let mode = args.endian.mode();
-            read(&args, mode).map(|()| ExitCode::SUCCESS)
-        }
+        ByteTool::Read(args) => read(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Find(args) => find(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Strings(args) => strings(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Struct(args) => structure(&args).map(|()| ExitCode::SUCCESS),
@@ -599,7 +597,8 @@ fn hex(args: &HexArgs) -> Result<()> {
     Ok(())
 }
 
-fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
+fn read(args: &ReadArgs) -> Result<()> {
+    let endian = args.endian;
     let width = args.ty.width() as u64;
     let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
