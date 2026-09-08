@@ -10630,7 +10630,16 @@ impl IntcurveSupportContext {
 
     /// Copy a pcurve mapping between support sides of this context.
     pub fn copy_pcurve(&mut self, source: usize, target: usize) {
-        self.sides[target].pcurve = self.sides[source].pcurve.clone();
+        let (source, target) = if source < target {
+            let (before, after) = self.sides.split_at_mut(target);
+            (&before[source], &mut after[0])
+        } else if source > target {
+            let (before, after) = self.sides.split_at_mut(source);
+            (&after[0], &mut before[target])
+        } else {
+            return;
+        };
+        target.pcurve.clone_from(&source.pcurve);
     }
 
     /// Return the ordered support sides.
