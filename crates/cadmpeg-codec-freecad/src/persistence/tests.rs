@@ -228,7 +228,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::native::ExtensionRecord>("extensions")
         .expect("extensions");
     assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].dependency_allow_partial, Some(2));
+    assert_eq!(
+        objects[0]
+            .dependency_allow_partial
+            .map(std::num::NonZeroU64::get),
+        Some(2)
+    );
     assert_eq!(objects[1].dependency_allow_partial, None);
     assert_eq!(extensions.len(), 1);
     assert_eq!(extensions[0].owner, "fcstd:native:object#Body");
@@ -463,18 +468,6 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .message
             .contains("logical ledger omits nonempty entry Payload.bin")
     }));
-
-    let mut corrupted = result.ir().clone();
-    let mut invalid_objects = objects.clone();
-    invalid_objects[0].dependency_allow_partial = Some(0);
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena("objects", &invalid_objects)
-        .expect("replace objects");
-    assert!(crate::validate_native(&corrupted)
-        .iter()
-        .any(|finding| finding.message.contains("invalid partial-load capability")));
 }
 
 #[test]
