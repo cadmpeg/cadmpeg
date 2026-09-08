@@ -294,7 +294,7 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
 fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
     for (members, offsets) in [("[]", "[]"), ("[10]", "[0]"), ("[10,11]", "[26,37]")] {
         let wire = format!(
-            r#"{{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","members":{members},"member_offsets":{offsets},"frame":{{"member_count_offset":21,"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}},"role":0,"role_offset":60,"paired_class_tag":"278","paired_byte_offset":100}}"#
+            r#"{{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","members":{members},"member_offsets":{offsets},"frame":{{"member_count_offset":21,"opaque_index":1,"opaque_index_offset":78,"opaque_scalar":0.0,"opaque_scalar_offset":82,"variant":false}},"role":0,"role_offset":60,"paired_class_tag":"278","paired_byte_offset":100}}"#
         );
         let group: crate::records::topology::DesignConstructionOperandGroup =
             serde_json::from_str(&wire).expect("construction group");
@@ -923,8 +923,8 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         "record_index": 2, "byte_offset": 10, "class_tag": "256",
         "members": [], "member_offsets": [],
         "frame": {"member_count_offset": 20, "opaque_index": 1,
-            "opaque_index_offset": 30, "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 34, "variant": false},
+            "opaque_index_offset": 58, "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 62, "variant": false},
         "role": DesignOperandRole::PROFILE.raw(), "extrude_role": "profile",
         "role_offset": 40, "paired_class_tag": "257", "paired_byte_offset": 50
     });

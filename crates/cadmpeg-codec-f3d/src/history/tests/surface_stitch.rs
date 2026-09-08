@@ -61,7 +61,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                         trailing_transforms: Vec::new(),
                         trailing_dual_transforms: Vec::new(),
                         trailing_flags: Vec::new(),
-                        opaque_index: 0,
+                        opaque_index: 1,
                         opaque_index_offset: 18,
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
