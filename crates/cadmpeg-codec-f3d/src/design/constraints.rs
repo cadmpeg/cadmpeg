@@ -1441,9 +1441,9 @@ mod tests {
             SketchEntityId::mint("synthetic:test:id#text").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Text {
-                text: "A".into(),
-                font_family: "Arial".into(),
-                font_weight: 400,
+                text: cadmpeg_ir::products::NonEmptyString::new("A").unwrap(),
+                font_family: cadmpeg_ir::products::NonEmptyString::new("Arial").unwrap(),
+                font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
                 height: Length(10.0),
                 width_factor: Some(0.8),
                 placement: None,

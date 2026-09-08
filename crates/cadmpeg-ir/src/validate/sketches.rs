@@ -571,20 +571,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             | SketchGeometryDefinition::Ellipse { .. }
             | SketchGeometryDefinition::Hyperbola { .. }
             | SketchGeometryDefinition::Parabola { .. }
-            | SketchGeometryDefinition::Nurbs { .. } => {}
-            SketchGeometryDefinition::Text {
-                text,
-                font_family,
-                font_weight,
-                ..
-            } => {
-                if text.is_empty()
-                    || font_family.is_empty()
-                    || !matches!(font_weight, 400 | 500 | 750)
-                {
-                    finding(findings, Check::Bounds, id, "invalid sketch text");
-                }
-            }
+            | SketchGeometryDefinition::Nurbs { .. }
+            | SketchGeometryDefinition::Text { .. } => {}
             SketchGeometryDefinition::ExternalReference { object, .. } => {
                 if object.is_empty() {
                     finding(

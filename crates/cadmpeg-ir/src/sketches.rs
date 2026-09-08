@@ -31,6 +31,49 @@ crate::ids::id_type!(
     SketchConstraintId
 );
 
+/// Font weight admitted by neutral sketch text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i32", into = "i32")]
+#[repr(i32)]
+pub enum SketchFontWeight {
+    /// Regular text weight.
+    Regular = 400,
+    /// Medium text weight.
+    Medium = 500,
+    /// Bold text weight.
+    Bold = 750,
+}
+
+impl TryFrom<i32> for SketchFontWeight {
+    type Error = &'static str;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            400 => Ok(Self::Regular),
+            500 => Ok(Self::Medium),
+            750 => Ok(Self::Bold),
+            _ => Err("sketch text font_weight must be 400, 500, or 750"),
+        }
+    }
+}
+
+impl From<SketchFontWeight> for i32 {
+    fn from(value: SketchFontWeight) -> Self {
+        value as Self
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SketchFontWeight {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SketchFontWeight".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"type": "integer", "enum": [400, 500, 750]})
+    }
+}
+
 /// Horizontal placement of sketch text about its text anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -472,11 +515,11 @@ pub enum SketchGeometryDefinition {
     /// Text placed in sketch coordinates.
     Text {
         /// Unicode text content.
-        text: String,
+        text: NonEmptyString,
         /// Source font-family name.
-        font_family: String,
-        /// Numeric font weight from the source text style.
-        font_weight: i32,
+        font_family: NonEmptyString,
+        /// Font weight from the source text style.
+        font_weight: SketchFontWeight,
         /// Nominal character height.
         height: Length,
         /// Horizontal scale relative to the nominal font width, absent when the
