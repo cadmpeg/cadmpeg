@@ -2491,7 +2491,7 @@ fn emit_carrier_curve(
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat<'_>,
-) {
+) -> Result<(), &'static str> {
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -2499,7 +2499,7 @@ fn emit_carrier_curve(
         ..
     } = &mut *carriers;
     let Some(mut geometry) = curve_geo.remove(&i) else {
-        return;
+        return Ok(());
     };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
@@ -2573,16 +2573,14 @@ fn emit_carrier_curve(
                     })
                 });
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                        sides: std::array::from_fn(|side| {
-                            cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: surfaces[side].clone(),
-                                pcurve: pcurves[side].clone(),
-                            }
+                    context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: surfaces[side].clone(),
+                            pcurve: pcurves[side].clone(),
                         }),
-                        parameter_range: embedded.parameter_range,
-                        discontinuities: embedded.discontinuities,
-                    },
+                        embedded.parameter_range,
+                        embedded.discontinuities,
+                    )?,
                     discontinuity_flag: embedded.discontinuity_flag,
                     offsets: embedded.offsets,
                 }
@@ -2610,16 +2608,14 @@ fn emit_carrier_curve(
                     })
                 });
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-                    context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                        sides: std::array::from_fn(|side| {
-                            cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: surfaces[side].clone(),
-                                pcurve: pcurves[side].clone(),
-                            }
+                    context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: surfaces[side].clone(),
+                            pcurve: pcurves[side].clone(),
                         }),
-                        parameter_range: embedded.parameter_range,
-                        discontinuities: embedded.discontinuities,
-                    },
+                        embedded.parameter_range,
+                        embedded.discontinuities,
+                    )?,
                     discontinuity_flag,
                 }
             }
@@ -2643,16 +2639,14 @@ fn emit_carrier_curve(
                     cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs })
                 });
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                    context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                        sides: std::array::from_fn(|side| {
-                            cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: Some(surface_ids[side].clone()),
-                                pcurve: Some(pcurves[side].clone()),
-                            }
+                    context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: Some(surface_ids[side].clone()),
+                            pcurve: Some(pcurves[side].clone()),
                         }),
-                        parameter_range: embedded.parameter_range,
-                        discontinuities: embedded.discontinuities,
-                    },
+                        embedded.parameter_range,
+                        embedded.discontinuities,
+                    )?,
                     selector: embedded.selector,
                     third: cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: Some(surface_ids[2].clone()),
@@ -2662,17 +2656,17 @@ fn emit_carrier_curve(
             }
             ProceduralCurveConstruction::SurfaceCurve(family) => {
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-                    family: emit_surface_curve_family(out, i, format, family),
+                    family: emit_surface_curve_family(out, i, format, family)?,
                 }
             }
             ProceduralCurveConstruction::Silhouette(embedded) => {
-                emit_silhouette_curve(out, i, embedded, format)
+                emit_silhouette_curve(out, i, embedded, format)?
             }
             ProceduralCurveConstruction::SurfaceOffset(embedded) => {
-                emit_surface_offset_curve(out, i, embedded, format)
+                emit_surface_offset_curve(out, i, embedded, format)?
             }
             ProceduralCurveConstruction::Spring(embedded) => {
-                emit_spring_curve(out, i, embedded, format)
+                emit_spring_curve(out, i, embedded, format)?
             }
             ProceduralCurveConstruction::Deformable(embedded) => {
                 let mut next_side = 0;
@@ -2752,16 +2746,14 @@ fn emit_carrier_curve(
                     },
                 };
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-                    context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                        sides: std::array::from_fn(|side| {
-                            cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: support_ids[side].clone(),
-                                pcurve: pcurves[side].clone(),
-                            }
+                    context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: support_ids[side].clone(),
+                            pcurve: pcurves[side].clone(),
                         }),
-                        parameter_range: embedded.parameter_range,
-                        discontinuities: embedded.discontinuities,
-                    },
+                        embedded.parameter_range,
+                        embedded.discontinuities,
+                    )?,
                     cache_first: embedded.form,
                     source,
                     source_parameter_range: embedded.source_parameter_range,
@@ -2769,9 +2761,9 @@ fn emit_carrier_curve(
                 }
             }
             ProceduralCurveConstruction::Projection(embedded) => {
-                emit_projection_curve(out, i, embedded, format)
+                emit_projection_curve(out, i, embedded, format)?
             }
-            ProceduralCurveConstruction::Law(embedded) => emit_law_curve(out, i, embedded, format),
+            ProceduralCurveConstruction::Law(embedded) => emit_law_curve(out, i, embedded, format)?,
             ProceduralCurveConstruction::Compound(
                 crate::nurbs::proc_curve::CompoundDefinition {
                     parameters,
@@ -2834,6 +2826,7 @@ fn emit_carrier_curve(
             ),
         ));
     }
+    Ok(())
 }
 
 fn emit_surface_curve_family(
@@ -2841,7 +2834,7 @@ fn emit_surface_curve_family(
     i: i64,
     format: IdFormat<'_>,
     family: crate::nurbs::proc_curve::EmbeddedSurfaceCurve,
-) -> cadmpeg_ir::geometry::SurfaceCurveFamily {
+) -> Result<cadmpeg_ir::geometry::SurfaceCurveFamily, &'static str> {
     let mut map_context = |embedded: crate::nurbs::proc_curve::EmbeddedIntersection| {
         let mut next_side = 0;
         let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
@@ -2862,41 +2855,41 @@ fn emit_surface_curve_family(
                 cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs })
             })
         });
-        cadmpeg_ir::geometry::IntcurveSupportContext {
-            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+        cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+            std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
                 pcurve: pcurves[side].clone(),
             }),
-            parameter_range: embedded.parameter_range,
-            discontinuities: embedded.discontinuities,
-        }
+            embedded.parameter_range,
+            embedded.discontinuities,
+        )
     };
-    match family {
+    Ok(match family {
         crate::nurbs::proc_curve::EmbeddedSurfaceCurve::Blend { context, tail } => {
             cadmpeg_ir::geometry::SurfaceCurveFamily::Blend {
-                context: map_context(context),
+                context: map_context(context)?,
                 tail,
             }
         }
         crate::nurbs::proc_curve::EmbeddedSurfaceCurve::SurfaceConstrained { context, tail } => {
             cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained {
-                context: map_context(context),
+                context: map_context(context)?,
                 tail,
             }
         }
         crate::nurbs::proc_curve::EmbeddedSurfaceCurve::Parametric { context, tail } => {
             cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
-                context: map_context(context),
+                context: map_context(context)?,
                 tail,
             }
         }
         crate::nurbs::proc_curve::EmbeddedSurfaceCurve::Skin { context, tail } => {
             cadmpeg_ir::geometry::SurfaceCurveFamily::Skin {
-                context: map_context(context),
+                context: map_context(context)?,
                 tail,
             }
         }
-    }
+    })
 }
 
 fn emit_silhouette_curve(
@@ -2904,7 +2897,7 @@ fn emit_silhouette_curve(
     i: i64,
     embedded: EmbeddedSilhouette,
     format: IdFormat<'_>,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     let mut next_side = 0;
     let support_ids: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
         let side = next_side;
@@ -2930,19 +2923,21 @@ fn emit_silhouette_curve(
         geometry: embedded.cast_surface,
         source_object: None,
     });
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                surface: support_ids[side].clone(),
-                pcurve: pcurves[side].clone(),
-            }),
-            parameter_range: embedded.context.parameter_range,
-            discontinuities: embedded.context.discontinuities,
+    Ok(
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
+            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                    surface: support_ids[side].clone(),
+                    pcurve: pcurves[side].clone(),
+                }),
+                embedded.context.parameter_range,
+                embedded.context.discontinuities,
+            )?,
+            silhouette: embedded.silhouette,
+            cast_surface,
+            light_direction: embedded.light_direction,
         },
-        silhouette: embedded.silhouette,
-        cast_surface,
-        light_direction: embedded.light_direction,
-    }
+    )
 }
 
 fn emit_surface_offset_curve(
@@ -2950,7 +2945,7 @@ fn emit_surface_offset_curve(
     i: i64,
     embedded: EmbeddedSurfaceOffset,
     format: IdFormat<'_>,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     let mut next_side = 0;
     let support_ids: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
         let side = next_side;
@@ -2976,26 +2971,28 @@ fn emit_surface_offset_curve(
         geometry: CurveGeometry::Nurbs(embedded.base),
         source_object: None,
     });
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                surface: support_ids[side].clone(),
-                pcurve: pcurves[side].clone(),
-            }),
-            parameter_range: embedded.context.parameter_range,
-            discontinuities: embedded.context.discontinuities,
+    Ok(
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                    surface: support_ids[side].clone(),
+                    pcurve: pcurves[side].clone(),
+                }),
+                embedded.context.parameter_range,
+                embedded.context.discontinuities,
+            )?,
+            discontinuity_flag: embedded.discontinuity_flag,
+            base_u_range: embedded.base_u_range,
+            base_v_range: embedded.base_v_range,
+            base,
+            base_range: embedded.base_range,
+            base_endpoints: embedded.base_endpoints,
+            cache_first: embedded.cache_first,
+            distance: embedded.distance,
+            shift: embedded.shift,
+            scale: embedded.scale,
         },
-        discontinuity_flag: embedded.discontinuity_flag,
-        base_u_range: embedded.base_u_range,
-        base_v_range: embedded.base_v_range,
-        base,
-        base_range: embedded.base_range,
-        base_endpoints: embedded.base_endpoints,
-        cache_first: embedded.cache_first,
-        distance: embedded.distance,
-        shift: embedded.shift,
-        scale: embedded.scale,
-    }
+    )
 }
 
 fn emit_spring_surface(
@@ -3037,7 +3034,7 @@ fn emit_spring_curve(
     i: i64,
     embedded: EmbeddedSpring,
     format: IdFormat<'_>,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     let emit_pcurve = |nurbs| PcurveGeometry::Nurbs { nurbs };
     let layout = match embedded.layout {
         EmbeddedSpringLayout::ContextFirst {
@@ -3071,8 +3068,8 @@ fn emit_spring_curve(
                 .map(crate::nurbs::proc_curve::SupportSlot::into_surface);
             let [first_pcurve, second_pcurve] = context.pcurves;
             cadmpeg_ir::geometry::SpringLayout::CacheFirst {
-                context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                    sides: [
+                context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    [
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: first_surface
                                 .map(|surface| emit_spring_surface(out, i, format, 0, surface)),
@@ -3084,17 +3081,17 @@ fn emit_spring_curve(
                             pcurve: second_pcurve.map(emit_pcurve).map(Into::into),
                         },
                     ],
-                    parameter_range: context.parameter_range,
-                    discontinuities: context.discontinuities,
-                },
+                    context.parameter_range,
+                    context.discontinuities,
+                )?,
                 form,
             }
         }
     };
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+    Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
         layout,
         direction: embedded.direction,
-    }
+    })
 }
 
 fn emit_projection_curve(
@@ -3102,7 +3099,7 @@ fn emit_projection_curve(
     i: i64,
     embedded: EmbeddedProjection,
     format: IdFormat<'_>,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     let mut next_side = 0;
     let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
         let side = next_side;
@@ -3128,19 +3125,21 @@ fn emit_projection_curve(
         geometry: CurveGeometry::Nurbs(embedded.source),
         source_object: None,
     });
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                surface: surfaces[side].clone(),
-                pcurve: pcurves[side].clone(),
-            }),
-            parameter_range: embedded.parameter_range,
-            discontinuities: embedded.discontinuities,
+    Ok(
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
+            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                    surface: surfaces[side].clone(),
+                    pcurve: pcurves[side].clone(),
+                }),
+                embedded.parameter_range,
+                embedded.discontinuities,
+            )?,
+            discontinuity_flag: embedded.discontinuity_flag,
+            source,
+            tail: embedded.tail,
         },
-        discontinuity_flag: embedded.discontinuity_flag,
-        source,
-        tail: embedded.tail,
-    }
+    )
 }
 
 fn emit_law_curve(
@@ -3148,7 +3147,7 @@ fn emit_law_curve(
     i: i64,
     embedded: EmbeddedLawCurve,
     format: IdFormat<'_>,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     fn map_law_curve(
         out: &mut AsmBrep,
         owner: i64,
@@ -3251,15 +3250,15 @@ fn emit_law_curve(
             map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
         })
     };
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
-        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+    Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
+        context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+            std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
                 pcurve: pcurves[side].clone(),
             }),
-            parameter_range: embedded.context.parameter_range,
-            discontinuities: embedded.context.discontinuities,
-        },
+            embedded.context.parameter_range,
+            embedded.context.discontinuities,
+        )?,
         version: embedded
             .version
             .map(|version| cadmpeg_ir::geometry::LawCurveVersionForm {
@@ -3275,7 +3274,7 @@ fn emit_law_curve(
             .enumerate()
             .map(|(index, formula)| map_formula(&format!("additional:{index}"), formula))
             .collect(),
-    }
+    })
 }
 
 /// Pass 3: emit surface and curve carriers in `RecordTable` order for
@@ -3288,7 +3287,7 @@ pub(crate) fn emit_carrier_records(
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for r in records {
         let i = r.index as i64;
         match r.head() {
@@ -3317,11 +3316,15 @@ pub(crate) fn emit_carrier_records(
                     reversed_curve_refs,
                     forward_curve_refs,
                     format,
-                );
+                )
+                .map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format!("{} record {i}: {error}", r.head()))
+                })?;
             }
             _ => {}
         }
     }
+    Ok(())
 }
 
 /// Emit reachable pcurve carriers with their wrapper and fit-tolerance tails.

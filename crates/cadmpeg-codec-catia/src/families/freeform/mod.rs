@@ -1168,7 +1168,7 @@ pub(crate) fn append_freeform_surface_pools(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
-) -> ConsolidatedCurveBindingCounts {
+) -> Option<ConsolidatedCurveBindingCounts> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
         data, records,
@@ -1535,7 +1535,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
-) -> ConsolidatedCurveBindingCounts {
+) -> Option<ConsolidatedCurveBindingCounts> {
     let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
@@ -1665,8 +1665,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         return None;
                     };
                     let surfaces = std::array::from_fn(|side| {
-                        (context.sides[side].pcurve.is_none())
-                            .then(|| context.sides[side].surface.clone())
+                        (context.sides()[side].pcurve.is_none())
+                            .then(|| context.sides()[side].surface.clone())
                             .flatten()
                     });
                     let [Some(first), Some(second)] = surfaces else {
@@ -2301,11 +2301,12 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             pending.push_back(resolved);
             continue;
         }
-        let context = IntcurveSupportContext {
+        let context = IntcurveSupportContext::try_new(
             sides,
-            parameter_range: resolved.block.parameters.range,
-            discontinuities: std::array::from_fn(|_| Vec::new()),
-        };
+            resolved.block.parameters.range,
+            std::array::from_fn(|_| Vec::new()),
+        )
+        .ok()?;
         let definition = if exact_side_count == 2 {
             ProceduralCurveDefinition::Intersection {
                 context,
@@ -2417,7 +2418,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         }
     }
     binding_counts.partner_supports = partner_support_blocks.len();
-    binding_counts
+    Some(binding_counts)
 }
 
 /// Tolerance in millimetres for consolidated definition-site agreement.
@@ -2929,7 +2930,8 @@ mod tests {
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &HashMap::new(),
-        );
+        )
+        .unwrap();
 
         assert!(matches!(
             ir.model.curves.as_slice(),
@@ -3256,14 +3258,15 @@ mod tests {
                 )
                 .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides: std::array::from_fn(|side| IntcurveSupportSide {
+                    context: IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| IntcurveSupportSide {
                             surface: Some(support_ids[side].clone()),
                             pcurve: None,
                         }),
-                        parameter_range: [0.0, 1.0],
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
-                    },
+                        [0.0, 1.0],
+                        std::array::from_fn(|_| Vec::new()),
+                    )
+                    .unwrap(),
                     discontinuity_flag: false,
                 },
             ),
@@ -3277,7 +3280,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        );
+        )
+        .unwrap();
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
         assert_eq!(ir.model.pcurves.len(), 0);
@@ -3293,19 +3297,19 @@ mod tests {
         let context = family.context();
         assert_eq!(
             context
-                .sides
+                .sides()
                 .iter()
                 .filter(|side| side.pcurve.is_some())
                 .count(),
             1
         );
         let start = cadmpeg_ir::eval::pcurve_uv(
-            &context.sides[0]
+            &context.sides()[0]
                 .pcurve
                 .as_ref()
                 .expect("first pcurve")
                 .geometry,
-            context.parameter_range[0],
+            context.parameter_range()[0],
         )
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
@@ -3340,7 +3344,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts.standard_edges, 0);
         let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -3352,11 +3357,11 @@ mod tests {
             _ => panic!("consolidated surface-curve construction"),
         };
         assert!(context
-            .sides
+            .sides()
             .iter()
             .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
         let start = cadmpeg_ir::eval::pcurve_uv(
-            &context.sides[0]
+            &context.sides()[0]
                 .pcurve
                 .as_ref()
                 .expect("standard pcurve")
@@ -3395,7 +3400,8 @@ mod tests {
             &[],
             &[],
             &HashMap::from([(0x5678, Some(0x1234))]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(counts.standard_edges, 0);
         let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -3407,7 +3413,7 @@ mod tests {
             _ => panic!("consolidated surface-curve construction"),
         };
         assert!(context
-            .sides
+            .sides()
             .iter()
             .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
     }
@@ -3527,14 +3533,15 @@ mod tests {
                 )
                 .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides: std::array::from_fn(|side| IntcurveSupportSide {
+                    context: IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| IntcurveSupportSide {
                             surface: Some(support_ids[side].clone()),
                             pcurve: None,
                         }),
-                        parameter_range: [0.0, 1.0],
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
-                    },
+                        [0.0, 1.0],
+                        std::array::from_fn(|_| Vec::new()),
+                    )
+                    .unwrap(),
                     discontinuity_flag: false,
                 },
             ),
@@ -3548,7 +3555,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        );
+        )
+        .unwrap();
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
         let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -3556,7 +3564,7 @@ mod tests {
         else {
             panic!("plane support keeps an intersection construction");
         };
-        assert!(context.sides.iter().all(|side| {
+        assert!(context.sides().iter().all(|side| {
             side.surface
                 .as_ref()
                 .is_some_and(|id| id.as_str().starts_with("catia:consolidated:plane#"))

@@ -71,8 +71,7 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
        id: ProceduralCurveId::mint("test:model:entity#surface-curve".to_string()).expect("valid identity"),
        definition: ProceduralCurveDefinition::SurfaceCurve {
            family: SurfaceCurveFamily::Parametric {
-               context: IntcurveSupportContext {
-               sides: [
+               context: IntcurveSupportContext::try_new([
                    IntcurveSupportSide {
                        surface: Some(surface),
                        pcurve: Some(SupportPcurve::new(
@@ -84,10 +83,7 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
                        surface: None,
                        pcurve: None,
                    },
-               ],
-               parameter_range: [0.0, 1.0],
-               discontinuities: std::array::from_fn(|_| Vec::new()),
-               },
+               ], [0.0, 1.0], std::array::from_fn(|_| Vec::new())).unwrap(),
                tail: None,
            },
        },
@@ -718,14 +714,10 @@ fn edge_endpoint_mismatch_is_flagged() {
     let procedural = procedural_curve! {
         id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
         definition: ProceduralCurveDefinition::Intersection {
-            context: crate::geometry::IntcurveSupportContext {
-                sides: std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
+            context: crate::geometry::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
-                }),
-                parameter_range: ir.model.edges[0].param_range.expect("cube edge range"),
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
+                }), ir.model.edges[0].param_range.expect("cube edge range"), std::array::from_fn(|_| Vec::new())).unwrap(),
             discontinuity_flag: false,
         },
         cache_fit_tolerance: Some(0.99),

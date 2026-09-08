@@ -100,7 +100,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 continue;
             };
             let solved = context
-                .parameter_range
+                .parameter_range()
                 .map(|parameter| curve_point(solved, parameter));
             let [Some(solved_start), Some(solved_end)] = solved else {
                 continue;
@@ -165,9 +165,13 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } => {
                 (std::borrow::Cow::Borrowed(family.context()), None)
             }
-            crate::geometry::ProceduralCurveDefinition::Spring { layout, .. } => {
-                (layout.support_context(), None)
-            }
+            crate::geometry::ProceduralCurveDefinition::Spring { layout, .. } => (
+                match layout.support_context() {
+                    Ok(context) => context,
+                    Err(_) => continue,
+                },
+                None,
+            ),
             crate::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
                 context,
                 third,
@@ -179,7 +183,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             continue;
         };
         let solved = context
-            .parameter_range
+            .parameter_range()
             .map(|parameter| curve_point(curve, parameter));
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
@@ -223,12 +227,12 @@ fn check_support_sides(
             distance,
         } => (endpoints, Some(distance)),
     };
-    for (side_index, side) in context.sides.iter().chain(third).enumerate() {
+    for (side_index, side) in context.sides().iter().chain(third).enumerate() {
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let support = context.parameter_range.map(|parameter| {
-            side.pcurve_parameter(context.parameter_range, parameter)
+        let support = context.parameter_range().map(|parameter| {
+            side.pcurve_parameter(context.parameter_range(), parameter)
                 .and_then(|parameter| pcurve_uv(&pcurve.geometry, parameter))
                 .and_then(|uv| model_surface_point_by_id(index, surface_id, uv.u, uv.v))
         });

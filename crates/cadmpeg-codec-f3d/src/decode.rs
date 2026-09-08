@@ -2063,7 +2063,7 @@ fn try_decode_text_model(
         let Ok(stream) = cadmpeg_asm::sat::parse(bytes) else {
             continue;
         };
-        let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT);
+        let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
             && decoded.asm.faces.is_empty()
@@ -4778,7 +4778,7 @@ fn try_decode_brep(
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT);
+    let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT)?;
     if decoded.asm.surfaces.is_empty()
         && decoded.asm.points.is_empty()
         && decoded.asm.faces.is_empty()

@@ -59,9 +59,9 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                 ref family,
-            } if family.context().sides[0].surface.is_some()
-                && family.context().sides[0].pcurve.is_some()
-                && family.context().sides[1].surface.is_none()
+            } if family.context().sides()[0].surface.is_some()
+                && family.context().sides()[0].pcurve.is_some()
+                && family.context().sides()[1].surface.is_none()
         )
     }));
     assert_eq!(result.ir().model.vertices.len(), 3);

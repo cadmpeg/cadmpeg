@@ -759,7 +759,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
     else {
         unreachable!()
     };
-    let pcurve = context.sides[1].pcurve.as_ref().unwrap();
+    let pcurve = context.sides()[1].pcurve.as_ref().unwrap();
     let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         unreachable!()
     };
@@ -788,7 +788,7 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
     else {
         unreachable!()
     };
-    assert!(context.sides[1].pcurve.is_none());
+    assert!(context.sides()[1].pcurve.is_none());
 }
 
 #[test]
@@ -814,7 +814,7 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
         else {
             return false;
         };
-        context.sides[1].pcurve.is_some()
+        context.sides()[1].pcurve.is_some()
     }));
 }
 
@@ -845,14 +845,14 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     else {
         unreachable!()
     };
-    let Some(support) = context.sides[1].pcurve.as_ref() else {
+    let Some(support) = context.sides()[1].pcurve.as_ref() else {
         panic!("adaptive blend-contact transfer did not produce a pcurve")
     };
     let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
         panic!("adaptive blend-contact transfer did not produce a NURBS pcurve")
     };
-    let source_pcurve = context.sides[0].pcurve.as_ref().unwrap();
-    let target_pcurve = context.sides[1].pcurve.as_ref().unwrap();
+    let source_pcurve = context.sides()[0].pcurve.as_ref().unwrap();
+    let target_pcurve = context.sides()[1].pcurve.as_ref().unwrap();
     assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let source_uv = cadmpeg_ir::eval::pcurve_uv(&source_pcurve.geometry, parameter).unwrap();
@@ -885,7 +885,7 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
         else {
             return false;
         };
-        context.sides[1].pcurve.is_some()
+        context.sides()[1].pcurve.is_some()
     }));
 }
 
@@ -943,13 +943,13 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     else {
         unreachable!()
     };
-    assert!(first.sides[1].pcurve.is_none());
+    assert!(first.sides()[1].pcurve.is_none());
     let ProceduralCurveDefinition::Intersection { context: later, .. } =
         ir.model.procedural_curves[1].definition()
     else {
         unreachable!()
     };
-    assert!(later.sides[1].pcurve.is_some());
+    assert!(later.sides()[1].pcurve.is_some());
 }
 
 fn cylinder_plane_transfer_fixture(
@@ -1010,8 +1010,8 @@ fn cylinder_plane_transfer_fixture(
     ir.model.procedural_curves.push(ProceduralCurve::new(
         construction,
         ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
+            context: IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: Some(source),
                         pcurve: Some(
@@ -1030,9 +1030,10 @@ fn cylinder_plane_transfer_fixture(
                         pcurve: None,
                     },
                 ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
+                [0.0, 1.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
     ));
@@ -1153,8 +1154,8 @@ fn blend_contact_transfer_fixture(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
                 .expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(contact_surface),
                             pcurve: Some(contact_pcurve.into()),
@@ -1164,9 +1165,10 @@ fn blend_contact_transfer_fixture(
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
         ),
@@ -1215,8 +1217,8 @@ fn blend_contact_transfer_fixture(
             ))
             .expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(support.clone()),
                             pcurve: Some(source_pcurve.clone().into()),
@@ -1226,9 +1228,10 @@ fn blend_contact_transfer_fixture(
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
             Some(tolerance),
@@ -1342,8 +1345,8 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(source),
                             pcurve: Some(
@@ -1362,9 +1365,10 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
         ),
@@ -1386,7 +1390,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { nurbs } = &context.sides[1].pcurve.as_ref().unwrap().geometry
+    let PcurveGeometry::Nurbs { nurbs } = &context.sides()[1].pcurve.as_ref().unwrap().geometry
     else {
         unreachable!()
     };
@@ -1664,8 +1668,8 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         ProceduralCurveId::mint("test:model:entity#nx:test:serialized-boundary")
             .expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
+            context: IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: Some(first_support.clone()),
                         pcurve: None,
@@ -1675,9 +1679,10 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                         pcurve: None,
                     },
                 ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
+                [0.0, 1.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
         Some(0.25),
@@ -1699,7 +1704,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
-    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+    assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
 }
 
 #[test]

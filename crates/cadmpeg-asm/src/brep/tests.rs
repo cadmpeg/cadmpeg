@@ -433,7 +433,8 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         "BREP.saved-edge.smbh",
         FORMAT,
         DecodePurpose::Model,
-    );
+    )
+    .unwrap();
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);

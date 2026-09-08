@@ -324,7 +324,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     else {
         unreachable!()
     };
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(context.parameter_range(), [-1.0, 2.0]);
     assert_eq!(*extension, 0);
     assert_eq!(primary.name(), "primary_law");
     assert!(matches!(
@@ -1038,14 +1038,14 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     else {
         panic!("expected two-sided offset construction")
     };
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(context.parameter_range(), [-1.0, 2.0]);
     assert!(*discontinuity_flag);
     assert_eq!(
-        context.discontinuities,
+        *context.discontinuities(),
         [vec![0.25, 0.75], vec![], vec![0.5]]
     );
     assert!(context
-        .sides
+        .sides()
         .iter()
         .all(|side| side.surface.is_none() && side.pcurve.is_none()));
     assert_eq!(*offsets, [-2.0, 4.0]);
@@ -1060,10 +1060,14 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        context.parameter_range = [-2.0, 3.0];
-        context.discontinuities = [vec![0.2, 0.8], vec![], vec![0.6]];
-        *discontinuity_flag = false;
-        *offsets = [-3.0, 5.0];
+        context
+            .edit(|_, context_parameter_range, context_discontinuities| {
+                (*context_parameter_range) = [-2.0, 3.0];
+                (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
+                *discontinuity_flag = false;
+                *offsets = [-3.0, 5.0];
+            })
+            .unwrap()
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -1113,7 +1117,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         panic!("expected embedded two-sided offset")
     };
     assert_eq!(*offsets, [-1.0, 3.0]);
-    for side in &context.sides {
+    for side in context.sides() {
         let surface_id = side.surface.as_ref().expect("embedded support surface");
         assert!(result.ir().model.surfaces.iter().any(|surface| {
             surface.id == *surface_id && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
@@ -1124,7 +1128,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         ));
     }
     assert!(matches!(
-        context.sides[1].pcurve.as_ref().map(|binding| &binding.geometry),
+        context.sides()[1].pcurve.as_ref().map(|binding| &binding.geometry),
         Some(PcurveGeometry::Nurbs { nurbs }) if nurbs.weights().is_some()
     ));
 
@@ -1138,14 +1142,18 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         else {
             unreachable!()
         };
-        context.parameter_range = [-2.0, 5.0];
-        for (side, discontinuities) in context.discontinuities.iter_mut().enumerate() {
-            for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                *value = 0.125 * (side + ordinal + 1) as f64;
-            }
-        }
-        *discontinuity_flag = false;
-        *offsets = [-2.5, 4.5];
+        context
+            .edit(|_, context_parameter_range, context_discontinuities| {
+                (*context_parameter_range) = [-2.0, 5.0];
+                for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate() {
+                    for (ordinal, value) in discontinuities.iter_mut().enumerate() {
+                        *value = 0.125 * (side + ordinal + 1) as f64;
+                    }
+                }
+                *discontinuity_flag = false;
+                *offsets = [-2.5, 4.5];
+            })
+            .unwrap()
     });
     let expected_retained = retained.model.procedural_curves[0].definition().clone();
     let mut retained_bytes = Vec::new();
@@ -1194,17 +1202,17 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
             .model
             .surfaces
             .iter()
-            .find(|surface| Some(&surface.id) == expected_context.sides[side].surface.as_ref())
+            .find(|surface| Some(&surface.id) == expected_context.sides()[side].surface.as_ref())
             .expect("source support surface");
         let actual_surface = round_trip
             .ir()
             .model
             .surfaces
             .iter()
-            .find(|surface| Some(&surface.id) == actual_context.sides[side].surface.as_ref())
+            .find(|surface| Some(&surface.id) == actual_context.sides()[side].surface.as_ref())
             .expect("round-trip support surface");
         assert_eq!(actual_surface.geometry, expected_surface.geometry);
-        expected_context.sides[side].surface = actual_context.sides[side].surface.clone();
+        expected_context.set_surface(side, actual_context.sides()[side].surface.clone());
     }
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].definition(),
@@ -1231,22 +1239,26 @@ fn generated_mixed_offset_supports_write_source_less() {
         let ProceduralCurveDefinition::TwoSidedOffset { context, .. } = definition else {
             panic!("expected two-sided offset construction")
         };
-        context.sides[1].surface = None;
-        context.sides[1].pcurve = None;
-        context.sides[0].pcurve = Some(
-            cadmpeg_ir::geometry::PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
-                    cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                    cadmpeg_ir::math::Point2::new(3.0, -1.0),
-                )
-                .unwrap(),
-            )
-            .into(),
-        );
-        context.sides[0]
-            .surface
-            .clone()
-            .expect("retained first support id")
+        context
+            .edit(|context_sides, _, _| {
+                (*context_sides)[1].surface = None;
+                (*context_sides)[1].pcurve = None;
+                (*context_sides)[0].pcurve = Some(
+                    cadmpeg_ir::geometry::PcurveGeometry::Line(
+                        cadmpeg_ir::geometry::LinePcurve::try_new(
+                            cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                            cadmpeg_ir::math::Point2::new(3.0, -1.0),
+                        )
+                        .unwrap(),
+                    )
+                    .into(),
+                );
+                (*context_sides)[0]
+                    .surface
+                    .clone()
+                    .expect("retained first support id")
+            })
+            .unwrap()
     });
     let expected_surface = source_less
         .model
@@ -1270,9 +1282,9 @@ fn generated_mixed_offset_supports_write_source_less() {
     else {
         panic!("expected round-trip two-sided offset construction")
     };
-    assert!(context.sides[1].surface.is_none() && context.sides[1].pcurve.is_none());
+    assert!(context.sides()[1].surface.is_none() && context.sides()[1].pcurve.is_none());
     assert_eq!(
-        context.sides[0].pcurve,
+        context.sides()[0].pcurve,
         Some(
             cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
                 nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
@@ -1295,7 +1307,7 @@ fn generated_mixed_offset_supports_write_source_less() {
         .model
         .surfaces
         .iter()
-        .find(|surface| Some(&surface.id) == context.sides[0].surface.as_ref())
+        .find(|surface| Some(&surface.id) == context.sides()[0].surface.as_ref())
         .expect("round-trip first support");
     assert_eq!(actual_surface.geometry, expected_surface);
 }
@@ -1319,7 +1331,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
         panic!("expected analytic two-sided offset")
     };
     assert_eq!(*offsets, [-1.5, 2.5]);
-    let supports = context.sides.each_ref().map(|side| {
+    let supports = context.sides().each_ref().map(|side| {
         result
             .ir()
             .model
@@ -1370,7 +1382,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
         panic!("expected round-trip analytic offset supports")
     };
     assert_eq!(*offsets, [-1.5, 2.5]);
-    for (side, expected) in context.sides.iter().zip(expected_geometries) {
+    for (side, expected) in context.sides().iter().zip(expected_geometries) {
         let actual = round_trip
             .ir()
             .model
@@ -1402,7 +1414,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         panic!("expected surface intersection")
     };
     assert!(*discontinuity_flag);
-    let expected_geometries = context.sides.each_ref().map(|side| {
+    let expected_geometries = context.sides().each_ref().map(|side| {
         result
             .ir()
             .model
@@ -1438,8 +1450,12 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        context.parameter_range = [-1.0, 2.0];
-        *discontinuity_flag = false;
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.0, 2.0];
+                *discontinuity_flag = false;
+            })
+            .unwrap()
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1452,7 +1468,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         ProceduralCurveDefinition::Intersection {
             ref context,
             discontinuity_flag: false,
-        } if context.parameter_range == [-1.0, 2.0]
+        } if context.parameter_range() == [-1.0, 2.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1474,7 +1490,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         panic!("expected round-trip surface intersection")
     };
     assert!(*discontinuity_flag);
-    for (side, expected) in context.sides.iter().zip(expected_geometries) {
+    for (side, expected) in context.sides().iter().zip(expected_geometries) {
         let actual = round_trip
             .ir()
             .model
@@ -1505,7 +1521,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     else {
         panic!("expected projection")
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
     assert!(*discontinuity_flag);
     assert!(result
         .ir()
@@ -1533,19 +1549,23 @@ fn generated_projection_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        context.parameter_range = [-1.0, 2.0];
-        *discontinuity_flag = false;
-        let ProjectionTail::Ranged {
-            flag,
-            parameter_range,
-            role,
-        } = tail
-        else {
-            unreachable!()
-        };
-        *flag = false;
-        *parameter_range = [-4.0, 5.0];
-        *role = ProjectionRole::Surf1;
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.0, 2.0];
+                *discontinuity_flag = false;
+                let ProjectionTail::Ranged {
+                    flag,
+                    parameter_range,
+                    role,
+                } = tail
+                else {
+                    unreachable!()
+                };
+                *flag = false;
+                *parameter_range = [-4.0, 5.0];
+                *role = ProjectionRole::Surf1;
+            })
+            .unwrap()
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1564,7 +1584,7 @@ fn generated_projection_decodes_and_writes_source_less() {
                 ref role,
             },
             ..
-        } if context.parameter_range == [-1.0, 2.0] && *role == ProjectionRole::Surf1
+        } if context.parameter_range() == [-1.0, 2.0] && *role == ProjectionRole::Surf1
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1685,7 +1705,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         panic!("expected three-surface intersection")
     };
     assert_eq!(*selector, 7);
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
     let third_surface = result
         .ir()
         .model
@@ -1708,8 +1728,12 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        context.parameter_range = [-1.0, 2.0];
-        *selector = -4;
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.0, 2.0];
+                *selector = -4;
+            })
+            .unwrap()
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1723,7 +1747,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
             ref context,
             selector: -4,
             ..
-        } if context.parameter_range == [-1.0, 2.0]
+        } if context.parameter_range() == [-1.0, 2.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1784,14 +1808,17 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         };
         assert_eq!(family.kind(), expected_family);
         let context = family.context();
-        assert!(context.sides.iter().all(|side| side.surface.is_some()));
+        assert!(context.sides().iter().all(|side| side.surface.is_some()));
 
         let mut edited = result.ir().clone();
         edited.model.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
                 unreachable!()
             };
-            family.context_mut().parameter_range = [-1.0, 2.0];
+            family
+                .context_mut()
+                .edit(|_, range, _| *range = [-1.0, 2.0])
+                .unwrap();
         });
         let mut regenerated = Vec::new();
         crate::test_support::plan_inherited_write(
@@ -1806,7 +1833,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         assert!(matches!(
             regenerated.ir().model.procedural_curves[0].definition(),
             ProceduralCurveDefinition::SurfaceCurve { ref family }
-                if family.context().parameter_range == [-1.0, 2.0]
+                if family.context().parameter_range() == [-1.0, 2.0]
         ));
 
         let (mut source_less, _, _) = result.into_parts();

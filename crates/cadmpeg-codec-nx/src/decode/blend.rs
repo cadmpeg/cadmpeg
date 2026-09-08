@@ -2818,7 +2818,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         .filter(|fit| fit.is_finite() && *fit > 0.0)
         .map_or(tolerance, |fit| tolerance.max(fit));
     let offset_surfaces = context
-        .sides
+        .sides()
         .iter()
         .filter_map(|side| {
             let surface = side.surface.as_ref()?;
@@ -2831,7 +2831,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         })
         .collect::<Vec<_>>();
     let mut candidates = Vec::new();
-    for side in &context.sides {
+    for side in context.sides() {
         let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
@@ -2958,7 +2958,7 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         unreachable!("definition selected above");
     };
-    let candidates = context.sides.iter().filter_map(|side| {
+    let candidates = context.sides().iter().filter_map(|side| {
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
         let offset =

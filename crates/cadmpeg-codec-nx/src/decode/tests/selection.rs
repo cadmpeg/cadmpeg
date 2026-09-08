@@ -34,10 +34,10 @@ fn decode_emits_both_intersection_support_pcurves() {
     else {
         panic!("typed intersection");
     };
-    assert!(context.sides[0].surface.is_some());
-    assert!(context.sides[0].pcurve.is_some());
-    assert!(context.sides[1].surface.is_some());
-    assert!(context.sides[1].pcurve.is_some());
+    assert!(context.sides()[0].surface.is_some());
+    assert!(context.sides()[0].pcurve.is_some());
+    assert!(context.sides()[1].surface.is_some());
+    assert!(context.sides()[1].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -53,8 +53,8 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     else {
         panic!("typed intersection");
     };
-    assert!(context.sides[0].pcurve.is_some());
-    let Some(support) = context.sides[1].pcurve.as_ref() else {
+    assert!(context.sides()[0].pcurve.is_some());
+    let Some(support) = context.sides()[1].pcurve.as_ref() else {
         panic!("completed second support pcurve");
     };
     let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {

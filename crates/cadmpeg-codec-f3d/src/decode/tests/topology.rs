@@ -119,11 +119,12 @@ fn history_topology_decode_matches_full_brep_graph() {
         )
         .expect("frame BREP");
 
-        let full_brep = crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT);
+        let full_brep =
+            crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT).unwrap();
         let full =
             crate::history::historical_topology_with_tags(&full_brep).expect("full topology");
         let history_brep =
-            crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT);
+            crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT).unwrap();
         let history =
             crate::history::historical_topology_with_tags(&history_brep).expect("history topology");
 

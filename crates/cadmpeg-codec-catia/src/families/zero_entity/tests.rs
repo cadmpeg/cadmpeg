@@ -171,14 +171,14 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     else {
         panic!("parametric surface-curve construction")
     };
-    assert_eq!(context.parameter_range, [0.0, 1.0]);
+    assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert_eq!(
-        context.sides[0].surface.as_ref(),
+        context.sides()[0].surface.as_ref(),
         Some(&result.ir().model.surfaces[0].id)
     );
-    assert!(context.sides[0].pcurve.is_some());
-    assert_eq!(context.sides[1].surface, None);
-    assert_eq!(context.sides[1].pcurve, None);
+    assert!(context.sides()[0].pcurve.is_some());
+    assert_eq!(context.sides()[1].surface, None);
+    assert_eq!(context.sides()[1].pcurve, None);
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

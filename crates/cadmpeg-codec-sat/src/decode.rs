@@ -65,7 +65,7 @@ fn decode_asm_binary(
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
-    );
+    )?;
     let mut attributes = BTreeMap::new();
     header_attributes(header, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
@@ -118,7 +118,7 @@ fn decode_acis_binary(
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
-    );
+    )?;
     let mut attributes = BTreeMap::new();
     header_attributes(header, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
@@ -159,7 +159,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
-    );
+    )?;
     build_result(
         ctx,
         brep,

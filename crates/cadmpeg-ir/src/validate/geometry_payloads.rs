@@ -1592,7 +1592,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 crate::geometry::SpringLayout::CacheFirst { .. } => true,
             };
-            if !support_context_is_finite(&context) || !inline_ranges_finite {
+            if context.is_err() || !inline_ranges_finite {
                 bounds_err(
                     findings,
                     procedural.id.as_str(),
@@ -1602,7 +1602,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             continue;
         }
         if let ProceduralCurveDefinition::SurfaceOffset {
-            context,
             base_u_range,
             base_v_range,
             base_range,
@@ -1613,10 +1612,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         } = procedural.definition()
         {
             let ranges = [base_u_range, base_v_range, base_range];
-            if !support_context_is_finite(context)
-                || ranges.iter().any(|range| {
-                    !range.iter().all(|value| value.is_finite()) || range[0] > range[1]
-                })
+            if ranges
+                .iter()
+                .any(|range| !range.iter().all(|value| value.is_finite()) || range[0] > range[1])
                 || !distance.is_finite()
                 || !shift.is_finite()
                 || !scale.is_finite()
@@ -1630,7 +1628,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             continue;
         }
         if let ProceduralCurveDefinition::Silhouette {
-            context,
             silhouette,
             light_direction,
             ..
@@ -1640,8 +1637,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::SilhouetteKind::Taper { draft_factor } => draft_factor.is_finite(),
                 _ => true,
             };
-            if !support_context_is_finite(context)
-                || !light_direction.x.is_finite()
+            if !light_direction.x.is_finite()
                 || !light_direction.y.is_finite()
                 || !light_direction.z.is_finite()
                 || light_direction.norm() <= f64::EPSILON
@@ -1655,25 +1651,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::SurfaceCurve { family } = procedural.definition() {
-            if !support_context_is_finite(family.context()) {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "surface-curve context is not finite and ordered",
-                );
-            }
-            continue;
-        }
         if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } =
             procedural.definition()
         {
-            if !support_context_is_finite(context)
-                || (third
-                    .pcurve
-                    .as_ref()
-                    .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-                    && context.parameter_range[0] == context.parameter_range[1])
+            if third
+                .pcurve
+                .as_ref()
+                .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+                && context.parameter_range()[0] == context.parameter_range()[1]
             {
                 bounds_err(
                     findings,
@@ -1683,8 +1668,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Projection { context, tail, .. } = procedural.definition()
-        {
+        if let ProceduralCurveDefinition::Projection { tail, .. } = procedural.definition() {
             let tail_finite = match tail {
                 crate::geometry::ProjectionTail::EarlyClose { .. } => true,
                 crate::geometry::ProjectionTail::Ranged {
@@ -1694,21 +1678,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && parameter_range[0] <= parameter_range[1]
                 }
             };
-            if !support_context_is_finite(context) || !tail_finite {
+            if !tail_finite {
                 bounds_err(
                     findings,
                     procedural.id.as_str(),
                     "projection fields are not finite and ordered",
-                );
-            }
-            continue;
-        }
-        if let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() {
-            if !support_context_is_finite(context) {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "intersection support context is not finite and ordered",
                 );
             }
             continue;
@@ -1744,12 +1718,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::TwoSidedOffset {
-            context, offsets, ..
-        } = procedural.definition()
-        {
-            let finite =
-                support_context_is_finite(context) && offsets.iter().all(|value| value.is_finite());
+        if let ProceduralCurveDefinition::TwoSidedOffset { offsets, .. } = procedural.definition() {
+            let finite = offsets.iter().all(|value| value.is_finite());
             if !finite {
                 bounds_err(
                     findings,
@@ -1865,25 +1835,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
-}
-
-fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) -> bool {
-    context
-        .parameter_range
-        .iter()
-        .all(|value| value.is_finite())
-        && context.parameter_range[0] <= context.parameter_range[1]
-        && (context.parameter_range[0] != context.parameter_range[1]
-            || context.sides.iter().all(|side| {
-                side.pcurve
-                    .as_ref()
-                    .is_none_or(|pcurve| pcurve.parameter_range.is_none())
-            }))
-        && context
-            .discontinuities
-            .iter()
-            .flatten()
-            .all(|value| value.is_finite())
 }
 
 pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {

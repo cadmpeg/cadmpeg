@@ -1356,7 +1356,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         _ => {}
                     }
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1387,7 +1387,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1413,7 +1413,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
-                for side in context.sides.iter().chain(std::iter::once(third)) {
+                for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1427,7 +1427,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
-                for side in &family.context().sides {
+                for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1453,7 +1453,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         cast_surface.as_str(),
                     );
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1470,7 +1470,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 if ids.curves(base.as_str()).is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", base.as_str());
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1484,8 +1484,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::Spring { layout, .. } => {
-                let context = layout.support_context();
-                for side in &context.sides {
+                let Ok(context) = layout.support_context() else {
+                    continue;
+                };
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1506,7 +1508,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1525,7 +1527,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 if ids.curves(source.as_str()).is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1578,7 +1580,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(

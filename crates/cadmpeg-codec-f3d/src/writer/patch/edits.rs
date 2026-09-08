@@ -3587,12 +3587,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     context: after_context,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3608,12 +3608,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     base: after_base,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before_base == after_base
                 && before.definition() != after.definition() =>
             {
@@ -3646,12 +3646,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     tail: after_tail,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before_source == after_source
                 && matches!(
                     (before_tail, after_tail),
@@ -3676,12 +3676,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     context: after_context,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3697,12 +3697,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     third: after_third,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before_third == after_third
                 && before.definition() != after.definition() =>
             {
@@ -3716,13 +3716,17 @@ pub(crate) fn validate_procedural_curve_edits(
                     family: after_family,
                 },
             ) if before_family.has_same_form(after_family)
-                && before_family.context().sides == after_family.context().sides
+                && before_family.context().sides() == after_family.context().sides()
                 && before_family
                     .context()
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_family.context().discontinuities.iter().map(Vec::len))
+                    .eq(after_family
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3839,12 +3843,12 @@ fn spring_patch_shape_agrees(
                 ..
             },
         ) => {
-            before_context.sides == after_context.sides
+            before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
         }
         _ => false,
     }

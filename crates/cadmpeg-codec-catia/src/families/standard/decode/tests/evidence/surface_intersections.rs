@@ -96,15 +96,15 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         panic!("intersection construction");
     };
     assert_eq!(ir.model.procedural_curve_owner(&procedural.id), Some(&id));
-    assert!(context.sides[0]
+    assert!(context.sides()[0]
         .surface
         .as_ref()
         .is_some_and(|id| id.as_str() == "catia:test:surface#surface-0"));
-    assert!(context.sides[1]
+    assert!(context.sides()[1]
         .surface
         .as_ref()
         .is_some_and(|id| id.as_str() == "catia:test:surface#surface-1"));
-    assert_eq!(context.parameter_range, [0.0, 3.0]);
+    assert_eq!(context.parameter_range(), [0.0, 3.0]);
 }
 
 #[test]
