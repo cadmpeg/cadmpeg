@@ -168,7 +168,9 @@ pub fn resolve_address(
         };
         let kind = match descriptor.derivation {
             SpaceDerivation::Root => AddressStepKind::Root,
-            _ => AddressStepKind::Member,
+            SpaceDerivation::StoredSlice { .. }
+            | SpaceDerivation::Expanded { .. }
+            | SpaceDerivation::Concatenated { .. } => AddressStepKind::Member,
         };
         steps.push(AddressStep {
             label: descriptor.label.clone(),
