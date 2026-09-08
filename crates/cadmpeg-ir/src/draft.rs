@@ -181,9 +181,6 @@ pub enum DraftError {
         /// Missing target identity.
         target: String,
     },
-    /// A B-rep assembly does not contain exactly one closed body graph.
-    #[error("invalid B-rep assembly: {0}")]
-    InvalidBrep(String),
 }
 
 /// Transactional collection of staged model entities and decode accounting.
