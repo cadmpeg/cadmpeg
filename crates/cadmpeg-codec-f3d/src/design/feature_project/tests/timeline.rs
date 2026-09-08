@@ -75,7 +75,7 @@ fn history_state_predecessors_are_component_qualified() {
             ),
             byte_offset: component_record_index,
             component_record_index,
-            context_uuid: context_uuid.into(),
+            context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
             context_uuid_offset: component_record_index + 12,
         };
     let naming_spaces = [

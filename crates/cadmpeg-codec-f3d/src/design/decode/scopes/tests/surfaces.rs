@@ -388,7 +388,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     );
     assert_eq!(bodies[0].field, [1, 2, 3, 4, 5, 6]);
     assert_eq!(
-        decoded_guids,
+        decoded_guids.map(String::from),
         [
             related_guids[0].to_owned(),
             related_guids[1].to_owned(),

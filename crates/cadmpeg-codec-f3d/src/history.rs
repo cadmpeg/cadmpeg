@@ -6831,7 +6831,7 @@ fn component_histories<'a>(
     }
     let mut matching_spaces = naming_spaces
         .iter()
-        .filter(|space| space.context_uuid.eq_ignore_ascii_case(context_id));
+        .filter(|space| space.context_uuid.as_str().eq_ignore_ascii_case(context_id));
     let Some(space) = matching_spaces.next() else {
         return Some(Vec::new());
     };

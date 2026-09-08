@@ -161,9 +161,9 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         identity_paths[0]
             .identity_guids
             .iter()
-            .map(|guid| &guid.value)
+            .map(|guid| guid.value.as_str())
             .collect::<Vec<_>>(),
-        identities.iter().collect::<Vec<_>>()
+        identities.to_vec()
     );
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
@@ -258,7 +258,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
                 path.record_index,
                 path.occurrence_guids
                     .iter()
-                    .map(|guid| guid.value.clone())
+                    .map(|guid| guid.value.as_str().to_owned())
                     .collect::<Vec<_>>(),
             )
         }),
@@ -819,7 +819,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         paths[0]
             .occurrence_guids
             .iter()
-            .map(|guid| guid.value.clone())
+            .map(|guid| guid.value.as_str().to_owned())
             .collect::<Vec<_>>(),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),

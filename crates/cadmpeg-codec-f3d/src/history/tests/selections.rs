@@ -582,9 +582,15 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
 
     let identity =
         |occurrence_reference| crate::records::feature::DesignCombineExternalBodyIdentity {
-            selector_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            selector_asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_asset_id_offset: 0,
-            selector_context_id: "22222222-2222-4222-8222-222222222222".into(),
+            selector_context_id: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_context_id_offset: 0,
             occurrence_reference,
             occurrence_reference_offset: 0,
@@ -592,7 +598,10 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
             external_body_reference_offset: 0,
             external_segment: 2,
             external_segment_offset: 0,
-            external_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            external_asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             external_asset_id_offset: 0,
             external_link_name: "component-body-link".into(),
             external_link_name_offset: 0,

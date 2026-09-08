@@ -21,7 +21,7 @@ pub(crate) fn project_local_components(
     let mut native_by_guid = BTreeMap::new();
     for occurrence in native_occurrences {
         native_by_guid
-            .entry(occurrence.occurrence_guid.to_ascii_lowercase())
+            .entry(occurrence.occurrence_guid.as_str().to_ascii_lowercase())
             .and_modify(|candidate| *candidate = None)
             .or_insert(Some(occurrence));
     }
@@ -38,7 +38,7 @@ pub(crate) fn project_local_components(
                 let Some(root) = path
                     .occurrence_guids
                     .first()
-                    .and_then(|guid| native_by_guid.get(&guid.value.to_ascii_lowercase()))
+                    .and_then(|guid| native_by_guid.get(&guid.value.as_str().to_ascii_lowercase()))
                     .copied()
                     .flatten()
                 else {
@@ -48,8 +48,8 @@ pub(crate) fn project_local_components(
                     &mut components,
                     &mut occurrences,
                     &native_by_guid,
-                    &root.component_guid,
-                    &root.occurrence_guid,
+                    root.component_guid.as_str(),
+                    root.occurrence_guid.as_str(),
                     root.transform().map_or(
                         [
                             [1.0, 0.0, 0.0, 0.0],
@@ -67,16 +67,16 @@ pub(crate) fn project_local_components(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &operation.component_guid,
-                &operation.source_occurrence_guid,
+                operation.component_guid.as_str(),
+                operation.source_occurrence_guid.as_str(),
                 operation.source_transform,
             );
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &operation.component_guid,
-                &operation.copied_occurrence_guid,
+                operation.component_guid.as_str(),
+                operation.copied_occurrence_guid.as_str(),
                 operation.copied_transform,
             );
         }
@@ -85,8 +85,8 @@ pub(crate) fn project_local_components(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &construction.component_guid,
-                &construction.occurrence_guid,
+                construction.component_guid.as_str(),
+                construction.occurrence_guid.as_str(),
                 construction.transform,
             );
         }
@@ -105,8 +105,8 @@ pub(crate) fn project_local_components(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                component_guid,
-                &occurrence.occurrence_guid,
+                component_guid.as_str(),
+                occurrence.occurrence_guid.as_str(),
                 occurrence.instance.transform.value,
             );
         }
@@ -138,7 +138,9 @@ pub(crate) fn project_derived_instance_features(
             continue;
         }
         feature.definition = FeatureDefinition::InsertComponent {
-            occurrence: crate::ids::neutral_component_occurrence_id(&construction.occurrence_guid),
+            occurrence: crate::ids::neutral_component_occurrence_id(
+                construction.occurrence_guid.as_str(),
+            ),
         };
     }
 }
@@ -292,9 +294,9 @@ mod tests {
                 record_index,
                 byte_offset: u64::from(record_index),
                 component_record_index,
-                component_guid: COMPONENT.into(),
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 component_guid_offset: 48,
-                occurrence_guid: occurrence_guid.into(),
+                occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
                 occurrence_guid_offset: 124,
                 placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
             }
@@ -310,9 +312,9 @@ mod tests {
                 relation_record_index: 20,
                 source_occurrence_record_index: 100,
                 copied_occurrence_record_index: 101,
-                component_guid: COMPONENT.into(),
-                source_occurrence_guid: SOURCE.into(),
-                copied_occurrence_guid: COPY.into(),
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                source_occurrence_guid: SOURCE.to_owned().try_into().expect("GUID"),
+                copied_occurrence_guid: COPY.to_owned().try_into().expect("GUID"),
                 source_transform: identity_matrix(),
                 source_transform_offset: 0,
                 copied_transform: identity_matrix(),
@@ -348,8 +350,8 @@ mod tests {
                 reference_record_index: 305,
                 relation_record_index: 383,
                 carrier_record_index: 382,
-                component_guid: COMPONENT.into(),
-                occurrence_guid: OCCURRENCE.into(),
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
                 transform: identity_matrix(),
                 transform_offset: 473,
             });
@@ -360,9 +362,9 @@ mod tests {
             record_index: 382,
             byte_offset: 0,
             component_record_index: 305,
-            component_guid: COMPONENT.into(),
+            component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
             component_guid_offset: 0,
-            occurrence_guid: OCCURRENCE.into(),
+            occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
             occurrence_guid_offset: 0,
             placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: std::num::NonZeroU32::MIN,

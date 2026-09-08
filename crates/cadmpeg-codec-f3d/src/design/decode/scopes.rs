@@ -1077,7 +1077,9 @@ fn exact_assembly_axial_operand_target(
                     && scope
                         .component_insert_construction()
                         .is_some_and(|construction| {
-                            construction.neutron_role.eq_ignore_ascii_case(role)
+                            construction
+                                .neutron_role
+                                .eq_ignore_ascii_case(role.as_str())
                         })
             });
             let component_insert = matches.next()?;
@@ -1228,7 +1230,8 @@ fn exact_assembly_axial_component_operand_at(
     if !first.selects_same_object(&second)
         || !first
             .occurrence_role
-            .eq_ignore_ascii_case(&second.occurrence_role)
+            .as_str()
+            .eq_ignore_ascii_case(second.occurrence_role.as_str())
     {
         return None;
     }
@@ -1292,9 +1295,11 @@ fn exact_assembly_axial_selector(
     let selector_context_at = after_selector_asset_id;
     let (selector_context_id, after_selector_context_id) =
         lp_utf16_bounded(bytes, selector_context_at, 36..=36)?;
-    if !is_guid_relaxed(&selector_asset_id)
-        || !is_guid_relaxed(&selector_context_id)
-        || View::u32_le_at(bytes, after_selector_context_id)? != 2
+    let selector_asset_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
+    let selector_context_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_context_id).ok()?;
+    if View::u32_le_at(bytes, after_selector_context_id)? != 2
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
     {
@@ -1313,7 +1318,12 @@ fn exact_assembly_axial_selector(
     }
     cursor = cursor.checked_add(4)?;
     let external = take_external_reference_identity(bytes, &mut cursor)?;
-    if !external.asset_id.eq_ignore_ascii_case(&selector_asset_id) || cursor > selector_paired_at {
+    if !external
+        .asset_id
+        .as_str()
+        .eq_ignore_ascii_case(selector_asset_id.as_str())
+        || cursor > selector_paired_at
+    {
         return None;
     }
 
@@ -1340,7 +1350,8 @@ fn exact_assembly_axial_selector(
     let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
     let (occurrence_role, after_occurrence_role) =
         lp_utf16_bounded(bytes, occurrence_role_at, 36..=36)?;
-    if !is_guid_relaxed(&occurrence_role) || after_occurrence_role > limit {
+    let occurrence_role = crate::records::DesignRelaxedGuidText::try_from(occurrence_role).ok()?;
+    if after_occurrence_role > limit {
         return None;
     }
 
@@ -2895,7 +2906,8 @@ fn exact_copy_paste_component_operation(
                 && occurrence.byte_offset < copied.byte_offset
                 && occurrence
                     .component_guid
-                    .eq_ignore_ascii_case(&copied.component_guid)
+                    .as_str()
+                    .eq_ignore_ascii_case(copied.component_guid.as_str())
                 && occurrence.transform().is_none()
         })
         .collect::<Vec<_>>();
@@ -2948,13 +2960,14 @@ fn bind_component_pattern_occurrences(
     }
     let Some(component_guid) = generated
         .first()
-        .map(|(occurrence, _)| &occurrence.component_guid)
+        .map(|(occurrence, _)| occurrence.component_guid.as_str())
     else {
         return;
     };
     if generated.iter().any(|(occurrence, _)| {
         !occurrence
             .component_guid
+            .as_str()
             .eq_ignore_ascii_case(component_guid)
     }) {
         return;
@@ -2966,6 +2979,7 @@ fn bind_component_pattern_occurrences(
                 && occurrence.byte_offset < byte_offset
                 && occurrence
                     .component_guid
+                    .as_str()
                     .eq_ignore_ascii_case(component_guid)
                 && matches!(
                     occurrence.placement,
@@ -2980,7 +2994,7 @@ fn bind_component_pattern_occurrences(
         return;
     };
     *instances = DesignRectangularPatternInstances::Components {
-        component_guid: component_guid.clone(),
+        component_guid: seed.component_guid.clone(),
         seed: crate::records::feature::DesignPatternComponentInstance {
             instance: seed_frame,
             occurrence_guid: seed.occurrence_guid.clone(),
@@ -3604,14 +3618,19 @@ fn exact_legacy_class_383_record_frame(
 fn exact_legacy_class_383_identity_guids(
     bytes: &[u8],
     start: usize,
-) -> Option<(String, String, u64, u64)> {
+) -> Option<(
+    crate::records::DesignRelaxedGuidText,
+    crate::records::DesignRelaxedGuidText,
+    u64,
+    u64,
+)> {
     let first_at = start.checked_add(class_383_identity::OCCURRENCE_GUID)?;
     let second_at = start.checked_add(class_383_identity::IDENTITY_GUID)?;
     let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, first_at, 36..=36)?;
     let (identity_guid, after_identity) = lp_utf16_bounded(bytes, second_at, 36..=36)?;
-    if !crate::bytes::is_guid_relaxed(&occurrence_guid)
-        || !crate::bytes::is_guid_relaxed(&identity_guid)
-        || after_occurrence != second_at
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    if after_occurrence != second_at
         || after_identity
             != start
                 .checked_add(class_383_identity::IDENTITY_GUID)?
@@ -3630,8 +3649,8 @@ fn exact_legacy_class_383_identity_guids(
 struct LegacyClass412Path {
     record_index: u32,
     byte_offset: u64,
-    occurrence_guid: crate::records::Located<String>,
-    identity_guids: Vec<crate::records::Located<String>>,
+    occurrence_guid: crate::records::Located<crate::records::DesignRelaxedGuidText>,
+    identity_guids: Vec<crate::records::Located<crate::records::DesignRelaxedGuidText>>,
 }
 
 fn exact_legacy_class_388_operand_paths(
@@ -3881,9 +3900,8 @@ fn exact_legacy_class_412_path(
         start.checked_add(class_412_path::OCCURRENCE_GUID)?,
         36..=36,
     )?;
-    if !is_guid_relaxed(&occurrence_guid)
-        || occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)?
-    {
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    if occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)? {
         return None;
     }
     let identity_offsets = [
@@ -3896,9 +3914,7 @@ fn exact_legacy_class_412_path(
     for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
         let identity_at = start.checked_add(relative_offset)?;
         let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-        if !is_guid_relaxed(&identity_guid) {
-            return None;
-        }
+        let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
         let expected_end = match ordinal {
             0 => class_412_path::SECOND_IDENTITY_GUID,
             1 => class_412_path::IDENTITY_SEPARATOR,
@@ -4215,9 +4231,7 @@ fn exact_assembly_operand_path(
             let mut position = after_tag + 18;
             let (occurrence, after_occurrence) =
                 lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-            if !crate::bytes::is_guid_relaxed(&occurrence) {
-                return None;
-            }
+            let occurrence = crate::records::DesignRelaxedGuidText::try_from(occurrence).ok()?;
             occurrence_guids.push(crate::records::Located {
                 value: occurrence,
                 offset: u64::try_from(position + 4).ok()?,
@@ -4225,9 +4239,7 @@ fn exact_assembly_operand_path(
             position = after_occurrence;
             for _ in 0..2 {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
-                    return None;
-                }
+                let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                 identity_guids.push(crate::records::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -4240,9 +4252,7 @@ fn exact_assembly_operand_path(
             position += 8;
             for _ in 0..2 {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
-                    return None;
-                }
+                let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                 identity_guids.push(crate::records::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -4266,9 +4276,7 @@ fn exact_assembly_operand_path(
             let mut position = after_tag + 18;
             for _ in 0..count {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
-                    return None;
-                }
+                let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                 occurrence_guids.push(crate::records::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -4283,9 +4291,7 @@ fn exact_assembly_operand_path(
                 for _ in 0..2 {
                     let (guid, after_guid) =
                         lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                    if !crate::bytes::is_guid_relaxed(&guid) {
-                        return None;
-                    }
+                    let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                     identity_guids.push(crate::records::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -4299,9 +4305,7 @@ fn exact_assembly_operand_path(
                 for _ in 0..2 {
                     let (guid, after_guid) =
                         lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                    if !crate::bytes::is_guid_relaxed(&guid) {
-                        return None;
-                    }
+                    let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                     identity_guids.push(crate::records::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -6010,7 +6014,11 @@ fn exact_base_feature_body_snapshot(
     };
     let parse_guid = |at: usize| {
         let (guid, end) = lp_utf16_bounded(bytes, at, 36..=36)?;
-        crate::bytes::is_guid_relaxed(&guid).then_some((guid, end, at + snapshot_guid::GUID_UTF16))
+        Some((
+            crate::records::DesignRelaxedGuidText::try_from(guid).ok()?,
+            end,
+            at + snapshot_guid::GUID_UTF16,
+        ))
     };
     let (first_guid, after_first_guid, first_guid_offset) = parse_guid(cursor)?;
     let (second_guid, after_second_guid, second_guid_offset) = parse_guid(after_first_guid)?;
@@ -8362,7 +8370,7 @@ struct ExternalReferenceIdentity {
     target_offset: u64,
     segment: u32,
     segment_offset: u64,
-    asset_id: String,
+    asset_id: crate::records::DesignRelaxedGuidText,
     asset_id_offset: u64,
     link_name: String,
     link_name_offset: u64,
@@ -8385,7 +8393,8 @@ fn take_external_reference_identity(
     let segment = View::u32_le_at(bytes, segment_at)?;
     let asset_at = segment_at.checked_add(4)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_at, 1..=256)?;
-    if !is_guid_relaxed(&asset_id) || bytes.get(after_asset_id) != Some(&0) {
+    let asset_id = crate::records::DesignRelaxedGuidText::try_from(asset_id).ok()?;
+    if bytes.get(after_asset_id) != Some(&0) {
         return None;
     }
     let link_name_at = after_asset_id.checked_add(1)?;
@@ -8398,9 +8407,8 @@ fn take_external_reference_identity(
                 lp_utf16_bounded(bytes, property_key_at, 1..=256)?;
             let version_urn_at = after_property_key;
             let (version_urn, end) = lp_utf16_bounded(bytes, version_urn_at, 1..=256)?;
-            if !is_guid_relaxed(&property_key) {
-                return None;
-            }
+            let property_key =
+                crate::records::DesignRelaxedGuidText::try_from(property_key).ok()?;
             (
                 Some(crate::records::feature::DesignExternalVersion {
                     property_key: crate::records::Located {
@@ -8460,9 +8468,11 @@ fn exact_combine_external_body_identity(
     let selector_context_at = after_selector_asset_id;
     let (selector_context_id, after_selector_context_id) =
         lp_utf16_bounded(bytes, selector_context_at, 1..=256)?;
-    if !is_guid_relaxed(&selector_asset_id)
-        || !is_guid_relaxed(&selector_context_id)
-        || View::u32_le_at(bytes, after_selector_context_id)? != 2
+    let selector_asset_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
+    let selector_context_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_context_id).ok()?;
+    if View::u32_le_at(bytes, after_selector_context_id)? != 2
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
     {
@@ -9280,17 +9290,19 @@ fn exact_coil_placement(
         u64::try_from(selection_start).ok()?,
         &selection_class_tag,
     )
-    .map(|selection| DesignCoilSelection::Persistent {
-        asset_id: selection.asset_id,
-        context_id: selection.context_id,
-        identity_record_index: selection.identity_record_index,
-        primary_identity: selection.primary_identity,
-        secondary: selection
-            .secondary
-            .map(|identity| crate::records::DesignSecondaryIdentity {
-                identity: identity.identity.value,
-                curve_identity: identity.curve_identity.map(|identity| identity.value),
+    .and_then(|selection| {
+        Some(DesignCoilSelection::Persistent {
+            asset_id: selection.asset_id.try_into().ok()?,
+            context_id: selection.context_id.try_into().ok()?,
+            identity_record_index: selection.identity_record_index,
+            primary_identity: selection.primary_identity,
+            secondary: selection.secondary.map(|identity| {
+                crate::records::DesignSecondaryIdentity {
+                    identity: identity.identity.value,
+                    curve_identity: identity.curve_identity.map(|identity| identity.value),
+                }
             }),
+        })
     })
     .or_else(|| {
         exact_coil_face_selection(
@@ -9496,8 +9508,8 @@ fn exact_coil_face_selection(
     }
     let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
     Some(DesignCoilSelection::FaceRecipe {
-        asset_id: prefix.asset_id,
-        context_id: prefix.context_id,
+        asset_id: prefix.asset_id.try_into().ok()?,
+        context_id: prefix.context_id.try_into().ok()?,
         recipe_record_index: face.recipe_record_index,
         recipe_record_byte_offset: face.recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),

@@ -263,9 +263,9 @@ fn validation_accepts_carrier_local_component_references() {
         record_index,
         byte_offset,
         component_record_index,
-        component_guid: COMPONENT.into(),
+        component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
         component_guid_offset: byte_offset + 48,
-        occurrence_guid: occurrence_guid.into(),
+        occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
         occurrence_guid_offset: byte_offset + 124,
         placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
     };

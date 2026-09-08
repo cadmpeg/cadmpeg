@@ -5,10 +5,13 @@
 #[allow(clippy::format_push_string)]
 fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
     {
-        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_byte_offset":0,"axis_paired_class_tag":"327","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"327","selector_byte_offset":0,"selector_paired_class_tag":"327","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"identity","selector_asset_id_offset":0,"selector_context_id":"identity","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"identity","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
-        let suffix = r#","role_record_index":0,"role_class_tag":"327","role_byte_offset":0,"occurrence_role":"identity","occurrence_role_offset":0}"#;
+        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_byte_offset":0,"axis_paired_class_tag":"327","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"327","selector_byte_offset":0,"selector_paired_class_tag":"327","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+        let suffix = r#","role_record_index":0,"role_class_tag":"327","role_byte_offset":0,"occurrence_role":"00000007-1111-4111-8111-111111111111","occurrence_role_offset":0}"#;
         let fields = [
-            ("external_property_key", "\"key\""),
+            (
+                "external_property_key",
+                "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"",
+            ),
             ("external_property_key_offset", "100"),
             ("external_version_urn", "\"urn\""),
             ("external_version_urn_offset", "110"),
@@ -25,6 +28,23 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                 crate::records::feature::DesignAssemblyAxialSelectorIdentity,
             >(&wire);
             if mask == 0 || mask == 15 {
+                let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
+                assert_relaxed_guid_fields::<
+                    crate::records::feature::DesignAssemblyAxialSelectorIdentity,
+                >(
+                    &value,
+                    &[
+                        "selector_asset_id",
+                        "selector_context_id",
+                        "external_asset_id",
+                        "occurrence_role",
+                    ],
+                );
+                if mask == 15 {
+                    assert_relaxed_guid_fields::<
+                        crate::records::feature::DesignAssemblyAxialSelectorIdentity,
+                    >(&value, &["external_property_key"]);
+                }
                 assert_eq!(
                     serde_json::to_string(&result.expect("complete version form"))
                         .expect("version wire"),
@@ -39,10 +59,13 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
         }
     }
     {
-        let prefix = r#"{"selector_asset_id":"identity","selector_asset_id_offset":0,"selector_context_id":"identity","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_body_reference":0,"external_body_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"identity","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_body_reference":0,"external_body_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
         let suffix = r#","tail_values":[0,0],"tail_value_offsets":[0,0]}"#;
         let fields = [
-            ("external_property_key", "\"key\""),
+            (
+                "external_property_key",
+                "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"",
+            ),
             ("external_property_key_offset", "100"),
             ("external_version_urn", "\"urn\""),
             ("external_version_urn_offset", "110"),
@@ -59,6 +82,22 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                 crate::records::feature::DesignCombineExternalBodyIdentity,
             >(&wire);
             if mask == 0 || mask == 15 {
+                let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
+                assert_relaxed_guid_fields::<
+                    crate::records::feature::DesignCombineExternalBodyIdentity,
+                >(
+                    &value,
+                    &[
+                        "selector_asset_id",
+                        "selector_context_id",
+                        "external_asset_id",
+                    ],
+                );
+                if mask == 15 {
+                    assert_relaxed_guid_fields::<
+                        crate::records::feature::DesignCombineExternalBodyIdentity,
+                    >(&value, &["external_property_key"]);
+                }
                 assert_eq!(
                     serde_json::to_string(&result.expect("complete version form"))
                         .expect("version wire"),
@@ -78,9 +117,13 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
 fn component_placement_preserves_wire_and_rejects_partial_location() {
     let base = serde_json::json!({
         "id": "occurrence", "class_tag": "327", "record_index": 7, "byte_offset": 0,
-        "component_record_index": 8, "component_guid": "component", "component_guid_offset": 48,
-        "occurrence_guid": "placed", "occurrence_guid_offset": 124, "occurrence_ordinal": 1
+        "component_record_index": 8, "component_guid": "00000001-1111-4111-8111-111111111111", "component_guid_offset": 48,
+        "occurrence_guid": "00000002-1111-4111-8111-111111111111", "occurrence_guid_offset": 124, "occurrence_ordinal": 1
     });
+    assert_relaxed_guid_fields::<crate::records::feature::DesignComponentOccurrence>(
+        &base,
+        &["component_guid", "occurrence_guid"],
+    );
     let transform = serde_json::json!([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
@@ -142,11 +185,17 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         class_tag: crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
         byte_offset: 300,
         occurrence_guids: vec![crate::records::Located {
-            value: "11111111-1111-4111-8111-111111111111".into(),
+            value: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             offset: 311,
         }],
         identity_guids: vec![crate::records::Located {
-            value: "22222222-2222-4222-8222-222222222222".into(),
+            value: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             offset: 322,
         }],
     };
@@ -410,7 +459,9 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
 #[test]
 fn assembly_path_wire_pairs_guid_locations() {
     for count in [0, 1, 3] {
-        let values: Vec<_> = (0..count).map(|index| format!("guid-{index}")).collect();
+        let values: Vec<_> = (0..count)
+            .map(|index| format!("{index:08}-1111-4111-8111-111111111111"))
+            .collect();
         let offsets: Vec<_> = (0..count).map(|index| 300 + index * 80).collect();
         let wire = serde_json::json!({
             "link": {
@@ -495,7 +546,7 @@ fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
 
 #[test]
 fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal() {
-    let prefix = r#"{"id":"occurrence","class_tag":"327","record_index":7,"byte_offset":0,"component_record_index":8,"component_guid":"component","component_guid_offset":48,"occurrence_guid":"placed","occurrence_guid_offset":124,"occurrence_ordinal":"#;
+    let prefix = r#"{"id":"occurrence","class_tag":"327","record_index":7,"byte_offset":0,"component_record_index":8,"component_guid":"00000001-1111-4111-8111-111111111111","component_guid_offset":48,"occurrence_guid":"00000002-1111-4111-8111-111111111111","occurrence_guid_offset":124,"occurrence_ordinal":"#;
     let matrix = r#","transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":209"#;
     for (ordinal, placed) in [(1, false), (1, true), (2, true), (u32::MAX, true)] {
         let suffix = if placed { matrix } else { "" };
@@ -515,5 +566,24 @@ fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal
             serde_json::from_str::<crate::records::feature::DesignComponentOccurrence>(&wire)
                 .expect_err("invalid occurrence ordinal");
         assert!(error.to_string().contains("occurrence_ordinal"));
+    }
+}
+
+fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>(
+    wire: &serde_json::Value,
+    fields: &[&str],
+) {
+    for field in fields {
+        for guid in ["g".repeat(36), "_".repeat(38), "invalid".into()] {
+            let mut changed = wire.clone();
+            changed[field] = serde_json::json!(guid);
+            let decoded = serde_json::from_value::<T>(changed.clone());
+            if guid == "invalid" {
+                assert!(decoded.is_err(), "{field}");
+            } else {
+                let decoded = decoded.unwrap_or_else(|error| panic!("{field}: {error}"));
+                assert_eq!(serde_json::to_value(decoded).unwrap(), changed);
+            }
+        }
     }
 }

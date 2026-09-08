@@ -332,16 +332,19 @@ fn exact_class_264_record_frame(
 fn exact_class_363_identity_guids(
     bytes: &[u8],
     start: usize,
-) -> Option<(String, String, u64, u64)> {
+) -> Option<(
+    crate::records::DesignRelaxedGuidText,
+    crate::records::DesignRelaxedGuidText,
+    u64,
+    u64,
+)> {
     let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
     let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
     let (occurrence_guid, occurrence_end) = lp_utf16_bounded(bytes, occurrence_at, 36..=36)?;
     let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-    if !is_guid_relaxed(&occurrence_guid)
-        || !is_guid_relaxed(&identity_guid)
-        || occurrence_end != identity_at
-        || identity_end != identity_at.checked_add(76)?
-    {
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
         return None;
     }
     Some((
@@ -507,8 +510,8 @@ mod tests {
             );
             let (occurrence, identity, _, _) =
                 exact_class_363_identity_guids(&bytes, 0).expect("identity GUID prefix");
-            assert_eq!(occurrence, guid);
-            assert_eq!(identity, guid);
+            assert_eq!(occurrence.as_str(), guid);
+            assert_eq!(identity.as_str(), guid);
         }
     }
 }

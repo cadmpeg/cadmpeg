@@ -546,7 +546,7 @@ pub struct DesignComponentNamingSpace {
     /// Component entity id named by the binding.
     pub component_record_index: u64,
     /// UUID used by persistent identities to select this component.
-    pub context_uuid: String,
+    pub context_uuid: DesignRelaxedGuidText,
     /// Byte offset of the UUID length prefix.
     pub context_uuid_offset: u64,
 }
@@ -8712,6 +8712,7 @@ pub struct XrefReference {
     pub relative_path: String,
     /// Occurrence-role GUID joining this reference to the Design-segment
     /// `DcXRefPCIFeature` record and the ACT GUID pool.
+    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     pub neutron_role: String,
     /// The independent `neutronData` property value. It is retained exactly
     /// and is never inferred from or aliased to `neutron_role`.

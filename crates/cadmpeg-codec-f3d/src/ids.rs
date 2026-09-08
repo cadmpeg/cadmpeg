@@ -244,9 +244,9 @@ pub(crate) fn neutral_feature_id_parts(
 pub(crate) fn neutral_combine_external_body_id(
     identity: &DesignCombineExternalBodyIdentity,
 ) -> String {
-    let selector_asset = identity_key_component(&identity.selector_asset_id);
-    let selector_context = identity_key_component(&identity.selector_context_id);
-    let external_asset = identity_key_component(&identity.external_asset_id);
+    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
+    let selector_context = identity_key_component(identity.selector_context_id.as_str());
+    let external_asset = identity_key_component(identity.external_asset_id.as_str());
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
         .external_version
@@ -286,10 +286,12 @@ pub(crate) fn neutral_combine_external_body_id(
 pub(crate) fn neutral_assembly_axial_object_id(
     identity: &DesignAssemblyAxialSelectorIdentity,
 ) -> String {
-    let selector_asset = identity_key_component(&identity.selector_asset_id.to_ascii_lowercase());
+    let selector_asset =
+        identity_key_component(&identity.selector_asset_id.as_str().to_ascii_lowercase());
     let selector_context =
-        identity_key_component(&identity.selector_context_id.to_ascii_lowercase());
-    let external_asset = identity_key_component(&identity.external_asset_id.to_ascii_lowercase());
+        identity_key_component(&identity.selector_context_id.as_str().to_ascii_lowercase());
+    let external_asset =
+        identity_key_component(&identity.external_asset_id.as_str().to_ascii_lowercase());
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
         .external_version

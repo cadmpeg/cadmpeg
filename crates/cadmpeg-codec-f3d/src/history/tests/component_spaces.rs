@@ -55,14 +55,20 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
             byte_offset: 0,
             component_record_index: 10,
-            context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+            context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             context_uuid_offset: 12,
         },
         crate::records::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
             byte_offset: 100,
             component_record_index: 20,
-            context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".into(),
+            context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             context_uuid_offset: 112,
         },
     ];

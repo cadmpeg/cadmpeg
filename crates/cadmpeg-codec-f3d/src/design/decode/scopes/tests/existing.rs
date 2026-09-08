@@ -514,8 +514,14 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
         assert_eq!(
             placement.selection,
             DesignCoilSelection::Persistent {
-                asset_id: "11111111-1111-4111-8111-111111111111".into(),
-                context_id: "22222222-2222-4222-8222-222222222222".into(),
+                asset_id: "11111111-1111-4111-8111-111111111111"
+                    .to_owned()
+                    .try_into()
+                    .expect("GUID"),
+                context_id: "22222222-2222-4222-8222-222222222222"
+                    .to_owned()
+                    .try_into()
+                    .expect("GUID"),
                 identity_record_index: 103,
                 primary_identity: 1331,
                 secondary: Some(crate::records::DesignSecondaryIdentity {
@@ -736,8 +742,14 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
     assert_eq!(
         placement.selection,
         DesignCoilSelection::FaceRecipe {
-            asset_id: "11111111-1111-4111-8111-111111111111".into(),
-            context_id: "22222222-2222-4222-8222-222222222222".into(),
+            asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
+            context_id: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             recipe_record_index: 103,
             recipe_record_byte_offset: recipes[0].byte_offset - 15,
             recipe_id: recipes[0].id.clone(),

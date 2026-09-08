@@ -8,9 +8,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
-};
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
 use crate::container::ContainerScan;
 use crate::ids::{self, native_stream};
 use crate::records::{
@@ -66,7 +64,7 @@ fn insert_component_naming_space(
     bulk_name: &str,
     marker: usize,
     component_record_index: u64,
-    context_uuid: String,
+    context_uuid: crate::records::DesignRelaxedGuidText,
     context_uuid_offset: usize,
 ) -> Result<(), CodecError> {
     let binding = DesignComponentNamingSpace {
@@ -147,9 +145,11 @@ pub fn decode_component_naming_spaces(
                 let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                     continue;
                 };
-                if !is_guid_relaxed(&context_uuid) {
+                let Ok(context_uuid) =
+                    crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+                else {
                     continue;
-                }
+                };
                 insert_component_naming_space(
                     &mut by_component,
                     &bulk_name,
@@ -201,9 +201,10 @@ pub fn decode_component_naming_spaces(
             let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                 continue;
             };
-            if !is_guid_relaxed(&context_uuid) {
+            let Ok(context_uuid) = crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+            else {
                 continue;
-            }
+            };
             insert_component_naming_space(
                 &mut by_component,
                 &bulk_name,

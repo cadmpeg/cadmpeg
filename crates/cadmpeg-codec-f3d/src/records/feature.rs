@@ -760,9 +760,9 @@ pub enum DesignCoilSelection {
     /// Nested entity-selection frame with one or two persistent identities.
     Persistent {
         /// Asset UUID qualifying the persistent selection namespace.
-        asset_id: String,
+        asset_id: DesignRelaxedGuidText,
         /// Context UUID qualifying the persistent selection namespace.
-        context_id: String,
+        context_id: DesignRelaxedGuidText,
         /// Indexed nested record carrying the persistent identity pair.
         identity_record_index: u32,
         /// First persistent identity value.
@@ -774,9 +774,9 @@ pub enum DesignCoilSelection {
     /// Face construction recipe carried by a placement selection frame.
     FaceRecipe {
         /// Asset UUID qualifying the recipe selection namespace.
-        asset_id: String,
+        asset_id: DesignRelaxedGuidText,
         /// Context UUID qualifying the recipe selection namespace.
-        context_id: String,
+        context_id: DesignRelaxedGuidText,
         /// Indexed record containing the face recipe.
         recipe_record_index: u32,
         /// Byte offset of the face recipe record header.
@@ -1691,7 +1691,7 @@ pub struct DesignRectangularPatternConstruction {
 pub enum DesignRectangularPatternInstances {
     Bodies(Vec<DesignPatternInstance>),
     Components {
-        component_guid: String,
+        component_guid: DesignRelaxedGuidText,
         seed: DesignPatternComponentInstance,
         generated: Vec<DesignPatternComponentInstance>,
     },
@@ -1706,7 +1706,7 @@ pub struct DesignPatternInstance {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignPatternComponentInstance {
     pub instance: DesignPatternInstance,
-    pub occurrence_guid: String,
+    pub occurrence_guid: DesignRelaxedGuidText,
 }
 
 impl DesignRectangularPatternInstances {
@@ -1755,11 +1755,11 @@ struct DesignRectangularPatternInstancesWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignComponentPatternOccurrencesWire {
     /// Reusable local component definition shared by every occurrence.
-    component_guid: String,
+    component_guid: DesignRelaxedGuidText,
     /// Existing seed occurrence.
-    seed_occurrence_guid: String,
+    seed_occurrence_guid: DesignRelaxedGuidText,
     /// Newly generated occurrences in pattern order after the seed.
-    generated_occurrence_guids: Vec<String>,
+    generated_occurrence_guids: Vec<DesignRelaxedGuidText>,
 }
 
 impl TryFrom<DesignRectangularPatternInstancesWire> for DesignRectangularPatternInstances {
@@ -2477,11 +2477,11 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Byte offset of `nested_record_index`.
     pub nested_record_index_offset: u64,
     /// Asset GUID of the enclosing selector.
-    pub selector_asset_id: String,
+    pub selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     pub selector_asset_id_offset: u64,
     /// Context GUID of the enclosing selector.
-    pub selector_context_id: String,
+    pub selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     pub selector_context_id_offset: u64,
     /// Axis-specific same-segment occurrence reference.
@@ -2497,7 +2497,7 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Byte offset of `external_segment`.
     pub external_segment_offset: u64,
     /// Asset GUID carried by the cross-document object reference.
-    pub external_asset_id: String,
+    pub external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     pub external_asset_id_offset: u64,
     /// Link name carried by the cross-document object reference.
@@ -2513,7 +2513,7 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Byte offset of the occurrence-role record's indexed header.
     pub role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
-    pub occurrence_role: String,
+    pub occurrence_role: DesignRelaxedGuidText,
     /// Byte offset of `occurrence_role`.
     pub occurrence_role_offset: u64,
 }
@@ -2546,11 +2546,11 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of `nested_record_index`.
     nested_record_index_offset: u64,
     /// Asset GUID of the enclosing selector.
-    selector_asset_id: String,
+    selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     selector_asset_id_offset: u64,
     /// Context GUID of the enclosing selector.
-    selector_context_id: String,
+    selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     selector_context_id_offset: u64,
     /// Axis-specific same-segment occurrence reference.
@@ -2566,7 +2566,7 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of `external_segment`.
     external_segment_offset: u64,
     /// Asset GUID carried by the cross-document object reference.
-    external_asset_id: String,
+    external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     external_asset_id_offset: u64,
     /// Link name carried by the cross-document object reference.
@@ -2575,7 +2575,7 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key: Option<String>,
+    external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     external_property_key_offset: Option<u64>,
@@ -2592,7 +2592,7 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of the occurrence-role record's indexed header.
     role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
-    occurrence_role: String,
+    occurrence_role: DesignRelaxedGuidText,
     /// Byte offset of `occurrence_role`.
     occurrence_role_offset: u64,
 }
@@ -2699,15 +2699,18 @@ impl DesignAssemblyAxialSelectorIdentity {
     /// Report whether two axis selectors carry the same persistent connector identity.
     pub(crate) fn selects_same_object(&self, other: &Self) -> bool {
         self.selector_asset_id
-            .eq_ignore_ascii_case(&other.selector_asset_id)
+            .as_str()
+            .eq_ignore_ascii_case(other.selector_asset_id.as_str())
             && self
                 .selector_context_id
-                .eq_ignore_ascii_case(&other.selector_context_id)
+                .as_str()
+                .eq_ignore_ascii_case(other.selector_context_id.as_str())
             && self.external_object_reference == other.external_object_reference
             && self.external_segment == other.external_segment
             && self
                 .external_asset_id
-                .eq_ignore_ascii_case(&other.external_asset_id)
+                .as_str()
+                .eq_ignore_ascii_case(other.external_asset_id.as_str())
             && self.external_link_name == other.external_link_name
             && match (&self.external_version, &other.external_version) {
                 (None, None) => true,
@@ -2715,7 +2718,8 @@ impl DesignAssemblyAxialSelectorIdentity {
                     first
                         .property_key
                         .value
-                        .eq_ignore_ascii_case(&second.property_key.value)
+                        .as_str()
+                        .eq_ignore_ascii_case(second.property_key.value.as_str())
                         && first.version_urn.value == second.version_urn.value
                 }
                 _ => false,
@@ -2763,9 +2767,9 @@ pub struct DesignAssemblyOperandPath {
     pub class_tag: DesignClassTag,
     pub byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
-    pub occurrence_guids: Vec<Located<String>>,
+    pub occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
-    pub identity_guids: Vec<Located<String>>,
+    pub identity_guids: Vec<Located<DesignRelaxedGuidText>>,
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -2781,12 +2785,12 @@ struct DesignAssemblyOperandPathWire {
     /// Byte offset of the indexed header.
     byte_offset: u64,
     /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
-    occurrence_guids: Vec<String>,
+    occurrence_guids: Vec<DesignRelaxedGuidText>,
     /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
     occurrence_guid_offsets: Vec<u64>,
     /// Four ordered identity GUIDs following a class-390 occurrence path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    identity_guids: Vec<String>,
+    identity_guids: Vec<DesignRelaxedGuidText>,
     /// Byte offsets parallel to `identity_guids`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identity_guid_offsets: Vec<u64>,
@@ -2920,6 +2924,7 @@ pub struct DesignComponentInsertConstruction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
+    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     pub neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     pub neutron_role_offset: u64,
@@ -2968,6 +2973,7 @@ struct DesignComponentInsertConstructionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
+    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     neutron_role_offset: u64,
@@ -3050,9 +3056,9 @@ pub struct DesignDerivedInstanceConstruction {
     /// Class-380 component-occurrence carrier named by the relation.
     pub carrier_record_index: u32,
     /// Component definition GUID carried by the joined occurrence.
-    pub component_guid: String,
+    pub component_guid: DesignRelaxedGuidText,
     /// Placed occurrence GUID carried by the joined occurrence.
-    pub occurrence_guid: String,
+    pub occurrence_guid: DesignRelaxedGuidText,
     /// Row-major local-to-model placement in centimetres.
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first scope-local transform scalar.
@@ -3078,11 +3084,11 @@ pub struct DesignComponentOccurrence {
     /// Referenced component-definition record.
     pub component_record_index: u64,
     /// Stable component-definition GUID.
-    pub component_guid: String,
+    pub component_guid: DesignRelaxedGuidText,
     /// Byte offset of the component GUID payload.
     pub component_guid_offset: u64,
     /// Stable placed-occurrence GUID.
-    pub occurrence_guid: String,
+    pub occurrence_guid: DesignRelaxedGuidText,
     /// Byte offset of the occurrence GUID payload.
     pub occurrence_guid_offset: u64,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
@@ -3133,11 +3139,11 @@ struct DesignComponentOccurrenceWire {
     /// Referenced component-definition record.
     component_record_index: u64,
     /// Stable component-definition GUID.
-    component_guid: String,
+    component_guid: DesignRelaxedGuidText,
     /// Byte offset of the component GUID payload.
     component_guid_offset: u64,
     /// Stable placed-occurrence GUID.
-    occurrence_guid: String,
+    occurrence_guid: DesignRelaxedGuidText,
     /// Byte offset of the occurrence GUID payload.
     occurrence_guid_offset: u64,
     /// One-based occurrence ordinal within the component definition.
@@ -3209,11 +3215,11 @@ pub struct DesignCopyPasteComponentOperation {
     /// Newly copied occurrence carrier.
     pub copied_occurrence_record_index: u32,
     /// Reusable component definition shared by source and copy.
-    pub component_guid: String,
+    pub component_guid: DesignRelaxedGuidText,
     /// Existing source occurrence identity.
-    pub source_occurrence_guid: String,
+    pub source_occurrence_guid: DesignRelaxedGuidText,
     /// Newly copied occurrence identity.
-    pub copied_occurrence_guid: String,
+    pub copied_occurrence_guid: DesignRelaxedGuidText,
     /// Source placement embedded by the scope.
     pub source_transform: [[f64; 4]; 4],
     /// Byte offset of the source placement.
@@ -3698,7 +3704,7 @@ pub enum DesignCombineForm {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignExternalVersion {
-    pub property_key: Located<String>,
+    pub property_key: Located<DesignRelaxedGuidText>,
     pub version_urn: Located<String>,
 }
 
@@ -3711,11 +3717,11 @@ pub struct DesignExternalVersion {
 )]
 pub struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
-    pub selector_asset_id: String,
+    pub selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     pub selector_asset_id_offset: u64,
     /// Context GUID of the enclosing body selector.
-    pub selector_context_id: String,
+    pub selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     pub selector_context_id_offset: u64,
     /// Same-segment occurrence reference preceding the external body reference.
@@ -3731,7 +3737,7 @@ pub struct DesignCombineExternalBodyIdentity {
     /// Byte offset of `external_segment`.
     pub external_segment_offset: u64,
     /// Asset GUID carried by the cross-document body reference.
-    pub external_asset_id: String,
+    pub external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     pub external_asset_id_offset: u64,
     /// Link name carried by the cross-document body reference.
@@ -3752,11 +3758,11 @@ pub struct DesignCombineExternalBodyIdentity {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCombineExternalBodyIdentityWire {
     /// Asset GUID of the enclosing body selector.
-    selector_asset_id: String,
+    selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     selector_asset_id_offset: u64,
     /// Context GUID of the enclosing body selector.
-    selector_context_id: String,
+    selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     selector_context_id_offset: u64,
     /// Same-segment occurrence reference preceding the external body reference.
@@ -3772,7 +3778,7 @@ struct DesignCombineExternalBodyIdentityWire {
     /// Byte offset of `external_segment`.
     external_segment_offset: u64,
     /// Asset GUID carried by the cross-document body reference.
-    external_asset_id: String,
+    external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     external_asset_id_offset: u64,
     /// Link name carried by the cross-document body reference.
@@ -3781,7 +3787,7 @@ struct DesignCombineExternalBodyIdentityWire {
     external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key: Option<String>,
+    external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     external_property_key_offset: Option<u64>,
@@ -8604,7 +8610,7 @@ pub enum DesignBaseFeatureConstruction {
         /// Ordered snapshot bodies with their source fields.
         bodies: Vec<DesignBaseFeatureEntry<u64>>,
         /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
-        related_guids: [String; 3],
+        related_guids: [DesignRelaxedGuidText; 3],
         /// Byte offsets of the first code unit of each related GUID.
         related_guid_offsets: [u64; 3],
         /// Indexed record carried by the snapshot linkage tail.
@@ -8786,7 +8792,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Six-byte source fields parallel to `body_entity_suffixes`.
         body_entity_fields: Vec<[u8; 6]>,
         /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
-        related_guids: [String; 3],
+        related_guids: [DesignRelaxedGuidText; 3],
         /// Byte offsets of the first code unit of each related GUID.
         related_guid_offsets: [u64; 3],
         /// Indexed record carried by the snapshot linkage tail.

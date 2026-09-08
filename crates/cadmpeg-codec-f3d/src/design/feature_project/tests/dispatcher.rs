@@ -573,9 +573,18 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             relation_record_index: 401,
             source_occurrence_record_index: 402,
             copied_occurrence_record_index: 403,
-            component_guid: "component".into(),
-            source_occurrence_guid: "source-occurrence".into(),
-            copied_occurrence_guid: "copied-occurrence".into(),
+            component_guid: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
+            source_occurrence_guid: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
+            copied_occurrence_guid: "33333333-3333-4333-8333-333333333333"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             source_transform: identity_matrix(),
             source_transform_offset: 0,
             copied_transform: identity_matrix(),
@@ -754,7 +763,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("CopyPaste"),
         FeatureDefinition::InsertComponent {
-            occurrence: crate::ids::neutral_component_occurrence_id("copied-occurrence"),
+            occurrence: crate::ids::neutral_component_occurrence_id(
+                "33333333-3333-4333-8333-333333333333"
+            ),
         }
     );
     assert_eq!(

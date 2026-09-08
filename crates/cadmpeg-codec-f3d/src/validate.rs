@@ -172,8 +172,6 @@ fn valid_class_363_operand_path_link(
         && path.identity_guids.len() == 1
         && path.occurrence_guids[0].offset == link.path_reference_offset
         && path.identity_guids[0].offset > path.occurrence_guids[0].offset
-        && crate::bytes::is_guid_relaxed(&path.occurrence_guids[0].value)
-        && crate::bytes::is_guid_relaxed(&path.identity_guids[0].value)
 }
 
 fn valid_class_307_joint_origin_qualifier(
@@ -306,19 +304,19 @@ fn valid_axial_selector_identity(
         |offset: u64, value: &str| utf16_len(value)?.checked_mul(2)?.checked_add(offset);
     let Some(selector_asset_end) = utf16_end(
         selector.selector_asset_id_offset,
-        &selector.selector_asset_id,
+        selector.selector_asset_id.as_str(),
     ) else {
         return false;
     };
     let Some(selector_context_end) = utf16_end(
         selector.selector_context_id_offset,
-        &selector.selector_context_id,
+        selector.selector_context_id.as_str(),
     ) else {
         return false;
     };
     let Some(external_asset_end) = utf16_end(
         selector.external_asset_id_offset,
-        &selector.external_asset_id,
+        selector.external_asset_id.as_str(),
     ) else {
         return false;
     };
@@ -340,7 +338,6 @@ fn valid_axial_selector_identity(
             let version_urn_offset = version.version_urn.offset;
             let version_len = utf16_len(version_urn);
             if external_link_end.checked_add(5) != Some(property_key_offset)
-                || !crate::bytes::is_guid_relaxed(property_key)
                 || !version_len.is_some_and(|length| (1..=256).contains(&length))
                 || utf16_end(property_key_offset, property_key).and_then(|end| end.checked_add(4))
                     != Some(version_urn_offset)
@@ -354,9 +351,10 @@ fn valid_axial_selector_identity(
     let Some(external_end) = external_end else {
         return false;
     };
-    let Some(occurrence_role_end) =
-        utf16_end(selector.occurrence_role_offset, &selector.occurrence_role)
-    else {
+    let Some(occurrence_role_end) = utf16_end(
+        selector.occurrence_role_offset,
+        selector.occurrence_role.as_str(),
+    ) else {
         return false;
     };
     let selector_pair_is_referenced = scope
@@ -413,16 +411,13 @@ fn valid_axial_selector_identity(
             == Some(selector.external_asset_id_offset)
         && external_asset_end.checked_add(5) == Some(selector.external_link_name_offset)
         && selector.role_byte_offset.checked_add(29) == Some(selector.occurrence_role_offset)
-        && crate::bytes::is_guid_relaxed(&selector.selector_asset_id)
-        && crate::bytes::is_guid_relaxed(&selector.selector_context_id)
-        && crate::bytes::is_guid_relaxed(&selector.external_asset_id)
         && selector
             .external_asset_id
-            .eq_ignore_ascii_case(&selector.selector_asset_id)
+            .as_str()
+            .eq_ignore_ascii_case(selector.selector_asset_id.as_str())
         && selector.occurrence_reference != 0
         && selector.external_object_reference != 0
         && (1..=256).contains(&external_link_len)
-        && crate::bytes::is_guid_relaxed(&selector.occurrence_role)
         && selector_pair_is_referenced
         && selector_records_are_unique
 }
@@ -470,7 +465,7 @@ fn valid_axial_assembly_targets(
                                 |construction| {
                                     construction
                                         .neutron_role
-                                        .eq_ignore_ascii_case(&selectors[0].occurrence_role)
+                                        .eq_ignore_ascii_case(selectors[0].occurrence_role.as_str())
                                 },
                             )
                     })
@@ -516,7 +511,8 @@ fn valid_axial_assembly_targets(
                     && selectors[0].selects_same_object(&selectors[1])
                     && selectors[0]
                         .occurrence_role
-                        .eq_ignore_ascii_case(&selectors[1].occurrence_role)
+                        .as_str()
+                        .eq_ignore_ascii_case(selectors[1].occurrence_role.as_str())
                     && component_scopes == 1
             }
             records::feature::DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
@@ -2416,10 +2412,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             }
                                             && path
                                                 .identity_guids
-                                                .iter()
-                                                .all(|guid| crate::bytes::is_guid_relaxed(&guid.value))
-                                            && path
-                                                .identity_guids
                                                 .windows(2)
                                                 .all(|offsets| offsets[0].offset < offsets[1].offset)
                                             && path
@@ -2446,8 +2438,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                                             design_stream(&occurrence.id)
                                                                 == native_stream
                                                                 && occurrence
-                                                                    .occurrence_guid
-                                                                    .eq_ignore_ascii_case(&guid.value)
+                                                                    .occurrence_guid.as_str()
+                                                                    .eq_ignore_ascii_case(guid.value.as_str())
                                                         })
                                                         .count()
                                                         == 1
@@ -2730,19 +2722,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && source.is_some_and(|source| {
                         source
                             .component_guid
-                            .eq_ignore_ascii_case(&operation.component_guid)
+                            .as_str()
+                            .eq_ignore_ascii_case(operation.component_guid.as_str())
                             && source
                                 .occurrence_guid
-                                .eq_ignore_ascii_case(&operation.source_occurrence_guid)
+                                .as_str()
+                                .eq_ignore_ascii_case(operation.source_occurrence_guid.as_str())
                             && source.transform().is_none()
                     })
                     && copied.is_some_and(|copied| {
                         copied
                             .component_guid
-                            .eq_ignore_ascii_case(&operation.component_guid)
+                            .as_str()
+                            .eq_ignore_ascii_case(operation.component_guid.as_str())
                             && copied
                                 .occurrence_guid
-                                .eq_ignore_ascii_case(&operation.copied_occurrence_guid)
+                                .as_str()
+                                .eq_ignore_ascii_case(operation.copied_occurrence_guid.as_str())
                             && copied.transform().map(|frame| frame.value)
                                 == Some(operation.copied_transform)
                     })
@@ -2801,19 +2797,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         };
                         let Some(selector_asset_end) = utf16_end(
                             identity.selector_asset_id_offset,
-                            &identity.selector_asset_id,
+                            identity.selector_asset_id.as_str(),
                         ) else {
                             return false;
                         };
                         let Some(selector_context_end) = utf16_end(
                             identity.selector_context_id_offset,
-                            &identity.selector_context_id,
+                            identity.selector_context_id.as_str(),
                         ) else {
                             return false;
                         };
                         let Some(external_asset_end) = utf16_end(
                             identity.external_asset_id_offset,
-                            &identity.external_asset_id,
+                            identity.external_asset_id.as_str(),
                         ) else {
                             return false;
                         };
@@ -2844,17 +2840,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     utf16_end(version_urn_offset, version_urn)
                                         .and_then(|end| end.checked_add(6))
                                         == Some(identity.tail_value_offsets[0]);
-                                crate::bytes::is_guid_relaxed(property_key)
-                                    && !version_urn.is_empty()
+                                !version_urn.is_empty()
                                     && property_key_offset_is_valid
                                     && version_urn_offset_is_valid
                                     && tail_offset_is_valid
                             }
                         };
-                        crate::bytes::is_guid_relaxed(&identity.selector_asset_id)
-                            && crate::bytes::is_guid_relaxed(&identity.selector_context_id)
-                            && crate::bytes::is_guid_relaxed(&identity.external_asset_id)
-                            && identity.external_asset_id == identity.selector_asset_id
+                        identity.external_asset_id == identity.selector_asset_id
                             && identity.occurrence_reference != 0
                             && identity.external_body_reference != 0
                             && !identity.external_link_name.is_empty()
@@ -4143,10 +4135,10 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut record_indices = HashSet::new();
     for occurrence in &ctx.native.design_component_occurrences {
         let stream = design_stream(&occurrence.id);
-        let valid = identities.insert((stream, occurrence.occurrence_guid.to_ascii_lowercase()))
-            && record_indices.insert((stream, occurrence.record_index))
-            && crate::bytes::is_guid_relaxed(&occurrence.component_guid)
-            && crate::bytes::is_guid_relaxed(&occurrence.occurrence_guid)
+        let valid = identities.insert((
+            stream,
+            occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
+        )) && record_indices.insert((stream, occurrence.record_index))
             && occurrence.component_guid_offset == occurrence.byte_offset + 48
             && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
             && match occurrence.placement {
@@ -4188,27 +4180,24 @@ fn valid_component_pattern_occurrences(
     else {
         return true;
     };
-    crate::bytes::is_guid_relaxed(component_guid)
-        && crate::bytes::is_guid_relaxed(&seed.occurrence_guid)
-        && generated
-            .iter()
-            .all(|row| crate::bytes::is_guid_relaxed(&row.occurrence_guid))
-        && native
-            .design_component_occurrences
-            .iter()
-            .any(|occurrence| {
-                design_stream(&occurrence.id) == stream
-                    && occurrence
-                        .component_guid
-                        .eq_ignore_ascii_case(component_guid)
-                    && occurrence
-                        .occurrence_guid
-                        .eq_ignore_ascii_case(&seed.occurrence_guid)
-                    && matches!(
-                        occurrence.placement,
-                        crate::records::feature::DesignComponentOccurrencePlacement::Base
-                    )
-            })
+    native
+        .design_component_occurrences
+        .iter()
+        .any(|occurrence| {
+            design_stream(&occurrence.id) == stream
+                && occurrence
+                    .component_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(component_guid.as_str())
+                && occurrence
+                    .occurrence_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(seed.occurrence_guid.as_str())
+                && matches!(
+                    occurrence.placement,
+                    crate::records::feature::DesignComponentOccurrencePlacement::Base
+                )
+        })
         && generated.iter().enumerate().all(|(ordinal, row)| {
             native
                 .design_component_occurrences
@@ -4217,10 +4206,12 @@ fn valid_component_pattern_occurrences(
                     design_stream(&occurrence.id) == stream
                         && occurrence
                             .component_guid
-                            .eq_ignore_ascii_case(component_guid)
+                            .as_str()
+                            .eq_ignore_ascii_case(component_guid.as_str())
                         && occurrence
                             .occurrence_guid
-                            .eq_ignore_ascii_case(&row.occurrence_guid)
+                            .as_str()
+                            .eq_ignore_ascii_case(row.occurrence_guid.as_str())
                         && occurrence.occurrence_ordinal() == ordinal as u32 + 2
                         && occurrence.transform() == Some(row.instance.transform)
                 })

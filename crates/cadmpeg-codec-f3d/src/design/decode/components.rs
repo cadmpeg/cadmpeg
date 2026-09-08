@@ -6,7 +6,7 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
@@ -71,11 +71,9 @@ pub(crate) fn exact_component_occurrence(
     let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
     let (component_guid, after_component) = lp_utf16_bounded(bytes, start + 44, 36..=36)?;
     let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, start + 120, 36..=36)?;
-    if after_component != start + 120
-        || after_occurrence != start + 196
-        || !is_guid_relaxed(&component_guid)
-        || !is_guid_relaxed(&occurrence_guid)
-    {
+    let component_guid = crate::records::DesignRelaxedGuidText::try_from(component_guid).ok()?;
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    if after_component != start + 120 || after_occurrence != start + 196 {
         return None;
     }
     let placement = match frame_length {
@@ -169,8 +167,8 @@ mod tests {
         header(&mut seed, b"333", 21);
         let seed = exact_component_occurrence(&seed, 0, "f3d:Design/BulkStream.dat")
             .expect("seed occurrence");
-        assert_eq!(seed.component_guid, COMPONENT);
-        assert_eq!(seed.occurrence_guid, OCCURRENCE);
+        assert_eq!(seed.component_guid.as_str(), COMPONENT);
+        assert_eq!(seed.occurrence_guid.as_str(), OCCURRENCE);
         assert_eq!(seed.occurrence_ordinal(), 1);
         assert_eq!(seed.transform(), None);
 
@@ -202,8 +200,8 @@ mod tests {
         header(&mut legacy, b"333", 21);
         let legacy = exact_component_occurrence(&legacy, 0, "f3d:Design/BulkStream.dat")
             .expect("legacy occurrence");
-        assert_eq!(legacy.component_guid, COMPONENT);
-        assert_eq!(legacy.occurrence_guid, OCCURRENCE);
+        assert_eq!(legacy.component_guid.as_str(), COMPONENT);
+        assert_eq!(legacy.occurrence_guid.as_str(), OCCURRENCE);
 
         let mut legacy_placed = common(357, 1);
         legacy_placed[4..7].copy_from_slice(b"327");

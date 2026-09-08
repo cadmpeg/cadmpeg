@@ -1331,7 +1331,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                             |operation| FeatureDefinition::InsertComponent {
                                 occurrence: crate::ids::neutral_component_occurrence_id(
-                                    &operation.copied_occurrence_guid,
+                                    operation.copied_occurrence_guid.as_str(),
                                 ),
                             },
                         )
@@ -6484,7 +6484,7 @@ fn project_rectangular_pattern_scalars(
             crate::records::feature::DesignRectangularPatternInstances::Components {
                 seed, ..
             } => Some(PatternSeed::Occurrences(vec![
-                crate::ids::neutral_component_occurrence_id(&seed.occurrence_guid),
+                crate::ids::neutral_component_occurrence_id(seed.occurrence_guid.as_str()),
             ])),
         });
     let group_seed = native_stream(&scope.id).and_then(|stream| {
