@@ -234,7 +234,7 @@ mod tests {
         };
         assert!(property.value().is_none());
         assert_eq!(
-            serde_json::to_string(&property).unwrap(),
+            serde_json::to_string(&property).expect("serialize empty references"),
             r#"{"value_offset":4,"value":{"kind":"multiple","value":[]},"connections":["target"]}"#
         );
     }
