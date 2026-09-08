@@ -569,7 +569,11 @@ fn rederived_body_census(
                     &mut bodies,
                     target,
                     tools,
-                    *keep_tools,
+                    if *keep_tools {
+                        ToolRetention::Keep
+                    } else {
+                        ToolRetention::Delete
+                    },
                     feature_completeness::combine_definition_is_incomplete(feature),
                 )?;
             }
@@ -900,12 +904,18 @@ fn apply_complete_boolean_outputs(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ToolRetention {
+    Keep,
+    Delete,
+}
+
 fn apply_complete_body_combine(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &mut BTreeSet<BodyId>,
     target: &BodySelection,
     tools: &BodySelection,
-    keep_tools: bool,
+    tool_retention: ToolRetention,
     incomplete: bool,
 ) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
@@ -938,7 +948,7 @@ fn apply_complete_body_combine(
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
-    if !keep_tools {
+    if tool_retention == ToolRetention::Delete {
         for tool in tools {
             bodies.remove(&tool);
         }
