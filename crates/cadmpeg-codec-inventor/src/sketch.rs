@@ -324,8 +324,8 @@ pub(crate) enum PmDcSketchEntityKind {
         position: [f64; 2],
         endpoint_of: PmDcReferenceList,
         center_of: PmDcReferenceList,
-        #[serde(flatten, with = "point_tail")]
-        tail: Option<(u32, PmDcReferenceList)>,
+        #[serde(flatten)]
+        tail: PointTail,
     },
     Line {
         points: PmDcReferenceList,
@@ -351,41 +351,52 @@ pub(crate) enum PmDcSketchEntityKind {
     },
 }
 
-mod point_tail {
-    use super::PmDcReferenceList;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/// The absent or complete state and association tail of a sketch point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PointTailWire", into = "PointTailWire")]
+pub(crate) enum PointTail {
+    Absent,
+    Present {
+        state: u32,
+        associations: PmDcReferenceList,
+    },
+}
 
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        state: Option<u32>,
-        associations: Option<PmDcReferenceList>,
-    }
+#[derive(Serialize, Deserialize)]
+struct PointTailWire {
+    state: Option<u32>,
+    associations: Option<PmDcReferenceList>,
+}
 
-    pub(super) fn serialize<S: Serializer>(
-        tail: &Option<(u32, PmDcReferenceList)>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let (state, associations) = match tail {
-            Some((state, associations)) => (Some(*state), Some(associations.clone())),
-            None => (None, None),
-        };
-        Wire {
-            state,
-            associations,
+impl From<PointTail> for PointTailWire {
+    fn from(tail: PointTail) -> Self {
+        match tail {
+            PointTail::Absent => Self {
+                state: None,
+                associations: None,
+            },
+            PointTail::Present {
+                state,
+                associations,
+            } => Self {
+                state: Some(state),
+                associations: Some(associations),
+            },
         }
-        .serialize(serializer)
     }
+}
 
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<(u32, PmDcReferenceList)>, D::Error> {
-        let wire = Wire::deserialize(deserializer)?;
+impl TryFrom<PointTailWire> for PointTail {
+    type Error = &'static str;
+
+    fn try_from(wire: PointTailWire) -> Result<Self, Self::Error> {
         match (wire.state, wire.associations) {
-            (Some(state), Some(associations)) => Ok(Some((state, associations))),
-            (None, None) => Ok(None),
-            _ => Err(serde::de::Error::custom(
-                "point state and associations must be present together",
-            )),
+            (Some(state), Some(associations)) => Ok(Self::Present {
+                state,
+                associations,
+            }),
+            (None, None) => Ok(Self::Absent),
+            _ => Err("point state and associations must be present together"),
         }
     }
 }
@@ -628,12 +639,12 @@ fn parse_point(
     let endpoint_of = reference_list(ctx, cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(ctx, cursor, 2, "point center-of list")?;
     let tail = if cursor.remaining() == 0 {
-        None
+        PointTail::Absent
     } else {
-        Some((
-            cursor.u32("point state")?,
-            reference_list(ctx, cursor, 2, "point association list")?,
-        ))
+        PointTail::Present {
+            state: cursor.u32("point state")?,
+            associations: reference_list(ctx, cursor, 2, "point association list")?,
+        }
     };
     Ok(PmDcSketchEntityKind::Point {
         position,

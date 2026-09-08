@@ -13,7 +13,7 @@ use crate::feature::{
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
-    PmDcSketchEntityKind, PmDcTransform,
+    PmDcSketchEntityKind, PmDcTransform, PointTail,
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
@@ -473,7 +473,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
-                if let Some((_, associations)) = tail {
+                if let PointTail::Present { associations, .. } = tail {
                     add_list(associations);
                 }
             }
