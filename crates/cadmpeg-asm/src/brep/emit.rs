@@ -12,7 +12,7 @@ use crate::nurbs;
 use crate::nurbs::proc_curve::{
     EmbeddedDeformableData, EmbeddedLawCurve, EmbeddedProjection, EmbeddedSilhouette,
     EmbeddedSpring, EmbeddedSpringLayout, EmbeddedSpringPcurve, EmbeddedSpringSupport,
-    EmbeddedSurfaceOffset, ProceduralCurveConstruction,
+    EmbeddedSurfaceOffset, EmbeddedSurfaceOffsetLayout, ProceduralCurveConstruction,
 };
 use crate::nurbs::proc_surface::{
     ClassicLoftProfileData, DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft,
@@ -2979,6 +2979,15 @@ fn emit_surface_offset_curve(
         geometry: CurveGeometry::Nurbs(embedded.base),
         source_object: None,
     });
+    let (discontinuity_flag, base_endpoints, cache_first) = match embedded.layout {
+        EmbeddedSurfaceOffsetLayout::ContextFirst { discontinuity_flag } => {
+            (discontinuity_flag, [None; 2], None)
+        }
+        EmbeddedSurfaceOffsetLayout::CacheFirst {
+            form,
+            base_endpoints,
+        } => (false, base_endpoints, Some(form)),
+    };
     cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
         context: cadmpeg_ir::geometry::IntcurveSupportContext {
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
@@ -2988,13 +2997,13 @@ fn emit_surface_offset_curve(
             parameter_range: embedded.context.parameter_range,
             discontinuities: embedded.context.discontinuities,
         },
-        discontinuity_flag: embedded.discontinuity_flag,
+        discontinuity_flag,
         base_u_range: embedded.base_u_range,
         base_v_range: embedded.base_v_range,
         base,
         base_range: embedded.base_range,
-        base_endpoints: embedded.base_endpoints,
-        cache_first: embedded.cache_first,
+        base_endpoints,
+        cache_first,
         distance: embedded.distance,
         shift: embedded.shift,
         scale: embedded.scale,
