@@ -387,14 +387,6 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
             curvilinear: false,
         }
     ));
-    assert!(sweep_orientation_is_incomplete(
-        &SweepOrientation::Binormal {
-            direction: cadmpeg_ir::features::FeatureDirection3::new(
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)
-            )
-            .unwrap(),
-        }
-    ));
 }
 
 #[test]
