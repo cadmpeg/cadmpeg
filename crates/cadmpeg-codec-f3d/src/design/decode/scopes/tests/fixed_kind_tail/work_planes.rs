@@ -8,7 +8,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"380");
     bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
-    let transform = identity_matrix();
+    let transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = 49 + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());

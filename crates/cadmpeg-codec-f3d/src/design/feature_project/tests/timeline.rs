@@ -794,7 +794,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
     assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
     assert_eq!(
         crate::design::feature_project::matrix_axis_angle(
-            &crate::design::decode::sketch::identity_matrix()
+            &crate::records::SketchPlacementMatrix::IDENTITY.rows()
         ),
         None
     );

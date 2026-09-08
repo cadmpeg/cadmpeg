@@ -402,7 +402,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        identity_matrix().try_into().unwrap()
+        crate::records::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -509,7 +509,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        identity_matrix().try_into().unwrap()
+        crate::records::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -625,7 +625,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        identity_matrix().try_into().unwrap()
+        crate::records::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -747,7 +747,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        identity_matrix().try_into().unwrap()
+        crate::records::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -889,7 +889,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         (bytes, scope, scope_at)
     };
 
-    let identity = identity_matrix();
+    let identity = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     let (bytes, scope, _) = make_fixture(257, identity);
     let records = IndexedRecordOffsets::build(&bytes);
     let construction = exact_component_insert_construction(&bytes, &records, &scope)

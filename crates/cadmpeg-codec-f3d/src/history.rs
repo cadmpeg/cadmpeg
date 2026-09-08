@@ -2794,7 +2794,7 @@ pub(crate) fn bind_vertex_recipe_history(
             || first.0 == third.0
             || second.0 == third.0
             || !three_point_plane_matches(
-                transform.map(|matrix| matrix.rows()),
+                transform.map(crate::records::SketchPlacementMatrix::rows),
                 [first.1, second.1, third.1],
             )
         {
