@@ -948,18 +948,8 @@ fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBui
     let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
         return;
     };
-    let feature_indices = ir
-        .model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    for id in active_features {
-        let feature = feature_indices
-            .get(&id)
-            .and_then(|index| ir.model.features.get_mut(*index))
-            .expect("active feature closure has validated every feature identity");
+    for index in active_features.into_values() {
+        let feature = &mut ir.model.features[index];
         feature.suppressed = Some(false);
         annotations.derived(&feature.id, "suppressed");
     }
@@ -986,20 +976,10 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
     let Ok(active_features) = active_feature_closure(ir, &configuration_bodies) else {
         return;
     };
-    let feature_indices = ir
-        .model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
     let states = active_features
         .iter()
-        .map(|id| {
-            let feature = feature_indices
-                .get(id)
-                .and_then(|index| ir.model.features.get(*index))
-                .expect("active feature has a validated index");
+        .map(|(id, &index)| {
+            let feature = &ir.model.features[index];
             (
                 id.clone(),
                 ConfigurationFeatureState {
@@ -1012,11 +992,8 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
             )
         })
         .collect::<BTreeMap<_, _>>();
-    for id in &active_features {
-        let feature = feature_indices
-            .get(id)
-            .and_then(|index| ir.model.features.get_mut(*index))
-            .expect("active feature closure has validated every feature identity");
+    for index in active_features.into_values() {
+        let feature = &mut ir.model.features[index];
         if feature.suppressed != Some(false) {
             feature.suppressed = Some(false);
             annotations.derived(&feature.id, "suppressed");
