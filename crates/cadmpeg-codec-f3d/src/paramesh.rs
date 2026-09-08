@@ -949,7 +949,9 @@ enum StreamLayout {
     /// One byte per element.
     Byte,
     /// A fixed number of unpacked f32 components per element.
-    Float(u64),
+    Float2,
+    Float3,
+    Float4,
     /// One octahedrally packed three-component direction per two f32 values.
     PackedDirection,
     /// One u32 value, with every nonterminal word interpreted as an i32 delta.
@@ -960,15 +962,15 @@ enum StreamLayout {
 fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), CodecError> {
     let expected: &[(&str, StreamDescriptorValue)] = match layout {
         StreamLayout::Byte => &[("T", StreamDescriptorValue::Integer(0))],
-        StreamLayout::Float(2) => &[
+        StreamLayout::Float2 => &[
             ("D", StreamDescriptorValue::Integer(2)),
             ("T", StreamDescriptorValue::Integer(3)),
         ],
-        StreamLayout::Float(3) => &[
+        StreamLayout::Float3 => &[
             ("D", StreamDescriptorValue::Integer(3)),
             ("T", StreamDescriptorValue::Integer(3)),
         ],
-        StreamLayout::Float(4) => &[
+        StreamLayout::Float4 => &[
             ("D", StreamDescriptorValue::Integer(4)),
             ("T", StreamDescriptorValue::Integer(3)),
         ],
@@ -981,11 +983,6 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
             ("T", StreamDescriptorValue::Integer(1)),
             ("d", StreamDescriptorValue::Integer(1)),
         ],
-        StreamLayout::Float(_) => {
-            return Err(malformed(
-                "paramesh stream declares an unsupported f32 component count",
-            ));
-        }
     };
     if stream.descriptor.len() != expected.len()
         || expected.iter().any(|(expected_name, expected_value)| {
@@ -1006,9 +1003,9 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
 fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
     for layout in [
         StreamLayout::Byte,
-        StreamLayout::Float(2),
-        StreamLayout::Float(3),
-        StreamLayout::Float(4),
+        StreamLayout::Float2,
+        StreamLayout::Float3,
+        StreamLayout::Float4,
         StreamLayout::PackedDirection,
         StreamLayout::TerminalDelta,
     ] {
@@ -1590,7 +1587,7 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     };
     let vertex_stream = named(&registry.vertex_stream)
         .ok_or_else(|| malformed("paramesh registry names no vertex stream"))?;
-    require_layout(vertex_stream, StreamLayout::Float(3))?;
+    require_layout(vertex_stream, StreamLayout::Float3)?;
     let vertices = decode_vertices(&vertex_stream.bytes)?;
     let corner_stream = named(&registry.triangle_stream)
         .ok_or_else(|| malformed("paramesh registry names no triangle stream"))?;
@@ -1674,8 +1671,8 @@ fn registry_attributes(
         let stream = named(registration.streams.values)
             .ok_or_else(|| malformed("paramesh channel declares an absent value stream"))?;
         match registration.streams.element_code {
-            ELEMENT_PAIR => require_layout(stream, StreamLayout::Float(2))?,
-            ELEMENT_QUAD => require_layout(stream, StreamLayout::Float(4))?,
+            ELEMENT_PAIR => require_layout(stream, StreamLayout::Float2)?,
+            ELEMENT_QUAD => require_layout(stream, StreamLayout::Float4)?,
             ELEMENT_PACKED_DIRECTION => {
                 require_layout(stream, StreamLayout::PackedDirection)?;
             }
