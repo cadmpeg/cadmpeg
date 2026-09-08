@@ -176,15 +176,6 @@ pub(crate) struct SegmentStreamWrapper {
     pub zlib_offset: usize,
 }
 
-/// One fixed-width member of the `RMFastLoad` object-id table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RmFastLoadObjectId {
-    /// Decoded little-endian object identifier.
-    pub value: u32,
-    /// Payload-relative offset of the four-byte table word.
-    pub offset: usize,
-}
-
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RmFastLoadObjectIdTable {
@@ -193,7 +184,13 @@ pub struct RmFastLoadObjectIdTable {
     /// Payload-relative offset of the four-byte count word.
     pub count_offset: usize,
     /// Ordered fixed-width object-id members.
-    pub object_ids: ObjectIdMembers<RmFastLoadObjectId>,
+    pub object_ids: ObjectIdMembers<u32>,
+}
+
+impl RmFastLoadObjectIdTable {
+    pub(crate) fn member_offset(&self, ordinal: usize) -> usize {
+        self.count_offset + 4 + ordinal * 4
+    }
 }
 
 impl Region {
@@ -555,10 +552,7 @@ impl<'a> Container<'a> {
         let object_ids = (0..count)
             .map(|ordinal| {
                 let offset = ids_start + ordinal * 4;
-                Some(RmFastLoadObjectId {
-                    value: View::u32_le_at(bytes, offset)?,
-                    offset,
-                })
+                View::u32_le_at(bytes, offset)
             })
             .collect::<Option<Vec<_>>>()?;
         let object_ids = ObjectIdMembers::new(object_ids).ok()?;
