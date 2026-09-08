@@ -3608,7 +3608,7 @@ fn visit_feature_history_operation_records(
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
-                == link.section_offset
+                == link.location.section_offset()
         }) else {
             continue;
         };
@@ -3644,7 +3644,7 @@ fn visit_feature_history_unlabeled_operation_records(
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
-                == link.section_offset
+                == link.location.section_offset()
         }) else {
             continue;
         };
@@ -3671,12 +3671,18 @@ pub(crate) fn canonical_feature_history_links(
         .collect::<Vec<_>>();
     links.sort_by(|first, second| {
         first
-            .section_offset
-            .cmp(&second.section_offset)
-            .then_with(|| first.source_offset.cmp(&second.source_offset))
+            .location
+            .section_offset()
+            .cmp(&second.location.section_offset())
+            .then_with(|| {
+                first
+                    .location
+                    .source_offset()
+                    .cmp(&second.location.source_offset())
+            })
             .then_with(|| first.id.cmp(&second.id))
     });
-    links.dedup_by_key(|link| link.section_offset);
+    links.dedup_by_key(|link| link.location.section_offset());
     links
 }
 
@@ -3764,7 +3770,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                 .map_or(section.offset as u64, |(offset, _)| {
                     offset + section.offset as u64
                 })
-                == link.section_offset
+                == link.location.section_offset()
         }) else {
             continue;
         };

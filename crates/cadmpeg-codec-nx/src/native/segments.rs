@@ -8,6 +8,8 @@ use crate::native::features::{
     FeatureOperationBodyOperand, FeatureOperationLabel,
 };
 use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
+pub(crate) mod om_location;
+use om_location::OmLocation;
 
 /// Classify the semantic role of one linked OM registry.
 ///
@@ -197,12 +199,9 @@ pub struct SegmentOmLink {
     pub slot: SegmentIndexSlot,
     /// Role established by exact class declarations in the pointed registry.
     pub schema_role: OmSchemaRole,
-    /// Bytes from the pointed offset to the OM section signature.
-    pub separator_byte_len: u32,
-    /// Absolute file offset of the pointed location.
-    pub source_offset: u64,
-    /// Absolute file offset of the `ff ff ff ff` OM signature.
-    pub section_offset: u64,
+    /// Checked pointed and signature offsets.
+    #[serde(flatten)]
+    pub location: OmLocation,
 }
 
 /// Return body objects whose latest decoded writer is not consumed by a later
@@ -560,14 +559,18 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
             } else {
                 continue;
             };
+            let Some(location) = entry_offset
+                .checked_add(relative as u64)
+                .and_then(|offset| OmLocation::new(offset, separator_byte_len as u32))
+            else {
+                continue;
+            };
             links.push(SegmentOmLink {
                 id: format!("nx:segment-om-links:link#{}", links.len()),
                 row: format!("nx:segment-index:row#{row_ordinal}"),
                 slot,
                 schema_role,
-                separator_byte_len: separator_byte_len as u32,
-                source_offset: entry_offset + relative as u64,
-                section_offset: entry_offset + relative as u64 + separator_byte_len as u64,
+                location,
             });
         }
     }
@@ -829,10 +832,10 @@ mod tests {
                 links[0].schema_role,
                 crate::native::om::OmSchemaRole::FeatureHistory
             );
-            assert_eq!(links[0].separator_byte_len, expected_separator);
+            assert_eq!(links[0].location.separator_byte_len(), expected_separator);
             assert_eq!(
-                links[0].section_offset,
-                links[0].source_offset + u64::from(expected_separator)
+                links[0].location.section_offset(),
+                links[0].location.source_offset() + u64::from(expected_separator)
             );
         }
     }

@@ -401,9 +401,11 @@ fn feature_history_links_follow_unique_physical_section_order() {
         row: format!("row-{id}"),
         slot: SegmentIndexSlot::Value,
         schema_role,
-        separator_byte_len: (section_offset - source_offset) as u32,
-        source_offset,
-        section_offset,
+        location: crate::native::segments::om_location::OmLocation::new(
+            source_offset,
+            (section_offset - source_offset) as u32,
+        )
+        .unwrap(),
     };
     let links = super::canonical_feature_history_links([
         link("late", OmSchemaRole::FeatureHistory, 300, 300),
@@ -415,7 +417,7 @@ fn feature_history_links_follow_unique_physical_section_order() {
     assert_eq!(
         links
             .iter()
-            .map(|link| (link.id.as_str(), link.section_offset))
+            .map(|link| (link.id.as_str(), link.location.section_offset()))
             .collect::<Vec<_>>(),
         [("duplicate", 100), ("late", 300)]
     );
