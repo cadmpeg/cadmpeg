@@ -3238,7 +3238,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
     prefix: &str,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
@@ -3259,7 +3259,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
     prefix: &str,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {

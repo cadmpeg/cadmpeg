@@ -6,58 +6,59 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod debug;
+pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;
 pub(crate) mod sketch_code;
 
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PmiDimension {
+pub(crate) struct PmiDimension {
     /// Globally unique source-derived record id.
-    pub id: String,
+    pub(crate) id: String,
     /// Source block containing this record.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Byte offset of the `MessagePack` map within the decompressed block.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// `UnQLite` record key.
-    pub guid: String,
+    pub(crate) guid: String,
     /// CAD dimension reference, such as `D1@Sketch4`.
-    pub cad_text: String,
+    pub(crate) cad_text: String,
     /// Number of elements in the source `dimItems` array.
     #[serde(default = "default_pmi_item_count", skip_serializing_if = "is_one")]
-    pub item_count: u32,
+    pub(crate) item_count: u32,
     /// Native PMI dimension subtype.
-    pub subtype: String,
+    pub(crate) subtype: String,
     /// Stored dimension value.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Byte offset of the big-endian `f64` value.
-    pub value_offset: u64,
+    pub(crate) value_offset: u64,
     /// Display precision.
-    pub precision: i64,
+    pub(crate) precision: i64,
     /// Byte offset of the `MessagePack` precision value.
-    pub precision_offset: u64,
+    pub(crate) precision_offset: u64,
     /// Native formatted dimension text and its byte offset.
     #[serde(flatten, with = "pmi_display_text_wire")]
-    pub display_text: Option<(String, u64)>,
+    pub(crate) display_text: Option<(String, u64)>,
     /// Basic-dimension flag.
-    pub basic: bool,
+    pub(crate) basic: bool,
     /// Byte offset of the basic flag.
-    pub basic_offset: u64,
+    pub(crate) basic_offset: u64,
     /// Inspection-dimension flag.
-    pub inspection: bool,
+    pub(crate) inspection: bool,
     /// Byte offset of the inspection flag.
-    pub inspection_offset: u64,
+    pub(crate) inspection_offset: u64,
     /// Reference-only flag.
-    pub reference_only: bool,
+    pub(crate) reference_only: bool,
     /// Byte offset of the reference-only flag.
-    pub reference_only_offset: u64,
+    pub(crate) reference_only_offset: u64,
 }
 
 impl PmiDimension {
-    pub fn display_text(&self) -> Option<&str> {
+    pub(crate) fn display_text(&self) -> Option<&str> {
         self.display_text.as_ref().map(|(text, _)| text.as_str())
     }
 
-    pub fn display_text_offset(&self) -> Option<u64> {
+    pub(crate) fn display_text_offset(&self) -> Option<u64> {
         self.display_text.as_ref().map(|(_, offset)| *offset)
     }
 }
@@ -114,26 +115,26 @@ fn is_one(value: &u32) -> bool {
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
 /// material and property overrides.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Configuration {
+pub(crate) struct Configuration {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-history record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position in the source configuration list.
     #[serde(default)]
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Numeric key used by configuration-scoped container sections.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_index: Option<u32>,
+    pub(crate) source_index: Option<u32>,
     /// Source configuration name.
-    pub name: String,
+    pub(crate) name: String,
     /// Material assigned in this configuration, when overridden; `None` when the
     /// configuration inherits the part's default material.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub material: Option<String>,
+    pub(crate) material: Option<String>,
     /// Source custom-property name/value pairs local to this configuration.
     #[serde(default)]
-    pub properties: BTreeMap<String, String>,
+    pub(crate) properties: BTreeMap<String, String>,
 }
 
 fn default_feature_xml_tag() -> String {
@@ -142,7 +143,7 @@ fn default_feature_xml_tag() -> String {
 
 /// A construction-tree parent reference.
 #[derive(Debug, Clone, PartialEq)]
-pub enum TreeParent {
+pub(crate) enum TreeParent {
     Record {
         record_id: String,
         source_id: Option<String>,
@@ -151,14 +152,14 @@ pub enum TreeParent {
 }
 
 impl TreeParent {
-    pub fn record_id(&self) -> Option<&str> {
+    pub(crate) fn record_id(&self) -> Option<&str> {
         match self {
             Self::Record { record_id, .. } => Some(record_id),
             Self::Source(_) => None,
         }
     }
 
-    pub fn source_id(&self) -> Option<&str> {
+    pub(crate) fn source_id(&self) -> Option<&str> {
         match self {
             Self::Record { source_id, .. } => source_id.as_deref(),
             Self::Source(source_id) => Some(source_id),
@@ -212,65 +213,65 @@ mod tree_parent_wire {
 }
 
 impl Feature {
-    pub fn tree_parent_record_id(&self) -> Option<&str> {
+    pub(crate) fn tree_parent_record_id(&self) -> Option<&str> {
         self.tree_parent.as_ref().and_then(TreeParent::record_id)
     }
 
-    pub fn parent_source_id(&self) -> Option<&str> {
+    pub(crate) fn parent_source_id(&self) -> Option<&str> {
         self.tree_parent.as_ref().and_then(TreeParent::source_id)
     }
 }
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct Feature {
+pub(crate) struct Feature {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-history record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// XML element name carrying this feature record.
     #[serde(default = "default_feature_xml_tag")]
-    pub xml_tag: String,
+    pub(crate) xml_tag: String,
     /// Containing feature, identified by its record or legacy source id.
     #[serde(flatten, with = "tree_parent_wire")]
-    pub tree_parent: Option<TreeParent>,
+    pub(crate) tree_parent: Option<TreeParent>,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_id: Option<String>,
+    pub(crate) source_id: Option<String>,
     /// Position of this feature in the construction-history timeline, in
     /// regeneration order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Feature display name.
-    pub name: String,
+    pub(crate) name: String,
     /// Native feature-type tag (e.g. `"Extrude"`, `"Fillet"`).
-    pub kind: String,
+    pub(crate) kind: String,
     /// Serialized feature-input object class owning this feature, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input_class: Option<String>,
+    pub(crate) input_class: Option<String>,
     /// Whether this feature is suppressed and excluded from regeneration.
     #[serde(default)]
-    pub suppressed: bool,
+    pub(crate) suppressed: bool,
     /// Source parametric input values keyed by parameter name.
     #[serde(default)]
-    pub parameters: BTreeMap<String, String>,
+    pub(crate) parameters: BTreeMap<String, String>,
     /// Source attributes on each named dimension, excluding its `Name` key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub dimension_properties: BTreeMap<String, BTreeMap<String, String>>,
+    pub(crate) dimension_properties: BTreeMap<String, BTreeMap<String, String>>,
     /// Source custom-property name/value pairs local to this feature.
     #[serde(default)]
-    pub properties: BTreeMap<String, String>,
+    pub(crate) properties: BTreeMap<String, String>,
     /// Text content of a native leaf feature element.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
+    pub(crate) text: Option<String>,
     /// Source order of dimensions, nested feature nodes, and text content.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub content: Vec<FeatureContent>,
+    pub(crate) content: Vec<FeatureContent>,
 }
 
 /// One ordered item inside a native feature XML element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum FeatureContent {
+pub(crate) enum FeatureContent {
     /// Named dimension child.
     Dimension(String),
     /// Native record id of a nested feature child.
@@ -282,7 +283,7 @@ pub enum FeatureContent {
 /// One ordered item inside the native `Keywords` root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum HistoryContent {
+pub(crate) enum HistoryContent {
     /// Native configuration record id.
     Configuration(String),
     /// Native top-level feature record id.
@@ -293,171 +294,171 @@ pub enum HistoryContent {
 
 /// The full parametric construction-history timeline for a part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureHistory {
+pub(crate) struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Source part display name, when recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub part_name: Option<String>,
+    pub(crate) part_name: Option<String>,
     /// Source attributes on the `Keywords` root, excluding its `Name` key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub properties: BTreeMap<String, String>,
+    pub(crate) properties: BTreeMap<String, String>,
     /// Source order of configurations, top-level features, and root text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub content: Vec<HistoryContent>,
+    pub(crate) content: Vec<HistoryContent>,
     /// Named parametric-model variants defined on this part.
     #[serde(default)]
-    pub configurations: Vec<Configuration>,
+    pub(crate) configurations: Vec<Configuration>,
     /// Ordered construction-history features, in regeneration order.
     #[serde(default)]
-    pub features: Vec<Feature>,
+    pub(crate) features: Vec<Feature>,
 }
 
 /// Native feature-input stream retained for parametric replay and rewrite.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureInputLane {
+pub(crate) struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
-    pub id: String,
+    pub(crate) id: String,
     /// Configuration this input lane applies to, when the source scoped inputs
     /// per configuration; `None` when the lane applies to all configurations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub configuration: Option<String>,
+    pub(crate) configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
-    pub native_payload: Vec<u8>,
+    pub(crate) native_payload: Vec<u8>,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
-    pub classes: Vec<FeatureInputClass>,
+    pub(crate) classes: Vec<FeatureInputClass>,
     /// Serialized object names in this lane.
     #[serde(default)]
-    pub names: Vec<FeatureInputName>,
+    pub(crate) names: Vec<FeatureInputName>,
     /// Named scalar values in this lane.
     #[serde(default)]
-    pub scalars: Vec<FeatureInputScalar>,
+    pub(crate) scalars: Vec<FeatureInputScalar>,
     /// Relation-class declarations bound to their attached scalar records.
     #[serde(default)]
-    pub relation_bindings: Vec<FeatureInputRelationBinding>,
+    pub(crate) relation_bindings: Vec<FeatureInputRelationBinding>,
     /// Compact relation instances grouped by feature and operand identity.
     #[serde(default)]
-    pub relation_instances: Vec<FeatureInputRelationInstance>,
+    pub(crate) relation_instances: Vec<FeatureInputRelationInstance>,
     /// Compact body-selection vectors owned by feature objects in this lane.
     #[serde(default)]
-    pub body_selections: Vec<FeatureInputBodySelection>,
+    pub(crate) body_selections: Vec<FeatureInputBodySelection>,
     /// Compact edge-selection vectors owned by feature objects in this lane.
     #[serde(default)]
-    pub edge_selections: Vec<FeatureInputEdgeSelection>,
+    pub(crate) edge_selections: Vec<FeatureInputEdgeSelection>,
     /// Compact surface-component selections owned by feature objects in this lane.
     #[serde(default)]
-    pub surface_selections: Vec<FeatureInputSurfaceSelection>,
+    pub(crate) surface_selections: Vec<FeatureInputSurfaceSelection>,
     /// Persistent identities of surfaces produced by regenerated features.
     #[serde(default)]
-    pub generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity>,
+    pub(crate) generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity>,
     /// Native entity-reference cells in byte order.
     #[serde(default)]
-    pub references: Vec<FeatureInputReference>,
+    pub(crate) references: Vec<FeatureInputReference>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
-    pub sketch_entities: Vec<SketchInputEntity>,
+    pub(crate) sketch_entities: Vec<SketchInputEntity>,
 }
 
 /// One compact feature-local body-selection vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputBodySelection {
+pub(crate) struct FeatureInputBodySelection {
     /// Globally unique deterministic identifier for this vector.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among compact body-selection vectors in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the schema word opening the vector.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Feature-input name record owning this vector.
-    pub object_name_ref: String,
+    pub(crate) object_name_ref: String,
     /// Native history feature owning this vector.
-    pub feature_ref: String,
+    pub(crate) feature_ref: String,
     /// Ordered feature-local body identifiers.
-    pub local_body_ids: Vec<u32>,
+    pub(crate) local_body_ids: Vec<u32>,
     /// Ordered body-state records stored before the selection vector.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub body_state_ids: Vec<u32>,
+    pub(crate) body_state_ids: Vec<u32>,
     /// Retention mode carried by the delete-body data record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
+    pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputEdgeSelection {
+pub(crate) struct FeatureInputEdgeSelection {
     /// Globally unique deterministic identifier for this vector.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among compact edge-selection vectors in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the vector marker.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Feature-input name record owning this vector.
-    pub object_name_ref: String,
+    pub(crate) object_name_ref: String,
     /// Native history feature owning this vector.
-    pub feature_ref: String,
+    pub(crate) feature_ref: String,
     /// Ordered feature-local edge identifiers.
-    pub local_edge_ids: Vec<u32>,
+    pub(crate) local_edge_ids: Vec<u32>,
     /// Complete typed path entries when this is an entry-form vector.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub components: Vec<FeatureInputComponentPathEntry>,
+    pub(crate) components: Vec<FeatureInputComponentPathEntry>,
     /// Ordered persistent references carried by a reference-list vector.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub references: Vec<Vec<FeatureInputComponentPathEntry>>,
+    pub(crate) references: Vec<Vec<FeatureInputComponentPathEntry>>,
     /// Ordered history features traversed by the persistent edge path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub producer_feature_refs: Vec<String>,
+    pub(crate) producer_feature_refs: Vec<String>,
     /// History feature owning the terminal edge component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub terminal_feature_ref: Option<String>,
+    pub(crate) terminal_feature_ref: Option<String>,
 }
 
 /// One compact feature-local surface-component selection.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputSurfaceSelection {
+pub(crate) struct FeatureInputSurfaceSelection {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among surface selections in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the vector marker.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Low selector subtype stored in the vector header.
     #[serde(default)]
-    pub selector: u8,
+    pub(crate) selector: u8,
     /// Component selection form; extrusion endpoints carry their opaque selector.
     #[serde(flatten, with = "surface_selection_kind_wire")]
-    pub kind: FeatureInputSurfaceSelectionKind,
+    pub(crate) kind: FeatureInputSurfaceSelectionKind,
     /// Feature-input name record owning this selection.
-    pub object_name_ref: String,
+    pub(crate) object_name_ref: String,
     /// Native history feature owning this selection.
-    pub feature_ref: String,
+    pub(crate) feature_ref: String,
     /// Ordered native history features traversed by the persistent surface path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub producer_feature_refs: Vec<String>,
+    pub(crate) producer_feature_refs: Vec<String>,
     /// Native history feature owning the terminal face component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub terminal_feature_ref: Option<String>,
+    pub(crate) terminal_feature_ref: Option<String>,
     /// Ordered typed entries in the persistent surface-component path.
     #[serde(default)]
-    pub components: Vec<FeatureInputComponentPathEntry>,
+    pub(crate) components: Vec<FeatureInputComponentPathEntry>,
 }
 
 /// Form of a retained surface-component selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureInputSurfaceSelectionKind {
+pub(crate) enum FeatureInputSurfaceSelectionKind {
     Component,
     ExtrusionEndpoint { endpoint_selector: u32 },
 }
 
 impl FeatureInputSurfaceSelection {
-    pub fn endpoint_selector(&self) -> Option<u32> {
+    pub(crate) fn endpoint_selector(&self) -> Option<u32> {
         match self.kind {
             FeatureInputSurfaceSelectionKind::Component => None,
             FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } => {
@@ -505,95 +506,95 @@ mod surface_selection_kind_wire {
 
 /// One persistent identity of a surface produced by a regenerated feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputGeneratedSurfaceIdentity {
+pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among generated surface identities in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the first component type signature.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Four-byte serialized surface identity type family.
-    pub type_prefix: [u8; 4],
+    pub(crate) type_prefix: [u8; 4],
     /// Source identifier of the feature that produced the terminal surface.
-    pub feature_source_id: u32,
+    pub(crate) feature_source_id: u32,
     /// Opaque feature-local identity of the terminal surface.
-    pub local_identity: u32,
+    pub(crate) local_identity: u32,
     /// Ordered typed entries in the persistent generated-surface path.
     #[serde(default)]
-    pub components: Vec<FeatureInputComponentPathEntry>,
+    pub(crate) components: Vec<FeatureInputComponentPathEntry>,
 }
 
 /// One typed node in a persistent feature-input component path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputComponentPathEntry {
+pub(crate) struct FeatureInputComponentPathEntry {
     /// Serialized component instance tag; absent on anonymous path nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instance: Option<u16>,
+    pub(crate) instance: Option<u16>,
     /// Twelve-byte serialized component type identity.
-    pub type_signature: [u8; 12],
+    pub(crate) type_signature: [u8; 12],
     /// Feature-local identifier carried by terminal selection nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_id: Option<u32>,
+    pub(crate) local_id: Option<u32>,
 }
 
 /// A declared sketch-relation family and its attached scalar record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputRelationBinding {
+pub(crate) struct FeatureInputRelationBinding {
     /// Globally unique deterministic identifier for this binding.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among relation bindings in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the relation class declaration.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Declared class record.
-    pub class_ref: String,
+    pub(crate) class_ref: String,
     /// Native relation family.
-    pub family: FeatureInputRelationFamily,
+    pub(crate) family: FeatureInputRelationFamily,
     /// Scalar record attached to the declaration.
-    pub scalar_ref: String,
+    pub(crate) scalar_ref: String,
     /// Native history feature owning the relation, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feature_ref: Option<String>,
+    pub(crate) feature_ref: Option<String>,
 }
 
 /// One compact sketch-relation instance represented by related scalar records.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputRelationInstance {
+pub(crate) struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among relation instances in scalar stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// First participating scalar's byte offset.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Native relation family.
-    pub family: FeatureInputRelationFamily,
+    pub(crate) family: FeatureInputRelationFamily,
     /// Class declaration defining the relation family.
-    pub class_ref: String,
+    pub(crate) class_ref: String,
     /// Native sketch feature owning the relation.
-    pub feature_ref: String,
+    pub(crate) feature_ref: String,
     /// Scalar members and their selected parameter and display roles.
     #[serde(flatten)]
-    pub scalars: relation_scalars::RelationScalars,
+    pub(crate) scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
-    pub operands: Vec<FeatureInputOperand>,
+    pub(crate) operands: Vec<FeatureInputOperand>,
 }
 
 impl FeatureInputRelationInstance {
-    pub fn scalar_refs(&self) -> &[String] {
+    pub(crate) fn scalar_refs(&self) -> &[String] {
         self.scalars.refs()
     }
 
-    pub fn parameter_scalar_ref(&self) -> Option<&str> {
+    pub(crate) fn parameter_scalar_ref(&self) -> Option<&str> {
         self.scalars.parameter()
     }
 
-    pub fn display_scalar_ref(&self) -> Option<&str> {
+    pub(crate) fn display_scalar_ref(&self) -> Option<&str> {
         self.scalars.display()
     }
 }
@@ -601,7 +602,7 @@ impl FeatureInputRelationInstance {
 /// Native sketch-relation family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureInputRelationFamily {
+pub(crate) enum FeatureInputRelationFamily {
     /// Diameter of one circular sketch entity.
     CircleDiameter,
     /// Distance between two line loci.
@@ -620,75 +621,75 @@ pub enum FeatureInputRelationFamily {
 
 /// One native entity-reference cell in a feature-input stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputReference {
+pub(crate) struct FeatureInputReference {
     /// Globally unique deterministic identifier for this cell.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Native history feature enclosing this cell, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feature_ref: Option<String>,
+    pub(crate) feature_ref: Option<String>,
     /// Position among reference cells in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the reference cell.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Native reference-cell family.
-    pub kind: FeatureInputOperandKind,
+    pub(crate) kind: FeatureInputOperandKind,
     /// Class declaration assigned to this lane-local token, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_ref: Option<String>,
+    pub(crate) class_ref: Option<String>,
     /// Local object index carried by the cell.
-    pub object_index: u16,
+    pub(crate) object_index: u16,
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureInputName {
+pub(crate) struct FeatureInputName {
     /// Globally unique deterministic identifier for this name record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among serialized names in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the name marker.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Native object identifier stored after the UTF-16 name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_id: Option<u32>,
+    pub(crate) object_id: Option<u32>,
     /// Decoded object name.
-    pub value: String,
+    pub(crate) value: String,
 }
 
 /// One named scalar serialized in native SI units.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureInputScalar {
+pub(crate) struct FeatureInputScalar {
     /// Globally unique deterministic identifier for this scalar record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Native history feature enclosing this scalar, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feature_ref: Option<String>,
+    pub(crate) feature_ref: Option<String>,
     /// Position among named scalars in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the little-endian f64 value.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Native object identifier carried by the scalar record.
-    pub object_id: u32,
+    pub(crate) object_id: u32,
     /// Name record attached to this scalar.
-    pub name: String,
+    pub(crate) name: String,
     /// Scalar value in native SI units.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Function of this scalar in the dimension record.
-    pub role: FeatureInputScalarRole,
+    pub(crate) role: FeatureInputScalarRole,
     /// Typed native operand cells attached to this scalar.
     #[serde(flatten, with = "scalar_operands_wire")]
-    pub operands: Vec<FeatureInputOperand>,
+    pub(crate) operands: Vec<FeatureInputOperand>,
 }
 
 impl FeatureInputScalar {
     /// Local sketch-entity indices carried by D6 dimension operands.
-    pub fn entity_indices(&self) -> Vec<u16> {
+    pub(crate) fn entity_indices(&self) -> Vec<u16> {
         scalar_operands_wire::entity_indices(&self.operands)
     }
 }
@@ -746,36 +747,36 @@ mod scalar_operands_wire {
 
 /// One native entity-reference cell attached to a feature-input scalar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputOperand {
+pub(crate) struct FeatureInputOperand {
     /// Byte offset of the reference cell within the feature-input stream.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Reference-cell record at this byte offset.
-    pub reference_ref: String,
+    pub(crate) reference_ref: String,
     /// Native reference-cell family.
-    pub kind: FeatureInputOperandKind,
+    pub(crate) kind: FeatureInputOperandKind,
     /// Local entity index carried by the cell.
-    pub entity_index: u16,
+    pub(crate) entity_index: u16,
     /// Resolved sketch-input entity in the same feature object, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_ref: Option<String>,
+    pub(crate) entity_ref: Option<String>,
 }
 
 /// Native feature-input entity-reference cell family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureInputOperandKind {
+pub(crate) enum FeatureInputOperandKind {
     /// `d6 80` reference cell.
     D6,
     /// `e1 80` reference cell.
     E1,
     /// Other two-byte reference-cell tag, stored as a little-endian u16.
-    Native(u16),
+    Native(operand_tag::NativeOperandTag),
 }
 
 /// Function of a named scalar in its dimension record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureInputScalarRole {
+pub(crate) enum FeatureInputScalarRole {
     /// Value consumed during model regeneration.
     Driving,
     /// Dimension-label placement or display value.
@@ -786,22 +787,22 @@ pub enum FeatureInputScalarRole {
 
 /// One class declaration in a native feature-input stream.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureInputClass {
+pub(crate) struct FeatureInputClass {
     /// Globally unique deterministic identifier for this declaration.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Position among class declarations in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the `ff ff 01 00` declaration marker.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Declared native class name.
     #[serde(flatten, with = "feature_class_wire")]
-    pub name: String,
+    pub(crate) name: String,
 }
 
 impl FeatureInputClass {
-    pub fn role(&self) -> FeatureInputClassRole {
+    pub(crate) fn role(&self) -> FeatureInputClassRole {
         crate::classification::native_object_class(&self.name).role
     }
 }
@@ -844,7 +845,7 @@ mod feature_class_wire {
 /// Design-intent role declared by a feature-input class.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureInputClassRole {
+pub(crate) enum FeatureInputClassRole {
     /// Modeling operation or construction feature.
     Feature,
     /// Sketch container.
@@ -868,50 +869,50 @@ pub enum FeatureInputClassRole {
 
 /// One typed sketch-entity marker inside a native feature-input stream.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct SketchInputEntity {
+pub(crate) struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature-input lane record id.
-    pub parent: String,
+    pub(crate) parent: String,
     /// Native history feature whose serialized object interval contains this marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feature_ref: Option<String>,
+    pub(crate) feature_ref: Option<String>,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
-    pub offset: u64,
+    pub(crate) offset: u64,
     /// Feature-local object index stored immediately before the marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_index: Option<u32>,
+    pub(crate) object_index: Option<u32>,
     /// Feature-local object identifier stored in the marker trailer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_id: Option<u32>,
+    pub(crate) local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
-    pub kind: SketchInputKind,
+    pub(crate) kind: SketchInputKind,
     /// Finite little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state_value: Option<f64>,
+    pub(crate) state_value: Option<f64>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coordinates_m: Option<[f64; 2]>,
+    pub(crate) coordinates_m: Option<[f64; 2]>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
-    pub links: Option<SketchInputLinks>,
+    pub(crate) links: Option<SketchInputLinks>,
 }
 
 /// A selector paired with a nonempty collection of resolved marker links.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SketchInputLinks {
-    pub selector: u16,
+pub(crate) struct SketchInputLinks {
+    pub(crate) selector: u16,
     entries: Vec<SketchInputLink>,
 }
 
 impl SketchInputLinks {
-    pub fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
+    pub(crate) fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
         (!entries.is_empty()).then_some(Self { selector, entries })
     }
 
-    pub fn entries(&self) -> &[SketchInputLink] {
+    pub(crate) fn entries(&self) -> &[SketchInputLink] {
         &self.entries
     }
 
@@ -962,13 +963,13 @@ mod sketch_input_links_wire {
 }
 
 impl SketchInputEntity {
-    pub fn links(&self) -> &[SketchInputLink] {
+    pub(crate) fn links(&self) -> &[SketchInputLink] {
         self.links.as_ref().map_or(&[], SketchInputLinks::entries)
     }
 
     /// Construct a marker from its identity, parent lane, ordinal, offset, and kind.
     #[cfg(test)]
-    pub fn new(
+    pub(crate) fn new(
         id: impl Into<String>,
         parent: impl Into<String>,
         ordinal: u32,
@@ -993,17 +994,17 @@ impl SketchInputEntity {
 
 /// One marker-local reference resolved within its owning feature object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SketchInputLink {
+pub(crate) struct SketchInputLink {
     /// Feature-local object identifier stored in the marker payload.
-    pub local_id: u16,
+    pub(crate) local_id: u16,
     /// Typed sketch-input marker with this local identifier.
-    pub entity_ref: String,
+    pub(crate) entity_ref: String,
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
-pub enum SketchInputKind {
+pub(crate) enum SketchInputKind {
     /// A sketch point.
     Point,
     /// A sketch line or circle from the shared native family.
@@ -1061,7 +1062,7 @@ impl From<SketchInputKind> for SketchInputKindWire {
 
 impl SketchInputKind {
     /// Maps a code in the geometry-marker namespace.
-    pub fn from_native_code(code: u32) -> Self {
+    pub(crate) fn from_native_code(code: u32) -> Self {
         use sketch_code::{LowMarkerCode, NativeSketchCode};
         match NativeSketchCode::try_from(code) {
             Ok(code) => Self::Native(code),
@@ -1073,7 +1074,7 @@ impl SketchInputKind {
     }
 
     /// Retains a code whose handle layout does not assign geometry semantics.
-    pub fn from_handle_code(code: u32) -> Self {
+    pub(crate) fn from_handle_code(code: u32) -> Self {
         match sketch_code::NativeSketchCode::try_from(code) {
             Ok(code) => Self::Native(code),
             Err(code) => Self::NativeHandle(code),
@@ -1081,7 +1082,7 @@ impl SketchInputKind {
     }
 
     /// Maps a marker code using its layout to separate geometry and relation handles.
-    pub fn from_native_code_and_layout(code: u32, coordinate_bearing: bool) -> Self {
+    pub(crate) fn from_native_code_and_layout(code: u32, coordinate_bearing: bool) -> Self {
         if code == 0 || (coordinate_bearing && code <= 3) {
             return Self::from_native_code(code);
         }
@@ -1090,7 +1091,7 @@ impl SketchInputKind {
     }
 
     /// Returns the stored code; the marker layout selects its namespace.
-    pub fn native_code(self) -> u32 {
+    pub(crate) fn native_code(self) -> u32 {
         match self {
             Self::Point => 0,
             Self::LineOrCircle => 1,
@@ -1105,7 +1106,7 @@ impl SketchInputKind {
     /// Whether this marker owns constraint semantics that require a neutral
     /// projection. Dimensional marker handles are operands of scalar-bearing
     /// relation instances and do not independently encode a constraint.
-    pub fn owns_constraint(self) -> bool {
+    pub(crate) fn owns_constraint(self) -> bool {
         match self {
             Self::Relation(
                 SketchRelationKind::Distance
@@ -1122,7 +1123,7 @@ impl SketchInputKind {
 /// Relation kind carried by a non-coordinate sketch marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SketchRelationKind {
+pub(crate) enum SketchRelationKind {
     /// Linear distance.
     Distance,
     /// Angular distance.
@@ -1297,7 +1298,7 @@ pub enum SketchRelationKind {
 
 impl SketchRelationKind {
     /// Decodes relation codes `1..85`.
-    pub fn from_native_code(code: u32) -> Option<Self> {
+    pub(crate) fn from_native_code(code: u32) -> Option<Self> {
         Some(match code {
             1 => Self::Distance,
             2 => Self::Angle,
@@ -1389,7 +1390,7 @@ impl SketchRelationKind {
     }
 
     /// Returns the serialized relation code.
-    pub fn native_code(self) -> u32 {
+    pub(crate) fn native_code(self) -> u32 {
         match self {
             Self::Distance => 1,
             Self::Angle => 2,
@@ -1482,6 +1483,19 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_operand_wire_rejects_reserved_tags() {
+        for tag in [0x0000, 0xffff, 0x80d6, 0x80e1] {
+            assert!(serde_json::from_value::<super::FeatureInputOperandKind>(
+                serde_json::json!({"native": tag})
+            )
+            .is_err());
+        }
+        let wire = serde_json::json!({"native": 0x812a});
+        let kind: super::FeatureInputOperandKind = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+    }
+
     #[test]
     fn surface_selection_kind_preserves_the_endpoint_wire() {
         #[derive(serde::Serialize, serde::Deserialize)]

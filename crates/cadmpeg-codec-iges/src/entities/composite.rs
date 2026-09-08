@@ -998,7 +998,7 @@ fn bounded_nurbs_for_id(
     index: Option<&CompositeIndex>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     let _nested = ctx
-        .map(|ctx| ctx.enter_nested("iges_composite_flatten", None))
+        .map(|ctx| ctx.enter_nested("iges_composite_flatten"))
         .transpose()
         .ok()?;
     let depth_limit = ctx
@@ -1012,7 +1012,6 @@ fn bounded_nurbs_for_id(
                 "iges_composite_depth",
                 depth_limit as u64,
                 depth.saturating_add(1) as u64,
-                None,
             );
         }
         return None;
@@ -1477,7 +1476,7 @@ fn project_with_type_130_policy(
         }
         let Some(use_flag) = entry
             .status
-            .use_flag()
+            .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
             losses.push(entity_loss(
@@ -1510,7 +1509,6 @@ fn project_with_type_130_policy(
                 "iges_composite_children",
                 MAX_COMPOSITE_CHILDREN as u64,
                 u64::try_from(raw_child_count).unwrap_or(u64::MAX),
-                None,
             ));
         }
         let minimum_child_count = composite_minimum_child_count(global.global_table());

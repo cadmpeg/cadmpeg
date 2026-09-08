@@ -51,10 +51,11 @@ impl IndexedRecordOffsets {
     /// Index every exact indexed-record header in `bytes` in one forward pass.
     pub(crate) fn build(bytes: &[u8]) -> Self {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        for at in indexed_record_offsets(bytes) {
-            if let Some(record_index) = indexed_record_index(bytes, at) {
-                by_record_index.entry(record_index).or_default().push(at);
-            }
+        for header in indexed_record_offsets(bytes) {
+            by_record_index
+                .entry(header.record_index)
+                .or_default()
+                .push(header.offset);
         }
         Self { by_record_index }
     }
@@ -984,17 +985,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .map(|prefix| ids::native_scope(&format!("{prefix}MetaStream.dat")))
             .and_then(|meta_scope| entity_modules.get(&meta_scope));
         let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
-        for &start in &indexed_offsets {
-            let Some(class_tag) = bytes
-                .get(start + 4..start + 7)
-                .and_then(|bytes| std::str::from_utf8(bytes).ok())
-            else {
-                continue;
-            };
-            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag.to_owned())
-            else {
-                continue;
-            };
+        for header in &indexed_offsets {
+            let start = header.offset;
+            let class_tag = header.class_tag.clone();
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some((entity_id, optional_slot_present, end)) =
@@ -1056,24 +1049,13 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
             .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<std::collections::HashSet<_>>();
-        for &start in &indexed_offsets {
-            let Some(entity_suffix) = View::u32_le_at(bytes, start + 7) else {
-                continue;
-            };
+        for header in &indexed_offsets {
+            let start = header.offset;
+            let entity_suffix = header.record_index;
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
                 continue;
             }
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
-            else {
-                continue;
-            };
-            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
-                continue;
-            };
-            if after_tag != start + 7 {
-                continue;
-            }
+            let class_tag = header.class_tag.clone();
             let Some(members) =
                 parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
             else {
@@ -1156,19 +1138,15 @@ fn decode_headers_for_indices(
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        for position in indexed_record_offsets(bytes) {
-            let record_index = indexed_record_index(bytes, position)
-                .expect("validated indexed-record header carries a four-byte record index");
+        for header in indexed_record_offsets(bytes) {
+            let position = header.offset;
+            let record_index = header.record_index;
             let scope = ids::native_scope(&entry.name);
             if wanted.contains(&(scope, record_index)) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
                     id: ids::native_design_record_header_id(&entry.name, position),
                     record_index,
-                    class_tag: std::str::from_utf8(&bytes[position + 4..position + 7])
-                        .expect("validated indexed-record class tag is ASCII")
-                        .to_owned()
-                        .try_into()
-                        .map_err(CodecError::Malformed)?,
+                    class_tag: header.class_tag,
                     byte_offset: position as u64,
                 });
             }
@@ -1308,10 +1286,11 @@ pub(crate) fn decode_pattern_definition(
             }
             let angle_at = reference_end(1)? + 6;
             let evaluated_angle = f64_at(angle_at)?;
-            let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
-            if !(1..=100_000).contains(&evaluated_count) {
-                return None;
-            }
+            let evaluated_count = crate::records::SketchPatternCount::try_from(View::u32_le_at(
+                payload,
+                angle_at + 8,
+            )?)
+            .ok()?;
             return Some(SketchPatternDefinition::Circular {
                 angle_parameter: parsed.auxiliary_references[0].value,
                 count_parameter: parsed.auxiliary_references[1].value,
@@ -1319,42 +1298,22 @@ pub(crate) fn decode_pattern_definition(
                 evaluated_count,
             });
         }
-        RelationClassMembers::Rectangular { clause_ordinal, .. } => {
+        RelationClassMembers::Rectangular { clauses, .. } => {
             if parsed.state != 0x2000_0000 {
                 return None;
             }
-            // Each direction clause writes its evaluated count directly before its
-            // count-parameter reference, so the count is five bytes before that
-            // reference's target. The clauses follow the class members that precede
-            // them. The rectangular class parser records their exact position only
-            // when all four parameter references are present.
-            let clause_ordinal = (*clause_ordinal)?;
-            if parsed.auxiliary_references.len() < clause_ordinal + 4 {
-                return None;
-            }
+            let [first_count, first_distance, second_count, second_distance] = (*clauses)?;
             let mut directions = Vec::with_capacity(2);
-            let clauses = [
-                (
-                    parsed.auxiliary_references[clause_ordinal]
-                        .offset
-                        .checked_sub(5)?,
-                    clause_ordinal,
-                    clause_ordinal + 1,
-                ),
-                (
-                    parsed.auxiliary_references[clause_ordinal + 2]
-                        .offset
-                        .checked_sub(5)?,
-                    clause_ordinal + 2,
-                    clause_ordinal + 3,
-                ),
-            ];
-            for (count_at, count_ordinal, distance_ordinal) in clauses {
-                let evaluated_count = View::u32_le_at(payload, count_at)?;
-                if !(1..=100_000).contains(&evaluated_count) {
-                    return None;
-                }
-                let direction_at = reference_end(count_ordinal)? + 6;
+            for (count, distance) in [
+                (first_count, first_distance),
+                (second_count, second_distance),
+            ] {
+                let count_at = count.offset.checked_sub(5)?;
+                let evaluated_count = crate::records::SketchPatternCount::try_from(
+                    View::u32_le_at(payload, count_at)?,
+                )
+                .ok()?;
+                let direction_at = count.offset + 4 + 6;
                 let direction = [
                     f64_at(direction_at)?,
                     f64_at(direction_at + 8)?,
@@ -1366,10 +1325,10 @@ pub(crate) fn decode_pattern_definition(
                 }
                 directions.push(SketchPatternDirection {
                     evaluated_count,
-                    count_parameter: parsed.auxiliary_references[count_ordinal].value,
+                    count_parameter: count.value,
                     direction,
                     evaluated_distance: f64_at(direction_at + 24)?,
-                    distance_parameter: parsed.auxiliary_references[distance_ordinal].value,
+                    distance_parameter: distance.value,
                 });
             }
             return Some(SketchPatternDefinition::Rectangular {
@@ -1454,23 +1413,14 @@ pub(crate) fn decode_sketch_points_from_stream(
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let mut decoded = decode_sketch_point_record(payload, frame.design_type.version)
-            .ok_or_else(|| {
+        let decoded =
+            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has an invalid version-{} member sequence",
                     frame.design_type.version
                 ))
             })?;
-        let (u, v, depth) = (
-            decoded.coordinates[0] * 10.0,
-            decoded.coordinates[1] * 10.0,
-            decoded.record_form.depth(),
-        );
-        if !u.is_finite() || !v.is_finite() || !depth.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {record_index} has a non-finite coordinate"
-            )));
-        }
+        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
         if !point_target_has_guid(
             &types_by_entity,
             decoded.trailing_reference(),
@@ -1514,21 +1464,21 @@ pub(crate) fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-        decoded
-            .record_form
-            .set_companion(companion)
-            .map_err(CodecError::Malformed)?;
-        out.push(SketchPoint {
-            id: ids::native_sketch_point_id(stream, frame.start),
-            record_index,
-            owner_reference: decoded.owner_reference,
-            class_tag: frame.class_tag.clone(),
-            byte_offset: frame.start as u64,
-            coordinate_offset: decoded.coordinate_offset,
-            record_form: decoded.record_form,
-            paired_reference: decoded.paired_reference,
-            coordinates: Point2::new(u, v),
-        });
+        out.push(
+            SketchPoint::try_from(crate::records::SketchPointDraft {
+                id: ids::native_sketch_point_id(stream, frame.start),
+                record_index,
+                owner_reference: decoded.owner_reference,
+                class_tag: frame.class_tag.clone(),
+                byte_offset: frame.start as u64,
+                coordinate_offset: decoded.coordinate_offset,
+                record_form: decoded.record_form,
+                companion,
+                paired_reference: decoded.paired_reference,
+                coordinates: Point2::new(u, v),
+            })
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(out)
 }
@@ -2358,10 +2308,7 @@ fn decode_version_zero_sketch_point(
     Some(DecodedSketchPoint {
         owner_reference: Some(owner_reference),
         coordinate_offset,
-        record_form: SketchPointRecordForm::Version0 {
-            flag: flag == 1,
-            companion: None,
-        },
+        record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
         paired_reference,
         coordinates: [x, y],
     })
@@ -2389,6 +2336,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         }
         _ => return None,
     };
+    let persistent_id = std::num::NonZeroU64::new(persistent_id)?;
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
     let inline_typed = match (class_version, paired_type_guid.as_deref()) {
         (8 | 10 | 11, None) => false,
@@ -2453,7 +2401,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version8 {
-                        companion: None,
                         depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2465,7 +2412,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version10 {
-                        companion: None,
                         depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2484,7 +2430,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version10InlineTyped {
-                        companion: None,
                         depth,
                         trailing_reference,
                         persistent_id,
@@ -2504,7 +2449,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version11InlineTyped {
-                        companion: None,
                         depth,
                         entity_genesis,
                         trailing_reference,
@@ -2527,7 +2471,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version11 {
-                        companion: None,
                         depth,
                         entity_genesis,
                         padded_paired_reference,
@@ -2703,6 +2646,9 @@ pub(crate) fn decode_sketch_curve_identities_from_stream(
         else {
             continue;
         };
+        let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
+            continue;
+        };
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
         let curve_class = SketchCurveClass::of(
@@ -2761,7 +2707,7 @@ pub fn decode_sketch_curve_identities(
 
 pub(crate) struct ParsedSketchSurface {
     pub(crate) entity_genesis: Option<u64>,
-    pub(crate) persistent_id: u64,
+    pub(crate) persistent_id: std::num::NonZeroU64,
     pub(crate) u_degree: u32,
     pub(crate) v_degree: u32,
     pub(crate) u_knots: Vec<f64>,
@@ -2784,7 +2730,7 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
         return None;
     }
     let entity_genesis = View::u64_le_at(payload, 69);
-    let persistent_id = View::u64_le_at(payload, 119)?;
+    let persistent_id = std::num::NonZeroU64::new(View::u64_le_at(payload, 119)?)?;
     let point_count = usize::try_from(View::u32_le_at(payload, 127)?).ok()?;
     if point_count == 0 || point_count > 100_000 {
         return None;
@@ -3057,7 +3003,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&curve.id)?, curve.record_index),
                 SketchRelationOperand::Curve {
                     record_index: curve.record_index,
-                    primary_id: curve.primary_id,
+                    primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
                 },
             ))
@@ -3067,7 +3013,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&surface.id)?, surface.record_index),
                 SketchRelationOperand::Surface {
                     record_index: surface.record_index,
-                    persistent_id: surface.persistent_id,
+                    persistent_id: surface.persistent_id.get(),
                 },
             ))
         }))
@@ -3643,6 +3589,12 @@ fn take_relation_reference(
     })
 }
 
+#[derive(Clone, Copy)]
+enum AuxiliaryRelationReference {
+    Absent,
+    Present(crate::records::Located<u32, usize>),
+}
+
 /// Take one reference member that the class may leave absent, recording it in
 /// the auxiliary run when it is present. An absent reference is one zero byte
 /// and names nothing, so it contributes no entry.
@@ -3650,17 +3602,18 @@ fn take_auxiliary_relation_reference(
     payload: &[u8],
     cursor: &mut usize,
     auxiliary_references: &mut Vec<crate::records::Located<u32, usize>>,
-) -> Option<bool> {
+) -> Option<AuxiliaryRelationReference> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
     let Some(target) = reference.target() else {
-        return Some(false);
+        return Some(AuxiliaryRelationReference::Absent);
     };
-    auxiliary_references.push(crate::records::Located {
+    let located = crate::records::Located {
         value: u32::try_from(target).ok()?,
         offset: at + 1,
-    });
-    Some(true)
+    };
+    auxiliary_references.push(located);
+    Some(AuxiliaryRelationReference::Present(located))
 }
 
 /// Skip the two tables both pattern classes write after their own leading
@@ -3694,7 +3647,7 @@ enum RelationClassMembers {
     CircularPattern,
     Rectangular {
         reference_count: u32,
-        clause_ordinal: Option<usize>,
+        clauses: Option<[crate::records::Located<u32, usize>; 4]>,
     },
     TextFrame,
     TextPath {
@@ -3747,6 +3700,8 @@ fn parse_relation_class_members(
             RelationClassMembers::CircularPattern
         }
         SketchRelationClass::RectangularPattern => {
+            use AuxiliaryRelationReference::Present;
+
             // The three flags are not checked the way the tangency class's are:
             // the counted runs and the unit directions that follow them already
             // reject a misframed record, and the flags do not.
@@ -3761,22 +3716,23 @@ fn parse_relation_class_members(
                 take!()?;
             }
             skip_pattern_tables(payload, cursor)?;
-            let clause_ordinal = auxiliary_references.len();
-            let mut complete = true;
-            for _ in 0..2 {
-                // The evaluated instance count precedes the count-parameter
-                // reference; the unit direction and source distance follow it,
-                // and the distance parameter closes the clause.
+            let mut clauses = [AuxiliaryRelationReference::Absent; 4];
+            for pair in clauses.chunks_exact_mut(2) {
                 *cursor += 4;
-                complete &= take!()?;
+                pair[0] = take!()?;
                 *cursor += 32;
-                complete &= take!()?;
+                pair[1] = take!()?;
             }
+            let clauses = match clauses {
+                [Present(a), Present(b), Present(c), Present(d)] => Some([a, b, c, d]),
+                _ => None,
+            };
             RelationClassMembers::Rectangular {
                 reference_count,
-                clause_ordinal: complete.then_some(clause_ordinal),
+                clauses,
             }
         }
+
         SketchRelationClass::TextPath { leading_flag } => {
             if leading_flag {
                 if payload.get(*cursor)? != &1 {
@@ -3916,15 +3872,27 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     Some((text_reference, transforms, view.position()))
 }
 
-/// Whether an indexed-record header starts at `at`: a u32 length prefix of
-/// three, a three-digit ASCII class tag, and a u32 record index. The eleven
-/// bytes must be present.
-fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
-    View::u32_le_at(bytes, at) == Some(3)
-        && bytes
-            .get(at + 4..at + 7)
-            .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit))
-        && bytes.get(at + 7..at + 11).is_some()
+/// Validated indexed-record identity and byte offset.
+pub(crate) struct IndexedRecordHeader {
+    pub(crate) offset: usize,
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::DesignClassTag,
+}
+
+fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHeader> {
+    if View::u32_le_at(bytes, at)? != 3 {
+        return None;
+    }
+    let class_tag = std::str::from_utf8(bytes.get(at + 4..at + 7)?)
+        .ok()?
+        .to_owned()
+        .try_into()
+        .ok()?;
+    Some(IndexedRecordHeader {
+        offset: at,
+        record_index: View::u32_le_at(bytes, at + 7)?,
+        class_tag,
+    })
 }
 
 /// The record index carried by the indexed-record header at `at`. The header
@@ -3937,7 +3905,7 @@ pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
     indexed_record_offsets(bytes.get(position..)?)
         .next()
-        .map(|at| position + at)
+        .map(|header| position + header.offset)
 }
 
 /// Header offsets of every indexed record whose class tag is three characters.
@@ -3947,9 +3915,11 @@ pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Optio
 /// types. No segment registers that many, and `indexed_record_index` reads the
 /// record index at a fixed `at + 7` on the same assumption; both would have to
 /// change together to widen it.
-pub(crate) fn indexed_record_offsets(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
+pub(crate) fn indexed_record_offsets(
+    bytes: &[u8],
+) -> impl Iterator<Item = IndexedRecordHeader> + '_ {
     memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
-        .filter(|at| indexed_record_header_at(bytes, *at))
+        .filter_map(|at| indexed_record_header_at(bytes, at))
 }
 
 pub(crate) fn next_indexed_record_offset_with_index(

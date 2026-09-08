@@ -478,8 +478,6 @@ pub struct CurveParameterScalar {
     pub raw: Vec<u8>,
     /// Body-relative token offset.
     pub offset: usize,
-    /// Token length in bytes.
-    pub length: usize,
 }
 
 /// One canonical entity reference in a positional curve body.
@@ -500,8 +498,6 @@ pub struct CurveParameterOpaqueSpan {
     pub raw: Vec<u8>,
     /// Body-relative span offset.
     pub offset: usize,
-    /// Span length in bytes.
-    pub length: usize,
 }
 
 /// Two pcurve endpoints represented in both adjacent face parameter frames.
@@ -1289,7 +1285,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
     let mut pending = None::<PendingCurveExpressionSolveBlock>;
     for (index, line) in lines.iter().enumerate() {
         let source = line.text.trim();
-        if pending.is_none() {
+        let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(source, "solve") {
                 program.line_indices.insert(index);
                 pending = Some(PendingCurveExpressionSolveBlock {
@@ -1302,23 +1298,22 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 program.unresolved_control = true;
             }
             continue;
-        }
+        };
 
         program.line_indices.insert(index);
         if starts_relation_keyword(source, "solve") {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
         if starts_relation_keyword(source, "for") {
             let unknowns = conditional_keyword_expression(source, "for")
                 .and_then(curve_expression_solve_unknowns);
-            let mut block = pending.take().expect("pending solve block");
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
             let mut assignment_line_indices = Vec::new();
             if let Some(unknowns) = &unknowns {
-                for statement in block.statements {
+                for statement in std::mem::take(&mut block.statements) {
                     if statement.equation.dependencies.iter().any(|dependency| {
                         unknowns
                             .iter()
@@ -1347,6 +1342,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             } else {
                 program.unresolved_control = true;
             }
+            pending = None;
             continue;
         }
         if source.is_empty() || source.starts_with("/*") {
@@ -1354,13 +1350,13 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
         }
         let Some((left, right)) = split_expression_assignment(source) else {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         };
         let (left, right) = (left.trim(), right.trim());
         if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
         let mut dependencies = Vec::new();
@@ -1368,23 +1364,19 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             || extend_expression_dependencies(&mut dependencies, right).is_none()
         {
             program.unresolved_control = true;
-            pending.as_mut().expect("pending solve block").valid = false;
+            block.valid = false;
             continue;
         }
-        pending
-            .as_mut()
-            .expect("pending solve block")
-            .statements
-            .push(PendingCurveExpressionSolveStatement {
-                equation: CurveExpressionEquation {
-                    left: left.to_owned(),
-                    right: right.to_owned(),
-                    dependencies,
-                    offset: line.offset,
-                },
-                assignment: expression_assignment(line),
-                line_index: index,
-            });
+        block.statements.push(PendingCurveExpressionSolveStatement {
+            equation: CurveExpressionEquation {
+                left: left.to_owned(),
+                right: right.to_owned(),
+                dependencies,
+                offset: line.offset,
+            },
+            assignment: expression_assignment(line),
+            line_index: index,
+        });
     }
     if pending.is_some() {
         program.unresolved_control = true;
@@ -1593,6 +1585,56 @@ struct ConditionalFrame {
     condition: Option<bool>,
 }
 
+#[derive(Default)]
+enum ConditionalStack {
+    #[default]
+    Empty,
+    Open {
+        frame: ConditionalFrame,
+        parents: Vec<ConditionalFrame>,
+    },
+}
+
+impl ConditionalStack {
+    fn push(&mut self, frame: ConditionalFrame) {
+        *self = match std::mem::take(self) {
+            Self::Empty => Self::Open {
+                frame,
+                parents: Vec::new(),
+            },
+            Self::Open {
+                frame: parent,
+                mut parents,
+            } => {
+                parents.push(parent);
+                Self::Open { frame, parents }
+            }
+        };
+    }
+
+    fn alternative(&self) -> CurveExpressionActivation {
+        match self {
+            Self::Empty => CurveExpressionActivation::Conditional,
+            Self::Open { frame, .. } => branch_activation(frame.parent, frame.condition, true),
+        }
+    }
+
+    fn end(&mut self) -> CurveExpressionActivation {
+        match std::mem::take(self) {
+            Self::Empty => CurveExpressionActivation::Conditional,
+            Self::Open { frame, mut parents } => {
+                if let Some(parent) = parents.pop() {
+                    *self = Self::Open {
+                        frame: parent,
+                        parents,
+                    };
+                }
+                frame.parent
+            }
+        }
+    }
+}
+
 fn conditional_keyword_expression<'a>(source: &'a str, keyword: &str) -> Option<&'a str> {
     let source = source.trim();
     let prefix = source.get(..keyword.len())?;
@@ -1732,7 +1774,7 @@ fn evaluate_expression_program_details(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let mut stack = Vec::<ConditionalFrame>::new();
+    let mut stack = ConditionalStack::default();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
@@ -1839,13 +1881,11 @@ fn evaluate_expression_program_details(
             continue;
         }
         if source.eq_ignore_ascii_case("else") {
-            let frame = stack.last().expect("validated conditional stack");
-            activity = branch_activation(frame.parent, frame.condition, true);
+            activity = stack.alternative();
             continue;
         }
         if source.eq_ignore_ascii_case("endif") {
-            let frame = stack.pop().expect("validated conditional stack");
-            activity = frame.parent;
+            activity = stack.end();
             continue;
         }
         let Some(mut assignment) = expression_assignment(line) else {
@@ -3735,26 +3775,21 @@ impl ExpressionValue for DimensionProbeValue {
                     constraints,
                 ))
             }
-            (
-                name @ (CreoMathFunction::Abs | CreoMathFunction::Ceil | CreoMathFunction::Floor),
-                [argument],
-            ) => {
-                let value = match name {
-                    CreoMathFunction::Abs => argument.numeric_value().map(f64::abs),
-                    CreoMathFunction::Ceil => {
-                        Self::optional_round(argument, None, true)?.into_option()
-                    }
-                    CreoMathFunction::Floor => {
-                        Self::optional_round(argument, None, false)?.into_option()
-                    }
-                    _ => unreachable!(),
-                };
-                Some(Self::numeric_result(
-                    argument.dimension.clone(),
-                    value,
-                    constraints,
-                ))
-            }
+            (CreoMathFunction::Abs, [argument]) => Some(Self::numeric_result(
+                argument.dimension.clone(),
+                argument.numeric_value().map(f64::abs),
+                constraints,
+            )),
+            (CreoMathFunction::Ceil, [argument]) => Some(Self::numeric_result(
+                argument.dimension.clone(),
+                Self::optional_round(argument, None, true)?.into_option(),
+                constraints,
+            )),
+            (CreoMathFunction::Floor, [argument]) => Some(Self::numeric_result(
+                argument.dimension.clone(),
+                Self::optional_round(argument, None, false)?.into_option(),
+                constraints,
+            )),
             (
                 name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
                 [argument, decimal_places],
@@ -6044,7 +6079,6 @@ fn curve_scalar_lane(
                 value: 0.0,
                 raw: vec![0x18],
                 offset: cursor,
-                length: 1,
             });
             claimed[cursor] = true;
             cursor += 1;
@@ -6060,7 +6094,6 @@ fn curve_scalar_lane(
                 value,
                 raw: body[cursor..next].to_vec(),
                 offset: cursor,
-                length: next - cursor,
             });
             claimed[cursor..next].fill(true);
             cursor = next;
@@ -6082,7 +6115,6 @@ fn curve_scalar_lane(
         opaque_spans.push(CurveParameterOpaqueSpan {
             raw: body[start..cursor].to_vec(),
             offset: start,
-            length: cursor - start,
         });
     }
     Some((scalars, references, opaque_spans))
@@ -6169,21 +6201,21 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
         if record.body.get(cursor..cursor + HELD_SCALAR_OPEN.len()) == Some(HELD_SCALAR_OPEN) {
             cursor += HELD_SCALAR_OPEN.len();
             let token = tokens.next().filter(|token| token.offset == cursor)?;
-            (token.length != 0
-                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            (!token.raw.is_empty()
+                && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
             values.push(token.value);
-            cursor += token.length;
+            cursor += token.raw.len();
             (record.body.get(cursor) == Some(&HELD_SCALAR_CLOSE)).then_some(())?;
             cursor += 1;
             continue;
         }
         if let Some(token) = tokens.peek().filter(|token| token.offset == cursor) {
-            (token.length != 0
-                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            (!token.raw.is_empty()
+                && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
             values.push(token.value);
-            cursor += token.length;
+            cursor += token.raw.len();
             tokens.next();
         } else if record.body[cursor] == 0x12 {
             values.push(0.0);
@@ -6360,17 +6392,17 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
     (prefix.offset == 0
         && prefix.raw == [0xfc, 0x02]
         && terminal.raw.first() == Some(&0x34)
-        && terminal.length == 3)
+        && terminal.raw.len() == 3)
         .then_some(())?;
-    let mut cursor = prefix.length;
+    let mut cursor = prefix.raw.len();
     for token in tokens {
         (token.offset == cursor
-            && token.length != 0
-            && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            && !token.raw.is_empty()
+            && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
         .then_some(())?;
-        cursor += token.length;
+        cursor += token.raw.len();
     }
-    (terminal.offset == cursor && terminal.offset + terminal.length == record.body.len())
+    (terminal.offset == cursor && terminal.offset + terminal.raw.len() == record.body.len())
         .then_some(())?;
     let values = tokens.each_ref().map(|token| token.value);
     (values.iter().all(|value| value.is_finite())

@@ -821,19 +821,19 @@ pub(in super::super) fn transfer_sketches(
                 cadmpeg_ir::sketches::SketchPlacement::Unresolved,
                 |transform| cadmpeg_ir::sketches::SketchPlacement::Resolved {
                     origin: Point3::new(
-                        transform.origin[0],
-                        transform.origin[1],
-                        transform.origin[2],
+                        transform.origin()[0],
+                        transform.origin()[1],
+                        transform.origin()[2],
                     ),
                     normal: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
+                        transform.normal()[0],
+                        transform.normal()[1],
+                        transform.normal()[2],
                     ),
                     u_axis: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
+                        transform.u_axis()[0],
+                        transform.u_axis()[1],
+                        transform.u_axis()[2],
                     ),
                 },
             ),

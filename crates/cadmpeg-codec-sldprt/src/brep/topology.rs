@@ -27,36 +27,36 @@ use cadmpeg_ir::topology::Sense;
 use crate::layout::world_point as world_pt;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
-pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+pub(crate) const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Bridge {
-    pub attr: u16,
-    pub refs: [u16; 5],
-    pub sequence: u32,
-    pub sense: Sense,
-    pub owner: Option<u16>,
-    pub offset: usize,
+pub(crate) struct Bridge {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 5],
+    pub(crate) sequence: u32,
+    pub(crate) sense: Sense,
+    pub(crate) owner: Option<u16>,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Loop {
-    pub attr: u16,
-    pub refs: [u16; 4],
-    pub offset: usize,
+pub(crate) struct Loop {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 4],
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct EdgeUse {
-    pub attr: u16,
-    pub references: EdgeReferences,
-    pub sequence: u32,
-    pub offset: usize,
+pub(crate) struct EdgeUse {
+    pub(crate) attr: u16,
+    pub(crate) references: EdgeReferences,
+    pub(crate) sequence: u32,
+    pub(crate) offset: usize,
 }
 
 /// Bare edge-use cells or the curve-only compact layout.
 #[derive(Debug, Clone, Eq)]
-pub enum EdgeReferences {
+pub(crate) enum EdgeReferences {
     Bare([u16; 6]),
     Compact { curve: u16 },
 }
@@ -76,14 +76,14 @@ impl PartialEq for EdgeReferences {
 }
 
 impl EdgeReferences {
-    pub fn canonical(&self) -> Option<u16> {
+    pub(crate) fn canonical(&self) -> Option<u16> {
         match self {
             Self::Bare(refs) => Some(refs[0]),
             Self::Compact { .. } => None,
         }
     }
 
-    pub fn curve(&self) -> u16 {
+    pub(crate) fn curve(&self) -> u16 {
         match self {
             Self::Bare(refs) => refs[3],
             Self::Compact { curve } => *curve,
@@ -92,28 +92,28 @@ impl EdgeReferences {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Coedge {
-    pub attr: u16,
-    pub refs: [u16; 9],
-    pub sense: Sense,
-    pub offset: usize,
+pub(crate) struct Coedge {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 9],
+    pub(crate) sense: Sense,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct VertexUse {
-    pub attr: u16,
-    pub refs: [u16; 5],
-    pub sequence: u32,
-    pub offset: usize,
+pub(crate) struct VertexUse {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 5],
+    pub(crate) sequence: u32,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Point {
-    pub attr: u16,
-    pub refs: Vec<u16>,
-    pub xyz_m: [f64; 3],
-    pub xyz_offset: usize,
-    pub offset: usize,
+pub(crate) struct Point {
+    pub(crate) attr: u16,
+    pub(crate) refs: Vec<u16>,
+    pub(crate) xyz_m: [f64; 3],
+    pub(crate) xyz_offset: usize,
+    pub(crate) offset: usize,
 }
 
 fn parse_sense(marker: u8) -> Option<Sense> {
@@ -418,21 +418,73 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
 
 /// The topology record tables of one stream, each keyed by `attr`.
 #[derive(Default)]
-pub struct Tables {
-    pub bridges: HashMap<u16, Bridge>,
-    pub loops: HashMap<u16, Loop>,
-    pub edge_uses: HashMap<u16, EdgeUse>,
-    pub coedges: HashMap<u16, Coedge>,
-    pub vertex_uses: HashMap<u16, VertexUse>,
-    pub points: HashMap<u16, Point>,
+pub(crate) struct Tables {
+    bridges: HashMap<u16, Bridge>,
+    loops: HashMap<u16, Loop>,
+    edge_uses: HashMap<u16, EdgeUse>,
+    coedges: HashMap<u16, Coedge>,
+    vertex_uses: HashMap<u16, VertexUse>,
+    points: HashMap<u16, Point>,
 }
 
 impl Tables {
+    pub(crate) fn bridges(&self) -> &HashMap<u16, Bridge> {
+        &self.bridges
+    }
+
+    pub(crate) fn insert_bridge(&mut self, record: Bridge) {
+        self.bridges.insert(record.attr, record);
+    }
+
+    pub(crate) fn loops(&self) -> &HashMap<u16, Loop> {
+        &self.loops
+    }
+
+    pub(crate) fn insert_loop(&mut self, record: Loop) {
+        self.loops.insert(record.attr, record);
+    }
+
+    pub(crate) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
+        &self.edge_uses
+    }
+
+    pub(crate) fn insert_edge_use(&mut self, record: EdgeUse) {
+        self.edge_uses.insert(record.attr, record);
+    }
+
+    pub(crate) fn coedges(&self) -> &HashMap<u16, Coedge> {
+        &self.coedges
+    }
+
+    pub(crate) fn insert_coedge(&mut self, record: Coedge) {
+        self.coedges.insert(record.attr, record);
+    }
+
+    pub(crate) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
+        &self.vertex_uses
+    }
+
+    pub(crate) fn insert_vertex_use(&mut self, record: VertexUse) {
+        self.vertex_uses.insert(record.attr, record);
+    }
+
+    pub(crate) fn points(&self) -> &HashMap<u16, Point> {
+        &self.points
+    }
+
+    pub(crate) fn insert_point(&mut self, record: Point) {
+        self.points.insert(record.attr, record);
+    }
+
     /// Merge deltas without replacing partition topology membership.
     ///
     /// Preserve partition topology for shared identities and add only deltas
     /// bridges selected by the typed FACE ownership set.
-    pub fn merge_deltas(&mut self, mut deltas: Self, selected_bridge_attrs: Option<&HashSet<u16>>) {
+    pub(crate) fn merge_deltas(
+        &mut self,
+        mut deltas: Self,
+        selected_bridge_attrs: Option<&HashSet<u16>>,
+    ) {
         if self.bridges.is_empty() {
             if let Some(selected_bridge_attrs) = selected_bridge_attrs {
                 retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
@@ -492,7 +544,29 @@ impl Candidate for Coedge {
         self.offset
     }
 }
-type CoedgeEvidence = [bool; 7];
+#[derive(Clone, Copy)]
+struct CoedgeEvidence<'a> {
+    owner: Option<&'a Loop>,
+    start: Option<&'a VertexUse>,
+    edge: Option<&'a [EdgeUse]>,
+    next_owner: Option<bool>,
+    previous: bool,
+    loop_head: bool,
+}
+
+impl CoedgeEvidence<'_> {
+    fn flags(self) -> [bool; 7] {
+        [
+            self.owner.is_some(),
+            self.start.is_some(),
+            self.edge.is_some(),
+            self.next_owner == Some(true),
+            self.next_owner.is_some(),
+            self.previous,
+            self.loop_head,
+        ]
+    }
+}
 
 /// Keep the latest record occurrence for each attribute while retaining all
 /// frame readings at that occurrence. A stream can contain overlapping payload
@@ -534,33 +608,36 @@ fn loop_is_owned(record: &Loop, bridges: &HashMap<u16, Bridge>) -> bool {
 /// fields identify the owner, vertex-use, edge-use, and ring; reciprocal links
 /// and loop-head membership provide additional confirmation. No field is a
 /// byte-position discriminator.
-fn coedge_evidence(
+fn coedge_evidence<'a>(
     candidate: &Coedge,
-    loops: &[Loop],
+    loops: &'a [Loop],
     bridges: &HashMap<u16, Bridge>,
-    vertex_uses: &HashMap<u16, VertexUse>,
-    edge_candidates: &CandidateMap<EdgeUse>,
+    vertex_uses: &'a HashMap<u16, VertexUse>,
+    edge_candidates: &'a CandidateMap<EdgeUse>,
     coedge_candidates: &CandidateMap<Coedge>,
-) -> CoedgeEvidence {
+) -> CoedgeEvidence<'a> {
     let owner = candidate.refs[1];
-    let owner_valid = owner != 0
-        && loops
-            .iter()
-            .rev()
-            .find(|loop_| loop_.attr == owner)
-            .is_some_and(|loop_| loop_is_owned(loop_, bridges));
+    let owner_evidence = loops
+        .iter()
+        .rev()
+        .find(|loop_| loop_.attr == owner)
+        .filter(|loop_| owner != 0 && loop_is_owned(loop_, bridges));
     let start = candidate.refs[4];
-    let start_valid = start != 0 && vertex_uses.contains_key(&start);
+    let start_evidence = vertex_uses.get(&start).filter(|_| start != 0);
     let edge = candidate.refs[6];
-    let edge_valid = edge != 0 && edge_candidates.contains_key(&edge);
+    let edge_evidence = edge_candidates
+        .get(&edge)
+        .filter(|_| edge != 0)
+        .map(Vec::as_slice);
     let next = candidate.refs[3];
-    let next_candidates = coedge_candidates.get(&next);
-    let next_valid = next != 0 && next_candidates.is_some();
-    let next_owner_valid = next_candidates.is_some_and(|candidates| {
-        candidates
-            .iter()
-            .any(|next_candidate| next_candidate.refs[1] == owner)
-    });
+    let next_owner_valid = coedge_candidates
+        .get(&next)
+        .filter(|_| next != 0)
+        .map(|candidates| {
+            candidates
+                .iter()
+                .any(|next_candidate| next_candidate.refs[1] == owner)
+        });
     let previous = candidate.refs[2];
     let previous_valid = previous == 0
         || coedge_candidates.get(&previous).is_some_and(|candidates| {
@@ -571,18 +648,19 @@ fn coedge_evidence(
     let loop_head_valid = loops.iter().rev().any(|loop_| {
         loop_.attr == owner && loop_is_owned(loop_, bridges) && loop_.refs[1] == candidate.attr
     });
-    [
-        owner_valid,
-        start_valid,
-        edge_valid,
-        next_valid && next_owner_valid,
-        next_valid,
-        previous_valid,
-        loop_head_valid,
-    ]
+    CoedgeEvidence {
+        owner: owner_evidence,
+        start: start_evidence,
+        edge: edge_evidence,
+        next_owner: next_owner_valid,
+        previous: previous_valid,
+        loop_head: loop_head_valid,
+    }
 }
 
-fn evidence_dominates(left: CoedgeEvidence, right: CoedgeEvidence) -> bool {
+fn evidence_dominates(left: CoedgeEvidence<'_>, right: CoedgeEvidence<'_>) -> bool {
+    let left = left.flags();
+    let right = right.flags();
     let at_least_as_supported = left.iter().zip(right).all(|(left, right)| *left || !right);
     let strictly_more_supported = left.iter().zip(right).any(|(left, right)| *left && !right);
     at_least_as_supported && strictly_more_supported
@@ -599,7 +677,7 @@ fn select_coedge(
     if candidates.len() == 1 {
         return candidates.first().cloned();
     }
-    let evidence: Vec<CoedgeEvidence> = candidates
+    let evidence: Vec<CoedgeEvidence<'_>> = candidates
         .iter()
         .map(|candidate| {
             coedge_evidence(
@@ -698,7 +776,7 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// enclosing payload. Family-specific framing gates reject payload coincidences.
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
-pub fn scan(body: &[u8]) -> Tables {
+pub(crate) fn scan(body: &[u8]) -> Tables {
     scan_with_point_framing(body, false, None, None)
 }
 
@@ -752,7 +830,7 @@ fn scan_with_point_framing(
                         excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
                     let carries_loop = record.refs[2] > 1;
                     if !excluded || carries_loop {
-                        t.bridges.insert(record.attr, record);
+                        t.insert_bridge(record);
                     }
                 }
             }
@@ -765,7 +843,7 @@ fn scan_with_point_framing(
             0x11 => insert_candidates(&mut coedge_candidates, parse_coedge_candidates(body, i)),
             0x12 => {
                 if let Some(record) = parse_vertex_use(body, i) {
-                    t.vertex_uses.insert(record.attr, record);
+                    t.insert_vertex_use(record);
                 }
             }
             0x1d => {
@@ -775,7 +853,7 @@ fn scan_with_point_framing(
                     parse_point(body, i, false)
                 };
                 if let Some(record) = record {
-                    t.points.insert(record.attr, record);
+                    t.insert_point(record);
                 }
             }
             _ => {}
@@ -783,7 +861,7 @@ fn scan_with_point_framing(
         i += 1;
     }
 
-    for (attr, candidates) in &coedge_candidates {
+    for candidates in coedge_candidates.values() {
         if let Some(record) = select_coedge(
             candidates,
             &loop_candidates,
@@ -792,12 +870,12 @@ fn scan_with_point_framing(
             &edge_candidates,
             &coedge_candidates,
         ) {
-            t.coedges.insert(*attr, record);
+            t.insert_coedge(record);
         }
     }
-    for (attr, candidates) in edge_candidates {
+    for candidates in edge_candidates.into_values() {
         if let Some(record) = select_edge_use(&candidates, &t.coedges, curve_attrs) {
-            t.edge_uses.insert(attr, record);
+            t.insert_edge_use(record);
         }
     }
     for record in loop_candidates {
@@ -808,7 +886,7 @@ fn scan_with_point_framing(
                 .get(&first)
                 .is_some_and(|coedge| coedge.refs[1] == record.attr)
         {
-            t.loops.insert(record.attr, record);
+            t.insert_loop(record);
         }
     }
     t

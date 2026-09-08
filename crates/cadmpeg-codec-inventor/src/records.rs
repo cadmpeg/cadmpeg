@@ -25,9 +25,61 @@ pub(crate) struct TypeDescriptor {
     pub(crate) fields: [(u16, u32); 2],
 }
 
+/// An `RSe` metadata section number from 1 through 11.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub(crate) enum MetaSectionNumber {
+    One = 1,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+    Eight = 8,
+    Nine = 9,
+    Ten = 10,
+    Eleven = 11,
+}
+
+impl TryFrom<u8> for MetaSectionNumber {
+    type Error = String;
+
+    fn try_from(number: u8) -> Result<Self, Self::Error> {
+        match number {
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            3 => Ok(Self::Three),
+            4 => Ok(Self::Four),
+            5 => Ok(Self::Five),
+            6 => Ok(Self::Six),
+            7 => Ok(Self::Seven),
+            8 => Ok(Self::Eight),
+            9 => Ok(Self::Nine),
+            10 => Ok(Self::Ten),
+            11 => Ok(Self::Eleven),
+            _ => Err(format!(
+                "metadata section number {number} is outside 1..=11"
+            )),
+        }
+    }
+}
+
+impl From<MetaSectionNumber> for u8 {
+    fn from(number: MetaSectionNumber) -> Self {
+        number as Self
+    }
+}
+
+impl std::fmt::Display for MetaSectionNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        u8::from(*self).fmt(f)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct MetaSection<'a> {
-    pub(crate) number: u8,
+    pub(crate) number: MetaSectionNumber,
     pub(crate) discriminator: u32,
     pub(crate) payload: View<'a>,
 }
@@ -108,7 +160,7 @@ pub(crate) fn parse_meta_tables<'a>(
         });
     }
     let mut sections = vec![MetaSection {
-        number: 1,
+        number: MetaSectionNumber::One,
         discriminator: block_count as u32,
         payload: section_1_payload,
     }];
@@ -117,7 +169,7 @@ pub(crate) fn parse_meta_tables<'a>(
     let (section_2_count, section_2_payload, _, next) =
         counted_section(body, offset, 10, "section 2")?;
     sections.push(MetaSection {
-        number: 2,
+        number: MetaSectionNumber::Two,
         discriminator: section_2_count as u32,
         payload: section_2_payload,
     });
@@ -125,7 +177,7 @@ pub(crate) fn parse_meta_tables<'a>(
     let (section_3_count, section_3_payload, _, next) =
         counted_section(body, offset, 28, "section 3")?;
     sections.push(MetaSection {
-        number: 3,
+        number: MetaSectionNumber::Three,
         discriminator: section_3_count as u32,
         payload: section_3_payload,
     });
@@ -143,29 +195,31 @@ pub(crate) fn parse_meta_tables<'a>(
     )?;
     let mut types = Vec::with_capacity(type_count);
     for index in 0..type_count {
-        let entry = section_4_payload
-            .window()
-            .get(index * type_desc::LEN..index * type_desc::LEN + type_desc::LEN)
-            .expect("counted type-table payload has exact entries");
-        let mut id = [0; 16];
-        id.copy_from_slice(&entry[type_desc::TYPE_ID..type_desc::FIELD_0_KIND]);
+        let entry = child(
+            section_4_payload,
+            index * type_desc::LEN,
+            (index + 1) * type_desc::LEN,
+            "type descriptor",
+        )?;
+        let mut entry = crate::pmdc::Cursor::new(entry);
         types.push(TypeDescriptor {
             index: index as u8,
-            id,
+            id: entry.take_array("type descriptor id")?,
             fields: [
                 (
-                    View::u16_le_at(entry, type_desc::FIELD_0_KIND).expect("two-byte field"),
-                    View::u32_le_at(entry, type_desc::FIELD_0_VALUE).expect("four-byte field"),
+                    entry.u16("type field 0 kind")?,
+                    entry.u32("type field 0 value")?,
                 ),
                 (
-                    View::u16_le_at(entry, type_desc::FIELD_1_KIND).expect("two-byte field"),
-                    View::u32_le_at(entry, type_desc::FIELD_1_VALUE).expect("four-byte field"),
+                    entry.u16("type field 1 kind")?,
+                    entry.u32("type field 1 value")?,
                 ),
             ],
         });
     }
+
     sections.push(MetaSection {
-        number: 4,
+        number: MetaSectionNumber::Four,
         discriminator: type_count as u32,
         payload: section_4_payload,
     });
@@ -176,7 +230,15 @@ pub(crate) fn parse_meta_tables<'a>(
     let mut end = terminal_start;
     let mut payload_len = SECTION_11_PAYLOAD_LEN;
     let mut reverse_sections = Vec::with_capacity(7);
-    for number in (5_u8..=11).rev() {
+    for number in [
+        MetaSectionNumber::Eleven,
+        MetaSectionNumber::Ten,
+        MetaSectionNumber::Nine,
+        MetaSectionNumber::Eight,
+        MetaSectionNumber::Seven,
+        MetaSectionNumber::Six,
+        MetaSectionNumber::Five,
+    ] {
         let header = end
             .checked_sub(payload_len.saturating_add(8))
             .ok_or_else(|| CodecError::Malformed("RSe metadata section chain underflows".into()))?;
@@ -310,11 +372,11 @@ fn counted_section<'a>(
 }
 
 fn validate_reverse_section(
-    number: u8,
+    number: MetaSectionNumber,
     discriminator: u32,
     payload_len: usize,
 ) -> Result<(), CodecError> {
-    if number == 5 {
+    if number == MetaSectionNumber::Five {
         return Ok(());
     }
     if discriminator > 1_000_000 {
@@ -322,11 +384,11 @@ fn validate_reverse_section(
             "RSe metadata section {number} count exceeds 1000000"
         )));
     }
-    if number == 6 {
+    if number == MetaSectionNumber::Six {
         return Ok(());
     }
     let item_size = match number {
-        7 => {
+        MetaSectionNumber::Seven => {
             if discriminator == 0 {
                 0
             } else if payload_len / discriminator as usize >= 0x4c {
@@ -335,11 +397,15 @@ fn validate_reverse_section(
                 32
             }
         }
-        8 => 20,
-        9 => 19,
-        10 => 8,
-        11 => 4,
-        _ => unreachable!("validated reverse section number"),
+        MetaSectionNumber::Eight => 20,
+        MetaSectionNumber::Nine => 19,
+        MetaSectionNumber::Ten => 8,
+        MetaSectionNumber::Eleven => 4,
+        MetaSectionNumber::One => 4,
+        MetaSectionNumber::Two => 10,
+        MetaSectionNumber::Three => 28,
+        MetaSectionNumber::Four => type_desc::LEN,
+        MetaSectionNumber::Five | MetaSectionNumber::Six => return Ok(()),
     };
     let expected = (discriminator as usize)
         .checked_mul(item_size)
@@ -639,5 +705,21 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
             .expect("synthetic RSe data fits policy");
         test(&ctx, view);
+    }
+    #[test]
+    fn metadata_section_numbers_have_a_closed_numeric_wire_form() {
+        for number in 0..=u8::MAX {
+            let parsed =
+                serde_json::from_value::<super::MetaSectionNumber>(serde_json::json!(number));
+            if (1..=11).contains(&number) {
+                assert_eq!(
+                    serde_json::to_value(parsed.expect("section number is in 1..=11"))
+                        .expect("section number is in 1..=11"),
+                    serde_json::json!(number)
+                );
+            } else {
+                assert!(parsed.is_err());
+            }
+        }
     }
 }

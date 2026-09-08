@@ -1701,7 +1701,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     )
     .expect("the record owns its extrusion");
     assert!(matches!(
-        decoded.definition,
+        decoded.definition(),
         DecodedProceduralSurfaceDefinition::Extrusion { .. }
     ));
 

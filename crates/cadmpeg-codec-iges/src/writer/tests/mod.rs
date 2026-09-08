@@ -437,7 +437,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         form,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameters: Vec::new(),
+        parameter_body: Vec::new(),
         transform: None,
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
@@ -488,7 +488,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         form: 0,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameters: b"102,1,@R0@;".to_vec(),
+        parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
     };
     assert!(matches!(
@@ -641,7 +641,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let start = hyperbola_point(2.0, 3.0, -range[1]).expect("reflected start evaluates");
     let end = hyperbola_point(2.0, 3.0, -range[0]).expect("reflected end evaluates");
     assert_eq!(
-        String::from_utf8(entity.parameters).expect("parameters are ASCII"),
+        String::from_utf8(entity.parameter_text()).expect("parameters are ASCII"),
         format!(
             "104,{},0,{},0,0,-1,0,{},{},{},{};",
             number(1.0 / 4.0),
@@ -744,7 +744,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         radius: 2.0,
     };
     let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
-    let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
+    let parameters = String::from_utf8(entity.parameter_text()).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
         .split(',')

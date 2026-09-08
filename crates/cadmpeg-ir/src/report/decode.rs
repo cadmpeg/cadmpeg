@@ -52,14 +52,11 @@ impl DecodeTransfer {
 
     /// Constructs the transfer state from the sealed wrapper's request scope
     /// and the backend's geometry outcome.
-    pub(crate) const fn stamp_request_scope(
-        container_only: bool,
-        geometry_transferred: bool,
-    ) -> Self {
+    pub(crate) const fn stamp_request_scope(container_only: bool, transfer: Self) -> Self {
         if container_only {
             Self::ContainerOnly
         } else {
-            Self::full(geometry_transferred)
+            Self::full(transfer.geometry_transferred())
         }
     }
 
@@ -573,10 +570,7 @@ impl DecodeReport {
     ) -> Self {
         Self {
             classification,
-            transfer: DecodeTransfer::stamp_request_scope(
-                container_only,
-                body.geometry_transferred,
-            ),
+            transfer: DecodeTransfer::stamp_request_scope(container_only, body.transfer),
             coverage: body.coverage,
             losses: body.losses,
             notes: body.notes,

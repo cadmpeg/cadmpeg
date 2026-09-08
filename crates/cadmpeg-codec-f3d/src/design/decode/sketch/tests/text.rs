@@ -273,7 +273,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, live_point_at as u64);
-    assert_eq!(points[0].coordinates, Point2::new(70.0, -30.0));
+    assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
         .try_into()

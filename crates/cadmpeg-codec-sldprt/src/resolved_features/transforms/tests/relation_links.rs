@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
@@ -692,7 +693,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         let operand = |index, marker: Option<&str>| FeatureInputOperand {
             offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
-            kind: FeatureInputOperandKind::Native(tag),
+            kind: FeatureInputOperandKind::Native(tag.try_into().unwrap()),
             entity_index: index,
             entity_ref: marker.map(str::to_string),
         };
@@ -765,7 +766,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let operand = |index| FeatureInputOperand {
         offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x8100),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
         entity_index: index,
         entity_ref: None,
     };

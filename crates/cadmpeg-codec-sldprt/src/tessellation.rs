@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayLists` descriptor tables.
 
+use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
@@ -26,18 +27,80 @@ const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Summary {
-    pub vertices: usize,
-    pub triangles: usize,
+pub(crate) struct Summary {
+    pub(crate) vertices: usize,
+    pub(crate) triangles: usize,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Mesh {
-    pub vertices: Vec<Point3>,
-    pub triangles: Vec<[u32; 3]>,
-    pub strip_lengths: Vec<u32>,
-    pub normals: Vec<Vector3>,
-    pub channels: Vec<TessellationChannel>,
+pub(crate) struct Mesh {
+    vertices: Vec<Point3>,
+    triangles: Vec<[u32; 3]>,
+    strip_lengths: Vec<u32>,
+    normals: Vec<Vector3>,
+    channels: Vec<TessellationChannel>,
+}
+
+impl Mesh {
+    fn new(
+        vertices: Vec<Point3>,
+        strip_lengths: Vec<u32>,
+        normals: Vec<Vector3>,
+        channels: Vec<TessellationChannel>,
+    ) -> Option<Self> {
+        let vertex_count = strip_lengths.iter().try_fold(0usize, |total, length| {
+            total.checked_add(usize::try_from(*length).ok()?)
+        })?;
+        if vertex_count != vertices.len()
+            || (!normals.is_empty() && normals.len() != vertices.len())
+        {
+            return None;
+        }
+        let mut triangles = Vec::new();
+        let mut base = 0u32;
+        for length in &strip_lengths {
+            for i in 0..length.saturating_sub(2) {
+                let [a, b, c] = if i % 2 == 0 {
+                    [
+                        base.checked_add(i)?,
+                        base.checked_add(i)?.checked_add(1)?,
+                        base.checked_add(i)?.checked_add(2)?,
+                    ]
+                } else {
+                    [
+                        base.checked_add(i)?,
+                        base.checked_add(i)?.checked_add(2)?,
+                        base.checked_add(i)?.checked_add(1)?,
+                    ]
+                };
+                triangles.push([a, b, c]);
+            }
+            base = base.checked_add(*length)?;
+        }
+        Some(Self {
+            vertices,
+            triangles,
+            strip_lengths,
+            normals,
+            channels,
+        })
+    }
+
+    pub(crate) fn into_tessellation(
+        self,
+        id: String,
+    ) -> Result<cadmpeg_ir::tessellation::Tessellation, cadmpeg_ir::tessellation::TessellationError>
+    {
+        cadmpeg_ir::tessellation::Tessellation::from_decoded(
+            id,
+            self.vertices,
+            self.triangles,
+            self.strip_lengths,
+            self.normals,
+            Vec::new(),
+            self.channels,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,13 +125,13 @@ pub(crate) enum PersistentSurfaceReference {
     Complete(PersistentFaceIdentity),
     /// A source-level reference whose trailing fields are opaque.
     SourceOnly {
-        feature_source_id: u32,
+        feature_source_id: FeatureSourceId,
         local_surface_id: u32,
     },
 }
 
 impl PersistentSurfaceReference {
-    pub(crate) fn feature_source_id(&self) -> u32 {
+    pub(crate) fn feature_source_id(&self) -> FeatureSourceId {
         match self {
             Self::Complete(identity) => identity.feature_source_id,
             Self::SourceOnly {
@@ -102,7 +165,7 @@ impl DisplayFace {
         let source = sources.next()?;
         sources
             .all(|candidate| candidate == source)
-            .then_some(source)
+            .then_some(source.value())
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
@@ -319,9 +382,6 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         }
         at = end;
     }
-    let vertex_count = strips
-        .iter()
-        .try_fold(0usize, |total, length| total.checked_add(*length))?;
     if !matches!(channels.as_slice(), [a, positions, normals, ..]
         if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
             && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
@@ -331,37 +391,17 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     }
     if strips.is_empty()
         || vertices.is_empty()
-        || vertex_count != vertices.len()
-        || !normals.is_empty() && normals.len() != vertices.len()
         || !auxiliary_channels_are_consistent(&strips, &channels[3..])
     {
         return None;
     }
-    let mut triangles = Vec::new();
-    let mut base = 0usize;
-    for length in &strips {
-        for i in 0..length.saturating_sub(2) {
-            let [a, b, c] = if i % 2 == 0 {
-                [base + i, base + i + 1, base + i + 2]
-            } else {
-                [base + i, base + i + 2, base + i + 1]
-            };
-            triangles.push([
-                u32::try_from(a).ok()?,
-                u32::try_from(b).ok()?,
-                u32::try_from(c).ok()?,
-            ]);
-        }
-        base = base.checked_add(*length)?;
-    }
     Some((
-        Mesh {
+        Mesh::new(
             vertices,
-            triangles,
-            strip_lengths: strips.into_iter().map(|length| length as u32).collect(),
+            strips.into_iter().map(|length| length as u32).collect(),
             normals,
             channels,
-        },
+        )?,
         at,
     ))
 }
@@ -425,7 +465,7 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
     faces
 }
 
-pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
+pub(crate) fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
     section_display_faces(section)
         .into_iter()
         .map(|face| face.mesh)
@@ -539,7 +579,7 @@ fn persistent_surface_references(
         let Some(feature_source_id) = fields
             .next()
             .and_then(|field| field.parse::<u32>().ok())
-            .filter(|source| *source != 0 && *source != u32::MAX)
+            .and_then(|source| FeatureSourceId::try_from(source).ok())
         else {
             at = end;
             continue;
@@ -581,7 +621,7 @@ fn persistent_surface_references(
     references
 }
 
-pub fn section_summary(section: Section<'_>) -> Option<Summary> {
+pub(crate) fn section_summary(section: Section<'_>) -> Option<Summary> {
     let meshes = section_meshes(section);
     (!meshes.is_empty()).then(|| Summary {
         vertices: meshes.iter().map(|mesh| mesh.vertices.len()).sum(),
@@ -589,7 +629,7 @@ pub fn section_summary(section: Section<'_>) -> Option<Summary> {
     })
 }
 
-pub fn summary(scan: &ContainerScan) -> Summary {
+pub(crate) fn summary(scan: &ContainerScan) -> Summary {
     scan.sections()
         .filter_map(section_summary)
         .fold(Summary::default(), |mut total, next| {
@@ -616,7 +656,9 @@ struct SurfaceCandidate<'a> {
 /// must provide a forward-evaluated parameter witness within the face or
 /// display quantization tolerance; an unconstrained nearest-support fit is
 /// not an ownership witness.
-pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Model) -> Vec<String> {
+pub(crate) fn assign_unique_surface_owners(
+    model: &mut cadmpeg_ir::document::Model,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let surfaces = model
         .surfaces
         .iter()
@@ -673,7 +715,9 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
         .filter_map(|face| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {
-                Some(transform) if transform.is_proper_rigid() => transform.try_inverse_affine()?,
+                Some(transform) if transform.is_proper_rigid() => {
+                    transform.try_inverse_affine().ok()?
+                }
                 Some(_) => return None,
                 None => cadmpeg_ir::transform::Transform::identity(),
             };
@@ -758,11 +802,16 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
         mesh.faces.push((*face).clone());
         mesh.body = Some((*body).clone());
         if let Some(deflection) = chordal_deflection {
-            mesh.chordal_deflection = Some(deflection);
+            mesh.set_chordal_deflection(Some(deflection))
+                .map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "invalid tessellation deflection: {error}"
+                    ))
+                })?;
         }
-        assigned.push(mesh.id.clone());
+        assigned.push(mesh.id.to_string());
     }
-    assigned
+    Ok(assigned)
 }
 
 fn approximate_surface_owner(
@@ -934,7 +983,7 @@ pub(crate) fn assign_persistent_owners(
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
-        let Some(Some(identity)) = bindings_by_mesh.get(&mesh.id) else {
+        let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
             continue;
         };
         let Some(Some(face)) = faces_by_identity.get(identity) else {
@@ -945,7 +994,7 @@ pub(crate) fn assign_persistent_owners(
         };
         mesh.faces.push(face.clone());
         mesh.body = Some(body.clone());
-        assigned.push(mesh.id.clone());
+        assigned.push(mesh.id.to_string());
     }
     assigned
 }
@@ -955,13 +1004,32 @@ struct PlaneFrame {
     origin: Point3,
     normal: Vector3,
     u_axis: Vector3,
-    v_axis: Vector3,
 }
 
 impl PlaneFrame {
+    fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
+        let normal = normal.unit()?;
+        let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
+        normal.cross(u_axis).unit()?;
+        [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
+            .into_iter()
+            .all(f64::is_finite)
+            .then_some(Self {
+                origin,
+                normal,
+                u_axis,
+            })
+    }
+
+    fn v_axis(self) -> Vector3 {
+        let axis = self.normal.cross(self.u_axis);
+        let length = axis.norm();
+        Vector3::new(axis.x / length, axis.y / length, axis.z / length)
+    }
+
     fn project(self, point: Point3) -> Point2 {
         let delta = point.vector_from(self.origin);
-        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis))
+        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis()))
     }
 }
 
@@ -2063,18 +2131,7 @@ fn plane_frame(surface: &SurfaceGeometry) -> Option<PlaneFrame> {
         }
         _ => return None,
     };
-    let normal = normal.unit()?;
-    let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
-    let v_axis = normal.cross(u_axis).unit()?;
-    [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(PlaneFrame {
-            origin,
-            normal,
-            u_axis,
-            v_axis,
-        })
+    PlaneFrame::new(origin, normal, u_axis)
 }
 
 fn point_distance(left: Point2, right: Point2) -> f64 {
@@ -2575,7 +2632,7 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
             transform
                 .apply_vector(analytic_surface_normal(
                     basis,
-                    transform.try_inverse_affine()?.apply_point(point),
+                    transform.try_inverse_affine().ok()?.apply_point(point),
                 )?)
                 .unit()
         }
@@ -2662,7 +2719,10 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             Some((elliptical_radius - local_radius.abs()).abs())
         }
         SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
-            analytic_surface_residual(basis, transform.try_inverse_affine()?.apply_point(point))
+            analytic_surface_residual(
+                basis,
+                transform.try_inverse_affine().ok()?.apply_point(point),
+            )
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
@@ -2702,7 +2762,7 @@ fn surface_measure(
         if transform.is_proper_rigid() {
             let mut measure = surface_measure(
                 basis,
-                transform.try_inverse_affine()?.apply_point(point),
+                transform.try_inverse_affine().ok()?.apply_point(point),
                 fit_tolerance,
             )?;
             measure.normal = measure

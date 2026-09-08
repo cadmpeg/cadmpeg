@@ -2244,7 +2244,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| node.pos as u64);
         annotations
-            .note(&pcurve_id, source.source_stream, source_offset)
+            .note(&pcurve_id, &source.source_stream, source_offset)
             .tag("INTERSECTION_PCURVE");
         annotations
             .derived(&pcurve_id, "geometry")

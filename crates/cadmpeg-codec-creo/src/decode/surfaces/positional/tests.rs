@@ -13,7 +13,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -45,13 +45,16 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         scalar_frames: Vec::new(),
         terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-            crate::surface::InlineSurfaceCarrier::Torus(crate::surface::PositionalTorusFrame {
-                center: [0.0, 0.0, 0.0],
-                axis: [0.0, 0.0, 1.0],
-                ref_direction: [1.0, 0.0, 0.0],
-                major_radius: 5.0,
-                minor_radius,
-            }),
+            crate::surface::InlineSurfaceCarrier::Torus(
+                crate::surface::PositionalTorusFrame::new(
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
+                    5.0,
+                    minor_radius,
+                )
+                .expect("valid positional torus frame"),
+            ),
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: surface_id as usize,
@@ -84,13 +87,16 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.parameters.len(), 1);
     scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Torus(crate::surface::PositionalTorusFrame {
-            center: [2.0, 2.0, 4.0],
-            axis: [0.0, 0.0, 1.0],
-            ref_direction: [-1.0, 0.0, 0.0],
-            major_radius: 0.0,
-            minor_radius: 2.0,
-        }),
+        crate::surface::InlineSurfaceCarrier::Torus(
+            crate::surface::PositionalTorusFrame::new(
+                [2.0, 2.0, 4.0],
+                [0.0, 0.0, 1.0],
+                [-1.0, 0.0, 0.0],
+                0.0,
+                2.0,
+            )
+            .expect("valid positional torus frame"),
+        ),
     );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 

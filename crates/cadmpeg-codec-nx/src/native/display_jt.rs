@@ -7,6 +7,7 @@ use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
+use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
@@ -55,12 +56,8 @@ fn inflate_display_jt(
     };
     let member = child_for_subslice(source, compressed)?;
     let view = inflate_zlib_exact(ctx, member).ok()?;
-    ctx.copy_retained(
-        view.window(),
-        "retain inflated DisplayJT payload",
-        Some(source.location()),
-    )
-    .ok()
+    ctx.copy_retained(view.window(), "retain inflated DisplayJT payload")
+        .ok()
 }
 
 /// Outer index of the embedded JT display-model stream.
@@ -163,12 +160,10 @@ pub struct DisplayJtDocument {
     pub index_row: String,
     /// Exact admitted 80-byte version field.
     pub version: JtVersionField,
-    /// Serialized JT byte-order flag.
-    pub byte_order: u8,
     /// Payload-relative table-of-contents offset.
     pub toc_offset: u32,
     /// Exact 16-byte logical scene-graph segment identifier.
-    pub lsg_segment_id: Vec<u8>,
+    pub lsg_segment_id: [u8; 16],
     /// Ordered table-of-contents entries.
     pub toc_entries: Vec<DisplayJtTocEntry>,
     /// Physical byte length ending at the next indexed header or stream boundary.
@@ -186,7 +181,7 @@ struct DisplayJtDocumentWire {
     format_minor: u16,
     byte_order: u8,
     toc_offset: u32,
-    lsg_segment_id: Vec<u8>,
+    lsg_segment_id: [u8; 16],
     toc_entries: Vec<DisplayJtTocEntry>,
     physical_byte_len: u64,
     source_offset: u64,
@@ -202,7 +197,7 @@ impl From<DisplayJtDocument> for DisplayJtDocumentWire {
             version_field: value.version.into_string(),
             format_major,
             format_minor,
-            byte_order: value.byte_order,
+            byte_order: 0,
             toc_offset: value.toc_offset,
             lsg_segment_id: value.lsg_segment_id,
             toc_entries: value.toc_entries,
@@ -215,6 +210,9 @@ impl From<DisplayJtDocument> for DisplayJtDocumentWire {
 impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
     type Error = &'static str;
     fn try_from(wire: DisplayJtDocumentWire) -> Result<Self, Self::Error> {
+        if wire.byte_order != 0 {
+            return Err("DisplayJtDocument.byte_order must be 0");
+        }
         let version = JtVersionField::new(wire.version_field)?;
         if wire.format_major != version.major() || wire.format_minor != version.minor() {
             return Err("DisplayJtDocument.format_major/format_minor disagree with version_field");
@@ -223,7 +221,6 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
             id: wire.id,
             index_row: wire.index_row,
             version,
-            byte_order: wire.byte_order,
             toc_offset: wire.toc_offset,
             lsg_segment_id: wire.lsg_segment_id,
             toc_entries: wire.toc_entries,
@@ -241,13 +238,13 @@ pub struct DisplayJtTocEntry {
     /// Zero-based serialized entry order.
     pub ordinal: u32,
     /// Exact 16-byte segment identifier.
-    pub segment_id: Vec<u8>,
+    pub segment_id: [u8; 16],
     /// Document-relative segment offset.
     pub segment_offset: u32,
     /// Physical segment byte length.
     pub segment_byte_len: u32,
     /// Exact four-byte segment attribute field.
-    pub attributes: Vec<u8>,
+    pub attributes: [u8; 4],
     /// Absolute source offset of the TOC entry.
     pub source_offset: u64,
 }
@@ -262,7 +259,7 @@ pub struct DisplayJtSegment {
     /// Owning table-of-contents entry.
     pub toc_entry: String,
     /// Exact 16-byte segment identifier.
-    pub segment_id: Vec<u8>,
+    pub segment_id: [u8; 16],
     /// Segment type repeated by the table-of-contents attribute word.
     pub segment_type: u32,
     /// Physical segment byte length, including its 24-byte header.
@@ -277,21 +274,88 @@ pub struct DisplayJtSegment {
 
 /// Validated compressed-data envelope following a JT segment header.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtCompressionWire",
+    into = "DisplayJtCompressionWire"
+)]
 pub struct DisplayJtCompression {
-    /// Serialized compression flag.
-    pub flag: u32,
-    /// Declared byte length of the algorithm byte and compressed member.
-    pub compressed_data_byte_len: u32,
-    /// Serialized compression algorithm identifier.
-    pub algorithm: u8,
-    /// Physical zlib-member byte length.
-    pub compressed_byte_len: u32,
+    envelope: JtCompressionEnvelope,
     /// SHA-256 of the completely inflated payload.
     pub inflated_sha256: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct DisplayJtCompressionWire {
+    flag: u32,
+    compressed_data_byte_len: u32,
+    algorithm: u8,
+    compressed_byte_len: u32,
+    inflated_sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct JtCompressionEnvelope {
+    compressed_byte_len: u32,
+}
+
+impl JtCompressionEnvelope {
+    fn try_new(
+        flag: u32,
+        compressed_data_byte_len: u32,
+        algorithm: u8,
+        compressed_byte_len: u32,
+    ) -> Result<Self, &'static str> {
+        if flag != 2 {
+            return Err("DisplayJtCompression.flag must be 2");
+        }
+        if algorithm != 2 {
+            return Err("DisplayJtCompression.algorithm must be 2");
+        }
+        if compressed_byte_len.checked_add(1) != Some(compressed_data_byte_len) {
+            return Err(
+                "DisplayJtCompression.compressed_data_byte_len disagrees with compressed_byte_len",
+            );
+        }
+        Ok(Self {
+            compressed_byte_len,
+        })
+    }
+}
+
+impl TryFrom<DisplayJtCompressionWire> for DisplayJtCompression {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtCompressionWire) -> Result<Self, Self::Error> {
+        let envelope = JtCompressionEnvelope::try_new(
+            wire.flag,
+            wire.compressed_data_byte_len,
+            wire.algorithm,
+            wire.compressed_byte_len,
+        )?;
+        Ok(Self {
+            envelope,
+            inflated_sha256: wire.inflated_sha256,
+        })
+    }
+}
+
+impl From<DisplayJtCompression> for DisplayJtCompressionWire {
+    fn from(value: DisplayJtCompression) -> Self {
+        Self {
+            flag: 2,
+            compressed_data_byte_len: value.envelope.compressed_byte_len + 1,
+            algorithm: 2,
+            compressed_byte_len: value.envelope.compressed_byte_len,
+            inflated_sha256: value.inflated_sha256,
+        }
+    }
+}
+
 /// One length-bounded object element in a JT shape-LOD segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtShapeLodElementWire",
+    into = "DisplayJtShapeLodElementWire"
+)]
 pub struct DisplayJtShapeLodElement {
     /// Globally unique element identity.
     pub id: String,
@@ -300,9 +364,7 @@ pub struct DisplayJtShapeLodElement {
     /// Zero-based serialized element order.
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    pub object_type_id: Vec<u8>,
-    /// Serialized object-base-type discriminator.
-    pub object_base_type: u8,
+    pub object_type_id: [u8; 16],
     /// Serialized object identifier.
     pub object_id: u32,
     /// Bytes following the common element header.
@@ -311,6 +373,53 @@ pub struct DisplayJtShapeLodElement {
     pub body_sha256: String,
     /// Absolute source offset of the element length.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtShapeLodElementWire {
+    id: String,
+    segment: String,
+    ordinal: u32,
+    object_type_id: [u8; 16],
+    object_base_type: u8,
+    object_id: u32,
+    body_byte_len: u32,
+    body_sha256: String,
+    source_offset: u64,
+}
+
+impl TryFrom<DisplayJtShapeLodElementWire> for DisplayJtShapeLodElement {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtShapeLodElementWire) -> Result<Self, Self::Error> {
+        if wire.object_base_type != 4 {
+            return Err("DisplayJtShapeLodElement.object_base_type must be 4");
+        }
+        Ok(Self {
+            id: wire.id,
+            segment: wire.segment,
+            ordinal: wire.ordinal,
+            object_type_id: wire.object_type_id,
+            object_id: wire.object_id,
+            body_byte_len: wire.body_byte_len,
+            body_sha256: wire.body_sha256,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtShapeLodElement> for DisplayJtShapeLodElementWire {
+    fn from(value: DisplayJtShapeLodElement) -> Self {
+        Self {
+            id: value.id,
+            segment: value.segment,
+            ordinal: value.ordinal,
+            object_type_id: value.object_type_id,
+            object_base_type: 4,
+            object_id: value.object_id,
+            body_byte_len: value.body_byte_len,
+            body_sha256: value.body_sha256,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Fixed version and binding header of a JT 9 tri-strip shape-LOD element.
@@ -395,6 +504,10 @@ pub struct DisplayJtTopologyPacketSequence {
 
 /// Polygon connectivity reconstructed from one JT topological dual mesh.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtPolygonMeshWire",
+    into = "DisplayJtPolygonMeshWire"
+)]
 pub struct DisplayJtPolygonMesh {
     /// Globally unique polygon-mesh identity.
     pub id: String,
@@ -403,15 +516,63 @@ pub struct DisplayJtPolygonMesh {
     /// Coordinate-array header indexed by the polygons.
     pub coordinate_header: String,
     /// Ordered polygon vertex indices.
-    pub polygons: Vec<Vec<u32>>,
+    polygons: Vec<Vec<u32>>,
     /// Per-corner vertex-attribute indices parallel to `polygons`.
-    pub vertex_attribute_indices: Vec<Vec<Option<u32>>>,
+    vertex_attribute_indices: Vec<Vec<Option<u32>>>,
     /// Per-polygon group identifiers.
-    pub polygon_groups: Vec<i32>,
+    polygon_groups: Vec<i32>,
     /// Per-polygon flag words.
-    pub polygon_flags: Vec<u16>,
+    polygon_flags: Vec<u16>,
     /// Absolute source offset of the topology packet sequence.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtPolygonMeshWire {
+    id: String,
+    topology: String,
+    coordinate_header: String,
+    polygons: Vec<Vec<u32>>,
+    vertex_attribute_indices: Vec<Vec<Option<u32>>>,
+    polygon_groups: Vec<i32>,
+    polygon_flags: Vec<u16>,
+    source_offset: u64,
+}
+impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtPolygonMeshWire) -> Result<Self, Self::Error> {
+        let count = wire.polygons.len();
+        if wire.vertex_attribute_indices.len() != count
+            || wire.polygon_groups.len() != count
+            || wire.polygon_flags.len() != count
+        {
+            return Err("polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree");
+        }
+        Ok(Self {
+            id: wire.id,
+            topology: wire.topology,
+            coordinate_header: wire.coordinate_header,
+            polygons: wire.polygons,
+            vertex_attribute_indices: wire.vertex_attribute_indices,
+            polygon_groups: wire.polygon_groups,
+            polygon_flags: wire.polygon_flags,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtPolygonMesh> for DisplayJtPolygonMeshWire {
+    fn from(value: DisplayJtPolygonMesh) -> Self {
+        Self {
+            id: value.id,
+            topology: value.topology,
+            coordinate_header: value.coordinate_header,
+            polygons: value.polygons,
+            vertex_attribute_indices: value.vertex_attribute_indices,
+            polygon_groups: value.polygon_groups,
+            polygon_flags: value.polygon_flags,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Fixed header of the vertex records following a JT 9 topology envelope.
@@ -551,8 +712,102 @@ pub struct DisplayJtVertexFlags {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JtVertexVersion {
+    One,
+    Two(u64),
+}
+
+impl TryFrom<(u16, Option<u64>)> for JtVertexVersion {
+    type Error = &'static str;
+    fn try_from((version, bindings): (u16, Option<u64>)) -> Result<Self, Self::Error> {
+        match (version, bindings) {
+            (1, None) => Ok(Self::One),
+            (2, Some(bindings)) => Ok(Self::Two(bindings)),
+            _ => Err("vertex_version/version_2_vertex_bindings: version 1 has no repeated bindings and version 2 requires them"),
+        }
+    }
+}
+
+impl JtVertexVersion {
+    fn into_wire(self) -> (u16, Option<u64>) {
+        match self {
+            Self::One => (1, None),
+            Self::Two(bindings) => (2, Some(bindings)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JtReflectivity(f32);
+
+impl TryFrom<f32> for JtReflectivity {
+    type Error = &'static str;
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        if value.is_finite() && (0.0..=1.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err("reflectivity: expected a finite fraction in 0..=1")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum JtMaterialVersion {
+    One,
+    Two(JtReflectivity),
+}
+
+impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
+    type Error = &'static str;
+    fn try_from((version, reflectivity): (u16, Option<f32>)) -> Result<Self, Self::Error> {
+        match (version, reflectivity) {
+            (1, None) => Ok(Self::One),
+            (2, Some(value)) => Ok(Self::Two(JtReflectivity::try_from(value)?)),
+            _ => Err("version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1"),
+        }
+    }
+}
+
+impl JtMaterialVersion {
+    fn into_wire(self) -> (u16, Option<f32>) {
+        match self {
+            Self::One => (1, None),
+            Self::Two(value) => (2, Some(value.0)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<f32>", into = "Vec<f32>")]
+struct JtRangeLimits(Vec<f32>);
+
+impl TryFrom<Vec<f32>> for JtRangeLimits {
+    type Error = &'static str;
+    fn try_from(values: Vec<f32>) -> Result<Self, Self::Error> {
+        if values
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+            || values.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err("range_limits: expected finite nonnegative strictly increasing distances");
+        }
+        Ok(Self(values))
+    }
+}
+
+impl From<JtRangeLimits> for Vec<f32> {
+    fn from(value: JtRangeLimits) -> Self {
+        value.0
+    }
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtTriStripShapeNodeWire",
+    into = "DisplayJtTriStripShapeNodeWire"
+)]
 pub struct DisplayJtTriStripShapeNode {
     /// Globally unique shape-node identity.
     pub id: String,
@@ -577,7 +832,7 @@ pub struct DisplayJtTriStripShapeNode {
     /// Qualitative compression level in the inclusive range zero through one.
     pub compression_level: f32,
     /// Vertex-shape data version.
-    pub vertex_version: u16,
+    vertex_version: JtVertexVersion,
     /// Packed vertex-channel binding mask.
     pub vertex_bindings: u64,
     /// Quantization bits per vertex coordinate component.
@@ -588,10 +843,84 @@ pub struct DisplayJtTriStripShapeNode {
     pub texture_quantization_bits: u8,
     /// Quantization bits per color component.
     pub color_quantization_bits: u8,
-    /// Version-2 repeated vertex-channel binding mask.
-    pub version_2_vertex_bindings: Option<u64>,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtTriStripShapeNodeWire {
+    id: String,
+    base_node: String,
+    object_id: u32,
+    reserved_bounds: [[f32; 3]; 2],
+    untransformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    memory_byte_len: u32,
+    compression_level: f32,
+    vertex_version: u16,
+    vertex_bindings: u64,
+    vertex_quantization_bits: u8,
+    normal_quantization_factor: u8,
+    texture_quantization_bits: u8,
+    color_quantization_bits: u8,
+    version_2_vertex_bindings: Option<u64>,
+    source_offset: u64,
+}
+impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtTriStripShapeNodeWire) -> Result<Self, Self::Error> {
+        let vertex_version =
+            JtVertexVersion::try_from((wire.vertex_version, wire.version_2_vertex_bindings))?;
+        Ok(Self {
+            id: wire.id,
+            base_node: wire.base_node,
+            object_id: wire.object_id,
+            reserved_bounds: wire.reserved_bounds,
+            untransformed_bounds: wire.untransformed_bounds,
+            area: wire.area,
+            vertex_count_range: wire.vertex_count_range,
+            node_count_range: wire.node_count_range,
+            polygon_count_range: wire.polygon_count_range,
+            memory_byte_len: wire.memory_byte_len,
+            compression_level: wire.compression_level,
+            vertex_version,
+            vertex_bindings: wire.vertex_bindings,
+            vertex_quantization_bits: wire.vertex_quantization_bits,
+            normal_quantization_factor: wire.normal_quantization_factor,
+            texture_quantization_bits: wire.texture_quantization_bits,
+            color_quantization_bits: wire.color_quantization_bits,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
+    fn from(value: DisplayJtTriStripShapeNode) -> Self {
+        let (vertex_version, version_2_vertex_bindings) = value.vertex_version.into_wire();
+        Self {
+            id: value.id,
+            base_node: value.base_node,
+            object_id: value.object_id,
+            reserved_bounds: value.reserved_bounds,
+            untransformed_bounds: value.untransformed_bounds,
+            area: value.area,
+            vertex_count_range: value.vertex_count_range,
+            node_count_range: value.node_count_range,
+            polygon_count_range: value.polygon_count_range,
+            memory_byte_len: value.memory_byte_len,
+            compression_level: value.compression_level,
+            vertex_version,
+            vertex_bindings: value.vertex_bindings,
+            vertex_quantization_bits: value.vertex_quantization_bits,
+            normal_quantization_factor: value.normal_quantization_factor,
+            texture_quantization_bits: value.texture_quantization_bits,
+            color_quantization_bits: value.color_quantization_bits,
+            version_2_vertex_bindings,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// One object element decoded from a compressed JT segment payload.
@@ -606,7 +935,7 @@ pub struct DisplayJtCompressedElement {
     /// Zero-based serialized element order.
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    pub object_type_id: Vec<u8>,
+    pub object_type_id: [u8; 16],
     /// Serialized object-base-type discriminator.
     pub object_base_type: u8,
     /// Serialized object identifier.
@@ -744,7 +1073,7 @@ pub struct DisplayJtBaseNodeData {
     /// Owning compressed element.
     pub element: String,
     /// Exact 16-byte object-type identifier of the owning element.
-    pub object_type_id: Vec<u8>,
+    pub object_type_id: [u8; 16],
     /// Serialized node object identifier.
     pub object_id: u32,
     /// Common node-data version.
@@ -822,6 +1151,10 @@ pub struct DisplayJtGeometricTransformAttribute {
 
 /// One JT material attribute attached to logical scene nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtMaterialAttributeWire",
+    into = "DisplayJtMaterialAttributeWire"
+)]
 pub struct DisplayJtMaterialAttribute {
     /// Globally unique material-attribute identity.
     pub id: String,
@@ -834,7 +1167,7 @@ pub struct DisplayJtMaterialAttribute {
     /// Base-attribute field-inhibit flags.
     pub field_inhibit_flags: u32,
     /// Material-record version.
-    pub version: u16,
+    version: JtMaterialVersion,
     /// Material blending and vertex-color override flags.
     pub data_flags: u16,
     /// Ambient RGBA components.
@@ -847,11 +1180,69 @@ pub struct DisplayJtMaterialAttribute {
     pub emission: [f32; 4],
     /// Specular exponent in the inclusive range 1 through 128.
     pub shininess: f32,
-    /// Reflected fraction for version 2 material records.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reflectivity: Option<f32>,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtMaterialAttributeWire {
+    id: String,
+    element: String,
+    object_id: u32,
+    state_flags: u8,
+    field_inhibit_flags: u32,
+    version: u16,
+    data_flags: u16,
+    ambient: [f32; 4],
+    diffuse: [f32; 4],
+    specular: [f32; 4],
+    emission: [f32; 4],
+    shininess: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reflectivity: Option<f32>,
+    source_offset: u64,
+}
+impl TryFrom<DisplayJtMaterialAttributeWire> for DisplayJtMaterialAttribute {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtMaterialAttributeWire) -> Result<Self, Self::Error> {
+        let version = JtMaterialVersion::try_from((wire.version, wire.reflectivity))?;
+        Ok(Self {
+            id: wire.id,
+            element: wire.element,
+            object_id: wire.object_id,
+            state_flags: wire.state_flags,
+            field_inhibit_flags: wire.field_inhibit_flags,
+            version,
+            data_flags: wire.data_flags,
+            ambient: wire.ambient,
+            diffuse: wire.diffuse,
+            specular: wire.specular,
+            emission: wire.emission,
+            shininess: wire.shininess,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
+    fn from(value: DisplayJtMaterialAttribute) -> Self {
+        let (version, reflectivity) = value.version.into_wire();
+        Self {
+            id: value.id,
+            element: value.element,
+            object_id: value.object_id,
+            state_flags: value.state_flags,
+            field_inhibit_flags: value.field_inhibit_flags,
+            version,
+            data_flags: value.data_flags,
+            ambient: value.ambient,
+            diffuse: value.diffuse,
+            specular: value.specular,
+            emission: value.emission,
+            shininess: value.shininess,
+            reflectivity,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Extra partition-node bounds selected by flag bit zero.
@@ -1012,7 +1403,7 @@ pub struct DisplayJtRangeLodNode {
     /// Range-LOD data version.
     pub range_version: u16,
     /// Strictly increasing nonnegative eye-distance limits.
-    pub range_limits: Vec<f32>,
+    range_limits: JtRangeLimits,
     /// Model-coordinate centre for range selection.
     pub center: [f32; 3],
     /// Absolute source offset of the owning compressed envelope.
@@ -1021,7 +1412,7 @@ pub struct DisplayJtRangeLodNode {
 
 struct ParsedJtElement<'a> {
     offset: usize,
-    object_type_id: &'a [u8],
+    object_type_id: [u8; 16],
     object_id: u32,
     object_base_type: u8,
     body: &'a [u8],
@@ -1038,7 +1429,7 @@ fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>
         if element_byte_len == 16 && element == END_OBJECT_TYPE {
             return Some((elements, view.position()));
         }
-        let object_type_id = element.get(..16)?;
+        let object_type_id = element.get(..16)?.try_into().ok()?;
         let &object_base_type = element.get(16)?;
         let object_id = View::u32_le_at(element, 17)?;
         elements.push(ParsedJtElement {
@@ -1196,13 +1587,12 @@ pub(crate) struct ParsedJtTriStripShapeNode {
     pub(crate) polygon_count_range: [i32; 2],
     pub(crate) memory_byte_len: u32,
     pub(crate) compression_level: f32,
-    pub(crate) vertex_version: u16,
+    vertex_version: JtVertexVersion,
     pub(crate) vertex_bindings: u64,
     pub(crate) vertex_quantization_bits: u8,
     pub(crate) normal_quantization_factor: u8,
     pub(crate) texture_quantization_bits: u8,
     pub(crate) color_quantization_bits: u8,
-    pub(crate) version_2_vertex_bindings: Option<u64>,
 }
 
 pub(crate) fn parse_jt9_tri_strip_shape_node_body(
@@ -1255,9 +1645,13 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     let normal_quantization_factor = family[jt_family::NORMAL_QUANTIZATION_FACTOR];
     let texture_quantization_bits = family[jt_family::TEXTURE_QUANTIZATION_BITS];
     let color_quantization_bits = family[jt_family::COLOR_QUANTIZATION_BITS];
-    let version_2_vertex_bindings = (vertex_version == 2).then(|| {
-        View::u64_le_at(family, jt_family::LEN).expect("version-2 binding lane is fixed-width")
-    });
+    let vertex_version = match vertex_version {
+        1 => JtVertexVersion::One,
+        2 => JtVertexVersion::Two(assemble_u64_le(
+            View::over_retained(family.get(jt_family::LEN..)?).array::<8>()?,
+        )),
+        _ => return None,
+    };
     if vertex_quantization_bits > 24
         || normal_quantization_factor > 13
         || texture_quantization_bits > 24
@@ -1280,7 +1674,6 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
         normal_quantization_factor,
         texture_quantization_bits,
         color_quantization_bits,
-        version_2_vertex_bindings,
     })
 }
 
@@ -1389,7 +1782,7 @@ pub(crate) struct ParsedJtRangeLodNode {
     pub(crate) reserved_values: Vec<f32>,
     pub(crate) reserved_value: i32,
     pub(crate) range_version: u16,
-    pub(crate) range_limits: Vec<f32>,
+    range_limits: JtRangeLimits,
     pub(crate) center: [f32; 3],
 }
 
@@ -1413,11 +1806,7 @@ pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRange
     let reserved_value = View::i32_le_at(family, 0)?;
     let range_version = View::u16_le_at(family, 4)?;
     let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
-    if range_limits.iter().any(|value| *value < 0.0)
-        || range_limits.windows(2).any(|pair| pair[0] >= pair[1])
-    {
-        return None;
-    }
+    let range_limits = JtRangeLimits::try_from(range_limits).ok()?;
     let center = [
         View::f32_le_at(remaining, 0)?,
         View::f32_le_at(remaining, 4)?,
@@ -1497,9 +1886,9 @@ pub(crate) fn parse_jt9_geometric_transform_body(
     Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
 }
 
-type ParsedJt9Material = (u8, u32, u16, u16, [[f32; 4]; 4], f32, Option<f32>);
+type ParsedJt9Material = (u8, u32, JtMaterialVersion, u16, [[f32; 4]; 4], f32);
 
-pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
+fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     let base_version = View::u16_le_at(body, 0)?;
     let state_flags = *body.get(2)?;
     let field_inhibit_flags = View::u32_le_at(body, 3)?;
@@ -1543,9 +1932,7 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
     let reflectivity = (version == 2)
         .then(|| scalar(79).filter(|value| (0.0..=1.0).contains(value)))
         .flatten();
-    if version == 2 && reflectivity.is_none() {
-        return None;
-    }
+    let version = JtMaterialVersion::try_from((version, reflectivity)).ok()?;
     Some((
         state_flags,
         field_inhibit_flags,
@@ -1553,7 +1940,6 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
         data_flags,
         colors,
         shininess,
-        reflectivity,
     ))
 }
 
@@ -1671,7 +2057,10 @@ pub fn display_jt_documents(
         let Some(toc_offset) = View::u32_le_at(document, jt_hdr::TOC_OFFSET) else {
             return Vec::new();
         };
-        let Some(lsg_segment_id) = document.get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN) else {
+        let Some(lsg_segment_id) = document
+            .get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN)
+            .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+        else {
             return Vec::new();
         };
         let Ok(toc_start) = usize::try_from(toc_offset) else {
@@ -1705,10 +2094,15 @@ pub fn display_jt_documents(
         }
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
-            let bytes = &document[offset..offset + jt_toc::LEN];
-            let segment_offset = View::u32_le_at(bytes, jt_toc::SEGMENT_OFFSET).expect("fixed row");
-            let segment_byte_len =
-                View::u32_le_at(bytes, jt_toc::SEGMENT_BYTE_LEN).expect("fixed row");
+            let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
+                .array::<{ jt_toc::LEN }>()
+            else {
+                return Vec::new();
+            };
+            let [segment_id @ .., o0, o1, o2, o3, l0, l1, l2, l3, a0, a1, a2, a3] = bytes;
+            let segment_offset = assemble_u32_le([o0, o1, o2, o3]);
+            let segment_byte_len = assemble_u32_le([l0, l1, l2, l3]);
+            let attributes = [a0, a1, a2, a3];
             let Some(segment_end) = usize::try_from(segment_offset)
                 .ok()
                 .and_then(|start| start.checked_add(segment_byte_len as usize))
@@ -1724,10 +2118,10 @@ pub fn display_jt_documents(
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
                 ordinal: ordinal as u32,
-                segment_id: bytes[jt_toc::SEGMENT_ID..jt_toc::SEGMENT_OFFSET].to_vec(),
+                segment_id,
                 segment_offset,
                 segment_byte_len,
-                attributes: bytes[jt_toc::ATTRIBUTES..jt_toc::LEN].to_vec(),
+                attributes,
                 source_offset: stream_source_offset + document_start as u64 + offset as u64,
             });
         }
@@ -1735,9 +2129,8 @@ pub fn display_jt_documents(
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
             version,
-            byte_order,
             toc_offset,
-            lsg_segment_id: lsg_segment_id.to_vec(),
+            lsg_segment_id,
             toc_entries,
             physical_byte_len: document.len() as u64,
             source_offset: stream_source_offset + document_start as u64,
@@ -1774,7 +2167,10 @@ pub fn display_jt_segments(
             else {
                 return Vec::new();
             };
-            let Some(segment_id) = segment.get(..16) else {
+            let Some(segment_id) = segment
+                .get(..16)
+                .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+            else {
                 return Vec::new();
             };
             let Some(segment_type) = View::u32_le_at(segment, 16) else {
@@ -1800,24 +2196,23 @@ pub fn display_jt_segments(
                 let Some(&algorithm) = payload.get(8) else {
                     return Vec::new();
                 };
-                if algorithm != 2 {
-                    return Vec::new();
-                }
                 let compressed = &payload[9..];
-                if compressed_data_byte_len as usize != compressed.len() + 1 {
-                    return Vec::new();
-                }
-                let Some(inflated) = inflate_display_jt(budget, compressed) else {
-                    return Vec::new();
-                };
                 let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
                     return Vec::new();
                 };
-                Some(DisplayJtCompression {
-                    flag: 2,
+                let Ok(envelope) = JtCompressionEnvelope::try_new(
+                    2,
                     compressed_data_byte_len,
                     algorithm,
                     compressed_byte_len,
+                ) else {
+                    return Vec::new();
+                };
+                let Some(inflated) = inflate_display_jt(budget, compressed) else {
+                    return Vec::new();
+                };
+                Some(DisplayJtCompression {
+                    envelope,
                     inflated_sha256: sha256_hex(&inflated),
                 })
             } else {
@@ -1827,7 +2222,7 @@ pub fn display_jt_segments(
                 id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
                 document: document.id.clone(),
                 toc_entry: entry.id.clone(),
-                segment_id: segment_id.to_vec(),
+                segment_id,
                 segment_type,
                 segment_byte_len: header_byte_len,
                 payload_sha256: sha256_hex(payload),
@@ -1867,9 +2262,8 @@ pub fn display_jt_shape_lod_elements(
                 id: format!("{}-element-{ordinal}", segment.id),
                 segment: segment.id.clone(),
                 ordinal: ordinal as u32,
-                object_type_id: element.object_type_id.to_vec(),
+                object_type_id: element.object_type_id,
                 object_id: element.object_id,
-                object_base_type: element.object_base_type,
                 body_byte_len: element.body.len() as u32,
                 body_sha256: sha256_hex(element.body),
                 source_offset: segment.source_offset + 24 + element.offset as u64,
@@ -2088,11 +2482,15 @@ pub fn display_jt_topology_packet_sequences(
         let Some(required_header_end) = cursor.checked_add(16) else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let Some(required_header) = representation.get(cursor..required_header_end) else {
+        let Some(required_header) = representation
+            .get(cursor..required_header_end)
+            .and_then(|bytes| View::over_retained(bytes).array::<16>())
+        else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let vertex_bindings = View::u64_le_at(required_header, 0).expect("fixed");
-        let quantization = &required_header[8..12];
+        let [bindings @ .., q0, q1, q2, q3, n0, n1, n2, n3] = required_header;
+        let vertex_bindings = assemble_u64_le(bindings);
+        let quantization = [q0, q1, q2, q3];
         if quantization[0] > 24
             || quantization[1] > 13
             || quantization[2] > 24
@@ -2103,17 +2501,20 @@ pub fn display_jt_topology_packet_sequences(
         if vertex_bindings != lod_vertex_bindings {
             return (Vec::new(), Vec::new(), Vec::new());
         }
-        let topological_vertex_count = View::u32_le_at(required_header, 12).expect("fixed");
+        let topological_vertex_count = assemble_u32_le([n0, n1, n2, n3]);
         let (vertex_attribute_count, vertex_header_byte_len) = if topological_vertex_count == 0 {
             (0, 16)
         } else {
             let Some(attribute_end) = cursor.checked_add(20) else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            let Some(attribute_bytes) = representation.get(cursor + 16..attribute_end) else {
+            let Some(attribute_bytes) = representation
+                .get(cursor + 16..attribute_end)
+                .and_then(|bytes| View::over_retained(bytes).array::<4>())
+            else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            (View::u32_le_at(attribute_bytes, 0).expect("fixed"), 20)
+            (assemble_u32_le(attribute_bytes), 20)
         };
         if i32::try_from(topological_vertex_count).is_err()
             || i32::try_from(vertex_attribute_count).is_err()
@@ -2128,21 +2529,21 @@ pub fn display_jt_topology_packet_sequences(
         };
         let representation_source_offset = element.source_offset + 45;
         if topological_vertex_count != 0 {
-            let Some(coordinate_header) = arrays.get(..32) else {
+            let Some(coordinate_header) = View::over_retained(arrays).array::<32>() else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            let unique_vertex_count = View::u32_le_at(coordinate_header, 0).expect("fixed");
-            let component_count = coordinate_header[4];
+            let [n0, n1, n2, n3, component_count, ranges @ ..] = coordinate_header;
+            let unique_vertex_count = assemble_u32_le([n0, n1, n2, n3]);
             if unique_vertex_count != topological_vertex_count || component_count != 3 {
                 return (Vec::new(), Vec::new(), Vec::new());
             }
             let mut component_ranges = [[0.0; 2]; 3];
             let mut component_quantization_bits = [0; 3];
-            for component in 0..3 {
-                let offset = 5 + component * 9;
-                let minimum = View::f32_le_at(coordinate_header, offset).expect("fixed");
-                let maximum = View::f32_le_at(coordinate_header, offset + 4).expect("fixed");
-                let bits = coordinate_header[offset + 8];
+            for (component, &[m0, m1, m2, m3, x0, x1, x2, x3, bits]) in
+                ranges.as_chunks::<9>().0.iter().enumerate()
+            {
+                let minimum = assemble_f32_le([m0, m1, m2, m3]);
+                let maximum = assemble_f32_le([x0, x1, x2, x3]);
                 if !minimum.is_finite()
                     || !maximum.is_finite()
                     || minimum > maximum
@@ -2334,7 +2735,7 @@ pub fn display_jt_polygon_meshes(
         }) {
             return Vec::new();
         }
-        meshes.push(DisplayJtPolygonMesh {
+        let Ok(mesh) = DisplayJtPolygonMesh::try_from(DisplayJtPolygonMeshWire {
             id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
             topology: sequence.id.clone(),
             coordinate_header: coordinate_header.id.clone(),
@@ -2349,7 +2750,10 @@ pub fn display_jt_polygon_meshes(
                 .map(|polygon| polygon.vertex_indices)
                 .collect(),
             source_offset: sequence.source_offset,
-        });
+        }) else {
+            return Vec::new();
+        };
+        meshes.push(mesh);
     }
     meshes
 }
@@ -2707,7 +3111,7 @@ pub fn display_jt_compressed_element_sequences(
                 segment: segment.id.clone(),
                 segment_type: segment.segment_type,
                 ordinal: ordinal as u32,
-                object_type_id: element.object_type_id.to_vec(),
+                object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 object_base_type: element.object_base_type,
                 body_byte_len: element.body.len() as u32,
@@ -2836,7 +3240,9 @@ pub fn display_jt_shape_lod_bindings(
                 let Some(property_version) = View::u16_le_at(atom.body, 6) else {
                     return Vec::new();
                 };
-                let segment_id = atom.body[8..24].to_vec();
+                let Ok(segment_id) = <[u8; 16]>::try_from(&atom.body[8..24]) else {
+                    return Vec::new();
+                };
                 let Some(segment_type) = View::u32_le_at(atom.body, 24) else {
                     return Vec::new();
                 };
@@ -2981,7 +3387,7 @@ pub fn display_jt_base_node_data(
             nodes.push(DisplayJtBaseNodeData {
                 id: format!("{}-base-node-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
-                object_type_id: element.object_type_id.to_vec(),
+                object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 version,
                 flags,
@@ -3220,15 +3626,8 @@ pub fn display_jt_material_attributes(
             if element.object_base_type != 3 {
                 return Vec::new();
             }
-            let Some((
-                state_flags,
-                field_inhibit_flags,
-                version,
-                data_flags,
-                colors,
-                shininess,
-                reflectivity,
-            )) = parse_jt9_material_body(element.body)
+            let Some((state_flags, field_inhibit_flags, version, data_flags, colors, shininess)) =
+                parse_jt9_material_body(element.body)
             else {
                 return Vec::new();
             };
@@ -3245,7 +3644,7 @@ pub fn display_jt_material_attributes(
                 specular: colors[2],
                 emission: colors[3],
                 shininess,
-                reflectivity,
+
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -3442,7 +3841,7 @@ pub fn display_jt_tri_strip_shape_nodes(
                 normal_quantization_factor: node.normal_quantization_factor,
                 texture_quantization_bits: node.texture_quantization_bits,
                 color_quantization_bits: node.color_quantization_bits,
-                version_2_vertex_bindings: node.version_2_vertex_bindings,
+
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -3499,14 +3898,12 @@ fn accumulate_display_jt_material(
         return;
     }
     let rgb_inhibited = match attribute.version {
-        1 => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
-        2 => attribute.field_inhibit_flags & DIFFUSE_RGB != 0,
-        _ => true,
+        JtMaterialVersion::One => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
+        JtMaterialVersion::Two(_) => attribute.field_inhibit_flags & DIFFUSE_RGB != 0,
     };
     let alpha_inhibited = match attribute.version {
-        1 => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
-        2 => attribute.field_inhibit_flags & DIFFUSE_ALPHA != 0,
-        _ => true,
+        JtMaterialVersion::One => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
+        JtMaterialVersion::Two(_) => attribute.field_inhibit_flags & DIFFUSE_ALPHA != 0,
     };
     if !rgb_inhibited {
         for (target, component) in path.diffuse[..3].iter_mut().zip(attribute.diffuse) {
@@ -4098,6 +4495,51 @@ pub(crate) fn display_jt_tessellations(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn range_limits_admit_only_finite_nonnegative_increasing_values() {
+        for valid in [vec![], vec![0.0], vec![0.0, 1.0, 2.0]] {
+            let admitted = super::JtRangeLimits::try_from(valid.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(&admitted).unwrap(),
+                serde_json::json!(valid)
+            );
+            assert_eq!(
+                serde_json::from_value::<super::JtRangeLimits>(serde_json::json!(valid)).unwrap(),
+                admitted
+            );
+        }
+        for invalid in [
+            vec![-1.0],
+            vec![1.0, 1.0],
+            vec![2.0, 1.0],
+            vec![f32::NAN],
+            vec![f32::INFINITY],
+        ] {
+            assert!(super::JtRangeLimits::try_from(invalid).is_err());
+        }
+        assert!(serde_json::from_str::<super::JtRangeLimits>("[2,1]").is_err());
+    }
+
+    #[test]
+    fn compression_wire_checks_constants_and_length_without_changing_evidence() {
+        let valid = serde_json::json!({
+            "flag": 2, "algorithm": 2, "compressed_data_byte_len": 4,
+            "compressed_byte_len": 3, "inflated_sha256": "hash"
+        });
+        let value: super::DisplayJtCompression = serde_json::from_value(valid.clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), valid);
+        for (field, invalid) in [
+            ("flag", 0),
+            ("algorithm", 1),
+            ("compressed_data_byte_len", 3),
+            ("compressed_byte_len", u32::MAX),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = invalid.into();
+            assert!(serde_json::from_value::<super::DisplayJtCompression>(wire).is_err());
+        }
+    }
+
+    #[test]
     fn index_wire_preserves_count_and_rejects_invalid_rows() {
         let wire = r#"{"id":"index","version":9,"declared_count":1,"rows":[{"id":"row","ordinal":0,"header_offset":28,"value":100,"source_offset":8}],"source_offset":0}"#;
         let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
@@ -4131,6 +4573,9 @@ mod tests {
         });
         let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(document).unwrap(), wire);
+        let mut invalid = wire.clone();
+        invalid["byte_order"] = serde_json::json!(1);
+        assert!(serde_json::from_value::<super::DisplayJtDocument>(invalid).is_err());
         wire["format_minor"] = serde_json::json!(6);
         assert!(serde_json::from_value::<super::DisplayJtDocument>(wire).is_err());
     }
@@ -4244,10 +4689,13 @@ mod tests {
             .as_ref()
             .expect("required invariant");
         assert_eq!(
-            compression.compressed_data_byte_len,
+            super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
             compressed.len() as u32 + 1
         );
-        assert_eq!(compression.compressed_byte_len, compressed.len() as u32);
+        assert_eq!(
+            compression.envelope.compressed_byte_len,
+            compressed.len() as u32
+        );
         assert_eq!(
             compression.inflated_sha256,
             cadmpeg_ir::hash::sha256_hex(&inflated)
@@ -4321,7 +4769,7 @@ mod tests {
             id: "segment".to_string(),
             document: "document".to_string(),
             toc_entry: "entry".to_string(),
-            segment_id: vec![1; 16],
+            segment_id: [1; 16],
             segment_type: 7,
             segment_byte_len: 78,
             payload_sha256: String::new(),
@@ -4333,8 +4781,17 @@ mod tests {
         assert_eq!(elements.len(), 1);
         assert_eq!(elements[0].object_type_id, object_type_id);
         assert_eq!(elements[0].object_id, 42);
-        assert_eq!(elements[0].object_base_type, 4);
+        assert_eq!(
+            serde_json::to_value(&elements[0]).unwrap()["object_base_type"],
+            4
+        );
         assert_eq!(elements[0].body_byte_len, 3);
+        let wire = serde_json::to_value(&elements[0]).unwrap();
+        for length in [15, 17] {
+            let mut invalid = wire.clone();
+            invalid["object_type_id"] = serde_json::json!(vec![0; length]);
+            assert!(serde_json::from_value::<super::DisplayJtShapeLodElement>(invalid).is_err());
+        }
 
         let mut malformed = container;
         *malformed
@@ -4416,7 +4873,7 @@ mod tests {
             id: "scene".into(),
             document: "document".into(),
             toc_entry: "scene-entry".into(),
-            segment_id: vec![1; 16],
+            segment_id: [1; 16],
             segment_type: 1,
             segment_byte_len: (33 + compressed.len()) as u32,
             payload_sha256: String::new(),
@@ -4427,7 +4884,7 @@ mod tests {
             id: "shape".into(),
             document: "document".into(),
             toc_entry: "shape-entry".into(),
-            segment_id: vec![9; 16],
+            segment_id: [9; 16],
             segment_type: 7,
             segment_byte_len: 0,
             payload_sha256: String::new(),
@@ -4492,7 +4949,7 @@ mod tests {
             DisplayJtVertexTextureCoordinates,
         };
 
-        let mesh = DisplayJtPolygonMesh {
+        let mesh = DisplayJtPolygonMesh::try_from(super::DisplayJtPolygonMeshWire {
             id: "native-mesh".into(),
             topology: "topology".into(),
             coordinate_header: "coordinate-header".into(),
@@ -4501,7 +4958,23 @@ mod tests {
             polygon_groups: vec![4, -1],
             polygon_flags: vec![0, 0],
             source_offset: 80,
-        };
+        })
+        .unwrap();
+        let wire = serde_json::to_value(&mesh).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DisplayJtPolygonMesh>(wire.clone()).unwrap(),
+            mesh
+        );
+        for field in [
+            "polygons",
+            "vertex_attribute_indices",
+            "polygon_groups",
+            "polygon_flags",
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field].as_array_mut().unwrap().pop();
+            assert!(serde_json::from_value::<DisplayJtPolygonMesh>(invalid).is_err());
+        }
         let coordinates = DisplayJtVertexCoordinates {
             id: "coordinates".into(),
             header: "coordinate-header".into(),
@@ -4525,8 +4998,7 @@ mod tests {
             id: "shape-element".into(),
             segment: "shape-segment".into(),
             ordinal: 0,
-            object_type_id: vec![0; 16],
-            object_base_type: 4,
+            object_type_id: [0; 16],
             object_id: 7,
             body_byte_len: 0,
             body_sha256: "00".repeat(32),
@@ -4550,7 +5022,7 @@ mod tests {
         let base = DisplayJtBaseNodeData {
             id: "base".into(),
             element: "scene-element".into(),
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 9,
             version: 1,
             flags: 0,
@@ -4564,7 +5036,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 0,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 2,
             object_id: 9,
             body_byte_len: 0,
@@ -4575,7 +5047,7 @@ mod tests {
         let instance_base = DisplayJtBaseNodeData {
             id: "instance-base".into(),
             element: "instance-element".into(),
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 11,
             version: 1,
             flags: 0,
@@ -4589,7 +5061,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 1,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 0,
             object_id: 11,
             body_byte_len: 0,
@@ -4626,7 +5098,7 @@ mod tests {
         let group_base = DisplayJtBaseNodeData {
             id: "group-base".into(),
             element: "group-element".into(),
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_id: 20,
             version: 1,
             flags: 0,
@@ -4640,7 +5112,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 3,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 1,
             object_id: 20,
             body_byte_len: 0,
@@ -4699,7 +5171,7 @@ mod tests {
             segment: "scene-segment".into(),
             segment_type: 1,
             ordinal: 5,
-            object_type_id: vec![0; 16],
+            object_type_id: [0; 16],
             object_base_type: 3,
             object_id: 13,
             body_byte_len: 0,
@@ -4713,16 +5185,26 @@ mod tests {
             object_id: 13,
             state_flags: 0,
             field_inhibit_flags: 0,
-            version: 1,
+            version: super::JtMaterialVersion::One,
             data_flags: 0x20,
             ambient: [0.1, 0.1, 0.1, 1.0],
             diffuse: [0.2, 0.3, 0.4, 0.5],
             specular: [0.0, 0.0, 0.0, 1.0],
             emission: [0.0, 0.0, 0.0, 1.0],
             shininess: 1.0,
-            reflectivity: None,
             source_offset: 126,
         };
+        let material_wire = serde_json::to_value(&material).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DisplayJtMaterialAttribute>(material_wire.clone()).unwrap(),
+            material
+        );
+        for (version, reflectivity) in [(1, Some(0.5)), (2, None), (3, None), (2, Some(-0.5))] {
+            let mut wire = material_wire.clone();
+            wire["version"] = version.into();
+            wire["reflectivity"] = serde_json::json!(reflectivity);
+            assert!(serde_json::from_value::<DisplayJtMaterialAttribute>(wire).is_err());
+        }
         let node = DisplayJtTriStripShapeNode {
             id: "shape-node".into(),
             base_node: "base".into(),
@@ -4735,15 +5217,25 @@ mod tests {
             polygon_count_range: [0, 0],
             memory_byte_len: 0,
             compression_level: 0.0,
-            vertex_version: 1,
+            vertex_version: super::JtVertexVersion::One,
             vertex_bindings: 2,
             vertex_quantization_bits: 0,
             normal_quantization_factor: 0,
             texture_quantization_bits: 0,
             color_quantization_bits: 0,
-            version_2_vertex_bindings: None,
             source_offset: 120,
         };
+        let node_wire = serde_json::to_value(&node).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DisplayJtTriStripShapeNode>(node_wire.clone()).unwrap(),
+            node
+        );
+        for (version, bindings) in [(1, Some(4)), (2, None), (3, None)] {
+            let mut wire = node_wire.clone();
+            wire["vertex_version"] = version.into();
+            wire["version_2_vertex_bindings"] = serde_json::json!(bindings);
+            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire).is_err());
+        }
         let vertex_header = DisplayJtCompressedVertexRecordsHeader {
             id: "vertex-header".into(),
             element: "shape-element".into(),
@@ -5051,13 +5543,13 @@ mod tests {
         assert_eq!(node.polygon_count_range, [11, 12]);
         assert_eq!(node.memory_byte_len, 4096);
         assert_eq!(node.compression_level, 0.75);
-        assert_eq!(node.vertex_version, 2);
+        assert_eq!(node.vertex_version.into_wire().0, 2);
         assert_eq!(node.vertex_bindings, 0x102);
         assert_eq!(node.vertex_quantization_bits, 24);
         assert_eq!(node.normal_quantization_factor, 13);
         assert_eq!(node.texture_quantization_bits, 16);
         assert_eq!(node.color_quantization_bits, 8);
-        assert_eq!(node.version_2_vertex_bindings, Some(0x304));
+        assert_eq!(node.vertex_version.into_wire().1, Some(0x304));
 
         let mut malformed = body.clone();
         malformed[60..64].copy_from_slice(&(-1.0_f32).to_le_bytes());
@@ -5119,8 +5611,9 @@ mod tests {
         }
         body.extend_from_slice(&64.0_f32.to_le_bytes());
         body.extend_from_slice(&0.25_f32.to_le_bytes());
-        let (state, inhibit, version, flags, colors, shininess, reflectivity) =
+        let (state, inhibit, version, flags, colors, shininess) =
             super::parse_jt9_material_body(&body).expect("required invariant");
+        let (version, reflectivity) = version.into_wire();
         assert_eq!(state, 0x02);
         assert_eq!(inhibit, 0x41);
         assert_eq!(version, 2);
@@ -5150,14 +5643,13 @@ mod tests {
             object_id: 1,
             state_flags,
             field_inhibit_flags,
-            version: 2,
+            version: super::JtMaterialVersion::try_from((2, Some(0.0))).unwrap(),
             data_flags: 0,
             ambient: [0.0, 0.0, 0.0, 1.0],
             diffuse,
             specular: [0.0, 0.0, 0.0, 1.0],
             emission: [0.0, 0.0, 0.0, 1.0],
             shininess: 1.0,
-            reflectivity: None,
             source_offset: 0,
         };
         let mut path = super::DisplayJtPath {
@@ -5261,7 +5753,7 @@ mod tests {
         assert_eq!(node.reserved_values, [0.25]);
         assert_eq!(node.reserved_value, -2);
         assert_eq!(node.range_version, 1);
-        assert_eq!(node.range_limits, [10.0, 20.0]);
+        assert_eq!(node.range_limits.0, [10.0, 20.0]);
         assert_eq!(node.center, [1.0, 2.0, 3.0]);
 
         let range_offset = body.len() - 20;
@@ -5309,11 +5801,10 @@ mod tests {
             id: "shape-lod".into(),
             segment: "segment".into(),
             ordinal: 0,
-            object_type_id: vec![
+            object_type_id: [
                 0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
                 0x59, 0x97,
             ],
-            object_base_type: 4,
             object_id: 1,
             body_byte_len: body.len() as u32,
             body_sha256: String::new(),

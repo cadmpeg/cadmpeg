@@ -11,6 +11,7 @@ use crate::decode::feature_history::{
     section_sweep_allows_linear_extrusion, section_sweep_boolean_operation,
     surface_transition_dependencies, sweep_output_kind, thicken_plane_offset,
 };
+use crate::decode::holes::placement::{CapOutline, HoleCylinder};
 use crate::decode::holes::{
     circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
     cylinder_from_single_cap_outline, extrusion_extent_and_direction,
@@ -21,11 +22,12 @@ use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, current_feature_recipe, current_feature_recipe_parent,
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
+use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::{
     arcs_intersect, circular_section_profile_from_cylinder, connected_sketch_profile_vertices,
-    extrusion_brep_side_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
-    extrusion_side_uvs, line_arc_intersect, ordered_extrusion_profiles, profile_segments_intersect,
-    profile_strictly_contains, resolved_sketch_profiles, ExtrusionProfile,
+    extrusion_brep_side_surface, extrusion_cap_pcurve, extrusion_side_uvs, line_arc_intersect,
+    ordered_extrusion_profiles, profile_segments_intersect, profile_strictly_contains,
+    resolved_sketch_profiles, ExtrusionProfile,
 };
 use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;
@@ -113,14 +115,21 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     }
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("spline profile");
-    assert_eq!(profiles[0][0].2, [1.0, 0.0]);
-    assert_eq!(profiles[0][0].3, [0.0, 1.0]);
-    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed spline");
-    assert_eq!(ordered, profiles);
+    assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
+    assert_eq!(profiles[0][0].end(), [0.0, 1.0]);
+    let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed spline");
+    let area = ordered[0].area();
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        profiles
+    );
     assert!(area > 0.0);
     assert!(profile_strictly_contains(&profiles[0], [0.2, 0.2]));
     assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
-    let diagonal = (
+    let diagonal = ProfileEntity::new(
         SketchGeometry::Nurbs {
             curve: cadmpeg_ir::geometry::PcurveNurbs::new(
                 1,
@@ -132,18 +141,16 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .unwrap(),
         },
         false,
-        [0.0, 0.0],
-        [1.0, 1.0],
-    );
-    let crossing_line = (
+    )
+    .expect("valid profile entity");
+    let crossing_line = ProfileEntity::new(
         SketchGeometry::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 0.0),
         },
         false,
-        [0.0, 1.0],
-        [1.0, 0.0],
-    );
+    )
+    .expect("valid profile entity");
     assert!(profile_segments_intersect(
         &diagonal,
         &crossing_line,
@@ -184,15 +191,15 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         );
     }
 
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(1),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(1),
+        [10.0, 20.0, 30.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     let side = extrusion_brep_side_surface(
         &transform,
         &spline,
@@ -237,25 +244,25 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
             .map(|index| {
                 let start = points[index];
                 let end = points[(index + 1) % 4];
-                (
+                ProfileEntity::new(
                     SketchGeometry::Line {
                         start: Point2::new(start[0], start[1]),
                         end: Point2::new(end[0], end[1]),
                     },
                     false,
-                    start,
-                    end,
                 )
+                .expect("valid profile entity")
             })
             .collect::<ExtrusionProfile>()
     };
     let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
     let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
-    let (profiles, outer_area) = ordered_extrusion_profiles(vec![hole.clone(), outer.clone()])
+    let profiles = ordered_extrusion_profiles(vec![hole.clone(), outer.clone()])
         .expect("strict outer and hole");
-    assert_eq!(profiles[0], outer);
+    let outer_area = profiles[0].area();
+    assert_eq!(profiles[0].entities(), &outer);
     assert!(outer_area > 0.0);
-    assert!(extrusion_profile_signed_area(&profiles[1]).expect("hole area") < 0.0);
+    assert!(profiles[1].area() < 0.0);
 
     assert!(ordered_extrusion_profiles(vec![
         rectangle([-2.0, -2.0], [2.0, 2.0], false),
@@ -278,8 +285,8 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         ),
     ]
     .into_iter()
-    .map(|(end_angle, start_angle, start, end)| {
-        (
+    .map(|(end_angle, start_angle, _, _)| {
+        ProfileEntity::new(
             SketchGeometry::Arc {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(0.5),
@@ -287,17 +294,19 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                 end_angle: Angle(end_angle),
             },
             true,
-            start,
-            end,
         )
+        .expect("valid profile entity")
     })
     .collect::<ExtrusionProfile>();
-    let (profiles, _) = ordered_extrusion_profiles(vec![
+    let profiles = ordered_extrusion_profiles(vec![
         circular_hole,
         rectangle([-2.0, -2.0], [2.0, 2.0], false),
     ])
     .expect("arc-bounded hole");
-    assert!(matches!(profiles[1][0].0, SketchGeometry::Arc { .. }));
+    assert!(matches!(
+        profiles[1].entities()[0].geometry(),
+        crate::decode::sweep::profiles::ProfileGeometry::Arc { .. }
+    ));
 }
 
 #[test]
@@ -539,17 +548,17 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             reference_type: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 1,
-            feature_id: Some(942),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 1.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            offset: 0,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(942),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
 
@@ -899,20 +908,25 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         saved_section: None,
         offset: 80,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 822,
-        feature_id: Some(822),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 90,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        822,
+        Some(822),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        90,
+    )
+    .expect("valid section frame");
 
-    let mismatched_transform = crate::placement::FeatureSectionTransform {
-        feature_id: Some(900),
-        ..transform.clone()
-    };
+    let mismatched_transform = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        Some(900),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
     assert_eq!(
         unique_feature_profile_definition(
             std::slice::from_ref(&definition),
@@ -947,11 +961,15 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         Some(822)
     );
 
-    let mismatched_section_transform = crate::placement::FeatureSectionTransform {
-        definition_id: 900,
-        feature_id: Some(822),
-        ..transform
-    };
+    let mismatched_section_transform = crate::placement::FeatureSectionTransform::new(
+        900,
+        Some(822),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
     assert!(unique_feature_profile_definition(
         std::slice::from_ref(&definition),
         std::slice::from_ref(&mismatched_section_transform),
@@ -1609,8 +1627,10 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
 
 #[test]
 fn circular_sweep_projects_profile_direction_and_extent() {
+    let rows = [12, 13]
+        .map(|id| super::class_911_surface_row(6, id, crate::surface::SurfaceKind::Cylinder));
     let sweep = CircularSweepGeometry {
-        cylinder_ids: vec![12, 13],
+        cylinder_rows: rows.iter().collect(),
         section_definition_id: None,
         direction: [0.0, 0.0, -1.0],
         extent: ExtrudeExtent::OneSided {
@@ -1621,7 +1641,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 draft: None,
             },
         },
-        geometry: SurfaceGeometry::Cylinder {
+        geometry: HoleCylinder {
             origin: Point3::new(2.0, 3.0, 4.0),
             axis: Vector3::new(0.0, 0.0, -1.0),
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1663,16 +1683,16 @@ fn circular_sweep_projects_profile_direction_and_extent() {
 
 #[test]
 fn circular_sweep_cylinder_recovers_its_section_profile() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 917,
-        feature_id: Some(40),
-        origin: [1.0, 2.0, 3.0],
-        u_axis: [0.0, 0.0, -1.0],
-        v_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 20,
-    };
-    let cylinder = SurfaceGeometry::Cylinder {
+    let transform = crate::placement::FeatureSectionTransform::new(
+        917,
+        Some(40),
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, -1.0],
+        [1.0, 0.0, 0.0],
+        20,
+    )
+    .expect("valid section frame");
+    let cylinder = HoleCylinder {
         origin: Point3::new(5.0, -14.0, 1.0),
         axis: Vector3::new(0.0, 1.0, 0.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1683,11 +1703,8 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
         circular_section_profile_from_cylinder(&transform, &cylinder),
         Some(([2.0, 4.0], 4.5))
     );
-    let mut off_axis = cylinder.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut off_axis else {
-        unreachable!();
-    };
-    *axis = Vector3::new(1.0, 0.0, 0.0);
+    let mut off_axis = cylinder;
+    off_axis.axis = Vector3::new(1.0, 0.0, 0.0);
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &off_axis),
         None
@@ -1898,62 +1915,42 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
     );
     assert!(matches!(
         hole_cylinder_from_cap_outlines([
-            (
-                902,
-                [0.0, 0.0, 0.85],
-                [0.0, 0.0, 1.0],
-                [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]],
-            ),
-            (
-                905,
-                [0.0, 0.0, 7.35],
-                [0.0, 0.0, -1.0],
-                [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]],
-            ),
+            CapOutline { surface_id: 902, origin: [0.0, 0.0, 0.85], normal: [0.0, 0.0, 1.0], corners: Some([[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]]) },
+            CapOutline { surface_id: 905, origin: [0.0, 0.0, 7.35], normal: [0.0, 0.0, -1.0], corners: Some([[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]]) },
         ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+        Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(0.0, 19.0, 0.85)
                 && axis == Vector3::new(0.0, 0.0, 1.0)
                 && radius == 1.5
     ));
     assert!(hole_cylinder_from_cap_outlines([
-        (
-            902,
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [[-1.0, -2.0, 0.0], [1.0, 2.0, 0.0]],
-        ),
-        (
-            905,
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, -1.0],
-            [[-1.0, -2.0, 1.0], [1.0, 2.0, 1.0]],
-        ),
+        CapOutline {
+            surface_id: 902,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            corners: Some([[-1.0, -2.0, 0.0], [1.0, 2.0, 0.0]])
+        },
+        CapOutline {
+            surface_id: 905,
+            origin: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, -1.0],
+            corners: Some([[-1.0, -2.0, 1.0], [1.0, 2.0, 1.0]])
+        },
     ])
     .is_none());
     assert!(matches!(
         circular_sweep_cylinder_from_cap_outlines([
-            (
-                828,
-                [0.0, 4.0, 0.0],
-                [0.0, 1.0, 0.0],
-                Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
-            ),
-            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
+            CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]) },
+            CapOutline { surface_id: 831, origin: [0.0, -4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: None },
         ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+        Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(-12.5, 4.0, 0.0)
                 && axis == Vector3::new(0.0, -1.0, 0.0)
                 && radius == 0.75
     ));
     assert!(matches!(
-        cylinder_from_single_cap_outline((
-            46,
-            [0.0, 16.0, 0.0],
-            [0.0, 1.0, 0.0],
-            Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
-        )),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+        cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]) }),
+        Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(0.0, 16.0, 0.0)
                 && axis == Vector3::new(0.0, 1.0, 0.0)
                 && radius == 4.45

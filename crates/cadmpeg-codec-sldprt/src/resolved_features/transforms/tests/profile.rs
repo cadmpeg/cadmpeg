@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -58,7 +59,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .map(|(index, marker)| FeatureInputOperand {
                 offset: index as u64,
                 reference_ref: format!("reference-{index}"),
-                kind: FeatureInputOperandKind::Native(0xbc7c),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
                 entity_index: index as u16,
                 entity_ref: Some(marker.into()),
             })

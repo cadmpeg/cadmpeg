@@ -38,20 +38,35 @@ struct Chart {
 
 /// One validated intersection curve and its solved chart.
 pub(super) struct IntersectionCarrier {
-    pub carrier: CurveCarrier,
-    pub support_data: IntersectionSupportData,
+    pub(crate) carrier: CurveCarrier,
+    pub(crate) support_data: IntersectionSupportData,
 }
 
 /// Ordered supports and optional UV lanes for the model-space chart curve.
 #[derive(Clone)]
 pub(super) struct IntersectionSupportData {
-    pub supports: [u16; 2],
-    pub fit_tolerance_mm: f64,
-    pub support_uv: Option<[Vec<Point2>; 2]>,
+    pub(crate) supports: [u16; 2],
+    pub(crate) fit_tolerance_mm: f64,
+    pub(crate) support_uv: Option<[Vec<Point2>; 2]>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UvWidth {
+    Two,
+    Four,
+}
+
+impl UvWidth {
+    fn values_per_point(self) -> usize {
+        match self {
+            Self::Two => 2,
+            Self::Four => 4,
+        }
+    }
 }
 
 struct UvRecord {
-    width: usize,
+    width: UvWidth,
     values: Vec<f64>,
 }
 
@@ -250,11 +265,12 @@ fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
     let count = View::u32_be_at(bytes, body + support_uv::COUNT)? as usize;
     let attr = View::u16_be_at(bytes, body + support_uv::ATTR)?;
     let marker = *bytes.get(body + support_uv::WIDTH)?;
-    if !(2..=4).contains(&marker) {
-        return None;
-    }
-    let width = if marker == 4 { 4 } else { 2 };
-    if count < width * 2 || !count.is_multiple_of(width) {
+    let width = match marker {
+        2 | 3 => UvWidth::Two,
+        4 => UvWidth::Four,
+        _ => return None,
+    };
+    if count < width.values_per_point() * 2 || !count.is_multiple_of(width.values_per_point()) {
         return None;
     }
     let values = (0..count)
@@ -353,7 +369,7 @@ fn solved_support_uv(
     let expected_values = parameters.len().checked_mul(4)?;
     let mut candidates = records?
         .iter()
-        .filter(|record| record.width == 4 && record.values.len() == expected_values)
+        .filter(|record| record.width == UvWidth::Four && record.values.len() == expected_values)
         .map(|record| {
             let controls = [0usize, 1].map(|support| {
                 let mut control_points = record
@@ -587,6 +603,28 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
         bytes
+    }
+
+    #[test]
+    fn width_two_uv_is_legal_without_a_paired_support_cache() {
+        let mut record = vec![0, 0xcc];
+        record.extend_from_slice(&6_u32.to_be_bytes());
+        record.extend_from_slice(&7_u16.to_be_bytes());
+        record.push(2);
+        for value in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
+            record.extend_from_slice(&value.to_be_bytes());
+        }
+        assert!(uv_at(&record, 2).is_some());
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart(4, &POINTS));
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, POINTS[2]));
+        bytes.extend(record);
+        let carriers = scan_intersection_carriers(&bytes);
+        let carrier = carriers
+            .get(&9)
+            .expect("width-two support leaves the curve available");
+        assert!(carrier.support_data.support_uv.is_none());
     }
 
     #[test]

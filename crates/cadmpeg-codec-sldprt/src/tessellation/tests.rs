@@ -591,7 +591,7 @@ fn mesh_from(
 
 fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> PersistentFaceIdentity {
     PersistentFaceIdentity {
-        feature_source_id: source,
+        feature_source_id: source.try_into().unwrap(),
         local_id: local,
         trailing_fields: trailing_fields.to_vec(),
     }
@@ -637,7 +637,7 @@ fn opaque_surface_suffix_remains_source_only() {
     assert_eq!(
         references,
         vec![PersistentSurfaceReference::SourceOnly {
-            feature_source_id: 7,
+            feature_source_id: 7_u32.try_into().unwrap(),
             local_surface_id: 3,
         }]
     );
@@ -787,7 +787,10 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .expect("valid tessellation"),
     );
 
-    assert_eq!(assign_unique_surface_owners(&mut model), vec!["mesh"]);
+    assert_eq!(
+        assign_unique_surface_owners(&mut model).unwrap(),
+        vec!["mesh"]
+    );
     assert_eq!(model.tessellations[0].faces, vec![second]);
     assert_eq!(
         model.tessellations[0].body,
@@ -803,7 +806,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .clear();
     model.tessellations[0].body = None;
     model.tessellations[0].faces.clear();
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 }
 
@@ -830,7 +833,10 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
         .expect("valid tessellation"),
     );
 
-    assert_eq!(assign_unique_surface_owners(&mut model), vec!["lower-mesh"]);
+    assert_eq!(
+        assign_unique_surface_owners(&mut model).unwrap(),
+        vec!["lower-mesh"]
+    );
     assert_eq!(model.tessellations[0].faces, vec![lower]);
     assert_eq!(
         model.tessellations[0].body,
@@ -866,12 +872,12 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["chordal-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
-        .chordal_deflection
+        .chordal_deflection()
         .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
@@ -903,12 +909,12 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["inconsistent-normals-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
-        .chordal_deflection
+        .chordal_deflection()
         .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
@@ -938,7 +944,7 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].body.is_none());
     assert!(model.tessellations[0].faces.is_empty());
 }
@@ -1030,7 +1036,10 @@ fn cone_support_binds_display_list_face() {
         .expect("valid tessellation"),
     );
 
-    assert_eq!(assign_unique_surface_owners(&mut model), vec!["cone-mesh"]);
+    assert_eq!(
+        assign_unique_surface_owners(&mut model).unwrap(),
+        vec!["cone-mesh"]
+    );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(
         model.tessellations[0].body,
@@ -1087,7 +1096,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["cone-cache-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1096,7 +1105,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
     assert!(model.tessellations[0]
-        .chordal_deflection
+        .chordal_deflection()
         .is_some_and(|deflection| deflection > 0.09 && deflection < 0.11));
 }
 
@@ -1166,7 +1175,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         .push(mesh_from("nurbs-exact-mesh", vertices, vec![[0, 1, 2]]));
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["nurbs-exact-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1174,7 +1183,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
-    assert!(model.tessellations[0].chordal_deflection.is_none());
+    assert!(model.tessellations[0].chordal_deflection().is_none());
 }
 
 #[test]
@@ -1207,10 +1216,10 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
-    assert!(model.tessellations[0].chordal_deflection.is_none());
+    assert!(model.tessellations[0].chordal_deflection().is_none());
 }
 
 #[test]
@@ -1246,7 +1255,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -1288,7 +1297,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -1296,12 +1305,12 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
 #[test]
 fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
     let trim = PlanarTrim {
-        frame: PlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
+        frame: PlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-3.0, -3.0),
             Point2::new(3.0, -3.0),
@@ -1347,12 +1356,12 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 #[test]
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
     let trim = PlanarTrim {
-        frame: PlaneFrame {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
+        frame: PlaneFrame::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-4.0, -4.0),
             Point2::new(4.0, -4.0),
@@ -1785,7 +1794,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model),
+        assign_unique_surface_owners(&mut model).unwrap(),
         vec!["arc-trim-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![target]);
@@ -1831,4 +1840,19 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(4.0, 0.0),
     ];
     assert!(!is_simple_polygon(&crossing, CONTAINMENT_TOLERANCE));
+}
+
+#[test]
+fn persistent_surface_source_sentinels_are_absent() {
+    for source in [0, u32::MAX] {
+        let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
+        let references = persistent_surface_references(
+            &payload,
+            ByteRange {
+                start: 0,
+                end: payload.len(),
+            },
+        );
+        assert!(references.is_empty());
+    }
 }

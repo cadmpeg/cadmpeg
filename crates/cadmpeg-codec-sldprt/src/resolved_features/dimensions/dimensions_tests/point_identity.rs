@@ -1,4 +1,5 @@
 use super::super::dimensioned_relation_carrier;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind,
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 
 #[test]
 fn classless_point_identity_requires_exact_reference_and_center_role() {
-    let kind = FeatureInputOperandKind::Native(0x80fe);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_80FE);
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
         id: id.into(),
         parent: "lane".into(),
@@ -141,7 +142,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         coordinates_m: Some(coordinates_m),
         links: None,
     };
-    let kind = FeatureInputOperandKind::Native(0x825c);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_825C);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -228,7 +229,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         coordinates_m: Some(coordinates_m),
         links: None,
     };
-    let kind = FeatureInputOperandKind::Native(0x825c);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_825C);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -310,5 +311,5 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
     )
     .expect("the radial identity selects its declared center");
     assert_eq!(carrier.marker.id, "center-one");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.center(), [0.010, 0.020]);
 }

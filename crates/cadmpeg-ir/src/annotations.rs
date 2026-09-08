@@ -208,8 +208,8 @@ impl ExactnessNote {
 }
 
 /// Opaque handle for an interned source stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StreamHandle(u32);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StreamHandle(Arc<str>);
 
 /// Incrementally constructs document annotations while interning stream names.
 #[derive(Debug, Default, Clone)]
@@ -231,42 +231,41 @@ impl AnnotationBuilder {
     /// Intern a source stream name and return its reusable handle.
     pub fn stream(&mut self, stream: impl Into<String>) -> StreamHandle {
         let stream = stream.into();
-        if let Some(index) = self
+        if let Some(existing) = self
             .annotations
             .streams
             .iter()
-            .position(|existing| existing.as_ref() == stream)
+            .find(|existing| existing.as_ref() == stream)
         {
-            return StreamHandle(
-                u32::try_from(index).expect("annotation stream count exceeds u32::MAX"),
-            );
+            return StreamHandle(existing.clone());
         }
-
         let stream = Arc::<str>::from(stream);
-        self.annotations.streams.push(stream);
-        StreamHandle(
-            u32::try_from(self.annotations.streams.len() - 1)
-                .expect("annotation stream count exceeds u32::MAX"),
-        )
+        self.annotations.streams.push(stream.clone());
+        StreamHandle(stream)
     }
 
     /// Record an entity's source location.
     ///
     /// The returned value supports the ergonomic
-    /// `builder.note(&id, stream, offset).tag("face")` form.
+    /// `builder.note(&id, &stream, offset).tag("face")` form.
     pub fn note(
         &mut self,
         id: impl Display,
-        stream: StreamHandle,
+        stream: &StreamHandle,
         offset: u64,
     ) -> ProvenanceNote<'_> {
         let id = id.to_string();
-        let stream = self
+        let stream = if let Some(existing) = self
             .annotations
             .streams
-            .get(stream.0 as usize)
-            .cloned()
-            .expect("stream handle was minted by this annotation builder");
+            .iter()
+            .find(|existing| existing.as_ref() == stream.0.as_ref())
+        {
+            existing.clone()
+        } else {
+            self.annotations.streams.push(stream.0.clone());
+            stream.0.clone()
+        };
         self.annotations.provenance.insert(
             id.clone(),
             AnnotationProvenance::annotation(stream, offset, None),
@@ -469,7 +468,7 @@ mod tests {
         let second = builder.stream("f3d:Breps.BlobParts/body.smbh");
 
         assert_eq!(first, second);
-        builder.note("f3d:body#0", first, 42).tag("body");
+        builder.note("f3d:body#0", &first, 42).tag("body");
 
         let annotations = builder.build();
         assert_eq!(annotations.stream_count(), 1);
@@ -483,7 +482,7 @@ mod tests {
     fn annotation_wire_keeps_stream_indices_at_the_boundary() {
         let mut builder = AnnotationBuilder::new();
         let stream = builder.stream("f3d:Breps.BlobParts/body.smbh");
-        builder.note("f3d:body#0", stream, 42).tag("body");
+        builder.note("f3d:body#0", &stream, 42).tag("body");
         let annotations = builder.build();
 
         let value = serde_json::to_value(&annotations).unwrap();
@@ -506,6 +505,46 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("references missing stream 1"));
+    }
+
+    #[test]
+    fn owned_stream_identity_survives_foreign_builder_clone_and_resume() {
+        let mut first = AnnotationBuilder::new();
+        let handle = first.stream("first");
+        let mut second = AnnotationBuilder::new();
+        second.stream("second");
+        second.note("foreign", &handle, 1);
+        let mut cloned = first.clone();
+        cloned.note("cloned", &handle, 2);
+        let mut resumed = AnnotationBuilder::resume(first.build());
+        resumed.note("resumed", &handle, 3);
+        let mut empty = AnnotationBuilder::new();
+        empty.note("empty", &handle, 4);
+        let mut same_name = AnnotationBuilder::new();
+        let local = same_name.stream("first");
+        same_name.note("same-name", &handle, 5);
+        assert_eq!(same_name.annotations().stream_count(), 1);
+        assert!(Arc::ptr_eq(
+            same_name.annotations.provenance["same-name"].stream_ref(),
+            &local.0,
+        ));
+        let wire = serde_json::to_value(same_name.annotations()).unwrap();
+        assert_eq!(wire["streams"], serde_json::json!(["first"]));
+        assert_eq!(wire["provenance"]["same-name"]["stream"], 0);
+        for (builder, id) in [
+            (second, "foreign"),
+            (cloned, "cloned"),
+            (resumed, "resumed"),
+            (empty, "empty"),
+            (same_name, "same-name"),
+        ] {
+            let annotations = builder.build();
+            assert_eq!(annotations.provenance[id].stream(), "first");
+            let wire = serde_json::to_value(&annotations).unwrap();
+            let restored: Annotations = serde_json::from_value(wire).unwrap();
+            assert_eq!(restored, annotations);
+            assert_eq!(restored.provenance[id].stream(), "first");
+        }
     }
 
     #[test]
@@ -581,7 +620,7 @@ mod tests {
     fn removing_an_entity_removes_provenance_and_exactness() {
         let mut builder = AnnotationBuilder::new();
         let stream = builder.stream("catia:e5_0d_03");
-        builder.note("catia:e5:curve#0", stream, 42).tag("circle");
+        builder.note("catia:e5:curve#0", &stream, 42).tag("circle");
         builder
             .derived("catia:e5:curve#0", "geometry")
             .expect("nonempty exactness field");

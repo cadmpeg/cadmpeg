@@ -37,15 +37,6 @@ pub enum ResourceFailure {
     AllocationFailed,
 }
 
-/// The extent a limit applies to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LimitScope {
-    /// The whole decode.
-    Global,
-    /// One expansion.
-    PerExpand,
-}
-
 /// An offset qualified by its address space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation {
@@ -60,8 +51,6 @@ pub struct SourceLocation {
 pub struct ErrorContext {
     /// The operation that failed, as a static label.
     pub operation: &'static str,
-    /// Where it failed, when a location is known.
-    pub location: Option<SourceLocation>,
 }
 
 /// A resource refusal.
@@ -71,8 +60,6 @@ pub struct ResourceLimit {
     pub dimension: ResourceDimension,
     /// Whether policy or the allocator refused.
     pub reason: ResourceFailure,
-    /// The extent the limit applies to.
-    pub scope: LimitScope,
     /// The allowance in force.
     pub limit: u64,
     /// The amount already charged before this request.

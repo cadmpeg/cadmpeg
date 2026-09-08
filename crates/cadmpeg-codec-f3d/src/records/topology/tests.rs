@@ -261,7 +261,6 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
     for fields in [
         "",
         r#","trailing_record_indices":[300],"trailing_record_offsets":[1044]"#,
-        r#","trailing_record_indices":[300,301],"trailing_record_offsets":[1044,1055]"#,
     ] {
         let wire = format!(
             r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#
@@ -295,7 +294,7 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
 fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
     for (members, offsets) in [("[]", "[]"), ("[10]", "[0]"), ("[10,11]", "[26,37]")] {
         let wire = format!(
-            r#"{{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","members":{members},"member_offsets":{offsets},"frame":{{"member_count_offset":21,"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}},"role":0,"role_offset":60,"paired_class_tag":"278","paired_byte_offset":100}}"#
+            r#"{{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","members":{members},"member_offsets":{offsets},"frame":{{"member_count_offset":21,"opaque_index":1,"opaque_index_offset":78,"opaque_scalar":0.0,"opaque_scalar_offset":82,"variant":false}},"role":0,"role_offset":60,"paired_class_tag":"278","paired_byte_offset":100}}"#
         );
         let group: crate::records::topology::DesignConstructionOperandGroup =
             serde_json::from_str(&wire).expect("construction group");
@@ -924,8 +923,8 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         "record_index": 2, "byte_offset": 10, "class_tag": "256",
         "members": [], "member_offsets": [],
         "frame": {"member_count_offset": 20, "opaque_index": 1,
-            "opaque_index_offset": 30, "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 34, "variant": false},
+            "opaque_index_offset": 58, "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 62, "variant": false},
         "role": DesignOperandRole::PROFILE.raw(), "extrude_role": "profile",
         "role_offset": 40, "paired_class_tag": "257", "paired_byte_offset": 50
     });
@@ -954,3 +953,65 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         assert!(error.to_string().contains("role"));
     }
 }
+
+#[test]
+fn recipe_sidecar_rejects_disagreeing_counts() {
+    let side = serde_json::json!({"field_count": 3, "header_value": 0,
+        "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
+    assert!(serde_json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
+    let side = serde_json::json!({"field_count": 2, "header_value": 0,
+        "scalars": [0], "payload_prefix": [0], "payload_entry_count": 1, "entries": []});
+    assert!(serde_json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
+    let clause = serde_json::json!({"fields": [], "face_reference_ordinals": [0, 0],
+        "edge_reference_ordinals": [0, 0], "payload_entry_count": 1, "entries": []});
+    assert!(serde_json::from_value::<super::DesignSurfacePatchRecipeClause>(clause).is_err());
+}
+
+#[test]
+fn recipe_sidecar_derives_counts_without_changing_wire() {
+    let side = serde_json::json!({"field_count": 2, "header_value": 0,
+        "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
+    let record: super::DesignTopologyRecipeSide = serde_json::from_value(side.clone()).unwrap();
+    assert_eq!(record.field_count(), 2);
+    assert_eq!(serde_json::to_value(record).unwrap(), side);
+}
+
+#[test]
+fn extrude_group_rejects_invalid_run_and_scalar_admission() {
+    let wire = serde_json::json!({"id": "group", "scope_record_index": 7, "scope_reference_ordinal": 0,
+        "record_index": 9, "byte_offset": 0, "class_tag": "277", "member_count_offset": 32,
+        "members": [10, 11], "member_offsets": [37, 48], "opaque_index": 1,
+        "opaque_index_offset": 58, "opaque_scalar": -1.0, "opaque_scalar_offset": 62,
+        "variant": false, "paired_class_tag": "259", "paired_byte_offset": 111});
+    let group: super::DesignExtrudeSelectionGroup = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+    for (field, value) in [
+        ("members", serde_json::json!([10, 10])),
+        ("member_offsets", serde_json::json!([37, 49])),
+        ("opaque_index", serde_json::json!(0)),
+        ("member_count_offset", serde_json::json!(33)),
+        ("opaque_index_offset", serde_json::json!(59)),
+        ("opaque_scalar_offset", serde_json::json!(63)),
+        ("paired_byte_offset", serde_json::json!(112)),
+        ("byte_offset", serde_json::json!(u64::MAX)),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<super::DesignExtrudeSelectionGroup>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut invalid = super::DesignExtrudeSelectionGroupWire::from(group.clone());
+        invalid.opaque_scalar = value;
+        assert!(super::DesignExtrudeSelectionGroup::try_from(invalid).is_err());
+    }
+    for members in [vec![], vec![10, 10]] {
+        let mut changed = group.clone();
+        assert!(changed.try_set_members(members).is_err());
+        assert_eq!(changed, group);
+    }
+}
+
+mod construction_frame;

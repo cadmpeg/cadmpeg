@@ -27,8 +27,8 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
         TextShapeKind::Face => TextTShapeGeometry::Face {
             natural_restriction: false,
             tolerance: 0.0,
-            surface: 0,
-            location: 0,
+            surface: None,
+            location: crate::brep::LocationRef::Identity,
             triangulation: None,
         },
         TextShapeKind::Wire => TextTShapeGeometry::Wire,
@@ -40,6 +40,16 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
 }
 
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+
+#[test]
+fn indexed_polygon_admits_only_aligned_parameters() {
+    let node = Point3::new(0.0, 0.0, 0.0);
+    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), 0.0).is_err());
+    let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), 0.0).unwrap();
+    assert_eq!(polygon.nodes, [node]);
+    assert_eq!(polygon.parameters, Some(vec![2.0]));
+    assert!(IndexedPolygon::try_new(vec![node], None, 0.0).is_ok());
+}
 
 #[test]
 fn neutral_identity_keys_preserve_exact_composed_locations() {
@@ -89,7 +99,6 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         transform: translated,
     }];
     let tshapes = [TextTShape {
-        index: 1,
         geometry: geometry_for_kind(TextShapeKind::Edge),
         flags: [false; 7],
         children: Vec::new(),
@@ -98,17 +107,17 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Forward,
-            location: 1,
+            location: 1.into(),
         },
     ];
     let tables = Tables {
@@ -123,7 +132,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables);
+    let indices = source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -143,30 +152,29 @@ fn source_indices_follow_depth_first_topology_order() {
     let use_shape = |shape: usize| TextShapeUse {
         shape,
         orientation: TextOrientation::Forward,
-        location: 0,
+        location: 0.into(),
     };
-    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
-        index,
+    let empty = |kind: TextShapeKind, children: Vec<usize>| TextTShape {
         geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
     let tshapes = vec![
-        empty(1, TextShapeKind::Compound, vec![2, 3]),
-        empty(2, TextShapeKind::Solid, vec![4]),
-        empty(3, TextShapeKind::Solid, vec![5]),
-        empty(4, TextShapeKind::Shell, vec![6]),
-        empty(5, TextShapeKind::Shell, vec![7]),
-        empty(6, TextShapeKind::Face, vec![8]),
-        empty(7, TextShapeKind::Face, vec![9]),
-        empty(8, TextShapeKind::Wire, vec![10]),
-        empty(9, TextShapeKind::Wire, vec![11]),
-        empty(10, TextShapeKind::Edge, vec![12, 13]),
-        empty(11, TextShapeKind::Edge, vec![14, 15]),
-        empty(12, TextShapeKind::Vertex, Vec::new()),
-        empty(13, TextShapeKind::Vertex, Vec::new()),
-        empty(14, TextShapeKind::Vertex, Vec::new()),
-        empty(15, TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Compound, vec![2, 3]),
+        empty(TextShapeKind::Solid, vec![4]),
+        empty(TextShapeKind::Solid, vec![5]),
+        empty(TextShapeKind::Shell, vec![6]),
+        empty(TextShapeKind::Shell, vec![7]),
+        empty(TextShapeKind::Face, vec![8]),
+        empty(TextShapeKind::Face, vec![9]),
+        empty(TextShapeKind::Wire, vec![10]),
+        empty(TextShapeKind::Wire, vec![11]),
+        empty(TextShapeKind::Edge, vec![12, 13]),
+        empty(TextShapeKind::Edge, vec![14, 15]),
+        empty(TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Vertex, Vec::new()),
     ];
     let roots = [use_shape(1)];
     let tables = Tables {
@@ -180,7 +188,7 @@ fn source_indices_follow_depth_first_topology_order() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = source_topology_indices(tables);
+    let indices = source_topology_indices(tables).expect("valid locations");
     let index =
         |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
 
@@ -206,19 +214,18 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
     let use_shape = |shape: usize| TextShapeUse {
         shape,
         orientation: TextOrientation::Forward,
-        location: 0,
+        location: 0.into(),
     };
-    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
-        index,
+    let empty = |kind: TextShapeKind, children: Vec<usize>| TextTShape {
         geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
     let tshapes = vec![
-        empty(1, TextShapeKind::Compound, vec![2, 2, 4]),
-        empty(2, TextShapeKind::Compound, vec![3]),
-        empty(3, TextShapeKind::Solid, Vec::new()),
-        empty(4, TextShapeKind::Compound, Vec::new()),
+        empty(TextShapeKind::Compound, vec![2, 2, 4]),
+        empty(TextShapeKind::Compound, vec![3]),
+        empty(TextShapeKind::Solid, Vec::new()),
+        empty(TextShapeKind::Compound, Vec::new()),
     ];
     let roots = [use_shape(1)];
     let tables = Tables {
@@ -233,7 +240,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables);
+    let indices = source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -271,22 +278,22 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 2,
             orientation: TextOrientation::Internal,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 4,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 5,
             orientation: TextOrientation::External,
-            location: 0,
+            location: 0.into(),
         },
     ];
     let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
@@ -297,12 +304,12 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 7,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 7,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
     ];
     let (start, end) = edge_endpoint_uses(9, &closed).expect("closed edge endpoints");
@@ -317,7 +324,7 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 3,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         children[2].clone(),
     ];
@@ -331,7 +338,7 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 5,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
     ];
     assert!(matches!(
@@ -410,9 +417,14 @@ fn edge_representation_selection_follows_family_rules() {
     ));
 
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
-    let selected = first_edge_representation(&matching_pcurves, |candidate| {
-        matches!(candidate, TextEdgeRepresentation::Pcurve { .. })
-    })
+    let selected = select_pcurve_representation(
+        &matching_pcurves,
+        &tables,
+        Transform::identity(),
+        0,
+        Transform::identity(),
+    )
+    .unwrap()
     .expect("first matching pcurve");
     assert_eq!(selected.0, 0);
 
@@ -929,13 +941,16 @@ Co 1001000 +2 0 *
         .expect("GUI properties");
     assert_eq!(gui_providers.len(), 1);
     assert_eq!(
-        gui_providers[0].object.as_deref(),
+        gui_providers[0]
+            .object
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
     assert!(gui_properties
         .iter()
-        .all(|property| property.raw_xml.starts_with("<Property")));
+        .all(|property| property.xml.text().starts_with("<Property")));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 

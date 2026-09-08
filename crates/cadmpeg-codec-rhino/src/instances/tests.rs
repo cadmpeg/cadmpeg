@@ -34,6 +34,7 @@ fn parent_child_composition_uses_column_point_order() {
     assert_eq!(
         parent
             .compose(child)
+            .unwrap()
             .apply_point(Point3::new(1.0, 0.0, 0.0)),
         Point3::new(12.0, 0.0, 0.0)
     );
@@ -1146,9 +1147,9 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
     let subd = &result.ir().model.subds[0];
-    assert_eq!(subd.vertices[2].point.x, 7.0);
-    assert_eq!(subd.edges[0].sharpness, [0.25, 0.25]);
-    assert_eq!(subd.edges[0].sector_coefficients, [0.125, 0.875]);
+    assert_eq!(subd.cage.vertices()[2].point().x, 7.0);
+    assert_eq!(subd.cage.edges()[0].sharpness(), [0.25, 0.25]);
+    assert_eq!(subd.cage.edges()[0].sector_coefficients(), [0.125, 0.875]);
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
@@ -1489,4 +1490,22 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
             && loss.message.contains("decode warnings")
     }));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+}
+
+#[test]
+fn contradictory_standard_unit_detail_preserves_scale_and_name() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 2_u32.to_le_bytes().to_vec();
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(utf16_bytes("retained name"));
+    let data = anonymous_chunk(archive, 0, &body);
+    let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
+    let mut warnings = Vec::new();
+    let units =
+        super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
+    assert_eq!(units.unit, 2);
+    assert_eq!(units.meters_per_unit, 0.5);
+    assert_eq!(units.custom_name, "retained name");
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].starts_with("redundant instance unit detail "));
 }

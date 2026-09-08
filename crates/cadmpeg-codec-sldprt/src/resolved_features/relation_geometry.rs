@@ -28,6 +28,7 @@ use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
     marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
@@ -310,10 +311,7 @@ pub(crate) fn project_spatial_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                                operand_kind_name(operand.kind),
-                            )
-                            .expect("source operand kind is nonempty"),
+                            native_kind: operand_kind_name(operand.kind),
                             field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
@@ -735,7 +733,7 @@ pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
 pub(super) fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
-        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x81e7)
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7)
     )
 }
 
@@ -920,11 +918,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                             )
                         })
                         .or_else(|| {
-                            (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
-                                .then(|| {
-                                    points.get(usize::from(first_operand.entity_index)).copied()
-                                })
-                                .flatten()
+                            (first_operand.kind
+                                == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD))
+                            .then(|| points.get(usize::from(first_operand.entity_index)).copied())
+                            .flatten()
                         })
                 })
                 .flatten();
@@ -1621,7 +1618,7 @@ pub(super) fn implicit_circle_marker<'a>(
     // Only 83fe defines an ordered center/radial point roster. Other native
     // carriers may use the relation-qualified witness tiers above, but their
     // point-marker order does not identify a circular-dimension pair.
-    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+    if operand_kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE) {
         return None;
     }
 
@@ -1765,11 +1762,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             )?))
         })
         .collect::<Vec<_>>();
-    if reference_indices.len() != 2 {
-        return None;
-    }
     let [slot_index, center_index] = reference_indices.as_slice() else {
-        unreachable!("two slot-handle references were required above")
+        return None;
     };
     let slot_index = u32::try_from(*slot_index).ok()?;
     let center_index = u32::try_from(*center_index).ok()?;
@@ -1790,19 +1784,14 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|candidate| candidate.offset);
-    let centers = center_indices
-        .map(|index| points.get(index).copied())
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = centers.as_slice() else {
-        unreachable!("slot descriptor has two center indices")
-    };
+    let [first, second] = center_indices.map(|index| points.get(index).copied());
+    let (first, second) = (first?, second?);
     let center = match (
         first.local_id == Some(center_index),
         second.local_id == Some(center_index),
     ) {
-        (true, false) => *first,
-        (false, true) => *second,
+        (true, false) => first,
+        (false, true) => second,
         _ => return None,
     };
     let coordinates = center.coordinates_m?;
@@ -1825,7 +1814,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     operand: &FeatureInputOperand,
     expected_radius: f64,
 ) -> Option<&'a SketchInputEntity> {
-    if operand.kind != FeatureInputOperandKind::Native(0x836e)
+    if operand.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E)
         || operand.entity_ref.is_some()
         || !expected_radius.is_finite()
         || expected_radius <= 0.0
@@ -1886,7 +1875,9 @@ fn point_dimension_marker_matches_operand(
     };
     let address = u32::from(operand.entity_index);
     let identity_matches = match operand.kind {
-        FeatureInputOperandKind::Native(0x814c) => marker.object_index == Some(address),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) => {
+            marker.object_index == Some(address)
+        }
         FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
         _ => false,
     };
@@ -2376,10 +2367,7 @@ pub(crate) fn project_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                                operand_kind_name(operand.kind),
-                            )
-                            .expect("source operand kind is nonempty"),
+                            native_kind: operand_kind_name(operand.kind),
                             field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
@@ -2801,7 +2789,7 @@ mod relation_geometry_tests {
         let operand = |offset: u64, entity_index: u16| FeatureInputOperand {
             offset,
             reference_ref: format!("reference-{offset}"),
-            kind: FeatureInputOperandKind::Native(0x8100),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
             entity_ref: None,
         };
@@ -3042,7 +3030,7 @@ mod relation_geometry_tests {
                 .map(|(index, entity_index)| FeatureInputOperand {
                     offset: 40 + index as u64,
                     reference_ref: format!("reference-{index}"),
-                    kind: FeatureInputOperandKind::Native(0x812a),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                     entity_index,
                     entity_ref: None,
                 })
@@ -3357,7 +3345,7 @@ mod relation_geometry_tests {
         let operand = |entity_index| FeatureInputOperand {
             offset: 700 + u64::from(entity_index),
             reference_ref: format!("reference-{entity_index}"),
-            kind: FeatureInputOperandKind::Native(0x8100),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
             entity_ref: None,
         };

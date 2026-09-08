@@ -132,7 +132,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let dialect_loss = crate::dialect::dialect_loss(&primary);
         let ir = CadIr::empty();
 
-        let mut body = DecodeBody::new(false);
+        let mut body = DecodeBody::new(if ctx.container_only() {
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::report::DecodeTransfer::full(false)
+        });
         body.notes = exchange
             .references
             .iter()
@@ -387,7 +391,7 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.body.geometry_transferred = true;
+        session.body.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
     }
 
     // Keep the established report order while every pass contributes through
@@ -504,10 +508,9 @@ fn decode_exchange_mode(
             u64::try_from(input.len()).unwrap_or(u64::MAX),
             "step_byte_accounting",
         )?;
-        let _reservation =
-            session
-                .ctx
-                .reserve_scoped(input.len() as u64, "step_byte_accounting", None)?;
+        let _reservation = session
+            .ctx
+            .reserve_scoped(input.len() as u64, "step_byte_accounting")?;
         byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
     if matches!(mode, DecodeMode::Decode(_)) {
@@ -518,11 +521,9 @@ fn decode_exchange_mode(
             session
                 .ctx
                 .charge_collection_items(source.reference_work, "step_opaque_record_links")?;
-            let bytes = session.ctx.copy_retained(
-                &input[source.span.clone()],
-                "step_opaque_record",
-                None,
-            )?;
+            let bytes = session
+                .ctx
+                .copy_retained(&input[source.span.clone()], "step_opaque_record")?;
             opaque.push(UnknownRecord::retained(
                 source.unknown_id,
                 source.span.start as u64,
@@ -541,11 +542,9 @@ fn decode_exchange_mode(
             ));
         }
         for (index, signature) in signature_spans.into_iter().enumerate() {
-            let bytes = session.ctx.copy_retained(
-                &input[signature.clone()],
-                "step_signature_record",
-                None,
-            )?;
+            let bytes = session
+                .ctx
+                .copy_retained(&input[signature.clone()], "step_signature_record")?;
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),

@@ -3,7 +3,7 @@
 
 use super::super::feature_history::feature_allows_additive_linear_extrusion;
 use super::super::holes::circular_sweep_geometry;
-use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
@@ -14,6 +14,7 @@ use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -77,7 +78,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
         let center = section_point_in_model(transform, section_center);
         let seam =
-            std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis[axis]);
+            std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis()[axis]);
         let sides = [("bottom", span.lower), ("top", span.upper)];
         let mut face_ids = Vec::new();
         let mut cap_coedges = Vec::new();
@@ -116,19 +117,19 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: cap_surface.clone(),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(
-                        transform.origin[0] + offset * transform.normal[0],
-                        transform.origin[1] + offset * transform.normal[1],
-                        transform.origin[2] + offset * transform.normal[2],
+                        transform.origin()[0] + offset * transform.normal()[0],
+                        transform.origin()[1] + offset * transform.normal()[1],
+                        transform.origin()[2] + offset * transform.normal()[2],
                     ),
                     normal: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
+                        transform.normal()[0],
+                        transform.normal()[1],
+                        transform.normal()[2],
                     ),
                     u_axis: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
+                        transform.u_axis()[0],
+                        transform.u_axis()[1],
+                        transform.u_axis()[2],
                     ),
                 },
                 source_object: None,
@@ -137,19 +138,19 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Circle {
                     center: Point3::new(
-                        center[0] + offset * transform.normal[0],
-                        center[1] + offset * transform.normal[1],
-                        center[2] + offset * transform.normal[2],
+                        center[0] + offset * transform.normal()[0],
+                        center[1] + offset * transform.normal()[1],
+                        center[2] + offset * transform.normal()[2],
                     ),
                     axis: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
+                        transform.normal()[0],
+                        transform.normal()[1],
+                        transform.normal()[2],
                     ),
                     ref_direction: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
+                        transform.u_axis()[0],
+                        transform.u_axis()[1],
+                        transform.u_axis()[2],
                     ),
                     radius,
                 },
@@ -158,9 +159,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: Point3::new(
-                    seam[0] + offset * transform.normal[0],
-                    seam[1] + offset * transform.normal[1],
-                    seam[2] + offset * transform.normal[2],
+                    seam[0] + offset * transform.normal()[0],
+                    seam[1] + offset * transform.normal()[1],
+                    seam[2] + offset * transform.normal()[2],
                 ),
                 source_object: None,
             });
@@ -229,14 +230,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(center[0], center[1], center[2]),
                 axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
                 ),
                 ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
                 ),
                 radius,
             },
@@ -347,29 +348,26 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
 
 pub(in super::super) fn circular_section_profile_from_cylinder(
     transform: &crate::placement::FeatureSectionTransform,
-    geometry: &SurfaceGeometry,
+    geometry: &super::super::holes::placement::HoleCylinder,
 ) -> Option<([f64; 2], f64)> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        radius,
-        ..
-    } = geometry
-    else {
-        return None;
-    };
-    let axis = normalized([axis.x, axis.y, axis.z])?;
-    (dot(axis, transform.normal).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
+    let origin = geometry.origin;
+    let axis = geometry.axis;
+    let radius = geometry.radius;
+    let axis = normalize([axis.x, axis.y, axis.z])?;
+    (dot(axis, transform.normal()).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
         && radius.is_finite()
-        && *radius > 0.0)
+        && radius > 0.0)
         .then_some(())?;
     let delta = [
-        origin.x - transform.origin[0],
-        origin.y - transform.origin[1],
-        origin.z - transform.origin[2],
+        origin.x - transform.origin()[0],
+        origin.y - transform.origin()[1],
+        origin.z - transform.origin()[2],
     ];
     Some((
-        [dot(delta, transform.u_axis), dot(delta, transform.v_axis)],
-        *radius,
+        [
+            dot(delta, transform.u_axis()),
+            dot(delta, transform.v_axis()),
+        ],
+        radius,
     ))
 }

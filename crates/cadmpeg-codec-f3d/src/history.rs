@@ -1288,7 +1288,7 @@ pub(crate) fn bind_feature_body_selections(
         let Some(group) = matching_groups.next() else {
             continue;
         };
-        if matching_groups.next().is_some() || group.members.len() != 1 {
+        if matching_groups.next().is_some() || group.members().len() != 1 {
             continue;
         }
         let (Some(state_id), Some(previous_state_id)) =
@@ -1525,7 +1525,7 @@ fn bind_pattern_body_selections(
             .filter(|group| {
                 group.scope_record_index == scope.record_index
                     && group.role() == DesignOperandRole::BODIES_B
-                    && !group.members.is_empty()
+                    && !group.members().is_empty()
                     && crate::ids::native_stream(&group.id) == stream
             })
             .collect::<Vec<_>>();
@@ -1649,11 +1649,16 @@ fn bind_body_recipe_body_selection(
     let Some(group) = matching_groups.next() else {
         return;
     };
-    if matching_groups.next().is_some() || group.members.is_empty() {
+    if matching_groups.next().is_some() || group.members().is_empty() {
         return;
     }
-    let mut body_slots = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+    let mut body_slots = Vec::with_capacity(group.members().len());
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .enumerate()
+    {
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return;
         };
@@ -1721,12 +1726,15 @@ fn bind_direct_body_recipe_body_selection(
             let Some(group) = matching_groups.next() else {
                 return;
             };
-            if matching_groups.next().is_some() || group.members.is_empty() {
+            if matching_groups.next().is_some() || group.members().is_empty() {
                 return;
             }
-            let mut selected = Vec::with_capacity(group.members.len());
-            for (ordinal, record_index) in
-                group.members.iter().map(|member| member.value).enumerate()
+            let mut selected = Vec::with_capacity(group.members().len());
+            for (ordinal, record_index) in group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .enumerate()
             {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
                     return;
@@ -2219,7 +2227,7 @@ fn bind_entity_face_selection(
     let Some(group) = matching_groups.next() else {
         return;
     };
-    if matching_groups.next().is_some() || group.members.is_empty() {
+    if matching_groups.next().is_some() || group.members().is_empty() {
         return;
     }
     bind_entity_face_groups(
@@ -2288,7 +2296,7 @@ fn bind_surface_stitch_face_selection(
                 u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
                     || group.record_index != *group_reference
                     || !group
-                        .members
+                        .members()
                         .iter()
                         .map(|member| member.value)
                         .eq([*member_reference])
@@ -2331,10 +2339,15 @@ fn bind_entity_face_groups(
     let mut selected = Vec::<(&str, i64, bool)>::new();
     let stream = crate::ids::native_stream(&scope.id);
     for group in groups {
-        if group.members.is_empty() {
+        if group.members().is_empty() {
             return;
         }
-        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return;
             };
@@ -2559,11 +2572,16 @@ fn bind_entity_selection_path(
     let Some(group) = matching_groups.next() else {
         return;
     };
-    if matching_groups.next().is_some() || group.members.is_empty() {
+    if matching_groups.next().is_some() || group.members().is_empty() {
         return;
     }
-    let mut edge_slots = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+    let mut edge_slots = Vec::with_capacity(group.members().len());
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .enumerate()
+    {
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return;
         };
@@ -3411,7 +3429,7 @@ pub(crate) fn bind_scope_histories(
                     .iter()
                     .filter(|history| {
                         historical_brep_source(&history.id).is_some_and(|source| {
-                            binding.blob_name.strip_prefix("BREP.") == Some(source)
+                            binding.blob_name().strip_prefix("BREP.") == Some(source)
                         })
                     })
                     .collect::<Vec<_>>();
@@ -3460,7 +3478,7 @@ pub(crate) fn bind_scope_histories(
             }
             let mut matching = candidates.iter().filter(|history| {
                 historical_brep_source(&history.id)
-                    .is_some_and(|source| binding.blob_name.strip_prefix("BREP.") == Some(source))
+                    .is_some_and(|source| binding.blob_name().strip_prefix("BREP.") == Some(source))
             });
             let history = matching.next()?;
             matching.next().is_none().then_some(history.id.as_str())
@@ -3610,7 +3628,7 @@ fn exact_face_selection_group<'a>(
             && group.record_index == group_record_index
             && group.role() == DesignOperandRole::ROLE_0X10
             && group
-                .members
+                .members()
                 .get(group_member_ordinal)
                 .map(|member| &member.value)
                 == Some(&operand.record_index)
@@ -4956,7 +4974,7 @@ fn bind_profile_face_group_cardinality(
             ) else {
                 continue;
             };
-            if group.members.len() != indices.len()
+            if group.members().len() != indices.len()
                 || indices.iter().any(|index| {
                     let operand = &operands[*index];
                     !operand.resolved_face_slots.is_empty()
@@ -5006,7 +5024,7 @@ fn bind_profile_face_group_cardinality(
                     let mut deleted = transition.topology.faces.deleted.clone();
                     deleted.sort_unstable();
                     deleted.dedup();
-                    (deleted.len() == group.members.len()
+                    (deleted.len() == group.members().len()
                         && deleted.len() == transition.topology.faces.deleted.len()
                         && deleted.iter().all(|face| {
                             preceding_faces.contains(face)
@@ -5023,7 +5041,7 @@ fn bind_profile_face_group_cardinality(
                 profile_face_group_cardinality_candidates(
                     topology,
                     &changed_faces,
-                    group.members.len(),
+                    group.members().len(),
                 )
             };
             let Some(faces) = faces else {
@@ -6491,7 +6509,7 @@ fn bind_face_selection(
         return;
     };
     let mut faces = Vec::new();
-    for record_index in group.members.iter().map(|member| &member.value) {
+    for record_index in group.members().iter().map(|member| &member.value) {
         let mut matches = operands.iter().filter(|operand| {
             crate::ids::native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
@@ -6551,12 +6569,17 @@ fn bind_body_recipe_face_selection(
     let Some(group) = matching_groups.next() else {
         return;
     };
-    if matching_groups.next().is_some() || group.members.is_empty() {
+    if matching_groups.next().is_some() || group.members().is_empty() {
         return;
     }
     let stream = crate::ids::native_stream(&scope.id);
     let mut slots = Vec::new();
-    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| &member.value)
+        .enumerate()
+    {
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return;
         };
@@ -6887,7 +6910,7 @@ fn component_histories<'a>(
                 && binding.entity_suffix >= space.component_record_index
                 && binding.entity_suffix < cluster_end
         })
-        .map(|binding| binding.blob_name.as_str())
+        .map(crate::records::DesignBodyBinding::blob_name)
         .collect::<HashSet<_>>();
     let mut selected = histories
         .iter()
@@ -7464,7 +7487,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 && group.record_index == construction.plane_group_record_index
                 && group.role() == DesignOperandRole::ROLE_0X5
                 && group
-                    .members
+                    .members()
                     .iter()
                     .map(|member| member.value)
                     .eq([selection_record_index])

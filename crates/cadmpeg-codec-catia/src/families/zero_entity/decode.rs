@@ -949,7 +949,7 @@ pub(crate) fn try_decode_zero_entity(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            geometry_transferred: true,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage,
             losses: vec![topology_loss.note(topology_message)],
             notes: Vec::new(),
@@ -963,8 +963,10 @@ pub(crate) fn try_decode_zero_entity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurve};
     use cadmpeg_ir::math::Vector3;
+    use std::num::NonZeroUsize;
 
     fn support(
         record_ordinal: u32,
@@ -1036,12 +1038,15 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            terminal_id: 8,
-                            gap: 1,
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1117,12 +1122,15 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            terminal_id: 8,
-                            gap: 1,
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1130,12 +1138,15 @@ mod tests {
                             pos: 25,
                             record_ordinal: 6,
                             tag: [0x62, 0x14],
-                            member_ids: vec![9, 8],
+                            members: ZeroEntityLoopMembers::try_new(
+                                9,
+                                1,
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![4, 5],
                             support_record_ordinals: vec![5, 4],
-                            terminal_id: 9,
-                            gap: 1,
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1143,12 +1154,15 @@ mod tests {
                             pos: 30,
                             record_ordinal: 7,
                             tag: [0x62, 0x14],
-                            member_ids: vec![10],
+                            members: ZeroEntityLoopMembers::try_new(
+                                10,
+                                1,
+                                NonZeroUsize::new(1).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![3],
                             support_record_ordinals: vec![99],
-                            terminal_id: 10,
-                            gap: 1,
-                            loop_class: 0x50,
+                            loop_class: ZeroEntityLoopClass::Bound50,
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, corner]],
                         },
@@ -1275,12 +1289,15 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
-                            terminal_id: 8,
-                            gap: 1,
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1381,12 +1398,15 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7, 6],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 4],
-                            terminal_id: 8,
-                            gap: 1,
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
                             oriented_model_endpoints: vec![[first, corner], [corner, first]],
                         },
@@ -1474,12 +1494,15 @@ mod tests {
                             pos: 20,
                             record_ordinal: 3,
                             tag: [0x62, 0x14],
-                            member_ids: vec![7],
+                            members: ZeroEntityLoopMembers::try_new(
+                                8,
+                                1,
+                                NonZeroUsize::new(1).expect("nonzero loop member count"),
+                            )
+                            .expect("admitted loop member run"),
                             typed_references: vec![1],
                             support_record_ordinals: vec![4],
-                            terminal_id: 8,
-                            gap: 1,
-                            loop_class: 0x41,
+                            loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, second]],
                         },

@@ -43,16 +43,19 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         format!("f3d:configuration:entry#{name}")
     );
     assert_eq!(
-        native.design_configurations[0].kind,
+        native.design_configurations[0].kind(),
         crate::records::DesignConfigurationKind::Table
     );
     assert_eq!(
-        native.design_configurations[0].variant_order,
+        native.design_configurations[0].variant_order(),
         ["Small", "Medium", "Large"]
     );
-    assert_eq!(native.design_configurations[0].payload["active"], "Medium");
     assert_eq!(
-        native.design_configurations[0].payload["extension"]["future"],
+        native.design_configurations[0].payload()["active"],
+        "Medium"
+    );
+    assert_eq!(
+        native.design_configurations[0].payload()["extension"]["future"],
         7
     );
     assert_eq!(decoded.ir().model.configurations.len(), 3);
@@ -79,24 +82,23 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         medium.native_ref.as_deref(),
         Some(native.design_configurations[0].id.as_str())
     );
-    let mut invalid_order = decoded.ir().clone();
-    update_f3d_native(&mut invalid_order, |native| {
-        native.design_configurations[0].variant_order.pop();
-    });
-    assert!(crate::validate::validate_native(&invalid_order)
-        .iter()
-        .any(|finding| finding
-            .message
-            .contains("invalid identity, payload, or variant order")));
-
     let mut retained = decoded.ir().clone();
     update_f3d_native(&mut retained, |native| {
-        native.design_configurations[0].payload["active"] = "Narrow".into();
-        native.design_configurations[0].payload["configurations"]["Narrow"] =
+        let configuration = &mut native.design_configurations[0];
+        let mut payload = configuration.payload().clone();
+        payload["active"] = "Narrow".into();
+        payload["configurations"]["Narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
-        native.design_configurations[0]
-            .variant_order
-            .push("Narrow".into());
+        let mut order = configuration.variant_order().to_vec();
+        order.push("Narrow".into());
+        *configuration = crate::records::DesignConfiguration::try_new(
+            configuration.id.clone(),
+            configuration.entry_name.clone(),
+            configuration.kind(),
+            order,
+            payload,
+        )
+        .unwrap();
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
         &f3d_native(&retained).design_configurations,
@@ -173,8 +175,8 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             "configuration rule(s) were retained without an unambiguous neutral activation target"
         )));
     let rule = f3d_native(rule_result.ir()).design_configurations.remove(0);
-    assert_eq!(rule.kind, crate::records::DesignConfigurationKind::Rule);
-    assert_eq!(rule.payload["activate"], "wide");
+    assert_eq!(rule.kind(), crate::records::DesignConfigurationKind::Rule);
+    assert_eq!(rule.payload()["activate"], "wide");
 
     let invalid = F3dCodec.decode(
         &mut Cursor::new(f3d_with_configuration(
@@ -240,7 +242,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert!(partial_rule.ir().model.configurations.is_empty());
     let partial_native = f3d_native(partial_rule.ir());
     assert_eq!(
-        partial_native.design_configurations[0].payload["vendorExtension"],
+        partial_native.design_configurations[0].payload()["vendorExtension"],
         7
     );
     assert!(partial_rule
@@ -734,11 +736,8 @@ fn generated_source_less_f3d_rejects_subds() {
     source_less.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     });
 
     let error = F3dCodec
@@ -797,9 +796,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let native_id = format!("f3d:{stream}:design-parameter#0");
-    f3d_native_mut(&mut source_less)
-        .design_parameters
-        .push(crate::records::DesignParameter {
+    f3d_native_mut(&mut source_less).design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: native_id.clone(),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
@@ -823,10 +821,11 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             name_offset: 120,
             evaluated_value: 3.0,
             evaluated_value_offset: 150,
-        });
-    f3d_native_mut(&mut source_less)
-        .design_parameters
-        .push(crate::records::DesignParameter {
+        })
+        .unwrap(),
+    );
+    f3d_native_mut(&mut source_less).design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("f3d:{stream}:design-parameter#1"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
@@ -850,7 +849,9 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             name_offset: 120,
             evaluated_value: 6.0,
             evaluated_value_offset: 150,
-        });
+        })
+        .unwrap(),
+    );
     let (_, parameters) = crate::design::feature_project::project_parameter_design(
         &f3d_native(&source_less).design_parameters,
         &[],
@@ -890,7 +891,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         .expect("identity grammar")]
     );
     assert_eq!(
-        f3d_native(decoded.ir()).design_parameters[0].evaluated_value,
+        f3d_native(decoded.ir()).design_parameters[0].evaluated_value(),
         3.0
     );
 }

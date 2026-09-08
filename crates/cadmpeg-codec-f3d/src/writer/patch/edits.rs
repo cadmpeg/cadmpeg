@@ -1616,12 +1616,12 @@ pub(crate) fn validate_configuration_edits(
     let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
-        if before.id != after.id || before.kind != after.kind {
+        if before.id != after.id || before.kind() != after.kind() {
             return Err(CodecError::NotImplemented(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload != after.payload || before.variant_order != after.variant_order {
+        if before.payload() != after.payload() || before.variant_order() != after.variant_order() {
             edits.insert(
                 name.to_owned(),
                 crate::design::configurations::encode_configuration_payload(after)?,
@@ -2349,21 +2349,17 @@ pub(crate) fn validate_sketch_point_edits(
     for point in target {
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
-        normalized.coordinates = before.coordinates;
+        normalized
+            .try_set_coordinates(before.coordinates())
+            .map_err(CodecError::Malformed)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-point edit changes fields other than coordinates: {}",
                 point.id
             )));
         }
-        if point.coordinates == before.coordinates {
+        if point.coordinates() == before.coordinates() {
             continue;
-        }
-        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {} has non-finite coordinates",
-                point.id
-            )));
         }
         let stream = point
             .id
@@ -2376,7 +2372,7 @@ pub(crate) fn validate_sketch_point_edits(
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
-            coordinates: point.coordinates,
+            coordinates: point.coordinates(),
         });
     }
     Ok(edits)

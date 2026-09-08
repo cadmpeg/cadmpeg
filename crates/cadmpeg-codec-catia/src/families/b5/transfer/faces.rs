@@ -44,10 +44,6 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         return None;
     }
 
-    let vertex_count = graph
-        .vertex_points
-        .len()
-        .checked_add(graph.logical_vertices.len())?;
     let mut parents = UnionFind::new(graph.faces.len());
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
@@ -55,10 +51,7 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let face = loop_owners[loop_id];
         for member in &loop_.members {
             let edge = member.edge;
-            let endpoints = graph.edge_vertices.get(&edge)?;
-            if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
-                return None;
-            }
+            graph.vertices.edges().get(&edge)?;
             *edge_uses.entry(edge).or_default() += 1;
             if let Some(other_face) = first_face_by_edge.insert(edge, face) {
                 parents.union(face, other_face);
@@ -139,10 +132,10 @@ pub(super) fn orient_loop_members(
         "catia b5 loop orientation constraints",
     )
     .ok()?;
-    for occurrences in uses.values().filter(|occurrences| occurrences.len() == 2) {
-        let [(left, left_reversed), (right, right_reversed)] = occurrences.as_slice() else {
-            unreachable!("filtered to two occurrences");
-        };
+    for [(left, left_reversed), (right, right_reversed)] in uses
+        .values()
+        .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
+    {
         let parity = left_reversed == right_reversed;
         if left == right {
             if parity {
@@ -165,9 +158,8 @@ pub(super) fn orient_loop_members(
             continue;
         }
         flips[root] = Some(false);
-        let mut pending = vec![root];
-        while let Some(node) = pending.pop() {
-            let flip = flips[node]?;
+        let mut pending = vec![(root, false)];
+        while let Some((node, flip)) = pending.pop() {
             for &(neighbor, parity) in &constraints[node] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
@@ -175,7 +167,7 @@ pub(super) fn orient_loop_members(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        pending.push(neighbor);
+                        pending.push((neighbor, required));
                     }
                 }
             }
@@ -243,18 +235,11 @@ fn b5_planar_loop_points(
     let mut points = Vec::with_capacity(loop_.members.len());
     for member in loop_orientation.member_order() {
         let edge = loop_.members[member].edge;
-        let endpoints = graph.edge_vertices.get(&edge)?;
-        let endpoint_indices = if loop_orientation.members[member].reversed {
-            [endpoints[1], endpoints[0]]
-        } else {
-            *endpoints
-        };
-        let [Some(start), Some(end)] = endpoint_indices.map(|index| {
-            super::b5_vertex_point(graph, index)
-                .map(|point| Point3::new(point[0], point[1], point[2]))
-        }) else {
-            return None;
-        };
+        let mut endpoints = graph.vertices.edge_points(edge)?;
+        if loop_orientation.members[member].reversed {
+            endpoints.swap(0, 1);
+        }
+        let [start, end] = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
         let (pcurve_id, parameter_range) = pcurve_uses.get(&(loop_id, member))?;
         if !parameter_range
             .iter()
@@ -511,8 +496,9 @@ pub(super) fn emit_faces(
                 .member_order()
                 .map(|member| {
                     let edge = loop_.members[member].edge;
-                    let endpoints = graph.edge_vertices[&edge];
-                    let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)];
+                    let endpoints = graph.vertices.edges()[&edge];
+                    let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)]
+                        .combined_index(graph.vertices.raw_points().len());
                     AnchoredVertexUse {
                         vertex: VertexId::mint(format!("catia:b5:vertex#{endpoint}"))
                             .expect("identity grammar"),
@@ -667,7 +653,10 @@ mod tests {
                 let end = vertices[(member + 1) % vertices.len()];
                 let edge = edge_base + member as u32;
                 let pcurve = pcurve_base + member as u32;
-                edge_vertices.insert(edge, [start, end]);
+                edge_vertices.insert(
+                    edge,
+                    [start, end].map(crate::families::b5::graph::vertex_refs::B5VertexRef::Raw),
+                );
                 loop_edges.push(edge);
                 loop_pcurves.push(pcurve);
                 let start_point = points[start];
@@ -711,7 +700,8 @@ mod tests {
                         })
                         .collect(),
                     metadata: B5LoopMetadata {
-                        framing_controls: [0, 0],
+                        framing_controls:
+                            [crate::families::b5::graph::controls::B5FramingControl::Control03; 2],
                         extension: None,
                     },
                     surface: 10,
@@ -737,7 +727,9 @@ mod tests {
                 object_id: 1,
                 surface: 10,
                 loops: vec![3, 2],
-                terminal_control: Some(3),
+                terminal_control: Some(
+                    crate::families::b5::graph::controls::B5FramingControl::Control03,
+                ),
             }],
             face_records: BTreeMap::new(),
             loops,
@@ -752,9 +744,12 @@ mod tests {
             parameter_incidences: BTreeMap::new(),
             edges: BTreeMap::new(),
             vertex_incidence_links: BTreeMap::new(),
-            vertex_points: points,
-            logical_vertices: Vec::new(),
-            edge_vertices,
+            vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                points,
+                Vec::new(),
+                edge_vertices,
+            )
+            .expect("valid vertex bindings"),
             edge_parameter_incidences: BTreeMap::new(),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),

@@ -44,11 +44,27 @@ struct ViewChild {
     sha256: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ViewListKind {
+    Named,
+    Active,
+}
+
+impl ViewListKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Named => "named",
+            Self::Active => "active",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ViewRecord {
     id: String,
     source_offset: u64,
-    list_kind: &'static str,
+    list_kind: ViewListKind,
     list_index: usize,
     name: String,
     target_millimeters: Option<[f64; 3]>,
@@ -897,7 +913,7 @@ fn parse_view(
     record: &crate::chunks::Chunk,
     archive: ArchiveVersion,
     scale: f64,
-    list_kind: &'static str,
+    list_kind: ViewListKind,
     list_index: usize,
 ) -> Result<(ViewRecord, Vec<LossNote>), FramingError> {
     let mut offset = record.body().start;
@@ -1094,7 +1110,7 @@ fn parse_view(
     }
     Ok((
         ViewRecord {
-            id: format!("rhino:document:view#{list_kind}-{list_index:04}"),
+            id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
             source_offset: record.header_start as u64,
             list_kind,
             list_index,
@@ -1122,8 +1138,9 @@ fn parse_list(
     record: &Record,
     archive: ArchiveVersion,
     scale: f64,
-    kind: &'static str,
+    list_kind: ViewListKind,
 ) -> (Vec<ViewRecord>, Vec<LossNote>) {
+    let kind = list_kind.as_str();
     let mut losses = Vec::new();
     let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
@@ -1192,7 +1209,7 @@ fn parse_list(
             break;
         }
         let next = view.next_offset();
-        match parse_view(data, &view, archive, scale, kind, index) {
+        match parse_view(data, &view, archive, scale, list_kind, index) {
             Ok((value, checksum_warnings)) => {
                 losses.extend(checksum_warnings);
                 views.push(value);
@@ -1290,7 +1307,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             }
             if record.typecode == NAMED_VIEWS {
                 let (parsed, mut parse_losses) =
-                    parse_list(scan.data, record, scan.archive, scale, "named");
+                    parse_list(scan.data, record, scan.archive, scale, ViewListKind::Named);
                 if !parse_losses.is_empty() {
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
@@ -1302,7 +1319,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             }
             if record.typecode == ACTIVE_VIEWS {
                 let (parsed, mut parse_losses) =
-                    parse_list(scan.data, record, scan.archive, scale, "active");
+                    parse_list(scan.data, record, scan.archive, scale, ViewListKind::Active);
                 if !parse_losses.is_empty() {
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
@@ -1331,8 +1348,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
 mod tests {
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
-        parse_viewport, parse_wallpaper, parse_window_position, ViewAttributes, Viewport,
-        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
+        parse_viewport, parse_wallpaper, parse_window_position, ViewAttributes, ViewListKind,
+        Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
@@ -1526,7 +1543,7 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1543,7 +1560,7 @@ mod tests {
         body.extend(child);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("unexpected typecode"));
@@ -1566,7 +1583,7 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1596,7 +1613,7 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1623,7 +1640,7 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
         assert_eq!(views[0].children.len(), 1);
@@ -1754,7 +1771,7 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&attributes));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
 
@@ -1768,7 +1785,8 @@ mod tests {
             0..corrupted_body.len(),
             0..corrupted_body.len(),
         );
-        let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
+        let (views, losses) =
+            parse_list(&corrupted_body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("0x20008c3b"));
@@ -1829,7 +1847,7 @@ mod tests {
             let mut body = 1_i32.to_le_bytes().to_vec();
             body.extend(view);
             let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-            parse_list(&body, &record, archive, 1.0, "named")
+            parse_list(&body, &record, archive, 1.0, ViewListKind::Named)
         };
 
         let (views, losses) = parse(make_view(&trace, &wallpaper));
@@ -1903,7 +1921,7 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&viewport_userdata));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
+        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1921,7 +1939,8 @@ mod tests {
             0..corrupted_body.len(),
             0..corrupted_body.len(),
         );
-        let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
+        let (views, losses) =
+            parse_list(&corrupted_body, &record, archive, 1.0, ViewListKind::Named);
         assert_eq!(views.len(), 1);
         assert!(losses.iter().any(|loss| {
             loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()

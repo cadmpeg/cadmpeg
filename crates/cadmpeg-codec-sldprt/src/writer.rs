@@ -1964,6 +1964,7 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
     let meshes = ir
         .model
         .tessellations
@@ -2046,19 +2047,19 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for index in auxiliary_count..3 {
-            match index {
-                0 => descriptor(&mut out, 4, 8, 2, 0, &[]),
-                1 => {
-                    let data = list_c
-                        .iter()
-                        .flat_map(|value| value.to_le_bytes())
-                        .collect::<Vec<_>>();
-                    descriptor(&mut out, 4, 8, 2, list_c.len(), &data);
-                }
-                2 => descriptor(&mut out, 1, 8, 2, 0, &[]),
-                _ => unreachable!("three auxiliary descriptors"),
-            }
+        let append: [AuxiliaryWriter; 3] = [
+            |out, _| descriptor(out, 4, 8, 2, 0, &[]),
+            |out, list_c| {
+                let data = list_c
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<_>>();
+                descriptor(out, 4, 8, 2, list_c.len(), &data);
+            },
+            |out, _| descriptor(out, 1, 8, 2, 0, &[]),
+        ];
+        for append in append.iter().skip(auxiliary_count) {
+            append(&mut out, &list_c);
         }
     }
     Ok(out)
@@ -2171,7 +2172,7 @@ pub(super) fn sequential_tessellation(
     )?;
     let triangles = triangles_from_strips(&strip_lengths)?;
     Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
-        mesh.id.clone(),
+        mesh.id.to_string(),
         vertices,
         triangles,
         strip_lengths,
@@ -2182,7 +2183,10 @@ pub(super) fn sequential_tessellation(
     .map_err(|err| CodecError::Malformed(err.to_string()))?
     .with_body(mesh.body.clone())
     .with_faces(mesh.faces.clone())
-    .with_chordal_deflection(mesh.chordal_deflection)
+    .with_chordal_deflection(mesh.chordal_deflection())
+    .map_err(|error| {
+        CodecError::malformed(format_args!("invalid tessellation deflection: {error}"))
+    })?
     .with_source_object(mesh.source_object.clone()))
 }
 

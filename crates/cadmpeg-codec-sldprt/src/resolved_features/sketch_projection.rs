@@ -24,7 +24,7 @@ pub(crate) struct ProjectedSketches {
 }
 
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
-pub fn sketches(
+pub(crate) fn sketches(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<ProjectedSketches, cadmpeg_core::CodecError> {

@@ -2528,8 +2528,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            geometry_transferred:
-                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
             coverage: [
                 (crate::coverage::LEGACY_V1_POINTS, decoded),
                 (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),

@@ -201,7 +201,6 @@ pub(crate) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) 
     table
         .entries
         .iter()
-        .filter(|entry| entry.class_id == 200)
         .filter_map(FeatureEntityTableEntry::source_entity_id)
         .collect()
 }
@@ -309,16 +308,13 @@ pub(crate) fn read_entries(
         } else {
             (EntryPayload::Plain, after_class)
         };
-        let terminal_state = if class_id == 200 {
-            payload
+        let terminal_state = match entry_payload {
+            EntryPayload::Source { .. } => payload
                 .get(body_start)
                 .copied()
-                .filter(|state| matches!(state, 0 | 1))
-        } else {
-            match entry_payload {
-                EntryPayload::Related { state, .. } => Some(state.as_u8()),
-                _ => None,
-            }
+                .filter(|state| matches!(state, 0 | 1)),
+            EntryPayload::Related { state, .. } => Some(state.as_u8()),
+            EntryPayload::Plain => None,
         };
         let terminal_table_separator = (index + 1 == count
             && terminal_state.is_some()

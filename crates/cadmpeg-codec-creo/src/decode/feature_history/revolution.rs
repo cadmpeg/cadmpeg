@@ -428,7 +428,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                     CurveId::mint(format!(
                         "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
                     )).expect("identity grammar"),
-                    geometry,
+                    CurveGeometry::from(geometry),
                     transform.offset,
                     format!(
                         "FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"
@@ -500,9 +500,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         let sketch_id = model_sketch_id(scan, definition);
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
-                let Some(geometry) = extruded_section_line(transform, *point) else {
-                    continue;
-                };
+                let geometry = extruded_section_line(transform, *point);
                 pending.push((
                     CurveId::mint(format!(
                         "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"

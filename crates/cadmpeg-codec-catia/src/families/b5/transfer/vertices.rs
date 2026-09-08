@@ -12,7 +12,7 @@ use cadmpeg_ir::topology::{Point, Vertex};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
-use super::edges::{b5_support_endpoints, b5_vertex_point};
+use super::edges::b5_support_endpoints;
 use super::{annotate, distance, B5SupportPlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
 
@@ -26,14 +26,12 @@ pub(super) fn transfer_vertex_tolerances(
 ) -> BTreeMap<usize, f64> {
     let mut tolerances = graph.vertex_tolerances.clone();
     for (&edge, supports) in supports {
-        let Some(&vertices) = graph.edge_vertices.get(&edge) else {
+        let Some(&vertices) = graph.vertices.edges().get(&edge) else {
             continue;
         };
-        let [Some(first), Some(second)] = vertices.map(|vertex| b5_vertex_point(graph, vertex))
-        else {
+        let Some(coordinates) = graph.vertices.edge_points(edge) else {
             continue;
         };
-        let coordinates = [first, second];
         for support in supports {
             let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves) else {
                 continue;
@@ -54,7 +52,7 @@ pub(super) fn transfer_vertex_tolerances(
             for (vertex, residual) in residuals {
                 if residual > EPS_VERTEX_RESIDUAL_INCREMENT && residual.is_finite() {
                     tolerances
-                        .entry(vertex)
+                        .entry(vertex.combined_index(graph.vertices.raw_points().len()))
                         .and_modify(|tolerance| {
                             *tolerance = tolerance.max(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
                         })
@@ -75,7 +73,7 @@ pub(super) fn emit_vertices(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
     let vertex_tolerances = &plan.vertex_tolerances;
-    for (index, coordinates) in graph.vertex_points.iter().enumerate() {
+    for (index, coordinates) in graph.vertices.raw_points().iter().enumerate() {
         if !used_vertices.contains(&index) {
             continue;
         }
@@ -110,8 +108,8 @@ pub(super) fn emit_vertices(
             tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
-    for (rank, vertex) in graph.logical_vertices.iter().enumerate() {
-        let index = graph.vertex_points.len() + rank;
+    for (rank, vertex) in graph.vertices.logical_vertices().iter().enumerate() {
+        let index = graph.vertices.raw_points().len() + rank;
         if !used_vertices.contains(&index) {
             continue;
         }

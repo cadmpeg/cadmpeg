@@ -320,7 +320,8 @@ impl BrepTransferDiagnostics {
         );
         coverage.record(
             crate::coverage::BREP_VERTEX_CARRIER_ZERO_CANDIDATE_COUNT,
-            self.vertex_solve.carrier_zero_candidate_vertices,
+            self.vertex_solve.carrier_no_geometric_candidate_vertices
+                + self.vertex_solve.carrier_no_valid_candidate_vertices,
         );
         if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
             coverage.record(
@@ -348,7 +349,7 @@ impl BrepTransferDiagnostics {
         );
         coverage.record(
             crate::coverage::BREP_PCURVE_PATH_COUNT,
-            self.vertex_solve.pcurve.paths,
+            self.vertex_solve.pcurve.paths(),
         );
         let pcurve = &self.vertex_solve.pcurve;
         if pcurve.inactive_paths > 0
@@ -387,7 +388,7 @@ impl BrepTransferDiagnostics {
         );
         if pcurve.carrier_validated_paths > 0
             || pcurve.carrier_rejected_paths > 0
-            || pcurve.carrier_unknown_paths > 0
+            || pcurve.carrier_unknown_paths() > 0
             || pcurve.carrier_rejected_records > 0
         {
             coverage.record(
@@ -400,7 +401,7 @@ impl BrepTransferDiagnostics {
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PATH_COUNT,
-                pcurve.carrier_unknown_paths,
+                pcurve.carrier_unknown_paths(),
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_SURFACE_PATH_COUNT,
@@ -450,7 +451,7 @@ impl BrepTransferDiagnostics {
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_TWO_CHART_MAPPED_RECORD_COUNT,
-                self.vertex_solve.pcurve.two_chart_mapped_records,
+                self.vertex_solve.pcurve.two_chart_mapped_records(),
             );
             coverage.record(
                 crate::coverage::BREP_PCURVE_TWO_CHART_COMPLETE_RECORD_COUNT,
@@ -614,16 +615,17 @@ fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
     ) || scan.surfaces.rows.iter().any(|row| row.id == face_id)
 }
 
-fn merge_body_components(
-    components: Vec<(Vec<u32>, BTreeSet<u32>)>,
-) -> Vec<(Vec<u32>, BTreeSet<u32>)> {
+fn merge_body_components(components: Vec<NeutralShellSpec>) -> Vec<NeutralShellSpec> {
     let mut faces = Vec::new();
     let mut curves = BTreeSet::new();
-    for (component_faces, component_curves) in components {
-        faces.extend(component_faces);
-        curves.extend(component_curves);
+    for component in components {
+        faces.extend(component.faces);
+        curves.extend(component.wire_curves);
     }
-    vec![(faces, curves)]
+    vec![NeutralShellSpec {
+        faces,
+        wire_curves: curves,
+    }]
 }
 
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
@@ -1386,7 +1388,10 @@ pub(in super::super) fn transfer_native_brep(
                 .copied()
                 .filter(|curve_id| neutral_edge_curves.contains(curve_id))
                 .collect::<BTreeSet<_>>();
-            (faces, curves)
+            NeutralShellSpec {
+                faces,
+                wire_curves: curves,
+            }
         })
         .collect::<Vec<_>>();
     let selected_body_count = crate::topology::selected_body_count(
@@ -1396,7 +1401,7 @@ pub(in super::super) fn transfer_native_brep(
     );
     let empty_component_count = body_components
         .iter()
-        .filter(|(faces, curves)| faces.is_empty() && curves.is_empty())
+        .filter(|component| component.faces.is_empty() && component.wire_curves.is_empty())
         .count();
     let explicit_single_body =
         scan.framing.declared_body_count == Some(1) || scan.framing.first_quilt_ptr == Some(0);
@@ -1457,7 +1462,10 @@ pub(in super::super) fn transfer_native_brep(
             ..NativeBrepTransferSummary::default()
         });
     }
-    diagnostics.emitted_face_count = body_components.iter().map(|(faces, _)| faces.len()).sum();
+    diagnostics.emitted_face_count = body_components
+        .iter()
+        .map(|component| component.faces.len())
+        .sum();
 
     let used_vertices = neutral_edge_curves
         .iter()
@@ -1613,7 +1621,9 @@ pub(in super::super) fn transfer_native_brep(
         }
     }
 
-    for (component_index, (faces, component_curves)) in body_components.iter().enumerate() {
+    for (component_index, component) in body_components.iter().enumerate() {
+        let faces = &component.faces;
+        let component_curves = &component.wire_curves;
         let body_id = BodyId::mint(format!("creo:visibgeom:body#{}", component_index + 1))
             .expect("identity grammar");
         let region_id = RegionId::mint(format!("creo:visibgeom:region#{}", component_index + 1))

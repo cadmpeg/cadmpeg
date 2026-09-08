@@ -479,7 +479,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id,
+        primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
         geometry: None,
     };
@@ -505,34 +505,36 @@ fn single_curve_annotation_projects_parameterized_offset() {
         Point2::new(0.0, -2.0),
         Point2::new(10.0, -2.0),
     );
-    let parameter = DesignParameter {
-        id: format!("{stream}:design-parameter#12"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 12,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(13),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code6,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "2 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#12"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 12,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(13),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code6,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "2 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d1".into(),
-        name_offset: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d1".into(),
+            name_offset: 80,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     let frame = DesignDimensionAnnotationFrame {
         id: format!("{stream}:design-dimension-annotation-frame#14"),
         companion_record_index: Some(15),
@@ -828,34 +830,36 @@ fn counted_angular_group_projects_unique_point_selected_line() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let parameter = DesignParameter {
-        id: format!("{stream}:design-parameter#20"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 20,
-        source_ordinal: 4,
-        source: crate::records::DesignParameterSource::new(
-            "Angular Dimension-4".into(),
-            Some(21),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "1.0471975512 rad".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 20,
+            source_ordinal: 4,
+            source: crate::records::DesignParameterSource::new(
+                "Angular Dimension-4".into(),
+                Some(21),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "1.0471975512 rad".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "rad".into(),
-            offset: Some(0),
-        }),
-        name: "d4".into(),
-        name_offset: 0,
-        evaluated_value: std::f64::consts::FRAC_PI_3,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "rad".into(),
+                offset: Some(70),
+            }),
+            name: "d4".into(),
+            name_offset: 80,
+            evaluated_value: std::f64::consts::FRAC_PI_3,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
@@ -922,23 +926,27 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         next_record_index: 31,
         next_byte_offset: 100,
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: format!("{stream}:sketch-point#40"),
         record_index: 40,
         owner_reference: Some(100),
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             40,
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
-            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-    };
+    })
+    .unwrap();
     let curve = |record_index: u32, start: Point2, end: Point2| {
         let delta_u = end.u - start.u;
         let delta_v = end.v - start.v;
@@ -951,7 +959,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             byte_offset: 0,
             geometry_offset: 0,
             entity_genesis: None,
-            primary_id: u64::from(record_index),
+            primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
             secondary_id: 0,
             geometry: Some(SketchCurveGeometry::Line {
                 start: Point3::new(start.u, start.v, 0.0),
@@ -968,7 +976,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         SketchEntityId("generated:point#40".into()),
         sketch.clone(),
         SketchGeometry::Point {
-            position: point.coordinates,
+            position: point.coordinates(),
         },
     )
     .with_native_ref(Some(point.id.clone()));

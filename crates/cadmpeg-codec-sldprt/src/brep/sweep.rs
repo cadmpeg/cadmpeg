@@ -28,13 +28,13 @@ const EPS_SWEEP_PROFILE_NURBS_E9: f64 = 1.0e-9;
 #[derive(Debug, Clone)]
 pub(crate) struct SweepCarrier {
     /// Stream-local attribute id of the record.
-    pub attr: u16,
+    pub(crate) attr: u16,
     /// Tag-byte offset in the stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Attribute of the profile curve carrier.
-    pub profile_attr: u16,
+    pub(crate) profile_attr: u16,
     /// Construction-specific fields.
-    pub kind: SweepKind,
+    pub(crate) kind: SweepKind,
 }
 
 /// The construction a [`SweepCarrier`] encodes.
