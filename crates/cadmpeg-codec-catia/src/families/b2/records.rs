@@ -889,10 +889,9 @@ pub(crate) fn b2_owner_packets_from_records(
                 B2OwnerReferenceEncoding::AllCompact,
             ]
             .into_iter()
-            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, encoding))
+            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding))
             .collect::<Vec<_>>();
-            let [mut packet] = candidates.try_into().ok()?;
-            packet.source_index = source_index;
+            let [packet] = candidates.try_into().ok()?;
             Some(packet)
         })
         .collect()
@@ -1221,6 +1220,7 @@ fn parameter_point_contains(point: &B2ParameterPoint, expected: f64) -> bool {
 fn b2_fixed_owner_packet(
     data: &[u8],
     frame: ConsolidatedFrame,
+    source_index: usize,
     reference_encoding: B2OwnerReferenceEncoding,
 ) -> Option<B2OwnerPacket> {
     if data.get(frame.payload) != Some(&0x89) {
@@ -1254,7 +1254,7 @@ fn b2_fixed_owner_packet(
     let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
     Some(B2OwnerPacket {
         pos: frame.pos,
-        source_index: 0,
+        source_index,
         header_token: frame.header_token,
         reference_encoding,
         references,
