@@ -3037,24 +3037,21 @@ fn plane_owned_bore_placements(
                 plane_origin.z - origin.z,
             )
             .dot(axis);
-            HolePlacement::Axis {
-                origin: Point3::new(
+            (
+                Point3::new(
                     origin.x + station * axis.x,
                     origin.y + station * axis.y,
                     origin.z + station * axis.z,
                 ),
-                axis: plane_normal,
-            }
+                plane_normal,
+            )
         })
         .fold(
-            HashMap::<[i64; 3], HolePlacement>::new(),
-            |mut placements, placement| {
-                let HolePlacement::Axis { origin, .. } = placement else {
-                    unreachable!("bore carriers always produce axis placements");
-                };
+            HashMap::<[i64; 3], (Point3, Vector3)>::new(),
+            |mut placements, (origin, axis)| {
                 placements
                     .entry([quantize(origin.x), quantize(origin.y), quantize(origin.z)])
-                    .or_insert(placement);
+                    .or_insert((origin, axis));
                 placements
             },
         )
@@ -3063,7 +3060,7 @@ fn plane_owned_bore_placements(
     placements.sort_by_key(|(key, _)| *key);
     let placements = placements
         .into_iter()
-        .map(|(_, placement)| placement)
+        .map(|(_, (origin, axis))| HolePlacement::Axis { origin, axis })
         .collect::<Vec<_>>();
     (!placements.is_empty()).then_some(placements)
 }
