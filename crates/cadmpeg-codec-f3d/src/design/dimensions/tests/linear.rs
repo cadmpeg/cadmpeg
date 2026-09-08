@@ -1136,12 +1136,26 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         wire.companion_record_index = group.companion_record_index;
         wire.record_index = group.companion_record_index - 1;
         wire.parameter_record_index = group.companion_record_index - 2;
+        wire.id = format!("{stream}:design-parameter-owner#{}", wire.record_index);
         group_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
     }
+    let mut group_parameter = zero_parameter.clone();
+    group_parameter.record_index = group_owner.parameter_record_index();
+    group_parameter.id = format!("{stream}:design-parameter#{}", group_parameter.record_index);
+    group_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                zero_parameter.source_kind().into(),
+                Some(group_owner.record_index()),
+                zero_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let combined = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&zero_parameter),
+            parameters: &[zero_parameter, group_parameter.clone()],
             owners: &[owner, group_owner.clone()],
             pairs: std::slice::from_ref(&pair),
             groups: std::slice::from_ref(&group),
@@ -1160,7 +1174,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let grouped = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&zero_parameter),
+            parameters: std::slice::from_ref(&group_parameter),
             owners: std::slice::from_ref(&group_owner),
             pairs: &[],
             groups: std::slice::from_ref(&group),
@@ -1197,7 +1211,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let indirect = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&zero_parameter),
+            parameters: std::slice::from_ref(&group_parameter),
             owners: std::slice::from_ref(&group_owner),
             pairs: &[],
             groups: std::slice::from_ref(&indirect_group),

@@ -1211,42 +1211,42 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         900,
         operation(DesignHemParameterOwners::GapLength {
             gap_owner_record_index: 901,
-            length_owner_record_index: 902,
+            length_owner_record_index: 904,
         }),
-        vec![owner(900, 901, 903), owner(900, 902, 904)],
+        vec![owner(900, 901, 903), owner(900, 904, 906)],
         vec![
             parameter(903, "HemGap", "mm", 0.02),
-            parameter(904, "HemLength", "mm", 10.0),
+            parameter(906, "HemLength", "mm", 10.0),
         ],
     );
     let rolled = project(
         910,
         operation(DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index: 911,
-            angle_owner_record_index: 912,
+            angle_owner_record_index: 914,
         }),
-        vec![owner(910, 911, 913), owner(910, 912, 914)],
+        vec![owner(910, 911, 913), owner(910, 914, 916)],
         vec![
             parameter(913, "HemRadius", "mm", 0.5),
-            parameter(914, "HemAngle", "deg", std::f64::consts::FRAC_PI_2),
+            parameter(916, "HemAngle", "deg", std::f64::consts::FRAC_PI_2),
         ],
     );
     let teardrop = project(
         920,
         operation(DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index: 921,
-            length_owner_record_index: 922,
-            radius_owner_record_index: 923,
+            length_owner_record_index: 924,
+            radius_owner_record_index: 927,
         }),
         vec![
-            owner(920, 921, 924),
-            owner(920, 922, 925),
-            owner(920, 923, 926),
+            owner(920, 921, 923),
+            owner(920, 924, 926),
+            owner(920, 927, 929),
         ],
         vec![
-            parameter(924, "HemGap", "mm", 0.25),
-            parameter(925, "HemLength", "mm", 10.0),
-            parameter(926, "HemRadius", "mm", 0.5),
+            parameter(923, "HemGap", "mm", 0.25),
+            parameter(926, "HemLength", "mm", 10.0),
+            parameter(929, "HemRadius", "mm", 0.5),
         ],
     );
 
