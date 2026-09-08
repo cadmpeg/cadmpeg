@@ -1689,3 +1689,18 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
     assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
     assert_eq!(crate::native::F3dNative::load(&namespace).unwrap(), native);
 }
+
+#[test]
+fn segment_type_guid_preserves_relaxed_text_and_rejects_invalid_text() {
+    for guid in ["g".repeat(36), "_".repeat(38), "bad".into()] {
+        let wire = format!(
+            r#"{{"id":"type","byte_offset":0,"type_guid":"{guid}","type_guid_offset":4,"version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}}"#
+        );
+        let decoded = serde_json::from_str::<crate::records::SegmentType>(&wire);
+        if guid == "bad" {
+            assert!(decoded.is_err());
+        } else {
+            assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), wire);
+        }
+    }
+}

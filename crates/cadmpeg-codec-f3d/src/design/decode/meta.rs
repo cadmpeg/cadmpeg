@@ -171,7 +171,10 @@ pub fn decode_component_naming_spaces(
                             .is_some_and(|base| {
                                 base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                             })
-                        && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
+                        && design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(inline_type_guid)
                         && design_type
                             .entities
                             .values()
@@ -353,7 +356,11 @@ pub(crate) fn typed_primary_frames<'a>(
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
     let mut typed_entities = HashSet::new();
     for design_type in &meta.types {
-        if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
+        if !design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
+        {
             continue;
         }
         for &entity_id in design_type.entities.values() {
@@ -371,6 +378,7 @@ pub(crate) fn typed_primary_frames<'a>(
         if !primary_frame
             .design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(type_guid)
         {
             continue;
@@ -538,6 +546,7 @@ pub fn decode_feature_timelines(
             .filter(|(_, design_type)| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
             })
             .collect::<Vec<_>>();
@@ -581,7 +590,7 @@ pub fn decode_feature_timelines(
                 type_guids_by_entity
                     .entry(*entity_id)
                     .or_default()
-                    .push(&design_type.type_guid);
+                    .push(design_type.type_guid.as_str());
             }
         }
         let mut source_ordinal = 0_u32;

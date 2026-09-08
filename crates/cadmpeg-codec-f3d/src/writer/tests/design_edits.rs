@@ -78,7 +78,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         panic!("parsed entity locations");
     };
     assert_eq!(entities.len(), 2);
-    object.type_guid = "91111111-2222-3333-4444-555555555555".into();
+    object.type_guid = "91111111-2222-3333-4444-555555555555"
+        .to_owned()
+        .try_into()
+        .expect("type GUID");
     object.base_type_guid.as_mut().expect("base GUID").value =
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into();
     object.version = 9;
@@ -215,7 +218,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         object.entities.values().copied().collect::<Vec<_>>(),
         [33, 44]
     );
-    assert_eq!(object.type_guid, "91111111-2222-3333-4444-555555555555");
+    assert_eq!(
+        object.type_guid.as_str(),
+        "91111111-2222-3333-4444-555555555555"
+    );
     assert_eq!(
         object
             .base_type_guid

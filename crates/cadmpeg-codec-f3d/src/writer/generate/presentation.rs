@@ -30,7 +30,7 @@ pub(crate) struct GeneratedDesignType {
 impl From<&SegmentType> for GeneratedDesignType {
     fn from(value: &SegmentType) -> Self {
         Self {
-            type_guid: value.type_guid.clone(),
+            type_guid: value.type_guid.as_str().to_owned(),
             base_type_guid: value
                 .base_type_guid
                 .as_ref()
@@ -334,7 +334,10 @@ mod tests {
         crate::records::SegmentType {
             id: "synthetic:design-type#body-map".into(),
             byte_offset: 0,
-            type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+            type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
                 value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
@@ -356,7 +359,10 @@ mod tests {
         crate::records::SegmentType {
             id: "synthetic:design-type#browser-node".into(),
             byte_offset: 0,
-            type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID.into(),
+            type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
                 value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into(),

@@ -665,7 +665,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version,

@@ -2535,7 +2535,7 @@ pub struct SegmentType {
     pub byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
-    pub type_guid: String,
+    pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
     /// GUID of this type's base type; `None` for a root type, whose stored base
@@ -2567,7 +2567,7 @@ struct SegmentTypeWire {
     pub byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
-    pub type_guid: String,
+    pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
     /// GUID of this type's base type; `None` for a root type, whose stored base

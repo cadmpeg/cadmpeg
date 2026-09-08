@@ -311,8 +311,11 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
-            lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)
-                .filter(|(guid, _)| is_guid_relaxed(guid)),
+            lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic).and_then(|(guid, next)| {
+                crate::records::DesignRelaxedGuidText::try_from(guid)
+                    .ok()
+                    .map(|guid| (guid, next))
+            }),
             "type GUID",
             at,
         )?;
@@ -699,7 +702,7 @@ mod tests {
         assert_eq!(types.len(), 3);
 
         // Every field of an entry belongs to that entry, not to its successor.
-        assert_eq!(types[0].type_guid, first);
+        assert_eq!(types[0].type_guid.as_str(), first);
         assert_eq!(
             types[0]
                 .base_type_guid
@@ -714,7 +717,7 @@ mod tests {
             [10, 11]
         );
 
-        assert_eq!(types[1].type_guid, second);
+        assert_eq!(types[1].type_guid.as_str(), second);
         assert_eq!(types[1].base_type_guid, None);
 
         assert_eq!(types[1].version, 7);
@@ -724,7 +727,7 @@ mod tests {
             [20]
         );
 
-        assert_eq!(types[2].type_guid, third);
+        assert_eq!(types[2].type_guid.as_str(), third);
         assert_eq!(
             types[2]
                 .base_type_guid
@@ -756,7 +759,7 @@ mod tests {
             assert!(design_type.byte_offset < design_type.type_guid_offset);
             assert_eq!(
                 string_at(design_type.type_guid_offset, 36),
-                design_type.type_guid
+                design_type.type_guid.as_str()
             );
             assert_eq!(u32_at(design_type.version_offset), design_type.version);
             if let Some(base) = &design_type.base_type_guid {

@@ -141,7 +141,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| crate::records::SegmentType {
         id: id.into(),
         byte_offset: 0,
-        type_guid: type_guid.into(),
+        type_guid: type_guid.to_owned().try_into().expect("type GUID"),
         type_guid_offset: 4,
         base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
             .then(|| crate::records::RecordedValue {

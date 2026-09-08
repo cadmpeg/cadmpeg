@@ -369,7 +369,10 @@ pub(crate) struct BodyMapRecord {
 
 fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
     meta.types.iter().any(|design_type| {
-        design_type.type_guid.eq_ignore_ascii_case(type_guid)
+        design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
             && design_type
                 .entities
                 .values()
@@ -463,6 +466,7 @@ pub(crate) fn snapshot_body_map_records(
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID)
         {
             continue;
@@ -670,6 +674,7 @@ fn body_map_records(
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_TYPE_GUID)
         {
             continue;
@@ -1247,7 +1252,7 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
                 value: value.to_owned(),
@@ -1312,7 +1317,10 @@ mod tests {
                 crate::records::SegmentType {
                     id: String::new(),
                     byte_offset: 0,
-                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("type GUID"),
                     type_guid_offset: 0,
                     base_type_guid: Some(crate::records::RecordedValue {
                         value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),

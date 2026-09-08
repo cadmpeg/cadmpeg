@@ -627,7 +627,7 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
                 value: value.to_owned(),

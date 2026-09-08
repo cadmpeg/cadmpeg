@@ -430,6 +430,7 @@ fn validate_design_type(
 ) -> bool {
     design_type
         .type_guid
+        .as_str()
         .eq_ignore_ascii_case(expected_type_guid)
         && design_type.version == expected_version
         && design_type.module == expected_module
@@ -1683,7 +1684,7 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
                 value: value.to_owned(),
@@ -2316,6 +2317,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_TYPE_GUID)
             })
             .expect("mesh-collection type");
@@ -2582,6 +2584,7 @@ mod tests {
                 .find(|design_type| {
                     design_type
                         .type_guid
+                        .as_str()
                         .eq_ignore_ascii_case(SCENE_NODE_TYPE_GUID)
                 })
                 .expect("Scene-node type"),
@@ -2639,6 +2642,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type")
@@ -2650,6 +2654,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type");
@@ -2682,6 +2687,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type");
@@ -2718,6 +2724,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type");

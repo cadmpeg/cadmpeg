@@ -1186,6 +1186,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
         {
             continue;

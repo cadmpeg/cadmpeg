@@ -33,7 +33,10 @@ fn generated_source_less_writes_design_type_metastream() {
             byte_offset: 0,
             module: "Fusion".to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![1, 2]),
-            type_guid: "11111111-2222-3333-4444-555555555555".into(),
+            type_guid: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 7,
@@ -44,7 +47,10 @@ fn generated_source_less_writes_design_type_metastream() {
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![277]),
-            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            type_guid: "22222222-3333-4444-5555-666666666666"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
                 value: "11111111-2222-3333-4444-555555555555".into(),
@@ -58,7 +64,10 @@ fn generated_source_less_writes_design_type_metastream() {
             byte_offset: 0,
             module: "FutureFeature".to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![999]),
-            type_guid: "33333333-4444-5555-6666-777777777777".into(),
+            type_guid: "33333333-4444-5555-6666-777777777777"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
                 value: "11111111-2222-3333-4444-555555555555".into(),
@@ -104,7 +113,9 @@ fn generated_source_less_writes_design_type_metastream() {
     assert_eq!(types.len(), 3);
     let fusion = types
         .iter()
-        .find(|design_type| design_type.type_guid == "11111111-2222-3333-4444-555555555555")
+        .find(|design_type| {
+            design_type.type_guid.as_str() == "11111111-2222-3333-4444-555555555555"
+        })
         .expect("Fusion type");
     assert_eq!(fusion.module, "Fusion");
     assert_eq!(
@@ -345,7 +356,10 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
         entities: crate::records::ReferenceRun::unlocated(vec![277]),
-        type_guid: "22222222-3333-4444-5555-666666666666".into(),
+        type_guid: "22222222-3333-4444-5555-666666666666"
+            .to_owned()
+            .try_into()
+            .expect("type GUID"),
         type_guid_offset: 0,
         base_type_guid: None,
         version: 4,
@@ -472,7 +486,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![277]),
-            type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID.into(),
+            type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 1,
@@ -483,7 +500,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 1,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![33]),
-            type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
+            type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 1,
@@ -494,7 +514,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 2,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![100]),
-            type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB".into(),
+            type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 11,
@@ -505,7 +528,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 3,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![600]),
-            type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2".into(),
+            type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 2,
@@ -516,7 +542,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 4,
             module: "Geometry".into(),
             entities: crate::records::ReferenceRun::unlocated(vec![601]),
-            type_guid: "F0130424-8B7E-4092-93C9-1CA807482534".into(),
+            type_guid: "F0130424-8B7E-4092-93C9-1CA807482534"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 0,
@@ -527,7 +556,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             byte_offset: 5,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::ReferenceRun::unlocated(vec![602]),
-            type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B".into(),
+            type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 3,
@@ -540,7 +572,9 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             entities: crate::records::ReferenceRun::unlocated(vec![101]),
             type_guid: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE
                 .0
-                .into(),
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,

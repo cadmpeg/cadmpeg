@@ -1536,8 +1536,11 @@ pub(crate) fn validate_design_type_edits(
         }
         let mut strings = Vec::new();
         if after.type_guid != before.type_guid {
-            validate_fixed_design_string(id, &before.type_guid, &after.type_guid)?;
-            strings.push((after.type_guid_offset, after.type_guid.as_bytes().to_vec()));
+            validate_fixed_design_string(id, before.type_guid.as_str(), after.type_guid.as_str())?;
+            strings.push((
+                after.type_guid_offset,
+                after.type_guid.as_str().as_bytes().to_vec(),
+            ));
         }
         if after.base_type_guid != before.base_type_guid {
             let before_base = before

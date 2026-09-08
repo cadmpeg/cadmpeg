@@ -326,6 +326,7 @@ fn decode_sketch_visibilities_in_stream(
             || !member_type.is_some_and(|member_type| {
                 member_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
                     && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
                     && member_type.module == "Geometry"
@@ -1206,7 +1207,7 @@ pub fn decode_sketch_relations(
             let class = stream_types
                 .get(&record.class_tag.code())
                 .and_then(|design_type| {
-                    SketchRelationClass::of(&design_type.type_guid, design_type.version)
+                    SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
                 });
             let parsed = class.and_then(|class| parse_classed_sketch_relation(payload, class));
             let Some(parsed) = parsed else {
@@ -1437,6 +1438,7 @@ pub(crate) fn decode_sketch_points_from_stream(
         if !frame
             .design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
             || frame.design_type.module != CURRENT_SKETCH_POINT_TYPE.2
             || ![0, 8, 10, CURRENT_SKETCH_POINT_TYPE.1].contains(&frame.design_type.version)
@@ -1483,6 +1485,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                 let design_type = companion_frame.design_type;
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
                     && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
                     && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
@@ -1598,10 +1601,13 @@ pub(crate) fn decode_sketch_texts_from_stream(
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
     for frame in design_primary_frames(bytes, meta)? {
-        if !SKETCH_TEXT_TYPE_GUIDS
-            .iter()
-            .any(|type_guid| frame.design_type.type_guid.eq_ignore_ascii_case(type_guid))
-        {
+        if !SKETCH_TEXT_TYPE_GUIDS.iter().any(|type_guid| {
+            frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(type_guid)
+        }) {
             continue;
         }
         let record_index = u32::try_from(frame.entity_id)
@@ -2699,7 +2705,7 @@ pub(crate) fn decode_sketch_curve_identities_from_stream(
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
         let curve_class = SketchCurveClass::of(
-            &frame.design_type.type_guid,
+            frame.design_type.type_guid.as_str(),
             frame.design_type.version,
             &frame.design_type.module,
         );

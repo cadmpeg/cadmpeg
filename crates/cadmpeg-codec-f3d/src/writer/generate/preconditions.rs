@@ -250,7 +250,10 @@ fn source_less_design_record_type<'a>(
 }
 
 fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -> bool {
-    design_type.type_guid.eq_ignore_ascii_case(expected.0)
+    design_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(expected.0)
         && design_type.version == expected.1
         && design_type.module == expected.2
 }
@@ -366,7 +369,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                     .entities
                     .values()
                     .any(|registered| *registered == u64::from(owner_reference))
-                    && design_type.type_guid.eq_ignore_ascii_case(
+                    && design_type.type_guid.as_str().eq_ignore_ascii_case(
                         crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                     )
             })
@@ -551,14 +554,14 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         {
             return Err(CodecError::InvalidInput(format!(
                 "duplicate F3D Design type GUID: {}",
-                design_type.type_guid
+                design_type.type_guid.as_str()
             )));
         }
         for entity_id in design_type.entities.values() {
             if let Some(before) = entity_types.insert(*entity_id, design_type.type_guid.as_str()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D Design entity {entity_id} is registered by both type {before} and type {}",
-                    design_type.type_guid
+                    design_type.type_guid.as_str()
                 )));
             }
             entity_modules.insert(*entity_id, design_type.module.clone());
@@ -589,7 +592,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             if !ancestors.insert(base.type_guid.as_str()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D Design type hierarchy contains a cycle at {}",
-                    base.type_guid
+                    base.type_guid.as_str()
                 )));
             }
             cursor = base;
