@@ -4,7 +4,6 @@ use super::assembly::is_supplemental_config_lane;
 use cadmpeg_ir::{Check, Finding, Severity};
 
 /// Validate `SolidWorks` native feature-input byte references.
-
 pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
