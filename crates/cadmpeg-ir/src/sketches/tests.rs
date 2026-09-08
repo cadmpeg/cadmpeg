@@ -490,27 +490,24 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
     use crate::sketches::{SketchEntityId, SketchId};
 
-    let profile = ProfileRef::SketchRegions {
-        sketch: SketchId("synthetic:test:sketch#region".into()),
-        regions: vec![
-            SketchProfileRegion::Loops {
-                outer: 2,
-                holes: vec![3, 5],
-            },
-            SketchProfileRegion::Loops {
-                outer: 8,
-                holes: Vec::new(),
-            },
-            SketchProfileRegion::Trimmed {
-                outer_boundary: vec![SketchProfileBoundaryUse {
+    let profile = ProfileRef::sketch_regions(
+        SketchId("synthetic:test:sketch#region".into()),
+        vec![
+            SketchProfileRegion::loops(2, vec![3, 5]).unwrap(),
+            SketchProfileRegion::loops(8, Vec::new()).unwrap(),
+            SketchProfileRegion::trimmed(
+                vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId("synthetic:test:sketch-entity#curve".into()),
-                    parameter_range: [0.25, 0.75],
+                    parameter_range: crate::geometry::DirectedParameterRange::new([0.25, 0.75])
+                        .unwrap(),
                     reversed: true,
                 }],
-                hole_boundaries: Vec::new(),
-            },
+                Vec::new(),
+            )
+            .unwrap(),
         ],
-    };
+    )
+    .unwrap();
     let json = serde_json::to_value(&profile).expect("serialize sketch regions");
     assert_eq!(json["kind"], "sketch_regions");
     assert_eq!(json["value"]["regions"][0]["outer"], 2);

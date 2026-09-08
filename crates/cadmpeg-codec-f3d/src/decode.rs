@@ -424,7 +424,7 @@ fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
         | ProfileRef::SpatialSketchSelection { .. } => false,
         ProfileRef::Sketch(_) | ProfileRef::Feature(_) => true,
         ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => true,
-        ProfileRef::SketchRegions { regions, .. } => !regions.is_empty(),
+        ProfileRef::SketchRegions { .. } => true,
         ProfileRef::SketchEntities { .. } => true,
         ProfileRef::HistoricalFaces { .. } => true,
         ProfileRef::Generated { .. } => true,

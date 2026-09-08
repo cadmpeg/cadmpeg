@@ -983,7 +983,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         ProfileRef::Faces(faces) => faces.is_empty(),
         ProfileRef::Generated { .. } => false,
         ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
-        ProfileRef::SketchRegions { regions, .. } => regions.is_empty(),
+        ProfileRef::SketchRegions { .. } => false,
         ProfileRef::SketchEntities { .. } => false,
         ProfileRef::SketchSelection { .. } | ProfileRef::SpatialSketchSelection { .. } => false,
         ProfileRef::HistoricalFaces { .. } => false,

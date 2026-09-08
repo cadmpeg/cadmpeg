@@ -1227,10 +1227,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
 
 #[test]
 fn historical_selection_preserves_first_member_region_order() {
-    let region = |outer| SketchProfileRegion::Loops {
-        outer,
-        holes: Vec::new(),
-    };
+    let region = |outer| SketchProfileRegion::loops(outer, Vec::new()).unwrap();
     assert_eq!(
         crate::design::profile_select::ordered_unique_profile_selections([
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
@@ -1268,36 +1265,29 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     );
 
     let regions = [
-        ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions: vec![SketchProfileRegion::Loops {
-                outer: 4,
-                holes: vec![5],
-            }],
-        },
-        ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions: vec![SketchProfileRegion::Loops {
-                outer: 2,
-                holes: Vec::new(),
-            }],
-        },
+        ProfileRef::sketch_regions(
+            sketch.clone(),
+            vec![SketchProfileRegion::loops(4, vec![5]).unwrap()],
+        )
+        .unwrap(),
+        ProfileRef::sketch_regions(
+            sketch.clone(),
+            vec![SketchProfileRegion::loops(2, Vec::new()).unwrap()],
+        )
+        .unwrap(),
     ];
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions),
-        Some(ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions: vec![
-                SketchProfileRegion::Loops {
-                    outer: 4,
-                    holes: vec![5],
-                },
-                SketchProfileRegion::Loops {
-                    outer: 2,
-                    holes: Vec::new(),
-                },
-            ],
-        })
+        Some(
+            ProfileRef::sketch_regions(
+                sketch.clone(),
+                vec![
+                    SketchProfileRegion::loops(4, vec![5]).unwrap(),
+                    SketchProfileRegion::loops(2, Vec::new()).unwrap(),
+                ]
+            )
+            .unwrap()
+        )
     );
 
     assert_eq!(
@@ -1796,10 +1786,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         None
     );
     let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-        SketchProfileRegion::Loops {
-            outer: 0,
-            holes: vec![1],
-        },
+        SketchProfileRegion::loops(0, vec![1]).unwrap(),
     ]);
     assert_eq!(
         transition_selection(vec![
@@ -1828,10 +1815,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         transition_selection(vec![Some(region)]),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                SketchProfileRegion::Loops {
-                    outer: 0,
-                    holes: vec![1],
-                },
+                SketchProfileRegion::loops(0, vec![1]).unwrap(),
             ])
         )
     );

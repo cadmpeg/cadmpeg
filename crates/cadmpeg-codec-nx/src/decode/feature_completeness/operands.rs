@@ -495,13 +495,7 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         ProfileRef::Sketch(_) => false,
         ProfileRef::SketchEntities { .. } => false,
         ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
-        ProfileRef::SketchRegions { regions, .. } => {
-            regions.is_empty()
-                || regions
-                    .iter()
-                    .enumerate()
-                    .any(|(index, region)| regions[..index].contains(region))
-        }
+        ProfileRef::SketchRegions { .. } => false,
         ProfileRef::HistoricalFaces { .. } => false,
         ProfileRef::Generated { curves, .. } => curves
             .iter()
