@@ -36,10 +36,8 @@ pub(crate) struct FamilyTable {
 }
 
 /// One ordered family-table column descriptor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableItem {
-    /// Legacy item object identity.
-    pub(crate) source_object_id: String,
     /// Source offset of the item object row.
     pub(crate) offset: usize,
     /// Stored item identifier.
@@ -53,10 +51,8 @@ pub(crate) struct FamilyTableItem {
 }
 
 /// One ordered family-table instance row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableInstance {
-    /// Legacy instance-row object identity.
-    pub(crate) source_object_id: String,
     /// Source offset of the instance object row.
     pub(crate) offset: usize,
     /// Stored instance name. This field is required to be non-empty UTF-8.
@@ -66,7 +62,6 @@ pub(crate) struct FamilyTableInstance {
     /// Direct model object referenced by the instance row.
     pub(crate) model_object_id: String,
     /// Values aligned by ordinal with [`FamilyTable::items`].
-    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) values: Vec<FamilyTableValue>,
 }
 
@@ -109,6 +104,53 @@ impl FamilyTableValuePayload {
             Self::String { .. } => 51,
             Self::Integer { .. } => 52,
         }
+    }
+}
+
+impl Serialize for FamilyTableItem {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source_object_id: String,
+            offset: &'a usize,
+            item_id: &'a i32,
+            type_code: &'a i32,
+            invisible: &'a i32,
+            name: &'a legacy::StringValue,
+        }
+        Wire {
+            source_object_id: legacy::object_node_id(self.offset),
+            offset: &self.offset,
+            item_id: &self.item_id,
+            type_code: &self.type_code,
+            invisible: &self.invisible,
+            name: &self.name,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl Serialize for FamilyTableInstance {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source_object_id: String,
+            offset: &'a usize,
+            name: &'a String,
+            attributes: &'a i32,
+            model_object_id: &'a String,
+            #[serde(serialize_with = "serialize_ordered")]
+            values: &'a Vec<FamilyTableValue>,
+        }
+        Wire {
+            source_object_id: legacy::object_node_id(self.offset),
+            offset: &self.offset,
+            name: &self.name,
+            attributes: &self.attributes,
+            model_object_id: &self.model_object_id,
+            values: &self.values,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -402,7 +444,6 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                 return None;
             }
             Some(FamilyTableItem {
-                source_object_id: item.id(),
                 offset: item.offset,
                 item_id: optional_integer(&index, item.offset, "id").ok()??,
                 type_code: optional_integer(&index, item.offset, "type").ok()??,
@@ -451,7 +492,6 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(FamilyTableInstance {
-                source_object_id: instance.id(),
                 offset: instance.offset,
                 name,
                 attributes,
