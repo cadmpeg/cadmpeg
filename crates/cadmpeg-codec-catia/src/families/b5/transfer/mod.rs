@@ -676,18 +676,22 @@ pub(crate) enum ResolvedPcurveSurface {
 
 /// Lower one resolved object-stream surface to an exact neutral carrier.
 pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPcurveSurface> {
-    surfaces::neutral_analytic_surface(surface)
-        .map(ResolvedPcurveSurface::Geometry)
-        .or_else(|| match surface {
-            B5Surface::RollingBall {
-                carrier_object_id,
-                definition,
-            } => Some(ResolvedPcurveSurface::RollingBall {
-                carrier_object_id: *carrier_object_id,
-                definition: Box::new(definition.clone()),
-            }),
-            _ => None,
-        })
+    match surfaces::surface_carrier(surface) {
+        surfaces::B5SurfaceCarrier::Analytic(geometry) => {
+            Some(ResolvedPcurveSurface::Geometry(geometry))
+        }
+        surfaces::B5SurfaceCarrier::Procedural(surfaces::B5ProceduralSurface::RollingBall {
+            carrier_object_id,
+            definition,
+        }) => Some(ResolvedPcurveSurface::RollingBall {
+            carrier_object_id,
+            definition: Box::new(definition.clone()),
+        }),
+        surfaces::B5SurfaceCarrier::Procedural(
+            surfaces::B5ProceduralSurface::Unresolved
+            | surfaces::B5ProceduralSurface::Revolution { .. },
+        ) => None,
+    }
 }
 
 /// Resolve a pcurve support carrier with the graph context required by exact
