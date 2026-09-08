@@ -876,7 +876,7 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain UFRxDoc string", None)?;
+        ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
         let _ = self.position().checked_add(len).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
         })?;
@@ -896,7 +896,7 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        ctx.charge_retained(count as u64, "retain UFRxDoc string", None)?;
+        ctx.charge_retained(count as u64, "retain UFRxDoc string")?;
         let value = self.take(count, field)?;
         std::str::from_utf8(value)
             .map(str::to_owned)

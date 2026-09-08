@@ -755,7 +755,6 @@ fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) 
                 "iges_surface_poles",
                 MAX_SURFACE_POLES as u64,
                 pole_count as u64,
-                None,
             );
         }
         return None;
@@ -1874,7 +1873,6 @@ pub(super) fn project(
                 "iges_revolution_poles",
                 MAX_SURFACE_POLES as u64,
                 u64::MAX,
-                None,
             ));
         };
         if surface_pole_count > MAX_SURFACE_POLES {
@@ -1882,7 +1880,6 @@ pub(super) fn project(
                 "iges_revolution_poles",
                 MAX_SURFACE_POLES as u64,
                 surface_pole_count as u64,
-                None,
             ));
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
@@ -2066,7 +2063,6 @@ pub(super) fn project(
                     "iges_surface_poles",
                     MAX_SURFACE_POLES as u64,
                     u64::MAX,
-                    None,
                 ));
             }
             Some(requested) if requested > MAX_SURFACE_POLES as u64 => {
@@ -2074,7 +2070,6 @@ pub(super) fn project(
                     "iges_surface_poles",
                     MAX_SURFACE_POLES as u64,
                     requested,
-                    None,
                 ));
             }
             Some(_) => {}
@@ -2107,7 +2102,6 @@ pub(super) fn project(
                 "iges_surface_poles",
                 MAX_SURFACE_POLES as u64,
                 pole_count as u64,
-                None,
             ));
         }
         let Some(u_knot_count) = u_count

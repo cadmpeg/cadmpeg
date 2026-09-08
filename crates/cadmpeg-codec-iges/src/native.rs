@@ -1719,7 +1719,7 @@ impl OccurrenceExpansion<'_, '_> {
     ) -> Result<Option<u32>, CodecError> {
         let _depth = self
             .ctx
-            .map(|ctx| ctx.enter_nested("iges_product_occurrence", None))
+            .map(|ctx| ctx.enter_nested("iges_product_occurrence"))
             .transpose()?;
         if occurrences.len() >= self.output_limit {
             return Ok(Some(instance_sequence));

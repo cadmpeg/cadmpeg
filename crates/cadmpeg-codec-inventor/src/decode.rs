@@ -190,11 +190,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         );
                         if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
-                                let data = ctx.copy_retained(
-                                    bytes,
-                                    "retain Inventor preview asset",
-                                    Some(property.raw.location()),
-                                )?;
+                                let data =
+                                    ctx.copy_retained(bytes, "retain Inventor preview asset")?;
                                 ir.model.assets.push(Asset {
                                     id: AssetId::mint(format!(
                                         "inventor:document:asset#preview-{}",
@@ -1414,7 +1411,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let data = ctx.copy_retained(
                 carrier.bytes.window(),
                 "retain Inventor kernel carrier that read no geometry",
-                Some(carrier.bytes.location()),
             )?;
             source_fidelity.retain_unknown_records(
                 &format!("RSeStorage/B{}:expanded", carrier.segment_token),

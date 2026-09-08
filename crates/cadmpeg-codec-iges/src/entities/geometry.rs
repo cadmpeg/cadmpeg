@@ -695,7 +695,7 @@ pub(crate) fn resolve_transform(
         return Err("transformation pointer names an even Directory sequence".into());
     }
     let _nested = ctx
-        .map(|ctx| ctx.enter_nested("iges_transform_chain", None))
+        .map(|ctx| ctx.enter_nested("iges_transform_chain"))
         .transpose()
         .map_err(|error| error.to_string())?;
     let depth_limit = ctx
@@ -839,7 +839,6 @@ pub(crate) fn enforce_transform_depth(
                     "iges_transform_depth",
                     depth_limit as u64,
                     depth.saturating_add(1) as u64,
-                    None,
                 ));
             }
             if !path.insert(sequence) {

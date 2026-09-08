@@ -466,7 +466,7 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor assembly string", None)?;
+        ctx.charge_retained(len as u64, "retain Inventor assembly string")?;
         self.source
             .utf16_le(count)
             .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))

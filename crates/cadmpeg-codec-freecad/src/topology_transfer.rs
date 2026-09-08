@@ -454,7 +454,7 @@ impl<'a> Builder<'a> {
         reversed: bool,
         output: &mut Vec<RegionId>,
     ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("transfer FCStd topology nesting", None)?;
+        let _depth = ctx.enter_nested("transfer FCStd topology nesting")?;
         let shape = self.shape(shape_index)?.clone();
         if matches!(
             shape.kind(),

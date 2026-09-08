@@ -203,7 +203,6 @@ pub(super) fn project(
                 "iges_copious_tuples",
                 MAX_COPIOUS_TUPLES as u64,
                 u64::try_from(raw_tuple_count).unwrap_or(u64::MAX),
-                None,
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {

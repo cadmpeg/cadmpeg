@@ -140,14 +140,14 @@ fn scoped_reservations_release_and_commit_without_double_counting() {
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     {
-        let mut reservation = ctx.reserve_scoped(3, "temporary", None).unwrap();
+        let mut reservation = ctx.reserve_scoped(3, "temporary").unwrap();
         reservation.grow(2).unwrap();
         assert_eq!(reservation.bytes(), 5);
     }
-    ctx.reserve_scoped(5, "released", None).unwrap();
-    let reservation = ctx.reserve_scoped(2, "retained", None).unwrap();
+    ctx.reserve_scoped(5, "released").unwrap();
+    let reservation = ctx.reserve_scoped(2, "retained").unwrap();
     reservation.commit().unwrap();
-    ctx.charge_retained(5, "retained", None).unwrap();
+    ctx.charge_retained(5, "retained").unwrap();
 }
 
 #[test]
@@ -171,12 +171,12 @@ fn every_session_dimension_refuses_and_fuses() {
 
     assert_dimension(
         |limits| limits.max_materialized_bytes = 1,
-        |ctx| ctx.reserve_scoped(2, "materialize", None).map(drop),
+        |ctx| ctx.reserve_scoped(2, "materialize").map(drop),
         ResourceDimension::MaterializedBytes,
     );
     assert_dimension(
         |limits| limits.max_retained_bytes = 1,
-        |ctx| ctx.charge_retained(2, "retain", None),
+        |ctx| ctx.charge_retained(2, "retain"),
         ResourceDimension::RetainedBytes,
     );
     assert_dimension(
@@ -200,7 +200,7 @@ fn every_session_dimension_refuses_and_fuses() {
     );
     assert_dimension(
         |limits| limits.max_recursion_depth = 0,
-        |ctx| ctx.enter_nested("nested", None).map(drop),
+        |ctx| ctx.enter_nested("nested").map(drop),
         ResourceDimension::RecursionDepth,
     );
     assert_dimension(
@@ -225,7 +225,7 @@ fn tiny_resource_limits_refuse_entities_and_materialized_bytes() {
     let policy = policy_with(|limits| limits.max_materialized_bytes = 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     assert!(matches!(
-        ctx.reserve_scoped(2, "materialize", None),
+        ctx.reserve_scoped(2, "materialize"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
@@ -255,9 +255,9 @@ fn depth_is_scoped_and_work_budget_is_sticky() {
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     {
-        let _guard = ctx.enter_nested("first", None).unwrap();
+        let _guard = ctx.enter_nested("first").unwrap();
     }
-    ctx.enter_nested("second", None).unwrap();
+    ctx.enter_nested("second").unwrap();
 
     let budget = ctx.work_budget(10);
     assert!(budget.charge_by(2));
@@ -276,7 +276,7 @@ fn depth_is_scoped_and_work_budget_is_sticky() {
 #[test]
 fn local_limit_refusal_uses_codec_dimension() {
     assert!(matches!(
-        refuse_local_limit("records", 4, 5, None),
+        refuse_local_limit("records", 4, 5),
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Codec("records")
                 && limit.context.operation == "records"
@@ -288,7 +288,7 @@ fn codec_limit_refusal_fuses_the_decode_session() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
     assert!(matches!(
-        ctx.refuse_codec_limit("nested_records", 4, 5, None),
+        ctx.refuse_codec_limit("nested_records", 4, 5),
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Codec("nested_records")
                 && limit.limit == 4

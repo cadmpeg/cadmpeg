@@ -172,7 +172,6 @@ fn commit_mesh_buffer(
         .charge_retained(
             u64::try_from(declared).unwrap_or(u64::MAX),
             "rhino_mesh_buffer",
-            None,
         )
         .map_err(|refusal| expansion_refused(position, &refusal))
 }

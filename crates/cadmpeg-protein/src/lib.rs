@@ -66,7 +66,6 @@ fn read_entry_bounded(
                 "Protein schema allocation",
                 MAX_SCHEMA_BYTES,
                 bytes.len().saturating_add(read) as u64,
-                None,
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);
