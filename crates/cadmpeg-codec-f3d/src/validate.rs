@@ -5564,58 +5564,40 @@ fn validate_fillet_operand_groups<'a>(
             }
             continue;
         }
-        let has_fixed_assignment =
-            scope
-                .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
-                .is_some_and(|(scope, fixed)| {
-                    fixed.groups.iter().all(|group| {
-                        group.tangency_weight.as_ref().is_none_or(|tangency| {
-                            tangency.value.is_finite() && tangency.value > 0.0
-                        }) && group
-                            .law
-                            .radii()
-                            .all(|radius| radius.value.is_finite() && radius.value >= 0.0)
-                            && group.law.radii().any(|radius| radius.value > 0.0)
-                            && group.law.intermediate().iter().all(|row| {
-                                row.parameter.value.is_finite()
-                                    && (0.0..1.0).contains(&row.parameter.value)
-                            })
-                            && group
-                                .law
-                                .intermediate()
-                                .windows(2)
-                                .all(|rows| rows[0].parameter.value < rows[1].parameter.value)
-                    }) && native.design_parameter_owners.iter().all(|owner| {
-                        design_stream(owner.id()) != native_stream
-                            || owner.scope_record_index() != scope.record_index
-                    }) && fixed
-                        .groups
-                        .iter()
-                        .flat_map(|group| {
-                            group
-                                .tangency_weight
-                                .iter()
-                                .map(|tangency| tangency.record_index)
-                                .chain(group.law.radii().map(|scalar| scalar.record_index))
-                                .chain(
-                                    group
-                                        .law
-                                        .intermediate()
-                                        .iter()
-                                        .map(|row| row.parameter.record_index),
-                                )
-                        })
-                        .all(|record_index| {
-                            scope
-                                .reference_members
-                                .values()
-                                .filter(|member| **member == record_index)
-                                .count()
-                                == 1
-                        })
-                        && ((fixed_edge_groups.len() == fixed.groups.len() && is_fixed_edge_group)
-                            || (fixed.groups.len() == 1 && sole_compact_group_shape))
-                });
+        let has_fixed_assignment = scope
+            .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
+            .is_some_and(|(scope, fixed)| {
+                native.design_parameter_owners.iter().all(|owner| {
+                    design_stream(owner.id()) != native_stream
+                        || owner.scope_record_index() != scope.record_index
+                }) && fixed
+                    .groups
+                    .iter()
+                    .flat_map(|group| {
+                        group
+                            .tangency_weight()
+                            .into_iter()
+                            .map(|tangency| tangency.record_index)
+                            .chain(group.law().radii().map(|scalar| scalar.record_index))
+                            .chain(
+                                group
+                                    .law()
+                                    .intermediate()
+                                    .iter()
+                                    .map(|row| row.parameter.record_index),
+                            )
+                    })
+                    .all(|record_index| {
+                        scope
+                            .reference_members
+                            .values()
+                            .filter(|member| **member == record_index)
+                            .count()
+                            == 1
+                    })
+                    && ((fixed_edge_groups.len() == fixed.groups.len() && is_fixed_edge_group)
+                        || (fixed.groups.len() == 1 && sole_compact_group_shape))
+            });
         if is_fillet
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment

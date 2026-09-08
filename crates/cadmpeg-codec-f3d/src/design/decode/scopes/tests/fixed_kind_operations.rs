@@ -124,13 +124,13 @@ pub(super) fn continue_fixed_kind_operations(
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup {
-                tangency_weight: Some(crate::records::feature::DesignFixedFilletScalar {
+            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
+                Some(crate::records::feature::DesignFixedFilletScalar {
                     value: 1.0,
                     record_index: 77,
                     value_offset: (fillet_start + 40) as u64,
                 }),
-                law: crate::records::feature::DesignFixedFilletLaw::Variable {
+                crate::records::feature::DesignFixedFilletLaw::Variable {
                     start: crate::records::feature::DesignFixedFilletScalar {
                         value: 0.0,
                         record_index: 78,
@@ -154,23 +154,25 @@ pub(super) fn continue_fixed_kind_operations(
                         },
                     }],
                 },
-            }],
+            )
+            .unwrap()],
         })
     );
     fillet_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 77]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup {
-                tangency_weight: None,
-                law: crate::records::feature::DesignFixedFilletLaw::Constant(
+            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
+                None,
+                crate::records::feature::DesignFixedFilletLaw::Constant(
                     crate::records::feature::DesignFixedFilletScalar {
                         value: 1.0,
                         record_index: 77,
                         value_offset: (fillet_start + 40) as u64
                     }
                 ),
-            }],
+            )
+            .unwrap()],
         })
     );
 
@@ -199,16 +201,17 @@ pub(super) fn continue_fixed_kind_operations(
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup {
-                tangency_weight: None,
-                law: crate::records::feature::DesignFixedFilletLaw::Constant(
+            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
+                None,
+                crate::records::feature::DesignFixedFilletLaw::Constant(
                     crate::records::feature::DesignFixedFilletScalar {
                         value: 0.5,
                         record_index: 89,
                         value_offset: (dynamic_scalar_at + 40) as u64
                     }
                 ),
-            }],
+            )
+            .unwrap()],
         })
     );
 
@@ -239,7 +242,7 @@ pub(super) fn continue_fixed_kind_operations(
     assert_eq!(fixed.groups.len(), 2);
     assert_eq!(
         fixed.groups[0]
-            .law
+            .law()
             .radii()
             .map(|scalar| scalar.value)
             .collect::<Vec<_>>(),
@@ -247,7 +250,7 @@ pub(super) fn continue_fixed_kind_operations(
     );
     assert_eq!(
         fixed.groups[1]
-            .law
+            .law()
             .radii()
             .map(|scalar| scalar.value)
             .collect::<Vec<_>>(),
@@ -255,8 +258,7 @@ pub(super) fn continue_fixed_kind_operations(
     );
     assert_eq!(
         fixed.groups[1]
-            .tangency_weight
-            .as_ref()
+            .tangency_weight()
             .map(|weight| (weight.value, weight.value_offset)),
         Some((0.75, (second_group_at + 2 * 115 + 40) as u64))
     );

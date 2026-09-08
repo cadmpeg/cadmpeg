@@ -1229,8 +1229,60 @@ pub struct DesignFixedFilletParameters {
     into = "DesignFixedFilletGroupWire"
 )]
 pub struct DesignFixedFilletGroup {
-    pub tangency_weight: Option<DesignFixedFilletScalar>,
-    pub law: DesignFixedFilletLaw,
+    tangency_weight: Option<DesignFixedFilletScalar>,
+    law: DesignFixedFilletLaw,
+}
+
+impl DesignFixedFilletGroup {
+    /// Admit a fillet radius law and optional tangency weight.
+    pub fn try_new(
+        tangency_weight: Option<DesignFixedFilletScalar>,
+        law: DesignFixedFilletLaw,
+    ) -> Result<Self, String> {
+        if tangency_weight
+            .as_ref()
+            .is_some_and(|weight| DesignPositiveScalar::new(weight.value).is_none())
+        {
+            return Err("tangency_weight must be positive and finite".into());
+        }
+        if !law
+            .radii()
+            .all(|radius| radius.value.is_finite() && radius.value >= 0.0)
+        {
+            return Err("radii must be finite and non-negative".into());
+        }
+        if !law.radii().any(|radius| radius.value > 0.0) {
+            return Err("radii must contain a positive radius".into());
+        }
+        if !law
+            .intermediate()
+            .iter()
+            .all(|row| row.parameter.value.is_finite() && (0.0..1.0).contains(&row.parameter.value))
+        {
+            return Err("intermediate_parameters must be finite and in [0, 1)".into());
+        }
+        if !law
+            .intermediate()
+            .windows(2)
+            .all(|rows| rows[0].parameter.value < rows[1].parameter.value)
+        {
+            return Err("intermediate_parameters must be strictly increasing".into());
+        }
+        Ok(Self {
+            tangency_weight,
+            law,
+        })
+    }
+
+    /// The admitted radius law.
+    pub fn law(&self) -> &DesignFixedFilletLaw {
+        &self.law
+    }
+
+    /// The optional positive tangency weight.
+    pub fn tangency_weight(&self) -> Option<&DesignFixedFilletScalar> {
+        self.tangency_weight.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1361,10 +1413,7 @@ impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
                 }
             }
         };
-        Ok(Self {
-            tangency_weight: wire.tangency_weight,
-            law,
-        })
+        Self::try_new(wire.tangency_weight, law)
     }
 }
 

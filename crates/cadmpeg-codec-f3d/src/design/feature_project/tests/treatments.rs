@@ -1077,20 +1077,21 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &mut indexed_scope.payload
     {
         *slot = Some(crate::records::feature::DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup {
-                tangency_weight: Some(crate::records::feature::DesignFixedFilletScalar {
+            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
+                Some(crate::records::feature::DesignFixedFilletScalar {
                     value: 1.0,
                     record_index: 10,
                     value_offset: 100,
                 }),
-                law: crate::records::feature::DesignFixedFilletLaw::Constant(
+                crate::records::feature::DesignFixedFilletLaw::Constant(
                     crate::records::feature::DesignFixedFilletScalar {
                         value: 0.5,
                         record_index: 20,
                         value_offset: 200,
                     },
                 ),
-            }],
+            )
+            .unwrap()],
         });
     }
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(

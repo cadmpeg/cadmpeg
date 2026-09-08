@@ -982,8 +982,11 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
             }
             let group: crate::records::feature::DesignFixedFilletGroup =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(group.law.radii().count(), radius_count as usize);
-            assert_eq!(group.law.intermediate().len(), intermediate_count as usize);
+            assert_eq!(group.law().radii().count(), radius_count as usize);
+            assert_eq!(
+                group.law().intermediate().len(),
+                intermediate_count as usize
+            );
             assert_eq!(serde_json::to_value(&group).unwrap(), wire);
             for field in [
                 "radii",
@@ -1729,3 +1732,5 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
 }
 
 mod scalars;
+
+mod fillet_law;
