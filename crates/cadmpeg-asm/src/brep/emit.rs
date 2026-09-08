@@ -103,7 +103,7 @@ fn emit_carrier_surface(
     } = reach;
     // A record index appears at most once in `records`; a duplicate
     // would have consumed the entry already, so skip rather than panic.
-    let Some((geometry, _)) = surface_geo.remove(&i) else {
+    let Some(geometry) = surface_geo.remove(&i) else {
         return;
     };
     out.surfaces.push(Surface {
