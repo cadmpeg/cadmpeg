@@ -266,41 +266,45 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         },
     );
     feature.native_ref = Some(scope.id.clone());
-    let operation = DesignSurfaceTrimOperation {
-        id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
-        scope_record_index: 1200,
-        selection_record_index: 1,
-        selection_byte_offset: 0,
-        selection_next_record_index: 2,
-        selection_next_byte_offset: 0,
-        chain_records: Vec::new(),
-        cell_table_record_index: 3,
-        cell_table_byte_offset: 0,
-        cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned()).unwrap(),
-        cell_table_frame_length: 0,
-        cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
-            .unwrap(),
-        cell_table_paired_byte_offset: 0,
-        cell_count: 2,
-        cell_count_offset: 0,
-        cell_entries: vec![
-            DesignSurfaceTrimCellEntry {
-                record_index: 4,
-                record_reference_offset: 0,
-                ordinal: 1,
-                ordinal_offset: 0,
-            },
-            DesignSurfaceTrimCellEntry {
-                record_index: 5,
-                record_reference_offset: 0,
-                ordinal: 4,
-                ordinal_offset: 0,
-            },
-        ],
-        trailing_value: 5,
-        trailing_value_offset: 0,
-        trailing_zero_offset: 0,
-    };
+    let operation = DesignSurfaceTrimOperation::try_from(
+        crate::records::feature::DesignSurfaceTrimOperationWire {
+            id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
+            scope_record_index: 1200,
+            selection_record_index: 1,
+            selection_byte_offset: 0,
+            selection_next_record_index: 2,
+            selection_next_byte_offset: 0,
+            chain_records: Vec::new(),
+            cell_table_record_index: 3,
+            cell_table_byte_offset: 0,
+            cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned())
+                .unwrap(),
+            cell_table_frame_length: 0,
+            cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
+                .unwrap(),
+            cell_table_paired_byte_offset: 0,
+            cell_count: 2,
+            cell_count_offset: 0,
+            cell_entries: vec![
+                DesignSurfaceTrimCellEntry {
+                    record_index: 4,
+                    record_reference_offset: 0,
+                    ordinal: 1,
+                    ordinal_offset: 0,
+                },
+                DesignSurfaceTrimCellEntry {
+                    record_index: 5,
+                    record_reference_offset: 0,
+                    ordinal: 4,
+                    ordinal_offset: 0,
+                },
+            ],
+            trailing_value: 5,
+            trailing_value_offset: 0,
+            trailing_zero_offset: 0,
+        },
+    )
+    .unwrap();
 
     super::bind_surface_trim_cell_selections(
         std::slice::from_mut(&mut feature),
