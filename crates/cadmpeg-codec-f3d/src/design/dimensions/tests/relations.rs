@@ -269,8 +269,6 @@ fn counted_dimension_groups_resolve_centered_entities() {
     })
     .unwrap();
     assert!(exact_counted_dimension_relation(&[&circle, &displaced]).is_none());
-
-
 }
 
 #[test]
