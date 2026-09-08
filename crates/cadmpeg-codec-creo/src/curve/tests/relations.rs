@@ -1098,6 +1098,30 @@ fn binds_relation_symbols_case_insensitively_and_preserves_scoped_dependencies()
 }
 
 #[test]
+fn skipped_solve_conditionals_do_not_underflow_execution_stack() {
+    for suffix in ["ENDIF\0x=1\0", "ELSE\0x=1\0ENDIF\0"] {
+        let mut payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8"
+            .to_vec();
+        payload.push(if suffix.starts_with("ELSE") { 6 } else { 5 });
+        payload.extend_from_slice(b"SOLVE\0IF YES\0FOR x\0");
+        payload.extend_from_slice(suffix.as_bytes());
+        let records = expression_records(&payload);
+        let assignments = evaluate_expression_program(
+            &records[0].lines,
+            None,
+            &ExternalRelationSymbols::default(),
+        );
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(
+            assignments[0].activation,
+            CurveExpressionActivation::Conditional
+        );
+        assert_eq!(assignments[0].value, None);
+    }
+}
+
+#[test]
 fn evaluates_nested_relation_conditionals_in_source_order() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x0eA=0\0IF a==0\0b=5\0IF NO\0c=1\0\
