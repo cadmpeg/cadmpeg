@@ -1031,15 +1031,15 @@ fn historical_edge_paths_round_trip_through_json() {
     use crate::features::PathRef;
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
-    let path = PathRef::HistoricalEdges {
-        state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-            .expect("valid identity"),
-        edges: vec![
+    let path = PathRef::historical_edges(
+        FeatureInputTopologyId::mint("synthetic:history-input:state#0").expect("valid identity"),
+        vec![
             HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity"),
             HistoricalEdgeId::mint("synthetic:history-input:edge#1").expect("valid identity"),
         ],
-        native: "native:path#0".into(),
-    };
+        "native:path#0".into(),
+    )
+    .unwrap();
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 }
@@ -1087,14 +1087,12 @@ fn historical_face_profiles_round_trip_through_json() {
     use crate::features::ProfileRef;
     use crate::ids::{FeatureInputTopologyId, HistoricalFaceId};
 
-    let profile = ProfileRef::HistoricalFaces {
-        state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-            .expect("valid identity"),
-        faces: vec![
-            HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")
-        ],
-        native: vec!["native:profile-group#0".into()],
-    };
+    let profile = ProfileRef::historical_faces(
+        FeatureInputTopologyId::mint("synthetic:history-input:state#0").expect("valid identity"),
+        vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
+        vec!["native:profile-group#0".into()],
+    )
+    .unwrap();
     let json = serde_json::to_string(&profile).unwrap();
     assert_eq!(serde_json::from_str::<ProfileRef>(&json).unwrap(), profile);
 }
@@ -2788,3 +2786,5 @@ mod parameters;
 mod configuration_states;
 
 mod source_content;
+
+mod profile_selections;

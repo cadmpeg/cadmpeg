@@ -2570,17 +2570,15 @@ fn bind_entity_selection_path(
         edge_slots.push(edge_slot);
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *path = PathRef::HistoricalEdges {
-        state: crate::design::edge_resolve::feature_input_topology_id(
-            feature_id,
-            previous_state_id,
-        ),
-        edges: edge_slots
+    *path = PathRef::historical_edges(
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        edge_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
             .collect(),
-        native: group_id.clone(),
-    };
+        group_id.clone(),
+    )
+    .unwrap_or_else(|_| PathRef::Native(group_id.clone()));
 }
 
 pub(crate) fn project_feature_input_topologies(

@@ -265,11 +265,10 @@ pub(crate) fn bind_sweep_sketch_selections(
                     .then_some((sketch, selected))
             })();
             if let Some((sketch, selected)) = resolved {
-                *section =
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::SketchEntities {
-                        sketch,
-                        entities: vec![selected],
-                    });
+                *section = cadmpeg_ir::features::SweepSection::Profile(
+                    ProfileRef::sketch_entities(sketch, vec![selected])
+                        .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone())),
+                );
             }
         }
         let resolve_path = |path: &mut PathRef| -> Option<()> {
@@ -463,18 +462,17 @@ pub(crate) fn bind_extrude_profile_selections(
                         false
                     }
                 }) {
-                    *profile = ProfileRef::SpatialSketchProfiles {
-                        sketch: spatial_id,
-                        profiles: indices,
-                    };
+                    *profile = ProfileRef::spatial_sketch_profiles(spatial_id, indices)
+                        .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
                 } else {
-                    *profile = ProfileRef::SpatialSketchSelection {
-                        sketch: spatial_id,
-                        selections: matching_groups
+                    *profile = ProfileRef::spatial_sketch_selection(
+                        spatial_id,
+                        matching_groups
                             .iter()
                             .map(|group| group.id.clone())
                             .collect(),
-                    };
+                    )
+                    .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
                 }
                 continue;
             }
@@ -494,10 +492,8 @@ pub(crate) fn bind_extrude_profile_selections(
                 curve_resolution.curve_identities,
                 curve_resolution.sketch_entities,
             ) {
-                *profile = ProfileRef::SketchProfiles {
-                    sketch: sketch_id.clone(),
-                    profiles,
-                };
+                *profile = ProfileRef::sketch_profiles(sketch_id.clone(), profiles)
+                    .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
                 continue;
             }
         }
@@ -519,13 +515,14 @@ pub(crate) fn bind_extrude_profile_selections(
             })
             .collect::<Vec<_>>();
         *profile = merge_resolved_profile_selections(sketch_id, &selections).unwrap_or_else(|| {
-            ProfileRef::SketchSelection {
-                sketch: sketch_id.clone(),
-                selections: matching_groups
+            ProfileRef::sketch_selection(
+                sketch_id.clone(),
+                matching_groups
                     .iter()
                     .map(|group| group.id.clone())
                     .collect(),
-            }
+            )
+            .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()))
         });
     }
 }
@@ -571,10 +568,7 @@ fn resolve_entity_selection_profile(
                     entities: curves,
                 })
             } else {
-                Some(ProfileRef::SketchProfiles {
-                    sketch,
-                    profiles: selected_profiles,
-                })
+                Some(ProfileRef::sketch_profiles(sketch, selected_profiles).ok()?)
             }
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
@@ -592,7 +586,7 @@ fn resolve_entity_selection_profile(
                         .collect::<HashSet<_>>()
                 }),
             )?;
-            Some(ProfileRef::SpatialSketchProfiles { sketch, profiles })
+            Some(ProfileRef::spatial_sketch_profiles(sketch, profiles).ok()?)
         }
         _ => None,
     }
@@ -703,19 +697,22 @@ fn historical_face_profile_selection(
         .as_str()
         .split_once('#')
         .map_or(feature_id.as_str(), |(_, key)| key);
-    Some(ProfileRef::HistoricalFaces {
-        state: feature_input_topology_id(feature_id, previous_state_id),
-        faces: selected_faces
-            .into_iter()
-            .map(|face| {
-                ids::history_input_face_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
-                    face,
-                )
-            })
-            .collect(),
-        native: groups.iter().map(|group| group.id.clone()).collect(),
-    })
+    Some(
+        ProfileRef::historical_faces(
+            feature_input_topology_id(feature_id, previous_state_id),
+            selected_faces
+                .into_iter()
+                .map(|face| {
+                    ids::history_input_face_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        face,
+                    )
+                })
+                .collect(),
+            groups.iter().map(|group| group.id.clone()).collect(),
+        )
+        .ok()?,
+    )
 }
 
 pub(crate) fn historical_profile_face_candidates(
@@ -844,17 +841,18 @@ pub(crate) fn merge_resolved_profile_selections(
         ProfileRef::SketchProfiles {
             sketch: selected,
             profiles,
-        } if selected == sketch => Some(ResolvedProfileSelection::Loops(profiles.clone())),
+        } if selected == sketch => Some(ResolvedProfileSelection::Loops(
+            profiles.as_slice().to_vec(),
+        )),
         ProfileRef::SketchRegions {
             sketch: selected,
             regions,
         } if selected == sketch => Some(ResolvedProfileSelection::Regions(regions.clone())),
         _ => None,
     }))? {
-        ResolvedProfileSelection::Loops(profiles) => Some(ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles,
-        }),
+        ResolvedProfileSelection::Loops(profiles) => {
+            Some(ProfileRef::sketch_profiles(sketch.clone(), profiles).ok()?)
+        }
         ResolvedProfileSelection::Regions(regions) => Some(ProfileRef::SketchRegions {
             sketch: sketch.clone(),
             regions,
@@ -940,18 +938,16 @@ pub(crate) fn resolved_extrude_profile_selection(
             (sketch.profiles.len() == 1).then_some(ResolvedProfileSelection::Loops(vec![0]))
         });
     match resolved_profiles {
-        Some(ResolvedProfileSelection::Loops(profiles)) => ProfileRef::SketchProfiles {
-            sketch: sketch_id.clone(),
-            profiles,
-        },
+        Some(ResolvedProfileSelection::Loops(profiles)) => {
+            ProfileRef::sketch_profiles(sketch_id.clone(), profiles)
+                .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
+        }
         Some(ResolvedProfileSelection::Regions(regions)) => ProfileRef::SketchRegions {
             sketch: sketch_id.clone(),
             regions,
         },
-        None => ProfileRef::SketchSelection {
-            sketch: sketch_id.clone(),
-            selections: vec![group.id.clone()],
-        },
+        None => ProfileRef::sketch_selection(sketch_id.clone(), vec![group.id.clone()])
+            .unwrap_or_else(|_| ProfileRef::Native(group.id.clone())),
     }
 }
 
@@ -1941,15 +1937,18 @@ fn resolve_entity_selection_path(
         {
             return None;
         }
-        return Some(PathRef::SpatialSketchCurves {
-            sketch: spatial_sketch.clone(),
-            curves: curve_ids
-                .into_iter()
-                .map(|(primary, secondary)| {
-                    neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary)
-                })
-                .collect(),
-        });
+        return Some(
+            PathRef::spatial_sketch_curves(
+                spatial_sketch.clone(),
+                curve_ids
+                    .into_iter()
+                    .map(|(primary, secondary)| {
+                        neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary)
+                    })
+                    .collect(),
+            )
+            .ok()?,
+        );
     }
 
     let sketch = neutral_sketch_id(placement);
@@ -1973,7 +1972,7 @@ fn resolve_entity_selection_path(
     }) {
         return None;
     }
-    Some(PathRef::SketchCurves { sketch, curves })
+    Some(PathRef::sketch_curves(sketch, curves).ok()?)
 }
 
 /// Resolve one ordered Loft guide or centerline group whose members select
@@ -2306,13 +2305,16 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         {
             resolved_spatial_sketch_profile_regions(stream, &profile, spatial_sketch, resolution)
                 .map_or_else(
-                    || ProfileRef::SpatialSketchSelection {
-                        sketch: spatial_sketch_id.clone(),
-                        selections: vec![group.id.clone()],
+                    || {
+                        ProfileRef::spatial_sketch_selection(
+                            spatial_sketch_id.clone(),
+                            vec![group.id.clone()],
+                        )
+                        .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                     },
-                    |profiles| ProfileRef::SpatialSketchProfiles {
-                        sketch: spatial_sketch_id.clone(),
-                        profiles,
+                    |profiles| {
+                        ProfileRef::spatial_sketch_profiles(spatial_sketch_id.clone(), profiles)
+                            .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                     },
                 )
         } else {
@@ -2403,13 +2405,16 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         resolved_profiles.insert(
             group.id.clone(),
             profile.map_or_else(
-                || ProfileRef::SpatialSketchSelection {
-                    sketch: spatial_sketch_id.clone(),
-                    selections: vec![operand.id.clone()],
+                || {
+                    ProfileRef::spatial_sketch_selection(
+                        spatial_sketch_id.clone(),
+                        vec![operand.id.clone()],
+                    )
+                    .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                 },
-                |profile| ProfileRef::SpatialSketchProfiles {
-                    sketch: spatial_sketch_id.clone(),
-                    profiles: vec![profile],
+                |profile| {
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch_id.clone(), vec![profile])
+                        .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                 },
             ),
         );

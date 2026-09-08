@@ -2573,22 +2573,22 @@ pub fn bind_sketch_feature_geometry(
             // The spatial carrier has no closed loop that can be represented
             // by a profile index. Keep the exact profile frame as a native
             // selection instead of retaining the provisional planar ID.
-            *profile = ProfileRef::SpatialSketchSelection {
-                sketch: spatial.id.clone(),
-                selections: vec![format!(
+            *profile = ProfileRef::spatial_sketch_selection(
+                spatial.id.clone(),
+                vec![format!(
                     "{stream}:design-record-header#{}",
                     profile_operand.byte_offset
                 )],
-            };
+            )
+            .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
             continue;
         }
         let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
             continue;
         };
-        *profile = ProfileRef::SpatialSketchProfiles {
-            sketch: spatial.id.clone(),
-            profiles: (0..profile_count).collect(),
-        };
+        *profile =
+            ProfileRef::spatial_sketch_profiles(spatial.id.clone(), (0..profile_count).collect())
+                .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
     }
     let sketch_features = features
         .iter()
@@ -3221,14 +3221,17 @@ fn resolved_split_face_path(
         }
         edge_slots.push(edge_slot);
     }
-    (!edge_slots.is_empty()).then(|| PathRef::HistoricalEdges {
-        state: feature_input_topology_id(&feature, previous_state_id),
-        edges: edge_slots
-            .into_iter()
-            .map(|edge_slot| ids::history_input_edge_id(&prefix, edge_slot))
-            .collect(),
-        native: group.id.clone(),
-    })
+    Some(
+        PathRef::historical_edges(
+            feature_input_topology_id(&feature, previous_state_id),
+            edge_slots
+                .into_iter()
+                .map(|edge_slot| ids::history_input_edge_id(&prefix, edge_slot))
+                .collect(),
+            group.id.clone(),
+        )
+        .ok()?,
+    )
 }
 
 /// Return the unique non-empty construction operand group in `scope` carrying
@@ -6328,11 +6331,8 @@ fn resolved_surface_patch_path(
                     _ => unreachable!("validated historical SurfacePatch paths"),
                 })
                 .collect();
-            return PathRef::HistoricalEdges {
-                state,
-                edges,
-                native: scope.id.clone(),
-            };
+            return PathRef::historical_edges(state, edges, scope.id.clone())
+                .unwrap_or_else(|_| PathRef::Native(scope.id.clone()));
         }
     }
     if paths.iter().all(|path| matches!(path, PathRef::Edges(_))) {
@@ -6365,8 +6365,8 @@ pub(crate) fn loft_path_from_edge_selection(
             native,
         } => PathRef::HistoricalEdges {
             state,
-            edges: edges.as_slice().to_vec(),
-            native: native.as_str().to_owned(),
+            edges,
+            native,
         },
         EdgeSelection::All
         | EdgeSelection::Unresolved
@@ -7926,11 +7926,8 @@ pub(crate) fn project_extrude(
                         });
                         match (complete, state) {
                             (true, Some(state)) if !faces.is_empty() => {
-                                ProfileRef::HistoricalFaces {
-                                    state,
-                                    faces,
-                                    native,
-                                }
+                                ProfileRef::historical_faces(state, faces, native)
+                                    .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()))
                             }
                             _ => ProfileRef::Native(scope.id.clone()),
                         }

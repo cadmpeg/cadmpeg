@@ -499,19 +499,26 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     )));
     assert!(!edge_selection_is_incomplete(&EdgeSelection::All));
     assert!(profile_ref_is_incomplete(&ProfileRef::Faces(Vec::new())));
-    assert!(profile_ref_is_incomplete(&ProfileRef::SketchSelection {
-        sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
-        selections: vec!["nx:sketch-selection#0".into()],
-    }));
-    assert!(profile_ref_is_incomplete(&ProfileRef::SketchProfiles {
-        sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
-        profiles: Vec::new(),
-    }));
+    assert!(profile_ref_is_incomplete(
+        &ProfileRef::sketch_selection(
+            cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+            vec!["nx:sketch-selection#0".into()]
+        )
+        .unwrap()
+    ));
+    assert!(ProfileRef::sketch_profiles(
+        cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+        Vec::new()
+    )
+    .is_err());
     assert!(path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
-    assert!(path_ref_is_incomplete(&PathRef::SpatialSketchSelection {
-        sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
-        selections: vec!["nx:path-selection#0".into()],
-    }));
+    assert!(path_ref_is_incomplete(
+        &PathRef::spatial_sketch_selection(
+            cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
+            vec!["nx:path-selection#0".into()]
+        )
+        .unwrap()
+    ));
     let edge =
         cadmpeg_ir::ids::EdgeId::mint("test:model:entity#edge%230").expect("identity grammar");
     assert!(path_ref_is_incomplete(&PathRef::Edges(vec![
@@ -1010,13 +1017,11 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
         face
     ]),));
     let producer = FeatureId::mint("test:feature#profile-producer").expect("identity grammar");
-    let generated = ProfileRef::Generated {
-        curves: vec![GeneratedCurveRef {
-            feature: producer.clone(),
-            local_id: "curve-0".into(),
-        }],
-        native: "test:profile-selection".into(),
-    };
+    let generated = ProfileRef::generated(
+        vec![GeneratedCurveRef::new(producer.clone(), "curve-0".into()).unwrap()],
+        "test:profile-selection".into(),
+    )
+    .unwrap();
     assert!(!profile_ref_is_incomplete(&generated));
     assert!(profile_dependency_is_incomplete(&generated, &[],));
     assert!(!profile_dependency_is_incomplete(

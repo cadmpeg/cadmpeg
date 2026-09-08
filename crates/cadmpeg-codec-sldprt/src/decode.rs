@@ -981,26 +981,24 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::Faces(faces) => faces.is_empty(),
-        ProfileRef::Generated { curves, .. } => curves.is_empty(),
-        ProfileRef::SketchProfiles { profiles, .. }
-        | ProfileRef::SpatialSketchProfiles { profiles, .. } => profiles.is_empty(),
+        ProfileRef::Generated { .. } => false,
+        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
         ProfileRef::SketchRegions { regions, .. } => regions.is_empty(),
-        ProfileRef::SketchEntities { entities, .. } => entities.is_empty(),
-        ProfileRef::SketchSelection { selections, .. }
-        | ProfileRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
-        ProfileRef::HistoricalFaces { faces, .. } => faces.is_empty(),
+        ProfileRef::SketchEntities { .. } => false,
+        ProfileRef::SketchSelection { .. } | ProfileRef::SpatialSketchSelection { .. } => false,
+        ProfileRef::HistoricalFaces { .. } => false,
         ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
         ProfileRef::Sketch(_) | ProfileRef::Feature(_) => false,
     };
     let incomplete_path = |path: &PathRef| match path {
         PathRef::Edges(edges) => edges.is_empty(),
         PathRef::Curves(curves) => curves.is_empty(),
-        PathRef::HistoricalEdges { edges, .. } => edges.is_empty(),
-        PathRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
+        PathRef::HistoricalEdges { .. } => false,
+        PathRef::SpatialSketchSelection { .. } => false,
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
-        PathRef::SketchCurves { curves, .. } => curves.is_empty(),
-        PathRef::SpatialSketchCurves { curves, .. } => curves.is_empty(),
+        PathRef::SketchCurves { .. } => false,
+        PathRef::SpatialSketchCurves { .. } => false,
     };
     let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
         matches!(

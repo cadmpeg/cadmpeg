@@ -665,10 +665,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "invalid-profile-index",
         1,
-        ProfileRef::SketchProfiles {
-            sketch: sketch_id.clone(),
-            profiles: vec![0, 0],
-        },
+        ProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap(),
     ));
     ir.model.features.push(feature(
         "invalid-region",
@@ -685,30 +682,14 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "repeated-profile-entity",
         3,
-        ProfileRef::SketchEntities {
-            sketch: sketch_id.clone(),
-            entities: vec![selected_entity.clone(), selected_entity],
-        },
-    ));
-    ir.model.features.push(feature(
-        "empty-native-selection",
-        4,
-        ProfileRef::SketchSelection {
-            sketch: sketch_id,
-            selections: Vec::new(),
-        },
+        ProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
     ));
 
     let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.message == "sketch profile indices are empty, repeated, or out of range"
     }));
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding.message
-                == "native sketch profile selections are empty or repeated")
-    );
+
     assert!(findings.iter().any(|finding| {
         finding.message
             == "sketch regions have empty, repeated, invalid, or out-of-range boundaries"

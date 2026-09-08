@@ -816,13 +816,11 @@ pub(crate) fn project_surface_sweep_profiles(
                         "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
                     );
                     Some((
-                        ProfileRef::Generated {
-                            curves: vec![GeneratedCurveRef {
-                                feature: feature_id,
-                                local_id,
-                            }],
+                        ProfileRef::generated(
+                            vec![GeneratedCurveRef::new(feature_id, local_id).ok()?],
                             native,
-                        },
+                        )
+                        .ok()?,
                         components.clone(),
                     ))
                 })

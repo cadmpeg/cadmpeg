@@ -278,8 +278,8 @@ pub(crate) fn resolved_profile_face_group(
     };
     Some(ProfileRef::HistoricalFaces {
         state,
-        faces: faces.as_slice().to_vec(),
-        native: vec![native.as_str().to_owned()],
+        faces,
+        native: vec![native.as_str().to_owned()].try_into().ok()?,
     })
 }
 
@@ -555,10 +555,10 @@ pub(crate) fn resolved_extrude_profile_face_group(
     else {
         return None;
     };
-    Some(ProfileRef::HistoricalFaces {
+    Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
         state,
-        faces: faces.as_slice().to_vec(),
-        native: vec![native.as_str().to_owned()],
+        faces,
+        native: vec![native.as_str().to_owned()].try_into().ok()?,
     })
 }
 
@@ -682,8 +682,8 @@ pub(crate) fn resolved_loft_edge_profile_group(
     };
     Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
         state,
-        faces: faces.as_slice().to_vec(),
-        native: vec![native.as_str().to_owned()],
+        faces,
+        native: vec![native.as_str().to_owned()].try_into().ok()?,
     })
 }
 
@@ -2922,7 +2922,7 @@ mod tests {
                 state,
                 faces,
                 native,
-            }) if state == expected_state && faces == [expected_face] && native == [group.id]
+            }) if state == expected_state && faces.as_slice() == [expected_face] && native.as_slice() == [group.id]
         ));
     }
 
