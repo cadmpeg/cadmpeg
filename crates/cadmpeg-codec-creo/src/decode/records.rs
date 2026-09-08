@@ -189,12 +189,32 @@ pub(super) struct CreoFeatureEntityTableEntryRecord {
 pub(super) struct CreoFeatureGeometryTableRecord {
     pub(super) id: String,
     pub(super) owner_feature_id: u32,
-    pub(super) kind: &'static str,
+    #[serde(flatten, serialize_with = "serialize_geometry_table_kind")]
+    pub(super) kind: crate::feature::FeatureGeometryTableKind,
     pub(super) declared_count: u32,
     pub(super) entity_class_id: u32,
-    pub(super) entry_ids: Option<Vec<u32>>,
     pub(super) offset: usize,
     pub(super) source_section: String,
+}
+
+fn serialize_geometry_table_kind<S: serde::Serializer>(
+    kind: &crate::feature::FeatureGeometryTableKind,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::feature::FeatureGeometryTableKind;
+    use serde::ser::SerializeMap;
+    let name = match kind {
+        FeatureGeometryTableKind::EdgeIds => "edge_ids",
+        FeatureGeometryTableKind::LoopIds => "loop_ids",
+        FeatureGeometryTableKind::Boundaries => "boundaries",
+        FeatureGeometryTableKind::UsedBodies => "used_bodies",
+        FeatureGeometryTableKind::GeometryLists => "geometry_lists",
+        FeatureGeometryTableKind::DatumIds(_) => "datum_ids",
+    };
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("kind", name)?;
+    map.serialize_entry("entry_ids", &kind.datum_ids())?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -819,17 +839,9 @@ pub(super) fn feature_geometry_table_records(
         .map(|table| CreoFeatureGeometryTableRecord {
             id: format!("creo:feature:geometry_table#{}", table.offset),
             owner_feature_id: table.feature_id,
-            kind: match &table.kind {
-                crate::feature::FeatureGeometryTableKind::EdgeIds => "edge_ids",
-                crate::feature::FeatureGeometryTableKind::LoopIds => "loop_ids",
-                crate::feature::FeatureGeometryTableKind::Boundaries => "boundaries",
-                crate::feature::FeatureGeometryTableKind::UsedBodies => "used_bodies",
-                crate::feature::FeatureGeometryTableKind::GeometryLists => "geometry_lists",
-                crate::feature::FeatureGeometryTableKind::DatumIds(_) => "datum_ids",
-            },
+            kind: table.kind.clone(),
             declared_count: table.count,
             entity_class_id: table.entity_class,
-            entry_ids: table.kind.datum_ids().map(<[u32]>::to_vec),
             offset: table.offset,
             source_section: source_section(scan, table.offset),
         })
