@@ -21,7 +21,7 @@ use crate::sab::{self, Record};
 pub struct AsmEditSet {
     records: Vec<Record>,
     ref_width: RefWidth,
-    header_scale: f64,
+    header_scale: Option<f64>,
 }
 
 /// Writable values for one solved NURBS surface cache.
@@ -94,11 +94,7 @@ impl AsmEditSet {
             CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
         })?;
         let header_scale = header.scale.unwrap_or(1.0);
-        Ok(Self {
-            records,
-            ref_width,
-            header_scale,
-        })
+        Ok(Self::from_framed(records, ref_width, header_scale))
     }
 
     /// Build a context from an already framed record partition.
@@ -106,7 +102,7 @@ impl AsmEditSet {
         Self {
             records,
             ref_width,
-            header_scale,
+            header_scale: Some(header_scale).filter(|scale| scale.is_finite() && *scale > 0.0),
         }
     }
 
@@ -125,8 +121,8 @@ impl AsmEditSet {
         self.ref_width
     }
 
-    /// ASM header length scale, or `1.0` when the header omits it.
-    pub const fn header_scale(&self) -> f64 {
+    /// Positive finite ASM length scale, absent when the native scale is invalid.
+    pub const fn header_scale(&self) -> Option<f64> {
         self.header_scale
     }
 
@@ -730,12 +726,12 @@ impl AsmEditSet {
         record: &Record,
         transform: Transform,
     ) -> Result<(), CodecError> {
-        if self.header_scale == 0.0 {
-            return Err(CodecError::malformed(format_args!(
-                "transform record {} has zero header scale",
+        let header_scale = self.header_scale.ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "transform record {} requires a positive finite header scale",
                 record.index
-            )));
-        }
+            ))
+        })?;
         let vectors = [
             [
                 transform.rows()[0][0],
@@ -753,9 +749,9 @@ impl AsmEditSet {
                 transform.rows()[2][2],
             ],
             [
-                transform.rows()[0][3] / (self.header_scale * LEN_TO_MM),
-                transform.rows()[1][3] / (self.header_scale * LEN_TO_MM),
-                transform.rows()[2][3] / (self.header_scale * LEN_TO_MM),
+                transform.rows()[0][3] / (header_scale * LEN_TO_MM),
+                transform.rows()[1][3] / (header_scale * LEN_TO_MM),
+                transform.rows()[2][3] / (header_scale * LEN_TO_MM),
             ],
         ];
         for (index, vector) in vectors.into_iter().enumerate() {
@@ -1923,6 +1919,33 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn transform_rejects_nonpositive_and_nonfinite_header_scales() {
+        let mut original = vec![0x0d, 9];
+        original.extend_from_slice(b"transform");
+        for _ in 0..4 {
+            original.push(0x14);
+            original.extend_from_slice(&[0; 24]);
+        }
+        original.push(0x06);
+        original.extend_from_slice(&1.0f64.to_le_bytes());
+        original.push(0x11);
+        let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut bytes = original.clone();
+            let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, scale);
+            assert!(matches!(
+                edits.patch_transform(
+                    &mut bytes,
+                    &records[0],
+                    cadmpeg_ir::transform::Transform::identity()
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+            assert_eq!(bytes, original);
+        }
+    }
 
     #[test]
     fn tagged_i64_replaces_only_the_selected_payload() {
