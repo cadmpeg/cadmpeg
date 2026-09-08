@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
     CacheFitToleranceError, FitTolerance, LawFormula, LawSurfaceConstruction, LawSurfaceTail,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
+    ProceduralSurfaceDefinition,
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
 use serde::Deserialize;
@@ -48,7 +49,9 @@ fn fit_tolerance_rejects_negative_and_nonfinite_values_at_admission() {
 fn law_tail_requires_exactly_its_cache_contract() {
     assert!(matches!(
         ProceduralSurface::new(surface_id(), law(LawSurfaceTail::Full), None),
-        Err(CacheFitToleranceError::MissingLawFull)
+        Err(ProceduralGeometryError::Cache(
+            CacheFitToleranceError::MissingLawFull
+        ))
     ));
     let full =
         ProceduralSurface::try_new(surface_id(), law(LawSurfaceTail::Full), Some(0.25), None)
@@ -83,7 +86,9 @@ fn law_tail_requires_exactly_its_cache_contract() {
         let definition = law(tail);
         assert!(matches!(
             ProceduralSurface::try_new(surface_id(), definition.clone(), Some(0.25), None),
-            Err(CacheFitToleranceError::NonFullLaw)
+            Err(ProceduralGeometryError::Cache(
+                CacheFitToleranceError::NonFullLaw
+            ))
         ));
         let mut surface = ProceduralSurface::new(surface_id(), definition, None).unwrap();
         let before = surface.clone();
