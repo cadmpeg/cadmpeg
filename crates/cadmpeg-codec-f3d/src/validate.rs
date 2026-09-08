@@ -8324,22 +8324,6 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
     // when the owning sketch reference is known.
     for point in &native.sketch_points {
-        let companion_curves_unique = point.companion().is_none_or(|companion| {
-            companion
-                .incident_curves
-                .iter()
-                .collect::<HashSet<_>>()
-                .len()
-                == companion.incident_curves.len()
-        });
-        if !companion_curves_unique || point.companion().is_none() {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch point has an invalid versioned form or companion".into(),
-                entity: Some(point.id.clone()),
-            });
-        }
         let duplicate = point.persistent_id().is_some_and(|persistent_id| {
             point.owner_reference.is_some_and(|owner_reference| {
                 !sketch_point_identities.insert((

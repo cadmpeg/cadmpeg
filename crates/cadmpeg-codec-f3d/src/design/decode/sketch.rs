@@ -1455,8 +1455,8 @@ pub(crate) fn decode_sketch_points_from_stream(
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let mut decoded = decode_sketch_point_record(payload, frame.design_type.version)
-            .ok_or_else(|| {
+        let decoded =
+            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has an invalid version-{} member sequence",
                     frame.design_type.version
@@ -1506,10 +1506,6 @@ pub(crate) fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-        decoded
-            .record_form
-            .set_companion(companion)
-            .map_err(CodecError::Malformed)?;
         out.push(
             SketchPoint::try_from(crate::records::SketchPointDraft {
                 id: ids::native_sketch_point_id(stream, frame.start),
@@ -1519,6 +1515,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                 byte_offset: frame.start as u64,
                 coordinate_offset: decoded.coordinate_offset,
                 record_form: decoded.record_form,
+                companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
@@ -2353,10 +2350,7 @@ fn decode_version_zero_sketch_point(
     Some(DecodedSketchPoint {
         owner_reference: Some(owner_reference),
         coordinate_offset,
-        record_form: SketchPointRecordForm::Version0 {
-            flag: flag == 1,
-            companion: None,
-        },
+        record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
         paired_reference,
         coordinates: [x, y],
     })
@@ -2449,7 +2443,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version8 {
-                        companion: None,
                         depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2461,7 +2454,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version10 {
-                        companion: None,
                         depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2480,7 +2472,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version10InlineTyped {
-                        companion: None,
                         depth,
                         trailing_reference,
                         persistent_id,
@@ -2500,7 +2491,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version11InlineTyped {
-                        companion: None,
                         depth,
                         entity_genesis,
                         trailing_reference,
@@ -2523,7 +2513,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version11 {
-                        companion: None,
                         depth,
                         entity_genesis,
                         padded_paired_reference,

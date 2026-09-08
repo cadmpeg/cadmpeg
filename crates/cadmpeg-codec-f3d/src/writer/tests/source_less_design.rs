@@ -625,15 +625,15 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             500,
             crate::records::SketchPointClosure::Selector0State1,
             Some(900),
             0.0,
-            Some(crate::records::SketchPointCompanion {
-                prefix_present_zero: false,
-                incident_curves: Vec::new(),
-            }),
         ),
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
@@ -885,10 +885,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     assert_eq!(
         native.sketch_points[0].companion(),
-        Some(crate::records::SketchPointCompanionRef {
+        crate::records::SketchPointCompanionRef {
             prefix_present_zero: false,
             incident_curves: &[],
-        })
+        }
     );
     assert_eq!(
         native.sketch_points[0].coordinates(),
@@ -970,10 +970,12 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 persistent_id,
                 flags: [true, false, false, true, false, true, false, true],
                 closure: crate::records::SketchPointClosure::Selector4State0,
-                companion: Some(crate::records::SketchPointCompanion {
-                    prefix_present_zero: true,
-                    incident_curves: vec![600],
-                }),
+            })
+            .unwrap();
+        point
+            .try_set_companion(crate::records::SketchPointCompanion {
+                prefix_present_zero: true,
+                incident_curves: vec![600],
             })
             .unwrap();
     }
@@ -1001,10 +1003,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     assert_eq!(
         extended_point.companion(),
-        Some(crate::records::SketchPointCompanionRef {
+        crate::records::SketchPointCompanionRef {
             prefix_present_zero: true,
             incident_curves: &[600],
-        })
+        }
     );
     assert!(crate::validate::validate_native(extended_round_trip.ir()).is_empty());
 

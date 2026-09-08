@@ -808,12 +808,15 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
             class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset: 0,
             coordinate_offset: 89,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
             record_form: crate::records::SketchPointRecordForm::version11(
                 u64::from(record_index),
                 crate::records::SketchPointClosure::Selector0State0,
                 None,
                 0.0,
-                None,
             ),
             paired_reference: 0,
             coordinates: Point2::new(0.0, 0.0),

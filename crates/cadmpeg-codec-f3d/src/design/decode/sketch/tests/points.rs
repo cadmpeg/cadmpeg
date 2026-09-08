@@ -124,7 +124,6 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             assert_eq!(
                 decoded.record_form,
                 SketchPointRecordForm::Version11 {
-                    companion: None,
                     depth: 0.25 * 10.0,
                     entity_genesis: None,
                     padded_paired_reference,
@@ -168,10 +167,7 @@ fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
     let decoded = decode_sketch_point_record(&payload, 0).expect("version-0 point");
     assert_eq!(
         decoded.record_form,
-        SketchPointRecordForm::Version0 {
-            flag: true,
-            companion: None
-        }
+        SketchPointRecordForm::Version0 { flag: true }
     );
     assert_eq!(decoded.record_form.persistent_id(), None);
     assert_eq!(decoded.record_form.flags(), [1, 0, 0, 0, 0, 0, 0, 0]);
