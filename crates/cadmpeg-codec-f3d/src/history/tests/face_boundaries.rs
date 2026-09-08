@@ -102,9 +102,8 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         record_index: 10,
         byte_offset: 100,
         class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        compact_layout: false,
+        layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
         local_id: 13,
-        local_id_offset: 123,
         asset_id: crate::records::DesignGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )

@@ -7992,9 +7992,9 @@ pub(crate) fn bind_edge_identity_history(
                 operand.group_record_index,
             ))
             .and_modify(|count| {
-                *count = count.and_then(|count| operand.compact_layout.then_some(count + 1));
+                *count = count.and_then(|count| operand.layout.is_compact().then_some(count + 1));
             })
-            .or_insert(operand.compact_layout.then_some(1));
+            .or_insert(operand.layout.is_compact().then_some(1));
     }
     let local_ids = operands
         .iter()

@@ -652,9 +652,8 @@ pub fn decode_edge_identity_operands(
                 record_index,
                 byte_offset: header.byte_offset,
                 class_tag: header.class_tag.clone(),
-                compact_layout: parsed.compact_layout,
+                layout: parsed.layout,
                 local_id: parsed.local_id,
-                local_id_offset: parsed.local_id_offset,
                 asset_id,
                 asset_id_offset: parsed.asset_id_offset,
                 context_id,
@@ -4043,9 +4042,8 @@ fn parse_extrude_identity_member(
 }
 
 pub(crate) struct ParsedEdgeIdentityMember {
-    pub(crate) compact_layout: bool,
+    pub(crate) layout: crate::records::topology::DesignEdgeIdentityLayout,
     pub(crate) local_id: u64,
-    pub(crate) local_id_offset: u64,
     pub(crate) asset_id: String,
     pub(crate) asset_id_offset: u64,
     pub(crate) context_id: String,
@@ -4056,15 +4054,17 @@ pub(crate) fn parse_edge_identity_member(
     bytes: &[u8],
     start: usize,
 ) -> Option<ParsedEdgeIdentityMember> {
-    let (compact_layout, marker_offset) = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
-        (false, 23)
+    use crate::records::topology::DesignEdgeIdentityLayout;
+    let layout = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
+        DesignEdgeIdentityLayout::Full
     } else if bytes.get(start + 11..start + 22) == Some(&[0; 11]) {
-        (true, 22)
+        DesignEdgeIdentityLayout::Compact
     } else if bytes.get(start + 11..start + 21) == Some(&[0; 10]) {
-        (true, 21)
+        DesignEdgeIdentityLayout::Shortest
     } else {
         return None;
     };
+    let marker_offset = usize::try_from(layout.marker_offset()).ok()?;
     let local_id_offset = marker_offset + 1;
     let asset_offset = marker_offset + 15;
     if bytes.get(start + marker_offset) != Some(&1)
@@ -4080,9 +4080,8 @@ pub(crate) fn parse_edge_identity_member(
         return None;
     }
     Some(ParsedEdgeIdentityMember {
-        compact_layout,
+        layout,
         local_id,
-        local_id_offset: u64::try_from(start + local_id_offset).ok()?,
         asset_id,
         asset_id_offset: u64::try_from(start + asset_offset + 4).ok()?,
         context_id,

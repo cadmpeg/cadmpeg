@@ -690,7 +690,7 @@ fn resolved_edge_group_with_transition_chain(
         let is_uniform_compact_transition_chain = allow_edge_treatment_transition_chain
             && !edges.is_empty()
             && identity_operands.iter().all(|operand| {
-                if !operand.compact_layout {
+                if !operand.layout.is_compact() {
                     return false;
                 }
                 let mut candidate = operand.transition_edge_candidates.clone();
@@ -2409,7 +2409,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                     let [operand] = matches.as_slice() else {
                         return None;
                     };
-                    operand.compact_layout.then_some(*operand)
+                    operand.layout.is_compact().then_some(*operand)
                 })
                 .collect::<Option<Vec<_>>>()?;
             radius_edge_identity_group_candidates(&identities, radius.0)?;

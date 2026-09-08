@@ -805,9 +805,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index,
         byte_offset: u64::from(record_index),
         class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        compact_layout: false,
+        layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
         local_id: u64::from(record_index),
-        local_id_offset: 0,
         asset_id: crate::records::DesignGuidText::try_from(
             "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
         )

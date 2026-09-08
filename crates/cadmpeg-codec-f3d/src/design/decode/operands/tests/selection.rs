@@ -631,8 +631,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("fixed edge-treatment selection identity");
     assert_eq!(edge_identity.local_id, 5890);
-    assert!(!edge_identity.compact_layout);
-    assert_eq!(edge_identity.local_id_offset, 24);
+    assert!(!edge_identity.layout.is_compact());
+    assert_eq!(edge_identity.layout.local_id_offset(), 24);
     assert_eq!(edge_identity.asset_id_offset, 42);
     assert_eq!(edge_identity.context_id_offset, 118);
 
@@ -640,9 +640,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let compact_edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("compact fixed edge-treatment selection identity");
-    assert!(compact_edge_identity.compact_layout);
+    assert!(compact_edge_identity.layout.is_compact());
     assert_eq!(compact_edge_identity.local_id, 5890);
-    assert_eq!(compact_edge_identity.local_id_offset, 23);
+    assert_eq!(compact_edge_identity.layout.local_id_offset(), 23);
     assert_eq!(compact_edge_identity.asset_id_offset, 41);
     assert_eq!(compact_edge_identity.context_id_offset, 117);
 
@@ -650,9 +650,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let shortest_edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("short compact edge-treatment selection identity");
-    assert!(shortest_edge_identity.compact_layout);
+    assert!(shortest_edge_identity.layout.is_compact());
     assert_eq!(shortest_edge_identity.local_id, 5890);
-    assert_eq!(shortest_edge_identity.local_id_offset, 22);
+    assert_eq!(shortest_edge_identity.layout.local_id_offset(), 22);
     assert_eq!(shortest_edge_identity.asset_id_offset, 40);
     assert_eq!(shortest_edge_identity.context_id_offset, 116);
 

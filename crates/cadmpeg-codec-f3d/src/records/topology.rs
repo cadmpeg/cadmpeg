@@ -2257,9 +2257,55 @@ pub enum AsmHistoricalEntityKind {
     Pcurve,
 }
 
+/// Prologue framing of a persistent edge-selection identity.
+///
+/// The three source framings differ only in the length of the zero run before
+/// the presence marker, which fixes where every following field sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignEdgeIdentityLayout {
+    /// Twelve-zero prologue; the presence marker sits at byte 23.
+    Full,
+    /// Eleven-zero prologue; the presence marker sits at byte 22.
+    Compact,
+    /// Ten-zero prologue; the presence marker sits at byte 21.
+    Shortest,
+}
+
+impl DesignEdgeIdentityLayout {
+    /// Byte offset of the presence marker from the indexed-record header.
+    pub(crate) fn marker_offset(self) -> u64 {
+        match self {
+            Self::Full => 23,
+            Self::Compact => 22,
+            Self::Shortest => 21,
+        }
+    }
+
+    /// Byte offset of `local_id` from the indexed-record header.
+    pub(crate) fn local_id_offset(self) -> u64 {
+        self.marker_offset() + 1
+    }
+
+    /// The two shortened framings share the on-wire `compact_layout` flag.
+    pub(crate) fn is_compact(self) -> bool {
+        !matches!(self, Self::Full)
+    }
+
+    fn from_local_id_delta(delta: u64) -> Option<Self> {
+        [Self::Full, Self::Compact, Self::Shortest]
+            .into_iter()
+            .find(|layout| layout.local_id_offset() == delta)
+    }
+}
+
 /// Persistent selection identity owned by a Fillet or Chamfer operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignEdgeIdentityOperandWire"))]
+#[serde(
+    try_from = "DesignEdgeIdentityOperandWire",
+    into = "DesignEdgeIdentityOperandWire"
+)]
 pub struct DesignEdgeIdentityOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -2275,13 +2321,11 @@ pub struct DesignEdgeIdentityOperand {
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
-    /// Whether the identity uses the compact eleven-zero prologue.
-    #[serde(default)]
-    pub compact_layout: bool,
+    /// Prologue framing, which fixes `local_id_offset` relative to
+    /// `byte_offset`.
+    pub layout: DesignEdgeIdentityLayout,
     /// Local persistent selection identity preceding the two UUID fields.
     pub local_id: u64,
-    /// Byte offset of `local_id`.
-    pub local_id_offset: u64,
     /// Asset UUID qualifying the local selection identity.
     pub asset_id: DesignGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
@@ -2291,28 +2335,128 @@ pub struct DesignEdgeIdentityOperand {
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
     pub historical: Option<HistoricalBinding>,
     /// Complete radius-qualified deleted source-edge set proved by the owning
     /// feature transition. The transition-scoped set repeats on each operand.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     /// Complete deleted source-edge chain proved by the owning feature
     /// transition. The transition-scoped chain repeats on each operand.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transition_edge_candidates: Vec<i64>,
     /// Ordered deleted treatment edges selected by an embedded bounded-face
     /// rule owned by this operand.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resolved_edge_slots: Vec<i64>,
     /// Unique edge slot selected in the owning feature's preceding state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
     /// Native identity or embedded bounded-face operand proving the resolved
     /// edge selection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution_identity_id: Option<String>,
+}
+
+impl DesignEdgeIdentityOperand {
+    /// Byte offset of `local_id`, fixed by the prologue framing.
+    pub fn local_id_offset(&self) -> u64 {
+        self.byte_offset
+            .saturating_add(self.layout.local_id_offset())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignEdgeIdentityOperandWire {
+    id: String,
+    scope_record_index: u32,
+    group_record_index: u32,
+    group_member_ordinal: u32,
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: String,
+    #[serde(default)]
+    compact_layout: bool,
+    local_id: u64,
+    local_id_offset: u64,
+    asset_id: String,
+    asset_id_offset: u64,
+    context_id: String,
+    context_id_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
+    historical: Option<HistoricalBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    transition_edge_candidates: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    resolved_edge_slots: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_edge_slot: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolution_identity_id: Option<String>,
+}
+
+impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
+    type Error = String;
+
+    fn try_from(wire: DesignEdgeIdentityOperandWire) -> Result<Self, Self::Error> {
+        let layout = wire
+            .local_id_offset
+            .checked_sub(wire.byte_offset)
+            .and_then(DesignEdgeIdentityLayout::from_local_id_delta)
+            .ok_or("local_id_offset does not name an edge-identity prologue framing")?;
+        if layout.is_compact() != wire.compact_layout {
+            return Err(
+                "compact_layout disagrees with the framing local_id_offset names".to_owned(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            group_record_index: wire.group_record_index,
+            group_member_ordinal: wire.group_member_ordinal,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag.try_into()?,
+            layout,
+            local_id: wire.local_id,
+            asset_id: wire.asset_id.try_into()?,
+            asset_id_offset: wire.asset_id_offset,
+            context_id: wire.context_id.try_into()?,
+            context_id_offset: wire.context_id_offset,
+            historical: wire.historical,
+            treatment_radius_candidates: wire.treatment_radius_candidates,
+            transition_edge_candidates: wire.transition_edge_candidates,
+            resolved_edge_slots: wire.resolved_edge_slots,
+            resolved_edge_slot: wire.resolved_edge_slot,
+            resolution_identity_id: wire.resolution_identity_id,
+        })
+    }
+}
+
+impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
+    fn from(operand: DesignEdgeIdentityOperand) -> Self {
+        let local_id_offset = operand.local_id_offset();
+        Self {
+            id: operand.id,
+            scope_record_index: operand.scope_record_index,
+            group_record_index: operand.group_record_index,
+            group_member_ordinal: operand.group_member_ordinal,
+            record_index: operand.record_index,
+            byte_offset: operand.byte_offset,
+            class_tag: operand.class_tag.into(),
+            compact_layout: operand.layout.is_compact(),
+            local_id: operand.local_id,
+            local_id_offset,
+            asset_id: operand.asset_id.into(),
+            asset_id_offset: operand.asset_id_offset,
+            context_id: operand.context_id.into(),
+            context_id_offset: operand.context_id_offset,
+            historical: operand.historical,
+            treatment_radius_candidates: operand.treatment_radius_candidates,
+            transition_edge_candidates: operand.transition_edge_candidates,
+            resolved_edge_slots: operand.resolved_edge_slots,
+            resolved_edge_slot: operand.resolved_edge_slot,
+            resolution_identity_id: operand.resolution_identity_id,
+        }
+    }
 }
 
 /// Edge-selection operand owned by an edge-selecting parameter scope.

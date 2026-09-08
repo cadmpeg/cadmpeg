@@ -6024,14 +6024,6 @@ fn validate_edge_identity_operands<'a>(
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
-        let local_id_offset_is_valid = if operand.compact_layout {
-            matches!(
-                operand.local_id_offset.checked_sub(operand.byte_offset),
-                Some(22 | 23)
-            )
-        } else {
-            operand.local_id_offset == operand.byte_offset.saturating_add(24)
-        };
         let valid = scope.is_some_and(|scope| {
             matches!(
                 design::design_feature_family(&scope.kind()),
@@ -6045,8 +6037,7 @@ fn validate_edge_identity_operands<'a>(
                     == Some(&operand.record_index)
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
-        }) && local_id_offset_is_valid
-            && operand.asset_id_offset == operand.local_id_offset.saturating_add(18)
+        }) && operand.asset_id_offset == operand.local_id_offset().saturating_add(18)
             && operand.context_id_offset == operand.asset_id_offset.saturating_add(76)
             && expected_edge_identity_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_identity_slots.insert((
