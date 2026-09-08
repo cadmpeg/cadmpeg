@@ -267,7 +267,16 @@ impl SldprtLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced("sldprt", self.code(), self.shared_taxonomy())
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("sldprt") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

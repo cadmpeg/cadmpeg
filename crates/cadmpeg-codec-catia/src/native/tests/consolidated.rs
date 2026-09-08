@@ -373,7 +373,9 @@ fn consolidated_circle_deserialization_rejects_mismatched_full_circle() {
         panic!("one consolidated circle")
     };
     let mut wire = serde_json::to_value(circle).expect("serialize CATIA circle");
-    let full_circle = wire["full_circle"].as_bool().expect("serialized circle flag");
+    let full_circle = wire["full_circle"]
+        .as_bool()
+        .expect("serialized circle flag");
     wire["full_circle"] = serde_json::json!(!full_circle);
 
     let error = serde_json::from_value::<crate::native::CatiaConsolidatedCircle>(wire)

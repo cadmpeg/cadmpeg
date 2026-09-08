@@ -174,9 +174,13 @@ impl RetainedSourceRecord {
 
     fn from_unknown(stream: String, record: UnknownRecord) -> Self {
         let (id, offset, byte_len, sha256, data, _) = record.into_parts();
-        match data {
-            Some(data) => Self::retained(id.into_string(), stream, offset, data),
-            None => Self::unavailable(id.into_string(), stream, offset, byte_len, sha256),
+        Self {
+            id: id.into_string(),
+            stream,
+            offset,
+            byte_len,
+            sha256,
+            data,
         }
     }
 
@@ -333,17 +337,13 @@ impl SourceFidelity {
                     id: id.clone(),
                     links,
                 };
-                let retained = match data {
-                    Some(data) => {
-                        RetainedSourceRecord::retained(id.into_string(), stream, offset, data)
-                    }
-                    None => RetainedSourceRecord::unavailable(
-                        id.into_string(),
-                        stream,
-                        offset,
-                        byte_len,
-                        sha256,
-                    ),
+                let retained = RetainedSourceRecord {
+                    id: id.into_string(),
+                    stream,
+                    offset,
+                    byte_len,
+                    sha256,
+                    data,
                 };
                 retained_records.push(retained);
                 product
@@ -420,6 +420,48 @@ mod tests {
             sidecar.validate(),
             Err(FidelityError::Digest { .. })
         ));
+    }
+
+    #[test]
+    fn unknown_conversion_preserves_contradictions_for_admission() {
+        for attach in [false, true] {
+            for (byte_len, sha256) in [
+                (99, crate::hash::sha256_hex(&[1, 2, 3])),
+                (3, "wrong".into()),
+            ] {
+                let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
+                    "id": "synthetic:model:unknown#0",
+                    "offset": 7,
+                    "byte_len": byte_len,
+                    "sha256": sha256,
+                    "data": "AQID"
+                }))
+                .unwrap();
+                let mut fidelity = SourceFidelity::default();
+                if attach {
+                    fidelity
+                        .attach_native_unknown_records(&mut CadIr::empty(), "synthetic", [unknown])
+                        .unwrap();
+                } else {
+                    fidelity.retain_unknown_records("source", [unknown]);
+                }
+                let retained = &fidelity.retained_records[0];
+                assert_eq!(retained.byte_len(), byte_len);
+                assert_eq!(retained.sha256(), sha256);
+                assert_eq!(retained.data(), Some([1, 2, 3].as_slice()));
+                if byte_len == 99 {
+                    assert!(matches!(
+                        fidelity.validate(),
+                        Err(FidelityError::Length { .. })
+                    ));
+                } else {
+                    assert!(matches!(
+                        fidelity.validate(),
+                        Err(FidelityError::Digest { .. })
+                    ));
+                }
+            }
+        }
     }
 
     #[test]

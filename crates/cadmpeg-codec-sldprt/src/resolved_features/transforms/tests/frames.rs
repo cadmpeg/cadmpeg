@@ -1316,7 +1316,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     }];
     let mut builder = AnnotationBuilder::new();
     let stream = builder.stream("test:support");
-    builder.note(&sketch_id.0, stream, 200).tag("support");
+    builder.note(&sketch_id.0, &stream, 200).tag("support");
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [&sketch_id.0, &entity_id.0, &constraint_id.0] {

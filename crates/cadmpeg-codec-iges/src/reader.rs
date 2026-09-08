@@ -546,7 +546,11 @@ fn decode_with_occurrence_limits(
             .attributes
             .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
     }
-    let mut body = DecodeBody::new(geometry_transferred);
+    let mut body = DecodeBody::new(if ctx.container_only() {
+        cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+    } else {
+        cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
+    });
     body.losses = losses;
     body.notes = notes;
     body.transfer_ledger = transfer_ledger;

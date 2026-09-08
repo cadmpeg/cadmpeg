@@ -34,6 +34,7 @@ fn parent_child_composition_uses_column_point_order() {
     assert_eq!(
         parent
             .compose(child)
+            .unwrap()
             .apply_point(Point3::new(1.0, 0.0, 0.0)),
         Point3::new(12.0, 0.0, 0.0)
     );

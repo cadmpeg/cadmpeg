@@ -919,20 +919,29 @@ mod tests {
 
     #[test]
     fn external_assembly_applicability_uses_the_complete_local_loss_identity() {
-        use cadmpeg_ir::report::{LossKind, LossTaxonomy};
+        use cadmpeg_ir::report::{LossKind, LossNamespace, LossTaxonomy};
+
+        const NX_NAMESPACE: LossNamespace<'static> = match LossNamespace::new(NX_LOSS_NAMESPACE) {
+            Ok(namespace) => namespace,
+            Err(_) => panic!("reserved NX loss namespace"),
+        };
+        const OTHER_NAMESPACE: LossNamespace<'static> = match LossNamespace::new("other") {
+            Ok(namespace) => namespace,
+            Err(_) => panic!("reserved alternate loss namespace"),
+        };
 
         let external = LossKind::namespaced(
-            NX_LOSS_NAMESPACE,
+            NX_NAMESPACE,
             EXTERNAL_ASSEMBLY_LOSS_CODE,
             LossTaxonomy::AssemblyComponentsExternal,
         );
         let wrong_namespace = LossKind::namespaced(
-            "other",
+            OTHER_NAMESPACE,
             EXTERNAL_ASSEMBLY_LOSS_CODE,
             LossTaxonomy::AssemblyComponentsExternal,
         );
         let wrong_code = LossKind::namespaced(
-            NX_LOSS_NAMESPACE,
+            NX_NAMESPACE,
             "assembly.other",
             LossTaxonomy::AssemblyComponentsExternal,
         );

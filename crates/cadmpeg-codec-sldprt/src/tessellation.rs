@@ -715,7 +715,9 @@ pub(crate) fn assign_unique_surface_owners(
         .filter_map(|face| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {
-                Some(transform) if transform.is_proper_rigid() => transform.try_inverse_affine()?,
+                Some(transform) if transform.is_proper_rigid() => {
+                    transform.try_inverse_affine().ok()?
+                }
                 Some(_) => return None,
                 None => cadmpeg_ir::transform::Transform::identity(),
             };
@@ -2616,7 +2618,7 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
             transform
                 .apply_vector(analytic_surface_normal(
                     basis,
-                    transform.try_inverse_affine()?.apply_point(point),
+                    transform.try_inverse_affine().ok()?.apply_point(point),
                 )?)
                 .unit()
         }
@@ -2703,7 +2705,10 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             Some((elliptical_radius - local_radius.abs()).abs())
         }
         SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
-            analytic_surface_residual(basis, transform.try_inverse_affine()?.apply_point(point))
+            analytic_surface_residual(
+                basis,
+                transform.try_inverse_affine().ok()?.apply_point(point),
+            )
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
@@ -2743,7 +2748,7 @@ fn surface_measure(
         if transform.is_proper_rigid() {
             let mut measure = surface_measure(
                 basis,
-                transform.try_inverse_affine()?.apply_point(point),
+                transform.try_inverse_affine().ok()?.apply_point(point),
                 fit_tolerance,
             )?;
             measure.normal = measure

@@ -106,7 +106,7 @@ fn attach_container_payloads(
         let id = UnknownId::mint(format!("nx:container-entry:opaque#{ordinal}"))
             .expect("identity grammar");
         annotations
-            .note(&id, annotation_stream, offset)
+            .note(&id, &annotation_stream, offset)
             .tag(content.label());
         annotations.exactness(&id, Exactness::ByteExact);
         unknowns.push(UnknownRecord::retained(
@@ -139,7 +139,7 @@ fn attach_indexed_om_unknowns(
                     .expect("identity grammar");
                     let offset = entry_offset + record.offset as u64;
                     annotations
-                        .note(&id, annotation_stream, offset)
+                        .note(&id, &annotation_stream, offset)
                         .tag("OM_ENTITY_RECORD");
                     annotations.exactness(&id, Exactness::ByteExact);
                     unknowns.push(UnknownRecord::retained(
@@ -166,7 +166,7 @@ fn attach_indexed_om_unknowns(
                     .expect("identity grammar");
                     let offset = entry_offset + record.offset as u64;
                     annotations
-                        .note(&id, annotation_stream, offset)
+                        .note(&id, &annotation_stream, offset)
                         .tag("OM_DATA_BLOCK");
                     annotations.exactness(&id, Exactness::ByteExact);
                     unknowns.push(UnknownRecord::retained(
@@ -224,7 +224,7 @@ pub(crate) fn attach(
     .unwrap_or_default();
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
-            .note(tessellation.id.as_str(), annotation_stream, source_offset)
+            .note(tessellation.id.as_str(), &annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
         annotations.exactness(tessellation.id.as_str(), Exactness::Derived);
         ir.model.tessellations.push(tessellation);
@@ -233,12 +233,12 @@ pub(crate) fn attach(
     attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
     for attribute in &model.om.part_attributes {
         annotations
-            .note(&attribute.id, annotation_stream, attribute.source_offset)
+            .note(&attribute.id, &annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
         let id = AttributeId::mint(format!("{}:neutral", attribute.id)).expect("identity grammar");
         annotations
-            .note(id.as_str(), annotation_stream, attribute.source_offset)
+            .note(id.as_str(), &annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.derived(id.as_str(), "target");
         annotations.derived(id.as_str(), "name");
@@ -308,7 +308,7 @@ pub(crate) fn attach(
                 ConfigurationBodies::Unresolved
             };
             annotations
-                .note(id.as_str(), annotation_stream, configuration.source_offset)
+                .note(id.as_str(), &annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
             annotations.derived(id.as_str(), "ordinal");
             if active_attribute_use.is_some() {
@@ -461,14 +461,14 @@ fn attach_rm_appearances(
             annotations,
             &mut appearances,
             definition,
-            annotation_stream,
+            &annotation_stream,
         );
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-color#{}",
             native_entity_key(&binding.source_id)
         );
         annotations
-            .note(&binding_id, annotation_stream, binding.source_offset)
+            .note(&binding_id, &annotation_stream, binding.source_offset)
             .tag("RMFASTLOAD_COLOR_ASSIGNMENT");
         annotations.derived(&binding_id, "target");
         annotations.derived(&binding_id, "appearance");
@@ -511,14 +511,14 @@ fn attach_rm_appearances(
             annotations,
             &mut appearances,
             definition,
-            annotation_stream,
+            &annotation_stream,
         );
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-face-color#{}",
             native_entity_key(&binding.face_id)
         );
         annotations
-            .note(&binding_id, annotation_stream, binding.source_offset)
+            .note(&binding_id, &annotation_stream, binding.source_offset)
             .tag("RMFASTLOAD_FACE_COLOR_ASSIGNMENT");
         annotations.derived(&binding_id, "target");
         annotations.derived(&binding_id, "appearance");
@@ -541,7 +541,7 @@ fn ensure_rm_color_appearance(
     annotations: &mut AnnotationBuilder,
     appearances: &mut BTreeMap<String, AppearanceId>,
     definition: &crate::native::om::PartColorDefinition,
-    annotation_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> AppearanceId {
     appearances
         .entry(definition.id.clone())
@@ -794,7 +794,7 @@ fn attach_jpeg_preview_assets(
         let native_ref = format!("nx:container:jpeg-preview#{ordinal}");
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations
-                .note(&native_ref, stream, source_offset)
+                .note(&native_ref, &stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");
             annotations.exactness(&native_ref, Exactness::ByteExact);
             unknowns.push(UnknownRecord::retained(
@@ -807,7 +807,7 @@ fn attach_jpeg_preview_assets(
         }
         let id = AssetId::mint(format!("{native_ref}:asset")).expect("identity grammar");
         annotations
-            .note(id.as_str(), stream, source_offset)
+            .note(id.as_str(), &stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
         annotations.exactness(id.as_str(), Exactness::ByteExact);
         annotations.derived(id.as_str(), "id");
@@ -874,7 +874,7 @@ fn attach_material_texture_assets(
     let stream = annotations.stream("nx:container");
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
         annotations
-            .note(asset.id.as_str(), stream, texture.source_offset)
+            .note(asset.id.as_str(), &stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
         annotations.exactness(asset.id.as_str(), Exactness::ByteExact);
         annotations.derived(asset.id.as_str(), "id");
@@ -1021,7 +1021,7 @@ fn attach_initial_segment_bodies(
     ir: &mut CadIr,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<FeatureId> {
     let bindings_by_body = ir
         .model
@@ -1241,7 +1241,7 @@ fn attach_feature_operations(
         data_blocks,
     );
     let stream = annotations.stream("nx:container");
-    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, stream);
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
@@ -1894,7 +1894,7 @@ fn attach_feature_operations(
             continue;
         };
         annotations
-            .note(annotation.id.as_str(), stream, label.source_offset)
+            .note(annotation.id.as_str(), &stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
         annotations.exactness(annotation.id.as_str(), Exactness::Derived);
         ir.model.semantic_annotations.push(annotation);
@@ -3475,7 +3475,7 @@ fn attach_feature_operations(
                             .map_or([].as_slice(), Vec::as_slice),
                     },
                     annotations,
-                    stream,
+                    &stream,
                 )
             })
             .flatten();
@@ -3571,7 +3571,7 @@ fn attach_feature_operations(
                 })
         });
         annotations
-            .note(&id, stream, label.source_offset)
+            .note(&id, &stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
         let source_content = feature_source_content(operation_payload_string_records);
@@ -3871,7 +3871,7 @@ fn attach_sketch_graph(
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<SketchId> {
     let operation_groups = sources
         .point_groups
@@ -4307,7 +4307,7 @@ fn attach_parasolid_topology_string_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(id.as_str(), source_stream, string.inflated_offset)
+                .note(id.as_str(), &source_stream, string.inflated_offset)
                 .tag("ENTITY_54_STRING_ATTRIBUTE");
             annotations.derived(id.as_str(), "target");
             annotations.derived(id.as_str(), "name");
@@ -4725,7 +4725,7 @@ fn attach_parasolid_topology_numeric_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(id.as_str(), source_stream, source_offset)
+                .note(id.as_str(), &source_stream, source_offset)
                 .tag(tag);
             annotations.derived(id.as_str(), "target");
             annotations.derived(id.as_str(), "name");
@@ -4890,7 +4890,7 @@ fn attach_parasolid_topology_structured_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(id.as_str(), source_stream, source_offset)
+                .note(id.as_str(), &source_stream, source_offset)
                 .tag(tag);
             annotations.derived(id.as_str(), "target");
             annotations.derived(id.as_str(), "name");
@@ -8775,7 +8775,7 @@ pub(crate) fn attach_expression_parameters(
             .min()
             .unwrap_or(0);
         annotations
-            .note(&feature_id, stream, first_offset)
+            .note(&feature_id, &stream, first_offset)
             .tag("hostglobalvariables");
         annotations.exactness(&feature_id, Exactness::Derived);
         let source_content = expressions
@@ -8820,7 +8820,7 @@ pub(crate) fn attach_expression_parameters(
             let id = expression_parameter_id(&expression.id)
                 .expect("sectioned expressions have parameter identities");
             annotations
-                .note(id.as_str(), stream, expression.source_offset)
+                .note(id.as_str(), &stream, expression.source_offset)
                 .tag("Number");
             annotations.derived(id.as_str(), "owner");
             annotations.derived(id.as_str(), "ordinal");

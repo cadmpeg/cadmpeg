@@ -3178,7 +3178,7 @@ fn build_geometry_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
     DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),
@@ -4493,7 +4493,7 @@ fn build_container_report(
     classification.append_losses(&mut losses);
 
     DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),

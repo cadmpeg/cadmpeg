@@ -94,7 +94,7 @@ fn body_instance_transform_composes_before_existing_body_transform() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    compose_body_transform(&mut body, instance);
+    compose_body_transform(&mut body, instance).unwrap();
     assert_eq!(
         body.transform
             .expect("required invariant")

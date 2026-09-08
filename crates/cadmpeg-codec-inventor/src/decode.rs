@@ -1398,7 +1398,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     for record in kernel_annotations {
         let stream = annotations.stream(format!("inventor:{}", record.stream));
         annotations
-            .note(&record.id, stream, record.offset)
+            .note(&record.id, &stream, record.offset)
             .tag(record.tag.as_str());
         for field in record.derived_fields {
             annotations.derived(&record.id, field);
@@ -1450,7 +1450,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let body = DecodeBody {
-        geometry_transferred,
+        transfer: if ctx.container_only() {
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
+        },
         coverage: [
             (crate::coverage::RSE_STORAGE_BANDS, storage_bands.len()),
             (crate::coverage::RSE_DATABASES, databases.len()),
