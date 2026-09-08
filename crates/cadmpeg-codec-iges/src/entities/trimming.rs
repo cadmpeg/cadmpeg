@@ -2339,27 +2339,19 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        staged.push((
-            entry.sequence,
-            candidate,
-            candidate_boundary_vertex_derivations,
-        ));
+        staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir);
-    for (sequence, candidate, derivations) in staged {
+    for (entry, candidate, derivations) in staged {
         if commit_session.commit_model(candidate, ir).is_err() {
-            let entry = entries
-                .get(&sequence)
-                .copied()
-                .expect("staged trimming entry came from the directory");
             losses.push(entity_loss(
                 entry,
                 "trimmed sheet candidate failed neutral validation",
             ));
             continue;
         }
-        decoded.insert(sequence);
+        decoded.insert(entry.sequence);
         boundary_vertex_derivations.extend(derivations);
     }
 
