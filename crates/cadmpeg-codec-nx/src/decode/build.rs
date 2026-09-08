@@ -887,11 +887,15 @@ pub(crate) fn try_decode_geometry(
                         let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance());
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
-                                metadata.fit_tolerance = fit_tolerance;
+                                metadata
+                                    .set_fit_tolerance(fit_tolerance)
+                                    .map_err(CodecError::malformed)?;
                             }
                             cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => {
                                 if let Some(fit_tolerance) = fit_tolerance {
-                                    inline.fit_tolerance = fit_tolerance;
+                                    inline
+                                        .set_fit_tolerance(fit_tolerance)
+                                        .map_err(CodecError::malformed)?;
                                 }
                             }
                         }

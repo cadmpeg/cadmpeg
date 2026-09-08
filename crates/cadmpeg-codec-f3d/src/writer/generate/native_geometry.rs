@@ -6171,7 +6171,7 @@ pub(crate) fn pcurve_uses_ref_form(pcurve: &Pcurve) -> Result<bool, CodecError> 
     match &pcurve.metadata {
         cadmpeg_ir::geometry::PcurveMetadata::AsmInline(_) => Ok(false),
         cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
-            if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance.is_none() =>
+            if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
         {
             Ok(true)
         }
@@ -6192,7 +6192,7 @@ pub(crate) fn native_pcurve(
 ) -> Result<(), CodecError> {
     let inline = match &pcurve.metadata {
         cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
-            if metadata.wrapper_reversed.is_some() || metadata.fit_tolerance.is_some() {
+            if metadata.wrapper_reversed.is_some() || metadata.fit_tolerance().is_some() {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} has non-ASM wrapper or tolerance metadata",
                     pcurve.id
@@ -6273,7 +6273,7 @@ pub(crate) fn native_pcurve(
             native_f64(bytes, weights[index]);
         }
     }
-    native_f64(bytes, inline.fit_tolerance);
+    native_f64(bytes, inline.fit_tolerance());
     bytes.push(0x10);
     for flag in inline.native_tail_flags {
         bytes.push(native_bool(flag));
