@@ -239,10 +239,7 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
             RevolutionBoundary::Start => lower,
             RevolutionBoundary::End => upper,
         };
-        return Some(line_pcurve(
-            [parameter, 0.0],
-            [parameter, std::f64::consts::TAU],
-        )?);
+        return line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU]);
     }
     revolution_boundary_pcurve(
         surface,

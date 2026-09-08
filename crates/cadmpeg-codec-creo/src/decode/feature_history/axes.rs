@@ -111,11 +111,11 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             }
             SurfaceGeometry::Plane(plane_surface) => {
                 let (_, &normal, _) = plane_surface.parts();
-                plane_normals.push(normal)
+                plane_normals.push(normal);
             }
             SurfaceGeometry::Sphere(sphere_surface) => {
                 let (&center, _, _, _) = sphere_surface.parts();
-                sphere_centers.push(center)
+                sphere_centers.push(center);
             }
             _ => return None,
         }

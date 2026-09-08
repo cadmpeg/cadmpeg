@@ -1093,7 +1093,7 @@ pub(crate) fn transfer_e5_topology(
     .is_none()
     {
         return false;
-    };
+    }
     if emit_e5_pcurves(ir, annotations, &pcurve_plan).is_none() {
         return false;
     }
@@ -2430,20 +2430,18 @@ fn e5_support_occurrence_intersection_context(
     {
         return None;
     }
-    Some(
-        IntcurveSupportContext::try_new(
-            [left, right].map(|side| IntcurveSupportSide {
-                surface: Some(side.surface.clone()),
-                pcurve: Some(SupportPcurve::new(
-                    side.pcurve.clone(),
-                    DirectedParameterRange::new(side.pcurve_range).ok(),
-                )),
-            }),
-            solved_range,
-            std::array::from_fn(|_| Vec::new()),
-        )
-        .ok()?,
+    IntcurveSupportContext::try_new(
+        [left, right].map(|side| IntcurveSupportSide {
+            surface: Some(side.surface.clone()),
+            pcurve: Some(SupportPcurve::new(
+                side.pcurve.clone(),
+                DirectedParameterRange::new(side.pcurve_range).ok(),
+            )),
+        }),
+        solved_range,
+        std::array::from_fn(|_| Vec::new()),
     )
+    .ok()
 }
 
 fn e5_occurrence_intersection_cache(

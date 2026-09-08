@@ -5329,7 +5329,7 @@ fn native_embedded_surface(
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
-            native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 1.0, 0.0)?
+            native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 1.0, 0.0)?;
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
@@ -5341,7 +5341,7 @@ fn native_embedded_surface(
                 *radius,
                 *ratio,
                 *half_angle,
-            )?
+            )?;
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
             let (center, axis, ref_direction, radius) = sphere_surface.parts();
