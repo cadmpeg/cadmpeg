@@ -814,10 +814,10 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
 
 pub(super) fn locus_key(locus: &SketchLocus) -> (&str, u8) {
     match locus {
-        SketchLocus::Entity(entity) => (&entity.0, 0),
-        SketchLocus::Start(entity) => (&entity.0, 1),
-        SketchLocus::End(entity) => (&entity.0, 2),
-        SketchLocus::Center(entity) => (&entity.0, 3),
+        SketchLocus::Entity(entity) => (entity.as_str(), 0),
+        SketchLocus::Start(entity) => (entity.as_str(), 1),
+        SketchLocus::End(entity) => (entity.as_str(), 2),
+        SketchLocus::Center(entity) => (entity.as_str(), 3),
     }
 }
 

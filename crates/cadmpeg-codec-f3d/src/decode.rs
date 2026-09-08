@@ -3876,7 +3876,7 @@ fn populate_annotations(
         if let Some(native_ref) = entity.native_ref.as_deref() {
             entities_by_native
                 .entry(native_ref)
-                .or_insert(entity.id().0.as_str());
+                .or_insert(entity.id().as_str());
         }
     }
     let planar_sketches = ir
@@ -3973,13 +3973,19 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            let planar = crate::ids::neutral_sketch_id(entity);
-            if planar_sketches.contains(planar.0.as_str()) {
-                note(&planar.0, "sketch");
+            let planar = match crate::ids::neutral_sketch_id(entity) {
+                Some(id) => id,
+                None => continue,
+            };
+            if planar_sketches.contains(planar.as_str()) {
+                note(planar.as_str(), "sketch");
             }
-            let spatial = crate::ids::neutral_spatial_sketch_id(entity);
-            if spatial_sketches.contains(spatial.0.as_str()) {
-                note(&spatial.0, "spatial_sketch");
+            let spatial = match crate::ids::neutral_spatial_sketch_id(entity) {
+                Some(id) => id,
+                None => continue,
+            };
+            if spatial_sketches.contains(spatial.as_str()) {
+                note(spatial.as_str(), "spatial_sketch");
             }
         }
         for entity in &native.design_entity_headers {
@@ -3998,7 +4004,8 @@ fn populate_annotations(
             note(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 note(
-                    &crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index).0,
+                    &match crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index) { Some(id) => id, None => continue }
+                        .as_str(),
                     "sketch_constraint",
                 );
             }

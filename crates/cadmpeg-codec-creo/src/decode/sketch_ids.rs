@@ -239,36 +239,38 @@ pub(crate) fn feature_sketch_record_id_in_scan(
 pub(crate) fn model_sketch_id(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
-) -> SketchId {
+) -> Option<SketchId> {
     let native_id = feature_sketch_record_id_in_scan(scan, definition);
-    SketchId(native_id.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1))
+    SketchId::mint(native_id.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1)).ok()
 }
 
 pub(crate) fn sketch_identity_scope(sketch: &SketchId) -> &str {
     sketch
-        .0
+        .as_str()
         .strip_prefix("creo:model:sketch#")
-        .unwrap_or(&sketch.0)
+        .unwrap_or(sketch.as_str())
 }
 
 pub(crate) fn sketch_entity_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
-) -> SketchEntityId {
-    SketchEntityId(format!(
+) -> Option<SketchEntityId> {
+    SketchEntityId::mint(format!(
         "creo:featdefs:sketch_entity#{}:{suffix}",
         sketch_identity_scope(sketch)
     ))
+    .ok()
 }
 
 pub(crate) fn sketch_constraint_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
-) -> SketchConstraintId {
-    SketchConstraintId(format!(
+) -> Option<SketchConstraintId> {
+    SketchConstraintId::mint(format!(
         "creo:featdefs:sketch_constraint#{}:{suffix}",
         sketch_identity_scope(sketch)
     ))
+    .ok()
 }
 
 pub(crate) fn sketch_native_ref(sketch: &SketchId) -> String {

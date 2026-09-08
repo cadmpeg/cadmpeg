@@ -207,7 +207,7 @@ mod tests {
     fn configuration_feature_sketch_resolves_against_model_sketches() {
         let mut ir = CadIr::empty();
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
-        let sketch_id = SketchId("test:model:sketch#sketch".into());
+        let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: 0,

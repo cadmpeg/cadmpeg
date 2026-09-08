@@ -50,19 +50,19 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
     let entity = |id: &str, geometry: SketchGeometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             geometry,
         )
     };
     let first = entity(
-        "generated:point#0",
+        "generated:test:point#0",
         SketchGeometry::Point {
             position: Point2::new(0.0, 0.0),
         },
     );
     let second = entity(
-        "generated:point#1",
+        "generated:test:point#1",
         SketchGeometry::Point {
             position: Point2::new(40.0, 0.0),
         },
@@ -86,7 +86,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
     ));
     let rounded = entity(
-        "generated:point#rounded",
+        "generated:test:point#rounded",
         SketchGeometry::Point {
             position: Point2::new(40.000_000_5, 0.0),
         },
@@ -102,14 +102,14 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
 
     let horizontal = entity(
-        "generated:line#horizontal",
+        "generated:test:line#horizontal",
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
         },
     );
     let diagonal = entity(
-        "generated:line#diagonal",
+        "generated:test:line#diagonal",
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 10.0),
@@ -132,14 +132,14 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         std::f64::consts::FRAC_PI_4,
     ));
     let vertical = entity(
-        "generated:line#vertical",
+        "generated:test:line#vertical",
         SketchGeometry::Line {
             start: Point2::new(0.0, -10.0),
             end: Point2::new(0.0, 10.0),
         },
     );
     let offset_point = entity(
-        "generated:point#offset",
+        "generated:test:point#offset",
         SketchGeometry::Point {
             position: Point2::new(2.0, 4.0),
         },
@@ -164,14 +164,14 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
 
     let inner_circle = entity(
-        "generated:circle#inner",
+        "generated:test:circle#inner",
         SketchGeometry::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length(4.0),
         },
     );
     let outer_circle = entity(
-        "generated:circle#outer",
+        "generated:test:circle#outer",
         SketchGeometry::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length(4.25),
@@ -190,7 +190,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
     let displaced_circle = entity(
-        "generated:circle#displaced",
+        "generated:test:circle#displaced",
         SketchGeometry::Circle {
             center: Point2::new(3.001, -2.0),
             radius: cadmpeg_ir::features::Length(4.25),
@@ -204,7 +204,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
 
     let tolerant_center_circle = entity(
-        "generated:circle#tolerant-center",
+        "generated:test:circle#tolerant-center",
         SketchGeometry::Circle {
             center: Point2::new(3.000_000_5, -2.0),
             radius: cadmpeg_ir::features::Length(4.25),
@@ -223,7 +223,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
     let tolerant_parallel = entity(
-        "generated:line#tolerant-parallel",
+        "generated:test:line#tolerant-parallel",
         SketchGeometry::Line {
             start: Point2::new(0.0, 2.000_000_5),
             end: Point2::new(10.0, 2.000_000_5),
@@ -242,7 +242,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
     let tolerant_outer_circle = entity(
-        "generated:circle#tolerant-outer",
+        "generated:test:circle#tolerant-outer",
         SketchGeometry::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length(4.250_000_5),
@@ -264,10 +264,10 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
 #[test]
 fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
-    let sketch = SketchId("generated:sketch#presentation".into());
+    let sketch = SketchId::mint("generated:test:sketch#presentation").unwrap();
     let entity = |record_index: u32, geometry: SketchGeometry| {
         SketchEntity::new(
-            SketchEntityId(format!("generated:entity#{record_index}")),
+            SketchEntityId::mint(format!("generated:test:entity#{record_index}")).unwrap(),
             sketch.clone(),
             geometry,
         )
@@ -394,7 +394,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             1.0e-6,
         ),
         Some(SketchConstraintDefinition::Radius { entity, .. })
-            if entity.0 == "generated:entity#796"
+            if entity.as_str() == "generated:entity#796"
     ));
     assert!(matches!(
         crate::design::dimensions::presentation_dimension_definition(
@@ -457,20 +457,20 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
 fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     let entity = |id: &str, geometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#symmetric-distance".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#symmetric-distance").unwrap(),
             geometry,
         )
     };
     let first = entity(
-        "generated:line#first",
+        "generated:test:line#first",
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(0.0, 10.0),
         },
     );
     let second = entity(
-        "generated:line#second",
+        "generated:test:line#second",
         SketchGeometry::Line {
             start: Point2::new(5.0, 2.0),
             end: Point2::new(5.0, 8.0),
@@ -534,13 +534,13 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
 fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let entity = |id: &str, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::Point { position },
         )
     };
-    let first = entity("generated:point#first", Point2::new(4.0, 16.0));
-    let second = entity("generated:point#second", Point2::new(4.0, 14.0));
+    let first = entity("generated:test:point#first", Point2::new(4.0, 16.0));
+    let second = entity("generated:test:point#second", Point2::new(4.0, 14.0));
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance")
         .expect("identity grammar");
 
@@ -556,7 +556,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     ));
     assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
-    let diagonal = entity("generated:point#diagonal", Point2::new(7.0, 14.0));
+    let diagonal = entity("generated:test:point#diagonal", Point2::new(7.0, 14.0));
     assert!(matches!(
         directional_point_dimension(
             &[&first, &diagonal],
@@ -567,7 +567,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         ),
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
     ));
-    let square = entity("generated:point#square", Point2::new(6.0, 18.0));
+    let square = entity("generated:test:point#square", Point2::new(6.0, 18.0));
     assert!(directional_point_dimension(
         &[&first, &square],
         2.0,
@@ -582,19 +582,19 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
 fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     let entity = |id: &str, geometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             geometry,
         )
     };
     let point = entity(
-        "generated:point#dimension",
+        "generated:test:point#dimension",
         SketchGeometry::Point {
             position: Point2::new(0.0, 0.0),
         },
     );
     let line = entity(
-        "generated:line#dimension",
+        "generated:test:line#dimension",
         SketchGeometry::Line {
             start: Point2::new(-10.0, 0.0),
             end: Point2::new(-50.0, 0.0),
@@ -617,46 +617,46 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
 fn counted_linear_graph_projects_exact_auxiliary_relations() {
     let entity = |id: &str, geometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             geometry,
         )
     };
     let horizontal = entity(
-        "generated:line#horizontal",
+        "generated:test:line#horizontal",
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
         },
     );
     let vertical = entity(
-        "generated:line#vertical",
+        "generated:test:line#vertical",
         SketchGeometry::Line {
             start: Point2::new(0.0, -2.0),
             end: Point2::new(0.0, 2.0),
         },
     );
     let parallel = entity(
-        "generated:line#parallel",
+        "generated:test:line#parallel",
         SketchGeometry::Line {
             start: Point2::new(0.0, 2.0),
             end: Point2::new(10.0, 2.0),
         },
     );
     let point = entity(
-        "generated:point#on-line",
+        "generated:test:point#on-line",
         SketchGeometry::Point {
             position: Point2::new(4.0, 0.0),
         },
     );
     let duplicate_point = entity(
-        "generated:point#duplicate",
+        "generated:test:point#duplicate",
         SketchGeometry::Point {
             position: Point2::new(4.0, 0.0),
         },
     );
     let arc = entity(
-        "generated:arc#bounded",
+        "generated:test:arc#bounded",
         SketchGeometry::Arc {
             center: Point2::new(3.0, 0.0),
             radius: cadmpeg_ir::features::Length(1.0),
@@ -665,13 +665,13 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
         },
     );
     let arc_start = entity(
-        "generated:point#arc-start",
+        "generated:test:point#arc-start",
         SketchGeometry::Point {
             position: Point2::new(4.0, 0.0),
         },
     );
     let outside_arc = entity(
-        "generated:point#outside-arc",
+        "generated:test:point#outside-arc",
         SketchGeometry::Point {
             position: Point2::new(2.0, 0.0),
         },
@@ -851,12 +851,13 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         coordinates: Point2::new(0.0, y),
     };
     let points = [point(40, 0.0), point(41, 2.0)];
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let entities = points
         .iter()
         .map(|point| {
             SketchEntity::new(
-                SketchEntityId(format!("point-{}", point.record_index)),
+                SketchEntityId::mint(format!("synthetic:test:id#point-{}", point.record_index))
+                    .unwrap(),
                 sketch.clone(),
                 SketchGeometry::Point {
                     position: point.coordinates,
@@ -891,7 +892,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     ));
 
     let spatial_sketch = SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -902,10 +903,11 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         .iter()
         .map(|point| {
             cadmpeg_ir::sketches::SpatialSketchEntity::new(
-                cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
-                    "spatial-point-{}",
+                cadmpeg_ir::sketches::SpatialSketchEntityId::mint(format!(
+                    "synthetic:test:id#spatial-point-{}",
                     point.record_index
-                )),
+                ))
+                .unwrap(),
                 spatial_sketch.id.clone(),
                 cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
                     position: Point3::new(0.0, point.coordinates.v, 0.0),
@@ -980,7 +982,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         geometry: None,
     };
     let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
-        cadmpeg_ir::sketches::SpatialSketchEntityId("spatial-axis".into()),
+        cadmpeg_ir::sketches::SpatialSketchEntityId::mint("synthetic:test:id#spatial-axis")
+            .unwrap(),
         spatial_sketch.id.clone(),
         cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
             start: Point3::new(-1.0, 1.0, 0.0),
@@ -1203,7 +1206,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
         SketchEntityId, SketchLocus,
     };
 
-    let entity = |name: &str| SketchEntityId(format!("generated:{name}"));
+    let entity = |name: &str| SketchEntityId::mint(format!("generated:{name}")).unwrap();
     let parameter = ParameterId::mint("generated:distance").expect("identity grammar");
     let horizontal = |first: &str, second: &str| Definition::HorizontalDistance {
         first: SketchLocus::Entity(entity(first)),

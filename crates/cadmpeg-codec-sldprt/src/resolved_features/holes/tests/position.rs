@@ -498,9 +498,9 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                "position-geometry".into(),
-            ))),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
+            )),
         },
         native_ref: Some("native-position-sketch".into()),
     };
@@ -582,7 +582,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     });
     lane.sketch_entities.sort_by_key(|marker| marker.ordinal);
     let sketch = Sketch {
-        id: SketchId("position-geometry".into()),
+        id: SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
         name: Some("Position".into()),
         configuration: None,
         visible: None,
@@ -595,7 +595,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         native_ref: Some("lane".into()),
     };
     let entities = [SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.id.clone(),
         SketchGeometry::Point {
             position: Point2::new(2.0, 3.0),
@@ -733,9 +733,9 @@ fn unique_unindexed_point_locus_is_projected() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                "position-geometry".into(),
-            ))),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
+            )),
         },
         native_ref: Some("native-position-sketch".into()),
     };
@@ -777,7 +777,7 @@ fn unique_unindexed_point_locus_is_projected() {
         marker("relation-anchor-1", 2, [0.0, 0.0]),
     ];
     let sketch = Sketch {
-        id: SketchId("position-geometry".into()),
+        id: SketchId::mint("synthetic:test:id#position-geometry").unwrap(),
         name: Some("Position".into()),
         configuration: None,
         visible: None,
@@ -837,7 +837,7 @@ fn unique_unindexed_point_locus_is_projected() {
 #[test]
 fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     let hole = model_hole();
-    let sketch_id = SpatialSketchId("position-geometry".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
@@ -922,13 +922,13 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     };
     let point = Point3::new(12.0, 23.0, 30.0);
     let entity = SpatialSketchEntity::new(
-        SpatialSketchEntityId("point".into()),
+        SpatialSketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch_id.clone(),
         SpatialSketchGeometry::Point { position: point },
     )
     .with_native_ref(Some("authored-point".into()));
     let same_axis_endpoint = SpatialSketchEntity::new(
-        SpatialSketchEntityId("same-axis-endpoint".into()),
+        SpatialSketchEntityId::mint("synthetic:test:id#same-axis-endpoint").unwrap(),
         sketch_id.clone(),
         SpatialSketchGeometry::Point {
             position: Point3::new(12.0, 23.0, 20.0),
@@ -936,7 +936,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     )
     .with_native_ref(Some("same-axis-endpoint".into()));
     let construction_point = SpatialSketchEntity::new(
-        SpatialSketchEntityId("construction-point".into()),
+        SpatialSketchEntityId::mint("synthetic:test:id#construction-point").unwrap(),
         sketch_id,
         SpatialSketchGeometry::Point {
             position: Point3::new(100.0, 100.0, 100.0),
@@ -982,7 +982,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
 #[test]
 fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
     let hole = model_hole();
-    let sketch_id = SpatialSketchId("position-geometry".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
@@ -1037,7 +1037,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         .enumerate()
         .map(|(index, position)| {
             SpatialSketchEntity::new(
-                SpatialSketchEntityId(format!("point-{index}")),
+                SpatialSketchEntityId::mint(format!("synthetic:test:id#point-{index}")).unwrap(),
                 sketch_id.clone(),
                 SpatialSketchGeometry::Point { position },
             )
@@ -1081,7 +1081,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
 #[test]
 fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     let hole = model_hole();
-    let sketch_id = SpatialSketchId("position-geometry".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
@@ -1140,7 +1140,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     };
     let locus = Point3::new(12.0, 23.0, 30.0);
     let entity = SpatialSketchEntity::new(
-        SpatialSketchEntityId("relation-locus".into()),
+        SpatialSketchEntityId::mint("synthetic:test:id#relation-locus").unwrap(),
         sketch_id,
         SpatialSketchGeometry::Point { position: locus },
     )

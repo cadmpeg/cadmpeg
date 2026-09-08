@@ -75,10 +75,10 @@ pub(super) fn transfer_section_entities(
         .filter_map(|segment| {
             let geometry = segment_geometry(segment)?;
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let id = sketch_entity_id(sketch_id, &suffix);
+            let id = sketch_entity_id(sketch_id, &suffix)?;
             annotate(
                 annotations,
-                &id.0,
+                id.as_str(),
                 "FeatDefs",
                 segment.offset as u64,
                 match (&geometry, segment.kind) {
@@ -135,13 +135,16 @@ pub(super) fn transfer_section_entities(
         .iter()
         .filter(|segment| segment_geometry(segment).is_none())
     {
-        let id = sketch_entity_id(
+        let id = match sketch_entity_id(
             sketch_id,
             section_segment_identity_suffix(unique_segment_ids, segment),
-        );
+        ) {
+            Some(id) => id,
+            None => continue,
+        };
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_segment",
@@ -191,7 +194,10 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("circle:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let id = match sketch_entity_id(sketch_id, &suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         let geometry = circle_geometries
             .get(&segment.offset)
             .cloned()
@@ -201,7 +207,7 @@ pub(super) fn transfer_section_entities(
         let solved_geometry = matches!(geometry, SketchGeometry::Circle { .. });
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -240,7 +246,10 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("point:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let id = match sketch_entity_id(sketch_id, &suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         let geometry = point_geometries
             .get(&segment.offset)
             .cloned()
@@ -250,7 +259,7 @@ pub(super) fn transfer_section_entities(
         let solved_geometry = matches!(geometry, SketchGeometry::Point { .. });
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -288,7 +297,10 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("centered_line:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let id = match sketch_entity_id(sketch_id, &suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         let geometry = centered_line_geometries
             .get(&segment.offset)
             .cloned()
@@ -298,7 +310,7 @@ pub(super) fn transfer_section_entities(
         let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -341,7 +353,10 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("reference_line:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let id = match sketch_entity_id(sketch_id, &suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         let geometry = reference_line_geometries
             .get(&segment.offset)
             .cloned()
@@ -351,7 +366,7 @@ pub(super) fn transfer_section_entities(
         let solved_geometry = matches!(geometry, SketchGeometry::ReferenceLine { .. });
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -396,11 +411,14 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("bounded_curve:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let id = match sketch_entity_id(sketch_id, &suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_bounded_curve",
@@ -440,10 +458,13 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("conic:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, suffix);
+        let id = match sketch_entity_id(sketch_id, suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_conic",
@@ -473,7 +494,10 @@ pub(super) fn transfer_section_entities(
             continue;
         }
         let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
-        let id = sketch_entity_id(sketch_id, suffix);
+        let id = match sketch_entity_id(sketch_id, suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         let geometry = if unique_external_id {
             let native_kind =
                 match unique_section_incidence_curve_family(definition, segment.external_id) {
@@ -493,7 +517,7 @@ pub(super) fn transfer_section_entities(
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "opaque_section_segment",
@@ -542,7 +566,10 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("saved:offset:{offset}")
         };
-        let entity_id = sketch_entity_id(sketch_id, &suffix);
+        let entity_id = match sketch_entity_id(sketch_id, &suffix) {
+            Some(id) => id,
+            None => continue,
+        };
         if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
@@ -562,7 +589,7 @@ pub(super) fn transfer_section_entities(
             CurveId::mint(sketch_section_curve_id(sketch_id, &suffix)).expect("identity grammar");
         annotate(
             annotations,
-            &entity_id.0,
+            entity_id.as_str(),
             "FeatDefs",
             offset as u64,
             "saved_section_entity",
@@ -627,15 +654,18 @@ pub(super) fn transfer_section_entities(
                 &scan.surfaces.rows,
             )
         });
-        let entity_id = external_id.map_or_else(
+        let Some(entity_id) = external_id.map_or_else(
             || {
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "creo:featdefs:saved_spline#{}:{suffix}",
                     sketch_identity_scope(sketch_id)
                 ))
+                .ok()
             },
             |external_id| sketch_entity_id(sketch_id, external_id),
-        );
+        ) else {
+            continue;
+        };
         let curve_id = CurveId::mint(format!(
             "creo:featdefs:saved_spline_curve#{}:{suffix}",
             sketch_identity_scope(sketch_id)
@@ -646,7 +676,7 @@ pub(super) fn transfer_section_entities(
         }
         annotate(
             annotations,
-            &entity_id.0,
+            entity_id.as_str(),
             "FeatDefs",
             spline.offset as u64,
             "saved_interpolation_spline",
@@ -666,19 +696,21 @@ pub(super) fn transfer_section_entities(
         }
     }
     for saved in semantic_saved_section_entities(definition) {
-        let (entity, offset) = unresolved_saved_section_entity(
+        let Some((entity, offset)) = unresolved_saved_section_entity(
             definition,
             sketch_id,
             saved,
             unique_saved_ids,
             ambiguous_segment_ids,
-        );
+        ) else {
+            continue;
+        };
         if entities.iter().any(|existing| existing.id() == entity.id()) {
             continue;
         }
         annotate(
             annotations,
-            entity.id().0.as_str(),
+            entity.id().as_str(),
             "FeatDefs",
             offset as u64,
             "unresolved_saved_section_entity",

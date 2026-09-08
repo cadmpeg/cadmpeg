@@ -29,8 +29,8 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     ));
     assert!(spatial_sketch_constraint_has_complete_neutral_semantics(
         &SpatialSketchConstraintDefinition::Coincident {
-            first: SpatialSketchEntityId("first".into()),
-            second: SpatialSketchEntityId("second".into()),
+            first: SpatialSketchEntityId::mint("synthetic:test:id#first").unwrap(),
+            second: SpatialSketchEntityId::mint("synthetic:test:id#second").unwrap(),
         }
     ));
     assert!(!spatial_sketch_constraint_has_complete_neutral_semantics(
@@ -49,8 +49,8 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("native-spatial".into()),
-            sketch: SpatialSketchId("spatial-sketch".into()),
+            id: SketchConstraintId::mint("synthetic:test:id#native-spatial").unwrap(),
+            sketch: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             definition: SpatialSketchConstraintDefinition::Native {
                 native_kind: "unresolved".into(),
                 native_state: None,

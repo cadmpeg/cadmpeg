@@ -29,7 +29,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         .model
         .sketch_constraints
         .push(SketchConstraint {
-            id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+            id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
             sketch,
             definition: SketchConstraintDefinition::Horizontal { entity },
             name: None,

@@ -77,12 +77,13 @@ pub(crate) fn transfer(
         .iter()
         .filter(|object| is_sketch(&object.type_name))
         .map(|object| {
-            (
+            Ok((
                 object.id.as_str(),
-                SketchId(format!("fcstd:design:sketch#{}", object.name)),
-            )
+                SketchId::mint(format!("fcstd:design:sketch#{}", object.name))
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ))
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let body_ids = ir
         .model
         .bodies
@@ -1355,7 +1356,8 @@ fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<SketchTransfer, CodecError> {
-    let id = SketchId(format!("fcstd:design:sketch#{}", object.name));
+    let id = SketchId::mint(format!("fcstd:design:sketch#{}", object.name))
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     let mut entities = Vec::new();
     let mut matched_references = BTreeSet::new();
     if let Some(geometry) = property(properties, "Geometry") {
@@ -1393,11 +1395,12 @@ fn parse_sketch(
                 .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    SketchEntityId::mint(format!(
                         "fcstd:design:sketch-entity#{}:{}",
                         object.name,
                         index + 1
-                    )),
+                    ))
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     id.clone(),
                     geometry_value,
                 )
@@ -1475,10 +1478,11 @@ fn parse_sketch(
                 .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    SketchEntityId::mint(format!(
                         "fcstd:design:sketch-entity#{}:external:{external_index}",
                         object.name
-                    )),
+                    ))
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     id.clone(),
                     geometry,
                 )
@@ -1507,7 +1511,7 @@ fn parse_sketch(
             let numeric_suffix = format!(":external:{external_index}");
             let entity_suffix = if entities
                 .iter()
-                .any(|entity| entity.id().0.ends_with(&numeric_suffix))
+                .any(|entity| entity.id().as_str().ends_with(&numeric_suffix))
             {
                 format!(":external-link:{external_index}")
             } else {
@@ -1515,10 +1519,11 @@ fn parse_sketch(
             };
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    SketchEntityId::mint(format!(
                         "fcstd:design:sketch-entity#{}{}",
                         object.name, entity_suffix
-                    )),
+                    ))
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     id.clone(),
                     SketchGeometry::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
@@ -1537,10 +1542,11 @@ fn parse_sketch(
     if horizontal_axis {
         entities.push(
             SketchEntity::new(
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "fcstd:design:sketch-entity#{}:reference-horizontal-axis",
                     object.name
-                )),
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?,
                 id.clone(),
                 SketchGeometry::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
@@ -1554,10 +1560,11 @@ fn parse_sketch(
     if vertical_axis {
         entities.push(
             SketchEntity::new(
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "fcstd:design:sketch-entity#{}:reference-vertical-axis",
                     object.name
-                )),
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?,
                 id.clone(),
                 SketchGeometry::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
@@ -1571,10 +1578,11 @@ fn parse_sketch(
     if root_point {
         entities.push(
             SketchEntity::new(
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "fcstd:design:sketch-entity#{}:reference-root-point",
                     object.name
-                )),
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?,
                 id.clone(),
                 SketchGeometry::Point {
                     position: Point2::new(0.0, 0.0),
@@ -2078,7 +2086,7 @@ fn parse_constraints(
         if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
             if let Some(root) = entities
                 .iter()
-                .find(|entity| entity.id().0.ends_with(":reference-root-point"))
+                .find(|entity| entity.id().as_str().ends_with(":reference-root-point"))
             {
                 resolved.insert(0, SketchLocus::Entity(root.id().clone()));
             }
@@ -2226,11 +2234,12 @@ fn parse_constraints(
                     .collect(),
             });
         constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!(
+            id: SketchConstraintId::mint(format!(
                 "fcstd:design:sketch-constraint#{}:{}",
                 object.name,
                 index + 1
-            )),
+            ))
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             sketch: sketch.clone(),
             definition,
             name: nonempty_attr(node, "Name"),
@@ -2579,9 +2588,9 @@ fn neutral_constraint(
 
 fn sketch_axis(locus: &SketchLocus) -> Option<SketchAxis> {
     let id = locus_entity(locus);
-    if id.0.ends_with(":reference-horizontal-axis") {
+    if id.as_str().ends_with(":reference-horizontal-axis") {
         Some(SketchAxis::Horizontal)
-    } else if id.0.ends_with(":reference-vertical-axis") {
+    } else if id.as_str().ends_with(":reference-vertical-axis") {
         Some(SketchAxis::Vertical)
     } else {
         None
@@ -2724,7 +2733,7 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
     let reference = |suffix: &str| {
         entities
             .iter()
-            .find(|candidate| candidate.id().0.ends_with(suffix))
+            .find(|candidate| candidate.id().as_str().ends_with(suffix))
             .map(|candidate| SketchLocus::Entity(candidate.id().clone()))
     };
     match (entity, position) {
@@ -2739,7 +2748,7 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
         let suffix = format!(":external:{external_index}");
         let entity = entities
             .iter()
-            .find(|candidate| candidate.id().0.ends_with(&suffix))?;
+            .find(|candidate| candidate.id().as_str().ends_with(&suffix))?;
         return sketch_locus(entity, position);
     }
     sketch_locus(entities.get(usize::try_from(entity).ok()?)?, position)
@@ -3097,7 +3106,7 @@ fn explicit_endpoint_relations(
     let entity_indices = entities
         .iter()
         .enumerate()
-        .map(|(index, entity)| (entity.id().0.as_str(), index))
+        .map(|(index, entity)| (entity.id().as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut relations = BTreeMap::new();
     for constraint in constraints {
@@ -3111,10 +3120,10 @@ fn explicit_endpoint_relations(
             .iter()
             .filter_map(|locus| match locus {
                 SketchLocus::Start(entity) => {
-                    Some((entity_indices.get(entity.0.as_str()).copied()?, true))
+                    Some((entity_indices.get(entity.as_str()).copied()?, true))
                 }
                 SketchLocus::End(entity) => {
-                    Some((entity_indices.get(entity.0.as_str()).copied()?, false))
+                    Some((entity_indices.get(entity.as_str()).copied()?, false))
                 }
                 _ => None,
             })
@@ -6233,8 +6242,8 @@ mod profile_tests {
 
     fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
         SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId(id.into()),
-            SketchId("test:sketch#curved".into()),
+            cadmpeg_ir::sketches::SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("test:test:sketch#curved").unwrap(),
             geometry,
         )
     }
@@ -6243,14 +6252,14 @@ mod profile_tests {
     fn curved_segments_chain_by_their_evaluated_endpoints() {
         let entities = [
             entity(
-                "test:entity#line",
+                "test:test:entity#line",
                 SketchGeometry::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(1.0, 0.0),
                 },
             ),
             entity(
-                "test:entity#arc",
+                "test:test:entity#arc",
                 SketchGeometry::Arc {
                     center: Point2::new(0.0, 0.0),
                     radius: Length(1.0),
@@ -6259,7 +6268,7 @@ mod profile_tests {
                 },
             ),
             entity(
-                "test:entity#line-after-arc",
+                "test:test:entity#line-after-arc",
                 SketchGeometry::Line {
                     start: Point2::new(0.0, 1.0),
                     end: Point2::new(1.0, 1.0),
@@ -6297,7 +6306,7 @@ mod profile_tests {
     #[test]
     fn disconnected_profile_seeds_skip_construction_in_persisted_order() {
         let mut construction = entity(
-            "test:entity#1",
+            "test:test:entity#1",
             SketchGeometry::Line {
                 start: Point2::new(-1.0, 0.0),
                 end: Point2::new(1.0, 0.0),
@@ -6307,14 +6316,14 @@ mod profile_tests {
         let entities = vec![
             construction,
             entity(
-                "test:entity#2",
+                "test:test:entity#2",
                 SketchGeometry::Circle {
                     center: Point2::new(0.0, 0.0),
                     radius: Length(2.0),
                 },
             ),
             entity(
-                "test:entity#3",
+                "test:test:entity#3",
                 SketchGeometry::Circle {
                     center: Point2::new(10.0, 0.0),
                     radius: Length(2.0),
@@ -6337,14 +6346,14 @@ mod profile_tests {
     fn coincident_constraint_connects_numerically_separate_endpoints() {
         let entities = [
             entity(
-                "test:entity#1",
+                "test:test:entity#1",
                 SketchGeometry::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(1.0, 0.0),
                 },
             ),
             entity(
-                "test:entity#2",
+                "test:test:entity#2",
                 SketchGeometry::Line {
                     start: Point2::new(2.0, 0.0),
                     end: Point2::new(3.0, 0.0),
@@ -6352,7 +6361,7 @@ mod profile_tests {
             ),
         ];
         let constraint = SketchConstraint {
-            id: SketchConstraintId("test:constraint#1".into()),
+            id: SketchConstraintId::mint("test:test:constraint#1").unwrap(),
             sketch: entities[0].sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
@@ -6382,21 +6391,21 @@ mod profile_tests {
     fn explicit_endpoint_relations_precede_nearby_geometry() {
         let entities = [
             entity(
-                "test:entity#anchor",
+                "test:test:entity#anchor",
                 SketchGeometry::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(0.0, 0.0),
                 },
             ),
             entity(
-                "test:entity#nearby",
+                "test:test:entity#nearby",
                 SketchGeometry::Line {
                     start: Point2::new(32.0 * f64::EPSILON, 0.0),
                     end: Point2::new(1.0, 0.0),
                 },
             ),
             entity(
-                "test:entity#constrained",
+                "test:test:entity#constrained",
                 SketchGeometry::Line {
                     start: Point2::new(2.0, 0.0),
                     end: Point2::new(3.0, 0.0),
@@ -6404,7 +6413,7 @@ mod profile_tests {
             ),
         ];
         let constraint = SketchConstraint {
-            id: SketchConstraintId("test:constraint#explicit-precedence".into()),
+            id: SketchConstraintId::mint("test:test:constraint#explicit-precedence").unwrap(),
             sketch: entities[0].sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
@@ -6444,14 +6453,14 @@ mod profile_tests {
         let entities = |gap| {
             [
                 entity(
-                    "test:entity#anchor",
+                    "test:test:entity#anchor",
                     SketchGeometry::Line {
                         start: Point2::new(0.0, 0.0),
                         end: Point2::new(1.0, 0.0),
                     },
                 ),
                 entity(
-                    "test:entity#continuation",
+                    "test:test:entity#continuation",
                     SketchGeometry::Line {
                         start: Point2::new(1.0 + gap, 0.0),
                         end: Point2::new(2.0, 0.0),
@@ -6475,21 +6484,21 @@ mod profile_tests {
     fn multiple_explicit_coincident_continuations_remain_separate_seeds() {
         let entities = [
             entity(
-                "test:entity#anchor",
+                "test:test:entity#anchor",
                 SketchGeometry::Line {
                     start: Point2::new(-1.0, 0.0),
                     end: Point2::new(0.0, 0.0),
                 },
             ),
             entity(
-                "test:entity#first-continuation",
+                "test:test:entity#first-continuation",
                 SketchGeometry::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(1.0, 0.0),
                 },
             ),
             entity(
-                "test:entity#second-continuation",
+                "test:test:entity#second-continuation",
                 SketchGeometry::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(0.0, 1.0),
@@ -6497,7 +6506,7 @@ mod profile_tests {
             ),
         ];
         let constraint = SketchConstraint {
-            id: SketchConstraintId("test:constraint#ambiguous-explicit".into()),
+            id: SketchConstraintId::mint("test:test:constraint#ambiguous-explicit").unwrap(),
             sketch: entities[0].sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![

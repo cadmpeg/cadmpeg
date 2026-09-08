@@ -68,7 +68,7 @@ pub(super) fn sketch_brep(
     }) {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
-            entity.id().0
+            entity.id().as_str()
         )));
     }
     let profiles = sketch.profiles.clone();
@@ -85,7 +85,7 @@ pub(super) fn sketch_brep(
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "sketch {} references missing entity {}",
                         sketch.id.as_str(),
-                        entity_use.entity.0
+                        entity_use.entity.as_str()
                     ))
                 })?;
                 let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
@@ -113,7 +113,7 @@ pub(super) fn sketch_brep(
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch {} references missing entity {}",
                     sketch.id.as_str(),
-                    entity_use.entity.0
+                    entity_use.entity.as_str()
                 ))
             })?;
             let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
@@ -146,7 +146,7 @@ pub(super) fn sketch_brep(
             if length == 0.0 && matches!(entity.geometry, SketchGeometry::Line { .. }) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch entity {} has zero length",
-                    entity.id().0
+                    entity.id().as_str()
                 )));
             }
             let curve_id = CurveId::mint(format!("{prefix}:curve:{profile_index}:{use_index}"))
@@ -507,7 +507,7 @@ pub(super) fn patch_line_profiles(
             if entity.endpoint_refs.len() != 2 {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch entity {} lacks two endpoint references",
-                    entity.id().0
+                    entity.id().as_str()
                 )));
             }
             match &entity.geometry {

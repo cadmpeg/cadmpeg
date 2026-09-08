@@ -33,7 +33,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SketchId("synthetic:test:sketch#curves".into());
+    let sketch_id = SketchId::mint("synthetic:test:sketch#curves").unwrap();
     let geometries = vec![
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
@@ -166,7 +166,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .into_iter()
         .enumerate()
         .map(|(index, geometry)| {
-            let id = SketchEntityId(format!("synthetic:test:sketch-entity#curve-{index:02}"));
+            let id = SketchEntityId::mint(format!("synthetic:test:sketch-entity#curve-{index:02}"))
+                .unwrap();
             ir.model.sketch_entities.push(SketchEntity::new(
                 id.clone(),
                 sketch_id.clone(),
@@ -325,7 +326,7 @@ fn encoder_writes_source_less_curved_sketches() {
         });
     }
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#arc-angle".into()),
+        id: SketchConstraintId::mint("synthetic:test:constraint#arc-angle").unwrap(),
         sketch: sketch_id.clone(),
         definition: SketchConstraintDefinition::ArcAngle {
             entity: entity_ids[1].clone(),
@@ -343,7 +344,7 @@ fn encoder_writes_source_less_curved_sketches() {
         native_ref: None,
     });
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#arc-angle-ellipse".into()),
+        id: SketchConstraintId::mint("synthetic:test:constraint#arc-angle-ellipse").unwrap(),
         sketch: sketch_id.clone(),
         definition: SketchConstraintDefinition::EllipseAngle {
             entity: entity_ids[23].clone(),
@@ -503,7 +504,7 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
     ] {
         ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId(format!("synthetic:test:constraint#{suffix}")),
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{suffix}")).unwrap(),
             sketch: sketch_id.clone(),
             definition,
             name: None,
@@ -831,7 +832,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
     for (ordinal, name) in ["Profile", "Profile"].into_iter().enumerate() {
-        let sketch_id = SketchId(format!("synthetic:test:sketch#named-{ordinal}"));
+        let sketch_id = SketchId::mint(format!("synthetic:test:sketch#named-{ordinal}")).unwrap();
         ir.model.sketches.push(Sketch {
             id: sketch_id.clone(),
             name: Some(name.into()),
@@ -846,7 +847,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             native_ref: None,
         });
         ir.model.sketch_entities.push(SketchEntity::new(
-            SketchEntityId(format!("synthetic:test:sketch-entity#named-{ordinal}")),
+            SketchEntityId::mint(format!("synthetic:test:sketch-entity#named-{ordinal}")).unwrap(),
             sketch_id.clone(),
             SketchGeometry::Point {
                 position: Point2::new(ordinal as f64, ordinal as f64 + 1.0),

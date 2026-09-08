@@ -166,19 +166,19 @@ pub(crate) fn bind_sketch_profiles(
     }
     let mut removed = superseded
         .iter()
-        .map(|sketch| sketch.0.clone())
+        .map(|sketch| sketch.as_str().to_owned())
         .collect::<HashSet<_>>();
     removed.extend(
         sketch_entities
             .iter()
             .filter(|entity| superseded.contains(&entity.sketch))
-            .map(|entity| entity.id().0.clone()),
+            .map(|entity| entity.id().as_str().to_owned()),
     );
     removed.extend(
         sketch_constraints
             .iter()
             .filter(|constraint| superseded.contains(&constraint.sketch))
-            .map(|constraint| constraint.id.0.clone()),
+            .map(|constraint| constraint.id.as_str().to_owned()),
     );
     sketches.retain(|sketch| !superseded.contains(&sketch.id));
     sketch_entities.retain(|entity| !superseded.contains(&entity.sketch));
@@ -447,10 +447,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let sketch_id = SketchId(format!(
+            let sketch_id = match SketchId::mint(format!(
                 "sldprt:model:sketch#compact:{lane_key}:{}",
                 native_feature.ordinal
-            ));
+            )) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
@@ -508,10 +511,13 @@ pub(crate) fn project_compact_sketch_profiles(
                     let end = corners[(index + 1) % corners.len()];
                     let start_marker = corner_markers[index];
                     let end_marker = corner_markers[(index + 1) % corner_markers.len()];
-                    let entity_id = SketchEntityId(format!(
+                    let entity_id = match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                         native_feature.ordinal
-                    ));
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    };
                     profile.push(SketchEntityUse {
                         entity: entity_id.clone(),
                         reversed: false,
@@ -556,18 +562,21 @@ pub(crate) fn project_compact_sketch_profiles(
                         let vertex = markers.get(usize::from(*vertex).checked_sub(1)?)?;
                         let start = project(curve)?;
                         let end = project(vertex)?;
-                        (start != end).then(|| {
-                            (
-                                SketchEntityId(format!(
-                                    "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
-                                    native_feature.ordinal
-                                )),
-                                *curve,
-                                *vertex,
-                                start,
-                                end,
-                            )
-                        })
+                        (start != end)
+                            .then(|| {
+                                Some((
+                                    SketchEntityId::mint(format!(
+                                        "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
+                                        native_feature.ordinal
+                                    ))
+                                    .ok()?,
+                                    *curve,
+                                    *vertex,
+                                    start,
+                                    end,
+                                ))
+                            })
+                            .flatten()
                     })
                     .collect::<Vec<_>>();
                 let profile = if let Some(profile) =
@@ -613,10 +622,13 @@ pub(crate) fn project_compact_sketch_profiles(
                         let end = corners[(index + 1) % corners.len()];
                         let start_marker = corner_markers[index];
                         let end_marker = corner_markers[(index + 1) % corner_markers.len()];
-                        let entity_id = SketchEntityId(format!(
+                        let entity_id = match SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                             native_feature.ordinal
-                        ));
+                        )) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        };
                         profile.push(SketchEntityUse {
                             entity: entity_id.clone(),
                             reversed: false,
@@ -672,10 +684,13 @@ pub(crate) fn project_compact_sketch_profiles(
             let mut profile = Vec::with_capacity(points.len());
             for (index, (marker, start)) in points.iter().enumerate() {
                 let end = points[(index + 1) % points.len()].1;
-                let entity_id = SketchEntityId(format!(
+                let entity_id = match SketchEntityId::mint(format!(
                     "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                     native_feature.ordinal
-                ));
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                };
                 profile.push(SketchEntityUse {
                     entity: entity_id.clone(),
                     reversed: false,
@@ -847,10 +862,13 @@ pub(crate) fn project_marker_backed_sketches(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let sketch_id = SketchId(format!(
+            let sketch_id = match SketchId::mint(format!(
                 "sldprt:model:sketch#markers:{lane_key}:{}",
                 native_feature.ordinal
-            ));
+            )) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             let markers = object_markers
                 .iter()
                 .copied()
@@ -928,7 +946,7 @@ pub(crate) fn project_marker_backed_sketches(
             }
             if bound_sketch
                 .as_ref()
-                .is_some_and(|sketch| !sketch.0.contains("sketch#compact:"))
+                .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
             {
                 continue;
             }
@@ -1509,10 +1527,11 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                     Some(
                         SketchEntity::new(
-                            SketchEntityId(format!(
+                            SketchEntityId::mint(format!(
                                 "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
                                 native_feature.ordinal, marker.ordinal
-                            )),
+                            ))
+                            .ok()?,
                             sketch_id.clone(),
                             geometry,
                         )
@@ -1661,10 +1680,13 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 for (index, start) in corners.iter().enumerate() {
                     projected.push(SketchEntity::new(
-                        SketchEntityId(format!(
+                        match SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#markers:{lane_key}:{}:rectangle:{index}",
                             native_feature.ordinal
-                        )),
+                        )) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        },
                         sketch_id.clone(),
                         SketchGeometry::Line {
                             start: *start,
@@ -1920,10 +1942,13 @@ pub(crate) fn project_sketch_block_profiles(
                     .id
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
-                let sketch_id = SketchId(format!(
+                let sketch_id = match SketchId::mint(format!(
                     "sldprt:model:sketch#block-profile:{lane_key}:{}",
                     native_profile.ordinal
-                ));
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                };
                 let Some(assembled) = assemble_sketch_block_profile(&SketchBlockProfileInput {
                     sketch_id: &sketch_id,
                     native_profile,
@@ -1995,17 +2020,18 @@ fn assemble_sketch_block_profile(
         let entity_ids = source_entities
             .iter()
             .map(|entity| {
-                (
+                Some((
                     entity.id().clone(),
-                    SketchEntityId(format!(
+                    SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{}:instance:{}:entity:{}",
-                        id_key(&input.sketch_id.0),
+                        id_key(input.sketch_id.as_str()),
                         id_key(&instance.feature_id),
-                        id_key(entity.id().0.as_str())
-                    )),
-                )
+                        id_key(entity.id().as_str())
+                    ))
+                    .ok()?,
+                ))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Option<HashMap<_, _>>>()?;
         for source_entity in &source_entities {
             let id = entity_ids.get(source_entity.id())?.clone();
             assembled_entities.push(
@@ -2026,7 +2052,7 @@ fn assemble_sketch_block_profile(
                     source_entity
                         .native_ref
                         .as_deref()
-                        .unwrap_or(source_entity.id().0.as_str())
+                        .unwrap_or(source_entity.id().as_str())
                 )))
                 .with_geometry_ref(source_entity.geometry_ref.clone())
                 .with_endpoint_refs(source_entity.endpoint_refs.clone()),
@@ -2333,10 +2359,13 @@ fn project_detached_legacy_config_sketches(
                 .get(native_ref)
                 .copied()
                 .unwrap_or(detached_frame);
-            let sketch_id = SketchId(format!(
+            let sketch_id = match SketchId::mint(format!(
                 "sldprt:model:sketch#legacy-config:{lane_key}:{}",
                 native_feature.ordinal
-            ));
+            )) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             let sketch = Sketch {
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
@@ -2465,14 +2494,15 @@ fn legacy_config_hex_sketch(
     }
     let sketch_key = sketch
         .id
-        .0
+        .as_str()
         .rsplit_once('#')
         .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| {
-        SketchEntityId(format!(
+        SketchEntityId::mint(format!(
             "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
             native_feature.ordinal
         ))
+        .ok()
     };
     let mut entities = Vec::new();
     for (index, (curve, endpoints)) in
@@ -2482,7 +2512,7 @@ fn legacy_config_hex_sketch(
     {
         entities.push(
             SketchEntity::new(
-                entity_id("axis", index),
+                entity_id("axis", index)?,
                 sketch.id.clone(),
                 SketchGeometry::Line {
                     start: point(endpoints[0])?,
@@ -2496,7 +2526,7 @@ fn legacy_config_hex_sketch(
     }
     entities.push(
         SketchEntity::new(
-            entity_id("circle", 0),
+            entity_id("circle", 0)?,
             sketch.id.clone(),
             SketchGeometry::Circle {
                 center,
@@ -2508,7 +2538,7 @@ fn legacy_config_hex_sketch(
     );
     entities.push(
         SketchEntity::new(
-            entity_id("circle", 1),
+            entity_id("circle", 1)?,
             sketch.id.clone(),
             SketchGeometry::Circle {
                 center: construction_center,
@@ -2524,7 +2554,7 @@ fn legacy_config_hex_sketch(
     for (index, curve) in line_curves.into_iter().enumerate() {
         let start = vertices[index];
         let end = vertices[(index + 1) % vertices.len()];
-        let id = entity_id("profile", index);
+        let id = entity_id("profile", index)?;
         outer_profile.push(SketchEntityUse {
             entity: id.clone(),
             reversed: false,
@@ -2546,7 +2576,7 @@ fn legacy_config_hex_sketch(
     sketch.profiles = vec![
         outer_profile,
         vec![SketchEntityUse {
-            entity: entity_id("circle", 0),
+            entity: entity_id("circle", 0)?,
             reversed: false,
         }],
     ];
@@ -2614,14 +2644,15 @@ fn legacy_config_collinear_sketch(
     let negative = [negative_u, origin.1[1]];
     let sketch_key = sketch
         .id
-        .0
+        .as_str()
         .rsplit_once('#')
         .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| {
-        SketchEntityId(format!(
+        SketchEntityId::mint(format!(
             "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
             native_feature.ordinal
         ))
+        .ok()
     };
     let line_curves = [negative_curve, first_curve, second_curve, third_curve];
     let segments = [
@@ -2637,7 +2668,7 @@ fn legacy_config_collinear_sketch(
         .map(|(index, (curve, (start, end)))| {
             Some(
                 SketchEntity::new(
-                    entity_id("line", index),
+                    entity_id("line", index)?,
                     sketch.id.clone(),
                     SketchGeometry::Line {
                         start: project(start)?,
@@ -2665,7 +2696,7 @@ fn legacy_config_collinear_sketch(
     for (index, (marker, coordinates)) in points.into_iter().enumerate() {
         entities.push(
             SketchEntity::new(
-                entity_id("point", index),
+                entity_id("point", index)?,
                 sketch.id.clone(),
                 SketchGeometry::Point {
                     position: project(coordinates)?,
@@ -2708,7 +2739,7 @@ mod detached_legacy_sketch_tests {
 
     fn sketch() -> Sketch {
         Sketch {
-            id: SketchId("sketch".into()),
+            id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
             name: Some("profile".into()),
             configuration: None,
             visible: None,
@@ -2929,7 +2960,7 @@ mod detached_legacy_sketch_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let expected_sketch = SketchId("sldprt:model:sketch#markers:1:30".into());
+        let expected_sketch = SketchId::mint("sldprt:model:sketch#markers:1:30").unwrap();
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
             cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
             30,
@@ -3171,9 +3202,9 @@ mod detached_legacy_sketch_tests {
 
     #[test]
     fn sketch_block_profile_assembly_projects_each_instance_into_one_frame() {
-        let block_sketch_id = SketchId("block-sketch".into());
-        let block_entity_id = SketchEntityId("block-circle".into());
-        let block_line_id = SketchEntityId("block-line".into());
+        let block_sketch_id = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
+        let block_entity_id = SketchEntityId::mint("synthetic:test:id#block-circle").unwrap();
+        let block_line_id = SketchEntityId::mint("synthetic:test:id#block-line").unwrap();
         let block_sketch = Sketch {
             id: block_sketch_id.clone(),
             name: Some("block".into()),
@@ -3218,7 +3249,7 @@ mod detached_legacy_sketch_tests {
             [0.0, 0.0, 0.0, 1.0],
         ])
         .expect("affine transform");
-        let assembled_id = SketchId("sldprt:model:sketch#block-profile:test".into());
+        let assembled_id = SketchId::mint("sldprt:model:sketch#block-profile:test").unwrap();
         let block_sketches = HashMap::from([("23".into(), block_sketch_id)]);
         let instances = [
             SketchBlockInstancePlacement {

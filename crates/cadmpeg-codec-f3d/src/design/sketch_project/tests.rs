@@ -647,8 +647,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         constraints[5].definition,
         SketchConstraintDefinition::SplineGroup { ref entities }
             if entities == &[
-                neutral_sketch_curve_id(&sketches[0].id, 20, 0),
-                neutral_sketch_curve_id(&sketches[0].id, 21, 0),
+                neutral_sketch_curve_id(&sketches[0].id, 20, 0).unwrap(),
+                neutral_sketch_curve_id(&sketches[0].id, 21, 0).unwrap(),
             ]
     ));
     let line = entities
@@ -660,7 +660,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
         .unwrap();
     let other_point = SketchEntity::new(
-        SketchEntityId("generated:point#other".into()),
+        SketchEntityId::mint("generated:test:point#other").unwrap(),
         point.sketch.clone(),
         point.geometry.clone(),
     )
@@ -695,7 +695,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
     }
     let other_line = SketchEntity::new(
-        SketchEntityId("generated:line#other".into()),
+        SketchEntityId::mint("generated:test:line#other").unwrap(),
         line.sketch.clone(),
         line.geometry.clone(),
     )
@@ -1043,8 +1043,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities },
             ..
         }) if entities == &[
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0).unwrap(),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0).unwrap(),
         ]
     ));
     assert!(matches!(
@@ -1073,7 +1073,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             &sketches[0].id,
             7,
             0,
-        ) && direction == &Vector3::new(0.0, 1.0, 0.0)
+        ).unwrap() && direction == &Vector3::new(0.0, 1.0, 0.0)
     ));
     assert!(matches!(
         constraints.get(4),

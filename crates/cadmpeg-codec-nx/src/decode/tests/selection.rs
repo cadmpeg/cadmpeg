@@ -1253,7 +1253,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[6].message.contains("1 NX sketch history feature"));
     assert!(losses[6].message.contains("1 have no neutral sketch graph"));
 
-    let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
+    let sketch_id = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
         id: sketch_id.clone(),
         name: None,

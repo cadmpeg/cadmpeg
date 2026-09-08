@@ -38,7 +38,7 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
 
 #[test]
 fn relation_point_materializes_under_one_proven_marker_transform() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
@@ -60,7 +60,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .enumerate()
         .map(|(index, (u, v))| {
             SketchEntity::new(
-                SketchEntityId(format!("point-{index}")),
+                SketchEntityId::mint(format!("synthetic:test:id#point-{index}")).unwrap(),
                 sketch.clone(),
                 SketchGeometry::Point {
                     position: Point2::new(u, v),
@@ -432,9 +432,9 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     );
     assert_eq!(
         loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
-        vec![SketchLocus::End(SketchEntityId(
-            "sldprt:model:sketch-entity#relation-line:lane:84".into(),
-        ))]
+        vec![SketchLocus::End(
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+        )]
     );
     let markers = lane
         .sketch_entities
@@ -447,15 +447,15 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             &markers,
             &loci,
         ),
-        Some(SketchLocus::End(SketchEntityId(
-            "sldprt:model:sketch-entity#relation-line:lane:84".into(),
-        )))
+        Some(SketchLocus::End(
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+        ))
     );
 }
 
 #[test]
 fn relation_point_coexists_with_nonpoint_native_carrier() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
@@ -477,7 +477,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .enumerate()
         .map(|(index, (u, v))| {
             SketchEntity::new(
-                SketchEntityId(format!("anchor-{index}")),
+                SketchEntityId::mint(format!("synthetic:test:id#anchor-{index}")).unwrap(),
                 sketch.clone(),
                 SketchGeometry::Point {
                     position: Point2::new(u, v),
@@ -499,7 +499,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     markers.push(point_marker.clone());
     entities.push(
         SketchEntity::new(
-            SketchEntityId("dimension-carrier".into()),
+            SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap(),
             sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(5.0, 6.0),
@@ -581,9 +581,9 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .expect("relation point");
     assert_eq!(
         loci[point_marker.id.as_str()],
-        vec![SketchLocus::Center(SketchEntityId(
-            "dimension-carrier".into()
-        ))]
+        vec![SketchLocus::Center(
+            SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()
+        )]
     );
     assert_eq!(
         loci[&super::qualified_point_marker_key(&point_marker.id)],
@@ -596,7 +596,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_entities(&point_marker.id, &markers, &loci),
-        vec![SketchEntityId("dimension-carrier".into())]
+        vec![SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()]
     );
     assert_eq!(
         marker_point_locus(&point_marker.id, &markers, &loci),
@@ -606,7 +606,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 
 #[test]
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
@@ -780,7 +780,7 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
 #[test]
 fn cylinder_centers_resolve_dimensioned_circle_frame() {
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -823,8 +823,8 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
 
 #[test]
 fn circular_profile_binds_by_unique_diameter_signature() {
-    let sketch_id = SketchId("circle-profile".into());
-    let entity_id = SketchEntityId("circle".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#circle-profile").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let feature = |id: &str, name: &str, sketch| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,

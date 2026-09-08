@@ -1686,7 +1686,7 @@ fn profile_consumers_require_a_regeneration_profile() {
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
 
     assert!(!bind_definition_sketch(
         &mut definition,

@@ -321,9 +321,9 @@ pub(super) fn resolve_two_center_semicircle_profile(
         true,
     );
     let sketch_key = sketch
-        .0
+        .as_str()
         .rsplit_once('#')
-        .map_or(sketch.0.as_str(), |(_, key)| key);
+        .map_or(sketch.as_str(), |(_, key)| key);
     for (index, (start_ref, end_ref, start, end)) in [
         (
             &first_refs[0],
@@ -343,9 +343,12 @@ pub(super) fn resolve_two_center_semicircle_profile(
     {
         entities.push(
             SketchEntity::new(
-                SketchEntityId(format!(
+                match SketchEntityId::mint(format!(
                     "sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"
-                )),
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                },
                 sketch.clone(),
                 SketchGeometry::Line { start, end },
             )

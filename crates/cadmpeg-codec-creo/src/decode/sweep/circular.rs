@@ -59,7 +59,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let sketch_id = match model_sketch_id(scan, definition) {
+            Some(id) => id,
+            None => continue,
+        };
         let Some((section_center, radius)) =
             resolved_circular_extrusion_profile(scan, ir, transform, feature_id, &sketch_id)
         else {

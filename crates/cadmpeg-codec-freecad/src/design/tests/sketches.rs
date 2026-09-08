@@ -151,7 +151,7 @@ fn associates_external_carriers_by_ref_and_retains_link_groups() {
     let entity = |suffix: &str| {
         entities
             .iter()
-            .find(|entity| entity.id().0.ends_with(suffix))
+            .find(|entity| entity.id().as_str().ends_with(suffix))
             .unwrap_or_else(|| panic!("missing entity {suffix}"))
     };
     let first_edge2 = entity(":external:0");
@@ -844,8 +844,8 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ref first,
             ref second,
             ..
-        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
-            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
+        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":reference-root-point"))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":4"))
     ));
     let repeated_parameters = result
         .ir()
@@ -875,11 +875,11 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ref first,
             ref second,
             ..
-        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
-            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
+        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":reference-root-point"))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":4"))
     ));
     assert!(result.ir().model.sketch_entities.iter().any(|entity| {
-        entity.id().0.ends_with(":reference-horizontal-axis")
+        entity.id().as_str().ends_with(":reference-horizontal-axis")
             && matches!(
                 entity.geometry,
                 cadmpeg_ir::sketches::SketchGeometry::ReferenceLine { .. }
@@ -890,13 +890,13 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         .model
         .sketch_entities
         .iter()
-        .any(|entity| entity.id().0.ends_with(":reference-root-point")));
+        .any(|entity| entity.id().as_str().ends_with(":reference-root-point")));
     let external = result
         .ir()
         .model
         .sketch_entities
         .iter()
-        .find(|entity| entity.id().0.ends_with(":external:0"))
+        .find(|entity| entity.id().as_str().ends_with(":external:0"))
         .expect("external geometry");
     assert!(matches!(
         external.geometry,
@@ -912,7 +912,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         .model
         .sketch_entities
         .iter()
-        .find(|entity| entity.id().0.ends_with(":external:1"))
+        .find(|entity| entity.id().as_str().ends_with(":external:1"))
         .expect("link-only external geometry");
     assert!(matches!(
         &unresolved_external.geometry,

@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 #[test]
 fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     let feature_id = FeatureId::mint("feature").expect("identity grammar");
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
@@ -111,7 +111,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         native_ref: Some("scalar".into()),
     };
     let mut entities = vec![SketchEntity::new(
-        SketchEntityId("center".into()),
+        SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch_id,
         SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),

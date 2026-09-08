@@ -114,10 +114,12 @@ pub(crate) fn transfer_native_sketch_entities(
                 continue;
             }
 
-            let entity_id = SketchEntityId(design_feature::neutral_history_id(
+            let Ok(entity_id) = SketchEntityId::mint(design_feature::neutral_history_id(
                 &geometry_field.id,
                 "sketch-entity",
-            ));
+            )) else {
+                continue;
+            };
             if ir.model.sketch_entities.iter().any(|entity| {
                 entity.id() == &entity_id
                     || (entity.sketch == sketch_id
@@ -346,10 +348,12 @@ pub(crate) fn transfer_native_sketch_constraints(
 
     let mut transferred = HashSet::new();
     for candidate in candidates {
-        let constraint_id = SketchConstraintId(design_feature::neutral_history_id(
+        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
             &candidate.target_entity_record,
             "sketch-constraint",
-        ));
+        )) else {
+            continue;
+        };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
                 || constraint.native_ref.as_deref() == Some(candidate.target_entity_record.as_str())
@@ -634,10 +638,12 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
 
-        let constraint_id = SketchConstraintId(design_feature::neutral_history_id(
+        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
             &entity.id,
             "sketch-constraint",
-        ));
+        )) else {
+            continue;
+        };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
                 || constraint.native_ref.as_deref() == Some(entity.id.as_str())
@@ -1177,7 +1183,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId("synthetic:test:sketch#0".to_string()),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
             name: None,
             configuration: None,
             visible: None,
@@ -1283,7 +1289,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId("synthetic:test:sketch#0".to_string()),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
             name: None,
             configuration: None,
             visible: None,
@@ -1432,12 +1438,15 @@ mod tests {
         assert!(transferred.contains("catia:outer:object-record#geometry-field"));
         assert_eq!(ir.model.sketch_entities.len(), 1);
         let entity = &ir.model.sketch_entities[0];
-        assert_eq!(entity.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(entity.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             entity.native_ref.as_deref(),
             Some("catia:outer:object-record#geometry-field")
         );
-        assert_eq!(entity.id().0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(
+            entity.id().as_str(),
+            "catia:outer:sketch-entity#geometry-field"
+        );
         assert!(entity.geometry_ref.is_none());
         assert!(matches!(
             &entity.geometry,
@@ -1499,7 +1508,7 @@ mod tests {
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#constraint-field")
@@ -1584,7 +1593,10 @@ mod tests {
         );
         assert_eq!(native_properties["catia_relation_incidence_count"], "1");
         assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(
+            entities[0].as_str(),
+            "catia:outer:sketch-entity#geometry-field"
+        );
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
         assert_eq!(operands[0].native_kind, "ConstraintDYS");
@@ -1652,7 +1664,7 @@ mod tests {
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#range")
@@ -1733,11 +1745,12 @@ mod tests {
     #[test]
     fn binds_a_constraint_to_an_exact_native_sketch_entity() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
-        let entity_id = SketchEntityId("synthetic:test:sketch-entity#source".to_string());
+        let entity_id =
+            SketchEntityId::mint("synthetic:test:sketch-entity#source".to_string()).unwrap();
         ir.model.sketch_entities.push(
             SketchEntity::new(
                 entity_id.clone(),
-                SketchId("synthetic:test:sketch#0".to_string()),
+                SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
                 SketchGeometry::Native {
                     native_kind: "2DPoint".to_string(),
                 },
@@ -1760,8 +1773,8 @@ mod tests {
         for suffix in ["first", "second"] {
             ir.model.sketch_entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
-                    SketchId("synthetic:test:sketch#0".to_string()),
+                    SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}")).unwrap(),
+                    SketchId::mint("synthetic:test:sketch#0".to_string()).unwrap(),
                     SketchGeometry::Native {
                         native_kind: "2DPoint".to_string(),
                     },
@@ -1784,8 +1797,9 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
         ir.model.sketch_entities.push(
             SketchEntity::new(
-                SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
-                SketchId("synthetic:test:other-sketch#0".to_string()),
+                SketchEntityId::mint("synthetic:test:other-sketch-entity#source".to_string())
+                    .unwrap(),
+                SketchId::mint("synthetic:test:other-sketch#0".to_string()).unwrap(),
                 SketchGeometry::Native {
                     native_kind: "2DPoint".to_string(),
                 },

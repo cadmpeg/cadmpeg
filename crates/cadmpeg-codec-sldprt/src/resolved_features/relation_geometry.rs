@@ -113,7 +113,12 @@ fn ensure_spatial_relation_point(
     if let [entity] = matches.as_slice() {
         return Some(entity.id().clone());
     }
-    let id = SpatialSketchEntityId(format!("{}:relation-point:{}", sketch.0, marker.offset));
+    let id = SpatialSketchEntityId::mint(format!(
+        "{}:relation-point:{}",
+        sketch.as_str(),
+        marker.offset
+    ))
+    .ok()?;
     entities.push(
         SpatialSketchEntity::new(
             id.clone(),
@@ -198,8 +203,8 @@ fn spatial_relation_point_line_entities(
     let start_id = ensure_spatial_relation_point(entities, sketch, start_marker, *start)?;
     let end_id = ensure_spatial_relation_point(entities, sketch, end_marker, *end)?;
     let point_id = ensure_spatial_relation_point(entities, sketch, point_marker, point)?;
-    let endpoint_refs = vec![start_id.0.clone(), end_id.0.clone()];
-    let reverse_endpoint_refs = vec![end_id.0.clone(), start_id.0.clone()];
+    let endpoint_refs = vec![start_id.as_str().to_owned(), end_id.as_str().to_owned()];
+    let reverse_endpoint_refs = vec![end_id.as_str().to_owned(), start_id.as_str().to_owned()];
     let existing_line_id = entities
         .iter()
         .find(|entity| {
@@ -212,7 +217,7 @@ fn spatial_relation_point_line_entities(
     let line_id = if let Some(line_id) = existing_line_id {
         line_id
     } else {
-        let id = SpatialSketchEntityId(format!("{}:relation-line", relation.id));
+        let id = SpatialSketchEntityId::mint(format!("{}:relation-line", relation.id)).ok()?;
         entities.push(
             SpatialSketchEntity::new(
                 id.clone(),
@@ -321,10 +326,13 @@ pub(crate) fn project_spatial_relation_bindings(
                         .collect(),
                 });
             let projected = SpatialSketchConstraint {
-                id: SketchConstraintId(format!(
+                id: match SketchConstraintId::mint(format!(
                     "sldprt:model:spatial-sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
-                )),
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                },
                 sketch: (*sketch).clone(),
                 definition,
                 native_ref: Some(relation.id.clone()),
@@ -492,7 +500,7 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            if sketch.0.contains("sketch#compact:")
+            if sketch.as_str().contains("sketch#compact:")
                 && !marker_is_geometry_locus(&lane.native_payload, marker.offset as usize)
                 && !entities.iter().any(|entity| {
                     entity
@@ -531,10 +539,13 @@ pub(crate) fn project_relation_point_geometry(
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
                         marker.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     sketch.clone(),
                     SketchGeometry::Point { position },
                 )
@@ -700,10 +711,13 @@ pub(crate) fn project_relation_point_geometry(
             }
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
                         marker.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     sketch.clone(),
                     SketchGeometry::Line { start, end },
                 )
@@ -970,13 +984,15 @@ pub(crate) fn project_relation_solved_line_geometry(
                     position.1 as f64 * QUANTUM,
                 ))
             });
-            let candidate = |id: &str, start, end| {
-                SketchEntity::new(
-                    SketchEntityId(id.into()),
-                    sketch.clone(),
-                    SketchGeometry::Line { start, end },
+            let candidate = |start, end| {
+                Some(
+                    SketchEntity::new(
+                        SketchEntityId::mint("sldprt:model:sketch-entity#solver-line").ok()?,
+                        sketch.clone(),
+                        SketchGeometry::Line { start, end },
+                    )
+                    .with_construction(true),
                 )
-                .with_construction(true)
             };
             let transformed_line = |markers: [&SketchInputEntity; 2]| {
                 let native = markers.map(|marker| {
@@ -1018,11 +1034,12 @@ pub(crate) fn project_relation_solved_line_geometry(
                     let mut candidates = candidates
                         .into_iter()
                         .filter(|(start, end)| {
-                            let line = candidate(
-                                "solver-line",
+                            let Some(line) = candidate(
                                 Point2::new(start.0 as f64 * QUANTUM, start.1 as f64 * QUANTUM),
                                 Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
-                            );
+                            ) else {
+                                return false;
+                            };
                             point_position.is_some_and(|point| {
                                 point_line_distance_value(point, &line).is_some_and(|measured| {
                                     same_dimension_length(measured, expected)
@@ -1079,7 +1096,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                     let Some((start, end)) = transformed_line(markers) else {
                         return Vec::new();
                     };
-                    lines.push((operand, markers, candidate("solver-line", start, end)));
+                    let Some(line) = candidate(start, end) else {
+                        return Vec::new();
+                    };
+                    lines.push((operand, markers, line));
                 }
                 lines
             };
@@ -1178,10 +1198,13 @@ pub(crate) fn project_relation_solved_line_geometry(
                             }
                             entities.push(
                                 SketchEntity::new(
-                                    SketchEntityId(format!(
+                                    match SketchEntityId::mint(format!(
                                         "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
                                         operand.entity_index
-                                    )),
+                                    )) {
+                                        Ok(id) => id,
+                                        Err(_) => continue,
+                                    },
                                     line.sketch.clone(),
                                     line.geometry.clone(),
                                 )
@@ -1210,10 +1233,13 @@ pub(crate) fn project_relation_solved_line_geometry(
                 }
                 entities.push(
                     SketchEntity::new(
-                        SketchEntityId(format!(
+                        match SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
                             operand.entity_index
-                        )),
+                        )) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        },
                         line.sketch.clone(),
                         line.geometry.clone(),
                     )
@@ -1421,10 +1447,13 @@ pub(crate) fn project_relation_solved_point_geometry(
                     let geometry_ref = relation_operand_geometry_ref(relation, index);
                     entities.push(
                         SketchEntity::new(
-                            SketchEntityId(format!(
+                            match SketchEntityId::mint(format!(
                                 "sldprt:model:sketch-entity#solver-point:{lane_key}:{}:{index}",
                                 relation.offset
-                            )),
+                            )) {
+                                Ok(id) => id,
+                                Err(_) => continue,
+                            },
                             sketch.clone(),
                             SketchGeometry::Point {
                                 position: Point2::new(
@@ -1508,10 +1537,13 @@ pub(crate) fn project_relation_solved_point_geometry(
             }
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}:{missing_index}",
                         relation.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     sketch.clone(),
                     SketchGeometry::Point {
                         position: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
@@ -2328,7 +2360,7 @@ pub(crate) fn project_relation_bindings(
                     marker_entities(marker, &markers_by_id, &loci_by_marker).into_iter()
                 })
                 .collect::<Vec<_>>();
-            entities.sort_by(|left, right| left.0.cmp(&right.0));
+            entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             entities.dedup();
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -2391,10 +2423,13 @@ pub(crate) fn project_relation_bindings(
             let has_display_scalar =
                 relation_display_scalar_for_parameter(relation, lane).is_some();
             let projected = SketchConstraint {
-                id: SketchConstraintId(format!(
+                id: match SketchConstraintId::mint(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
-                )),
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                },
                 sketch: (*sketch).clone(),
                 definition,
                 name: None,
@@ -2454,10 +2489,13 @@ pub(crate) fn project_relation_bindings(
             let active =
                 marker_relation_is_inactive(marker, &definition, sketch_entities).then_some(false);
             let projected = SketchConstraint {
-                id: SketchConstraintId(format!(
+                id: match SketchConstraintId::mint(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
                     marker.offset
-                )),
+                )) {
+                    Ok(id) => id,
+                    Err(_) => continue,
+                },
                 sketch: (*sketch).clone(),
                 definition,
                 name: None,
@@ -2774,7 +2812,7 @@ mod relation_geometry_tests {
         use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
         use std::collections::BTreeMap;
 
-        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
             id: FeatureId::mint("feature").expect("identity grammar"),
             ordinal: 0,
@@ -2938,9 +2976,9 @@ mod relation_geometry_tests {
             &constraint.definition,
             SketchConstraintDefinition::DistanceLoci { first, second, .. }
                 if first == &SketchLocus::Entity(
-                    SketchEntityId("sldprt:model:sketch-entity#solver-point:test:30:0".into())
+                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:0").unwrap()
                 ) && second == &SketchLocus::Entity(
-                    SketchEntityId("sldprt:model:sketch-entity#solver-point:test:30:1".into())
+                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:1").unwrap()
                 )
         ));
     }
@@ -2956,7 +2994,7 @@ mod relation_geometry_tests {
 
         const FEATURE: &str = "feature-native";
         const LANE: &str = "lane#test";
-        let sketch_id = SketchId("sketch".into());
+        let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
             id: FeatureId::mint("feature").expect("identity grammar"),
             ordinal: 0,
@@ -3228,21 +3266,29 @@ mod relation_geometry_tests {
 
     #[test]
     fn dynamic_line_pair_fallback_preserves_the_existing_solver_slot() {
-        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
         let line = |id: &str, start: Point2, end: Point2| {
             SketchEntity::new(
-                SketchEntityId(id.into()),
+                SketchEntityId::mint(id).unwrap(),
                 sketch.clone(),
                 SketchGeometry::Line { start, end },
             )
             .with_construction(true)
         };
         let generated = vec![
-            line("roster-4", Point2::new(-13.0, 3.0), Point2::new(0.0, 3.0)),
-            line("roster-0", Point2::new(0.0, 0.0), Point2::new(0.0, 13.0)),
+            line(
+                "synthetic:test:id#roster-4",
+                Point2::new(-13.0, 3.0),
+                Point2::new(0.0, 3.0),
+            ),
+            line(
+                "synthetic:test:id#roster-0",
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 13.0),
+            ),
         ];
         let existing = vec![line(
-            "profile-line",
+            "synthetic:test:id#profile-line",
             Point2::new(-16.0, 3.0),
             Point2::new(-16.0, 7.0),
         )];
@@ -3394,7 +3440,7 @@ mod relation_geometry_tests {
             sketch_entities: vec![source, first, second],
         };
         let sketch = SpatialSketch {
-            id: SpatialSketchId("spatial-sketch".into()),
+            id: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             name: None,
             configuration: None,
             visible: None,

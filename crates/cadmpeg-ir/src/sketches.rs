@@ -10,42 +10,25 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-macro_rules! string_id {
-    ($name:ident, $doc:literal) => {
-        #[doc = $doc]
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
-        pub struct $name(pub String);
-
-        impl Serialize for $name {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                crate::schema::serialize_reference_id(&self.0, serializer)
-            }
-        }
-
-        impl $name {
-            /// Borrow the underlying id string.
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
-        }
-    };
-}
-
-string_id!(SketchId, "Identifies a neutral planar sketch.");
-string_id!(SketchEntityId, "Identifies solved geometry in a sketch.");
-string_id!(SpatialSketchId, "Identifies a neutral spatial sketch.");
-string_id!(
-    SpatialSketchEntityId,
-    "Identifies solved geometry in a spatial sketch."
+crate::ids::id_type!(
+    /// Identifies a neutral planar sketch.
+    SketchId
 );
-string_id!(
-    SketchConstraintId,
-    "Identifies a geometric sketch constraint."
+crate::ids::id_type!(
+    /// Identifies solved geometry in a sketch.
+    SketchEntityId
+);
+crate::ids::id_type!(
+    /// Identifies a neutral spatial sketch.
+    SpatialSketchId
+);
+crate::ids::id_type!(
+    /// Identifies solved geometry in a spatial sketch.
+    SpatialSketchEntityId
+);
+crate::ids::id_type!(
+    /// Identifies a geometric sketch constraint.
+    SketchConstraintId
 );
 
 /// Horizontal placement of sketch text about its text anchor.
@@ -165,12 +148,8 @@ pub struct SketchEntityUse {
 }
 
 /// Solved geometry belonging to one sketch.
-///
-/// Prefer [`SketchEntity::new`] for invariant-bearing construction. There is no
-/// public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SketchEntityWire")]
 pub struct SketchEntity {
     /// Globally unique entity id.
     id: SketchEntityId,
@@ -195,7 +174,6 @@ pub struct SketchEntity {
 impl SketchEntity {
     /// Construct a sketch entity from its id, owning sketch, and geometry.
     pub fn new(id: SketchEntityId, sketch: SketchId, geometry: SketchGeometry) -> Self {
-        assert!(!id.0.is_empty(), "SketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -238,41 +216,6 @@ impl SketchEntity {
     pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
         self.endpoint_refs = endpoint_refs;
         self
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SketchEntityWire {
-    id: SketchEntityId,
-    sketch: SketchId,
-    #[serde(default)]
-    construction: bool,
-    #[serde(default)]
-    native_ref: Option<String>,
-    #[serde(default)]
-    geometry_ref: Option<String>,
-    #[serde(default)]
-    endpoint_refs: Vec<String>,
-    geometry: SketchGeometry,
-}
-
-impl TryFrom<SketchEntityWire> for SketchEntity {
-    type Error = &'static str;
-
-    fn try_from(wire: SketchEntityWire) -> Result<Self, Self::Error> {
-        if wire.id.0.is_empty() {
-            return Err("SketchEntity.id must not be empty");
-        }
-        Ok(Self {
-            id: wire.id,
-            sketch: wire.sketch,
-            construction: wire.construction,
-            native_ref: wire.native_ref,
-            geometry_ref: wire.geometry_ref,
-            endpoint_refs: wire.endpoint_refs,
-            geometry: wire.geometry,
-        })
     }
 }
 
@@ -597,12 +540,8 @@ pub struct SpatialSketchEntityUse {
 }
 
 /// Solved model-space geometry belonging to one spatial sketch.
-///
-/// Prefer [`SpatialSketchEntity::new`] for invariant-bearing construction. There
-/// is no public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SpatialSketchEntityWire")]
 pub struct SpatialSketchEntity {
     /// Globally unique spatial entity id.
     id: SpatialSketchEntityId,
@@ -631,7 +570,6 @@ impl SpatialSketchEntity {
         sketch: SpatialSketchId,
         geometry: SpatialSketchGeometry,
     ) -> Self {
-        assert!(!id.0.is_empty(), "SpatialSketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -674,41 +612,6 @@ impl SpatialSketchEntity {
     pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
         self.endpoint_refs = endpoint_refs;
         self
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SpatialSketchEntityWire {
-    id: SpatialSketchEntityId,
-    sketch: SpatialSketchId,
-    #[serde(default)]
-    construction: bool,
-    #[serde(default)]
-    native_ref: Option<String>,
-    #[serde(default)]
-    geometry_ref: Option<String>,
-    #[serde(default)]
-    endpoint_refs: Vec<String>,
-    geometry: SpatialSketchGeometry,
-}
-
-impl TryFrom<SpatialSketchEntityWire> for SpatialSketchEntity {
-    type Error = &'static str;
-
-    fn try_from(wire: SpatialSketchEntityWire) -> Result<Self, Self::Error> {
-        if wire.id.0.is_empty() {
-            return Err("SpatialSketchEntity.id must not be empty");
-        }
-        Ok(Self {
-            id: wire.id,
-            sketch: wire.sketch,
-            construction: wire.construction,
-            native_ref: wire.native_ref,
-            geometry_ref: wire.geometry_ref,
-            endpoint_refs: wire.endpoint_refs,
-            geometry: wire.geometry,
-        })
     }
 }
 

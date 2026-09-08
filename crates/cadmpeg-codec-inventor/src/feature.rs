@@ -2198,7 +2198,7 @@ mod tests {
             50,
         );
         let neutral_sketch = Sketch {
-            id: SketchId(format!("inventor:design:sketch#{SEGMENT}-50")),
+            id: SketchId::mint(format!("inventor:design:sketch#{SEGMENT}-50")).unwrap(),
             name: None,
             configuration: None,
             visible: None,

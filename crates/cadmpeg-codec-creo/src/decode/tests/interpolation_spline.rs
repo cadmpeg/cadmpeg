@@ -52,10 +52,12 @@ const EPS_FULL_TURN: f64 = 1e-12;
 // These checked constructors must accept the explicit test fixtures.
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
-    let sketch_id = SketchId("creo:model:sketch#spline".to_string());
-    let spline_id = SketchEntityId("creo:model:sketch_entity#spline".to_string());
-    let first_line_id = SketchEntityId("creo:model:sketch_entity#first-line".to_string());
-    let second_line_id = SketchEntityId("creo:model:sketch_entity#second-line".to_string());
+    let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
+    let spline_id = SketchEntityId::mint("creo:model:sketch_entity#spline".to_string()).unwrap();
+    let first_line_id =
+        SketchEntityId::mint("creo:model:sketch_entity#first-line".to_string()).unwrap();
+    let second_line_id =
+        SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
     let spline = SketchGeometry::Nurbs {
         curve: cadmpeg_ir::geometry::PcurveNurbs::new(
             3,
@@ -991,7 +993,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
                 }) if (*value - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
-    let sketch = SketchId("creo:model:sketch#822".to_string());
+    let sketch = SketchId::mint("creo:model:sketch#822".to_string()).unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
         name: None,
@@ -1631,13 +1633,15 @@ fn circular_sweep_projects_profile_direction_and_extent() {
 
     assert_eq!(
         circular_sweep_feature_definition(
-            ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
+            ProfileRef::Sketch(SketchId::mint("creo:model:sketch#917".to_string()).unwrap()),
             &sweep,
             BooleanOp::Join,
             Some(true),
         ),
         IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
+            profile: ProfileRef::Sketch(
+                SketchId::mint("creo:model:sketch#917".to_string()).unwrap()
+            ),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: Vector3::new(0.0, 0.0, -1.0),
                 source: None,
@@ -1696,7 +1700,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
 
 #[test]
 fn typed_center_locus_requires_a_circular_geometry_family() {
-    let entity = SketchEntityId("creo:test:entity#1".into());
+    let entity = SketchEntityId::mint("creo:test:entity#1").unwrap();
     let definition = SketchConstraintDefinition::CoincidentLoci {
         loci: vec![SketchLocus::Center(entity.clone())],
     };
@@ -1741,7 +1745,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 fn section_profile_prefers_a_resolved_sketch_chain() {
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
-        id: SketchId("creo:model:sketch#offset:40".to_string()),
+        id: SketchId::mint("creo:model:sketch#offset:40".to_string()).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -1759,12 +1763,13 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
     );
 
     ir.model.sketches[0].profiles.push(vec![SketchEntityUse {
-        entity: SketchEntityId("creo:featdefs:sketch_entity#offset:40:4".to_string()),
+        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
+            .unwrap(),
         reversed: false,
     }]);
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Sketch(SketchId("creo:model:sketch#offset:40".to_string()))
+        ProfileRef::Sketch(SketchId::mint("creo:model:sketch#offset:40".to_string()).unwrap())
     );
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
@@ -1774,9 +1779,10 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 
 #[test]
 fn connected_profile_vertices_include_open_chain_terminals() {
-    let sketch_id = SketchId("creo:model:sketch#917".to_string());
-    let entity_id =
-        |external_id| SketchEntityId(format!("creo:featdefs:sketch_entity#917:{external_id}"));
+    let sketch_id = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+    let entity_id = |external_id| {
+        SketchEntityId::mint(format!("creo:featdefs:sketch_entity#917:{external_id}")).unwrap()
+    };
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),

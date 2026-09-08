@@ -57,8 +57,8 @@ fn spatial_point_distance_requires_point_geometry_and_exact_value() {
 #[test]
 fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     let mut entity = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity#circle".into()),
-        SketchId("f3d:model:sketch#radial".into()),
+        SketchEntityId::mint("f3d:model:sketch-entity#circle").unwrap(),
+        SketchId::mint("f3d:model:sketch#radial").unwrap(),
         SketchGeometry::Circle {
             center: Point2::new(2.0, 3.0),
             radius: Length(5.0),
@@ -128,7 +128,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         }) if actual == entity.id()
     ));
     let mut duplicate = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity#duplicate-circle".into()),
+        SketchEntityId::mint("f3d:model:sketch-entity#duplicate-circle").unwrap(),
         entity.sketch.clone(),
         entity.geometry.clone(),
     )
@@ -204,10 +204,10 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
 
 #[test]
 fn owner_scoped_line_lengths_preserve_repeated_entities() {
-    let sketch = SketchId("f3d:model:sketch#line-length".into());
+    let sketch = SketchId::mint("f3d:model:sketch#line-length").unwrap();
     let line = |name: &str, v: f64, length: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#{name}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, v),
@@ -261,10 +261,10 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
 
 #[test]
 fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
-    let sketch = SketchId("f3d:model:sketch#angular".into());
+    let sketch = SketchId::mint("f3d:model:sketch#angular").unwrap();
     let line = |name: &str, angle: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#{name}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
@@ -314,7 +314,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
 #[test]
 fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     let stream = "f3d:A";
-    let sketch = SketchId("f3d:model:sketch#angular-incidence".into());
+    let sketch = SketchId::mint("f3d:model:sketch#angular-incidence").unwrap();
     let curve = |record_index, byte_offset, angle: f64| SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
@@ -361,7 +361,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
     let entity = |record_index, angle: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#line-{record_index}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#line-{record_index}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
@@ -413,19 +413,19 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
 
 #[test]
 fn owner_scoped_point_dimensions_quotient_coincident_identities() {
-    let sketch = SketchId("f3d:model:sketch#point-classes".into());
+    let sketch = SketchId::mint("f3d:model:sketch#point-classes").unwrap();
     let point = |name: &str, u: f64, v: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#{name}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point {
                 position: Point2::new(u, v),
             },
         )
     };
-    let lower = point("lower", -53.0, -20.875);
-    let lower_duplicate = point("lower-duplicate", -53.0, -20.875 + 5.0e-7);
-    let upper = point("upper", -53.0, -7.875);
+    let lower = point("synthetic:test:id#lower", -53.0, -20.875);
+    let lower_duplicate = point("synthetic:test:id#lower-duplicate", -53.0, -20.875 + 5.0e-7);
+    let upper = point("synthetic:test:id#upper", -53.0, -7.875);
     let parameter = parse_design_parameter(&parameter_record(
         Some(1),
         "13 mm",
@@ -453,7 +453,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
         }) if first == lower.id().clone() && second == upper.id().clone() && parameter == parameter_id
     ));
 
-    let another_upper = point("another-upper", -40.0, -7.875);
+    let another_upper = point("synthetic:test:id#another-upper", -40.0, -7.875);
     assert!(unique_point_class_dimension_definition(
         &[lower, upper, another_upper],
         &sketch,
@@ -466,10 +466,10 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
 
 #[test]
 fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
-    let sketch = SketchId("f3d:model:sketch#radial-loci".into());
+    let sketch = SketchId::mint("f3d:model:sketch#radial-loci").unwrap();
     let point = |id: &str, u, v| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Point {
                 position: Point2::new(u, v),
@@ -478,7 +478,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
     };
     let circle = |id: &str, u, v, radius| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(u, v),
@@ -486,11 +486,11 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             },
         )
     };
-    let center = point("center", 2.0, 3.0);
-    let annotation = point("annotation", 7.0, 3.0);
-    let measured = circle("measured", 2.0, 3.0, 5.0);
-    let other_center = circle("other-center", 20.0, 30.0, 5.0);
-    let other_radius = circle("other-radius", 2.0, 3.0, 7.0);
+    let center = point("synthetic:test:id#center", 2.0, 3.0);
+    let annotation = point("synthetic:test:id#annotation", 7.0, 3.0);
+    let measured = circle("synthetic:test:id#measured", 2.0, 3.0, 5.0);
+    let other_center = circle("synthetic:test:id#other-center", 20.0, 30.0, 5.0);
+    let other_radius = circle("synthetic:test:id#other-radius", 2.0, 3.0, 7.0);
     let all = [
         center.clone(),
         annotation.clone(),
@@ -511,7 +511,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         ),
         Some(SketchConstraintDefinition::Radius { entity, .. }) if entity == measured.id().clone()
     ));
-    let repeated = circle("repeated", 12.0, 3.0, 5.0);
+    let repeated = circle("synthetic:test:id#repeated", 12.0, 3.0, 5.0);
     assert!(matches!(
         radial_locus_dimension_definition(
             &[&measured, &annotation, &repeated],
@@ -537,24 +537,25 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
 
 #[test]
 fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
-    let sketch = SketchId("f3d:model:sketch#radial-extension".into());
-    let entity =
-        |id: &str, geometry| SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry);
+    let sketch = SketchId::mint("f3d:model:sketch#radial-extension").unwrap();
+    let entity = |id: &str, geometry| {
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
+    };
     let line = entity(
-        "line",
+        "synthetic:test:id#line",
         SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(6.0, 0.0),
         },
     );
     let extension_point = entity(
-        "extension-point",
+        "synthetic:test:id#extension-point",
         SketchGeometry::Point {
             position: Point2::new(6.5, 0.0),
         },
     );
     let off_carrier = entity(
-        "off-carrier",
+        "synthetic:test:id#off-carrier",
         SketchGeometry::Point {
             position: Point2::new(6.5, 0.25),
         },

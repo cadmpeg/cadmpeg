@@ -2762,7 +2762,7 @@ pub(super) fn relation_operand_marker<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<&'a str> {
     let operand = relation.operands.get(index)?;
-    if sketch.0.contains("sketch#compact:") && operand.kind == FeatureInputOperandKind::D6 {
+    if sketch.as_str().contains("sketch#compact:") && operand.kind == FeatureInputOperandKind::D6 {
         let mut coordinate_handles = markers_by_id
             .values()
             .copied()
@@ -3517,7 +3517,7 @@ pub(super) fn profile_loci_by_marker(
                 )
             };
             markers_by_id.contains_key(marker.as_str()).then(|| {
-                let locus = if entity.id().0.contains("sketch-entity#compact:")
+                let locus = if entity.id().as_str().contains("sketch-entity#compact:")
                     && matches!(entity.geometry, SketchGeometry::Line { .. })
                 {
                     SketchLocus::Start(entity.id().clone())
@@ -3618,7 +3618,7 @@ pub(super) fn profile_loci_by_marker(
                 if result.contains_key(&result_key) {
                     continue;
                 }
-                if qualified_point && sketch.0.contains("sketch#compact:") {
+                if qualified_point && sketch.as_str().contains("sketch#compact:") {
                     continue;
                 }
                 let Some([u, v]) = marker.coordinates_m else {

@@ -3049,7 +3049,7 @@ mod tests {
     #[test]
     fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         let sketch = Sketch {
-            id: SketchId("sketch".into()),
+            id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
             name: None,
             configuration: None,
             visible: None,

@@ -165,7 +165,7 @@ fn cylinder(id: usize, x: f64) -> Surface {
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
     SketchEntity::new(
-        SketchEntityId(format!("profile-line-{ordinal}")),
+        SketchEntityId::mint(format!("synthetic:test:id#profile-line-{ordinal}")).unwrap(),
         sketch.clone(),
         SketchGeometry::Line { start, end },
     )

@@ -214,7 +214,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(sketch.id.0.clone()),
+                    entity: Some(sketch.id.as_str().to_owned()),
                 });
             }
         }
@@ -226,7 +226,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(sketch.id.0.clone()),
+                    entity: Some(sketch.id.as_str().to_owned()),
                 });
             }
         }
@@ -238,7 +238,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(constraint.id.0.clone()),
+                    entity: Some(constraint.id.as_str().to_owned()),
                 });
             }
         }
@@ -252,7 +252,7 @@ pub(super) fn check_native_links(
                             check: Check::NativeLinks,
                             severity: Severity::Error,
                             message: format!("operand native_ref `{target}` does not resolve"),
-                            entity: Some(constraint.id.0.clone()),
+                            entity: Some(constraint.id.as_str().to_owned()),
                         });
                     }
                 }
@@ -266,7 +266,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(constraint.id.0.clone()),
+                    entity: Some(constraint.id.as_str().to_owned()),
                 });
             }
         }
@@ -280,7 +280,7 @@ pub(super) fn check_native_links(
                             check: Check::NativeLinks,
                             severity: Severity::Error,
                             message: format!("operand native_ref `{target}` does not resolve"),
-                            entity: Some(constraint.id.0.clone()),
+                            entity: Some(constraint.id.as_str().to_owned()),
                         });
                     }
                 }

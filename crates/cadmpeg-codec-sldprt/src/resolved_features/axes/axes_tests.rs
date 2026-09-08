@@ -472,7 +472,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.sketch_entities[1].kind = SketchInputKind::Relation(SketchRelationKind::Distance);
     lane.sketch_entities[3].kind = SketchInputKind::LineOrCircle;
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -637,7 +637,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
     };
     lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -717,7 +717,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     };
     lane.sketch_entities[3].kind = SketchInputKind::Arc;
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,

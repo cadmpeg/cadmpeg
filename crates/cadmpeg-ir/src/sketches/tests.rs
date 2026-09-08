@@ -16,8 +16,8 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     };
 
     let planar = SketchEntity::new(
-        SketchEntityId("synthetic:test:sketch-entity#0".into()),
-        SketchId("synthetic:test:sketch#0".into()),
+        SketchEntityId::mint("synthetic:test:sketch-entity#0").unwrap(),
+        SketchId::mint("synthetic:test:sketch#0").unwrap(),
         SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
@@ -37,11 +37,11 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     assert!(serde_json::from_value::<SketchEntity>(empty_planar)
         .unwrap_err()
         .to_string()
-        .contains("SketchEntity.id"));
+        .contains("identity is invalid"));
 
     let spatial = SpatialSketchEntity::new(
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#0".into()),
-        SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap(),
+        SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
         SpatialSketchGeometry::Point {
             position: Point3::new(1.0, 2.0, 3.0),
         },
@@ -61,28 +61,21 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     assert!(serde_json::from_value::<SpatialSketchEntity>(empty_spatial)
         .unwrap_err()
         .to_string()
-        .contains("SpatialSketchEntity.id"));
+        .contains("identity is invalid"));
 
-    assert!(std::panic::catch_unwind(|| {
-        SketchEntity::new(
-            SketchEntityId(String::new()),
-            SketchId("synthetic:test:sketch#0".into()),
-            SketchGeometry::Point {
-                position: Point2::new(0.0, 0.0),
-            },
-        )
-    })
-    .is_err());
-    assert!(std::panic::catch_unwind(|| {
-        SpatialSketchEntity::new(
-            SpatialSketchEntityId(String::new()),
-            SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
-            SpatialSketchGeometry::Point {
-                position: Point3::new(0.0, 0.0, 0.0),
-            },
-        )
-    })
-    .is_err());
+    for invalid in ["", "x", "a:b#c", "a:b:c#", "a:b:c#d#e", "a:b:c#d e"] {
+        assert!(SketchId::mint(invalid).is_err());
+        assert!(SketchEntityId::mint(invalid).is_err());
+        assert!(SpatialSketchId::mint(invalid).is_err());
+        assert!(SpatialSketchEntityId::mint(invalid).is_err());
+        assert!(crate::sketches::SketchConstraintId::mint(invalid).is_err());
+        let wire = serde_json::to_string(invalid).unwrap();
+        assert!(serde_json::from_str::<SketchId>(&wire).is_err());
+        assert!(serde_json::from_str::<SketchEntityId>(&wire).is_err());
+        assert!(serde_json::from_str::<SpatialSketchId>(&wire).is_err());
+        assert!(serde_json::from_str::<SpatialSketchEntityId>(&wire).is_err());
+        assert!(serde_json::from_str::<crate::sketches::SketchConstraintId>(&wire).is_err());
+    }
 }
 
 #[test]
@@ -94,7 +87,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
     };
 
     let mut ir = unit_cube();
-    let sketch = SketchId("synthetic:test:sketch#polygon".into());
+    let sketch = SketchId::mint("synthetic:test:sketch#polygon").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
         name: None,
@@ -109,7 +102,9 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     let members = (0..3)
-        .map(|ordinal| SketchEntityId(format!("synthetic:test:polygon-point#{ordinal}")))
+        .map(|ordinal| {
+            SketchEntityId::mint(format!("synthetic:test:polygon-point#{ordinal}")).unwrap()
+        })
         .collect::<Vec<_>>();
     ir.model
         .sketch_entities
@@ -122,7 +117,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
                 },
             )
         }));
-    let constraint = SketchConstraintId("synthetic:test:polygon-constraint#0".into());
+    let constraint = SketchConstraintId::mint("synthetic:test:polygon-constraint#0").unwrap();
     ir.model.sketch_constraints.push(SketchConstraint {
         id: constraint.clone(),
         sketch,
@@ -168,7 +163,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
     };
 
-    let entity = SketchEntityId("synthetic:test:entity#0".into());
+    let entity = SketchEntityId::mint("synthetic:test:entity#0").unwrap();
     let parameter = ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar");
     let definitions = vec![
         SketchConstraintDefinition::Disabled,
@@ -314,7 +309,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     );
 
     let mut ir = unit_cube();
-    let sketch = SketchId("synthetic:test:sketch#locus".into());
+    let sketch = SketchId::mint("synthetic:test:sketch#locus").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
         name: None,
@@ -336,7 +331,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             end: Point2::new(1.0, 0.0),
         },
     ));
-    let constraint_id = SketchConstraintId("synthetic:test:constraint#locus".into());
+    let constraint_id = SketchConstraintId::mint("synthetic:test:constraint#locus").unwrap();
     ir.model.sketch_constraints.push(SketchConstraint {
         id: constraint_id.clone(),
         sketch,
@@ -382,20 +377,20 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
     };
 
-    let sketch = SketchId("synthetic:test:sketch#coordinate-equations".into());
-    let first = SketchEntityId("synthetic:test:coordinate-point#first".into());
-    let second = SketchEntityId("synthetic:test:coordinate-point#second".into());
-    let midpoint = SketchEntityId("synthetic:test:coordinate-point#midpoint".into());
+    let sketch = SketchId::mint("synthetic:test:sketch#coordinate-equations").unwrap();
+    let first = SketchEntityId::mint("synthetic:test:coordinate-point#first").unwrap();
+    let second = SketchEntityId::mint("synthetic:test:coordinate-point#second").unwrap();
+    let midpoint = SketchEntityId::mint("synthetic:test:coordinate-point#midpoint").unwrap();
     let constraints = [
         (
-            SketchConstraintId("synthetic:test:constraint#point-coordinates".into()),
+            SketchConstraintId::mint("synthetic:test:constraint#point-coordinates").unwrap(),
             SketchConstraintDefinition::PointCoordinateValues {
                 point: SketchLocus::Entity(midpoint.clone()),
                 values: [Length(2.0), Length(1.0)],
             },
         ),
         (
-            SketchConstraintId("synthetic:test:constraint#mean-u".into()),
+            SketchConstraintId::mint("synthetic:test:constraint#mean-u").unwrap(),
             SketchConstraintDefinition::MidpointCoordinate {
                 first: SketchLocus::Entity(first.clone()),
                 second: SketchLocus::Entity(second.clone()),
@@ -404,7 +399,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             },
         ),
         (
-            SketchConstraintId("synthetic:test:constraint#mean-v".into()),
+            SketchConstraintId::mint("synthetic:test:constraint#mean-v").unwrap(),
             SketchConstraintDefinition::MidpointCoordinate {
                 first: SketchLocus::Entity(first.clone()),
                 second: SketchLocus::Entity(second.clone()),
@@ -491,7 +486,7 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     use crate::sketches::{SketchEntityId, SketchId};
 
     let profile = ProfileRef::SketchRegions {
-        sketch: SketchId("synthetic:test:sketch#region".into()),
+        sketch: SketchId::mint("synthetic:test:sketch#region").unwrap(),
         regions: vec![
             SketchProfileRegion::Loops {
                 outer: 2,
@@ -503,7 +498,7 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
             },
             SketchProfileRegion::Trimmed {
                 outer_boundary: vec![SketchProfileBoundaryUse {
-                    entity: SketchEntityId("synthetic:test:sketch-entity#curve".into()),
+                    entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
                     parameter_range: [0.25, 0.75],
                     reversed: true,
                 }],
@@ -543,8 +538,9 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     };
 
     let mut ir = unit_cube();
-    let sketch = SpatialSketchId("synthetic:test:spatial-sketch#one".into());
-    let circle = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into());
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#one").unwrap();
+    let circle =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#circle").unwrap();
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch.clone(),
         name: Some("3D path".into()),
@@ -574,7 +570,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             },
         ));
     let parallel_line =
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#parallel-line".into());
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#parallel-line").unwrap();
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
             parallel_line.clone(),
@@ -587,7 +583,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .with_construction(true),
     );
     let collinear_line =
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#collinear-line".into());
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#collinear-line").unwrap();
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
             collinear_line.clone(),
@@ -600,7 +596,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .with_construction(true),
     );
     let repeated_parallel_line =
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#repeated-parallel-line".into());
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#repeated-parallel-line")
+            .unwrap();
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
             repeated_parallel_line.clone(),
@@ -642,7 +639,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         pmi: None,
         native_ref: None,
     });
-    let surface = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into());
+    let surface =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#surface").unwrap();
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
@@ -663,7 +661,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             },
         ));
     let surface_point =
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface-point".into());
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#surface-point").unwrap();
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
@@ -673,7 +671,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 position: Point3::new(0.5, 0.5, 0.0),
             },
         ));
-    let line = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let line = SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
             line.clone(),
@@ -685,7 +683,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         )
         .with_construction(true),
     );
-    let point = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#point".into());
+    let point = SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#point").unwrap();
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
@@ -696,7 +694,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             },
         ));
     let measured_point =
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#measured-point".into());
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#measured-point").unwrap();
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
@@ -707,7 +705,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             },
         ));
     let coincident_point =
-        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#coincident-point".into());
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#coincident-point")
+            .unwrap();
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
@@ -720,7 +719,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#group".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#group").unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
                 entities: vec![line.clone(), circle.clone()],
@@ -730,9 +729,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId(
-                "synthetic:test:spatial-sketch-constraint#repeated-parallel-distance".into(),
-            ),
+            id: SketchConstraintId::mint(
+                "synthetic:test:spatial-sketch-constraint#repeated-parallel-distance",
+            )
+            .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
                 pairs: vec![
@@ -752,7 +752,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#offset".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#offset")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Offset {
                 sources: vec![line.clone()],
@@ -773,9 +774,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId(
-                "synthetic:test:spatial-sketch-constraint#line-set-distance".into(),
-            ),
+            id: SketchConstraintId::mint(
+                "synthetic:test:spatial-sketch-constraint#line-set-distance",
+            )
+            .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::ParallelLineSetDistance {
                 first: vec![line.clone(), collinear_line],
@@ -787,7 +789,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#line-length".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#line-length")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::LineLength {
                 entity: line.clone(),
@@ -798,9 +801,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId(
-                "synthetic:test:spatial-sketch-constraint#repeated-line-length".into(),
-            ),
+            id: SketchConstraintId::mint(
+                "synthetic:test:spatial-sketch-constraint#repeated-line-length",
+            )
+            .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::RepeatedLineLength {
                 entities: vec![line.clone(), parallel_line.clone()],
@@ -811,7 +815,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#point-surface".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#point-surface")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::PointOnSurface {
                 point: surface_point,
@@ -822,7 +827,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#coincident".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#coincident")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Coincident {
                 first: point.clone(),
@@ -833,7 +839,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#symmetric".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#symmetric")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Symmetric {
                 first: point.clone(),
@@ -845,7 +852,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#midpoint".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#midpoint")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Midpoint {
                 point: point.clone(),
@@ -856,9 +864,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId(
-                "synthetic:test:spatial-sketch-constraint#point-distance".into(),
-            ),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#point-distance")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::PointDistance {
                 first: point.clone(),
@@ -870,7 +877,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#direction".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#direction")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::ParallelToDirection {
                 entity: line.clone(),
@@ -885,7 +893,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#distance".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#distance")
+                .unwrap(),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::ParallelLineDistance {
                 first: line.clone(),
@@ -897,7 +906,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#tangent".into()),
+            id: SketchConstraintId::mint("synthetic:test:spatial-sketch-constraint#tangent")
+                .unwrap(),
             sketch,
             definition: SpatialSketchConstraintDefinition::Tangent {
                 first: line,
@@ -985,16 +995,16 @@ fn spatial_sketch_paths_round_trip_through_json() {
     use crate::sketches::{SpatialSketchEntityId, SpatialSketchId};
 
     let path = PathRef::SpatialSketchCurves {
-        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
-        curves: vec![SpatialSketchEntityId(
-            "synthetic:test:spatial-sketch-entity#0".into(),
-        )],
+        sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
+        curves: vec![
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap(),
+        ],
     };
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
     let native = PathRef::SpatialSketchSelection {
-        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
         selections: vec!["native:path-selection#0".into()],
     };
     let json = serde_json::to_string(&native).unwrap();
@@ -1025,10 +1035,10 @@ fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
         [first_direction, pattern_direction([0.0, 1.0])],
         vec![
             vec![SketchPatternInstance {
-                entities: vec![SketchEntityId("test:sketch-entity#0".into())],
+                entities: vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
             }],
             vec![SketchPatternInstance {
-                entities: vec![SketchEntityId("test:sketch-entity#1".into())],
+                entities: vec![SketchEntityId::mint("test:test:sketch-entity#1").unwrap()],
             }],
         ],
     )
@@ -1070,18 +1080,18 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
     };
 
     let pattern = SketchCircularPattern::new(
-        SketchEntityId("test:sketch-entity#center".into()),
+        SketchEntityId::mint("test:test:sketch-entity#center").unwrap(),
         Angle(1.0),
         None,
         None,
         vec![
             SketchCircularPatternInstance {
                 angle: Angle(0.0),
-                entities: vec![SketchEntityId("test:sketch-entity#0".into())],
+                entities: vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
             },
             SketchCircularPatternInstance {
                 angle: Angle(1.0),
-                entities: vec![SketchEntityId("test:sketch-entity#1".into())],
+                entities: vec![SketchEntityId::mint("test:test:sketch-entity#1").unwrap()],
             },
         ],
     )
@@ -1113,8 +1123,8 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
 
     let definition = SketchConstraintDefinition::Offset {
         pairs: vec![SketchOffsetPair {
-            source: SketchEntityId("test:sketch-entity#source".into()),
-            result: SketchEntityId("test:sketch-entity#result".into()),
+            source: SketchEntityId::mint("test:test:sketch-entity#source").unwrap(),
+            result: SketchEntityId::mint("test:test:sketch-entity#result").unwrap(),
             source_reversed: false,
         }],
         distance: Length(2.0),
@@ -1230,8 +1240,8 @@ fn internal_alignment_index_stays_with_bspline_variants() {
     use crate::sketches::{SketchConstraintDefinition, SketchEntityId, SketchInternalAlignment};
 
     let definition = SketchConstraintDefinition::InternalAlignment {
-        helper: SketchEntityId("test:sketch-entity#helper".into()),
-        parent: SketchEntityId("test:sketch-entity#parent".into()),
+        helper: SketchEntityId::mint("test:test:sketch-entity#helper").unwrap(),
+        parent: SketchEntityId::mint("test:test:sketch-entity#parent").unwrap(),
         alignment: SketchInternalAlignment::BsplineControlPoint(2),
     };
     let wire = serde_json::to_value(&definition).unwrap();
@@ -1257,8 +1267,9 @@ fn same_coordinate_accepts_legacy_relation_tags() {
         SketchLocus,
     };
 
-    let first = SketchLocus::Entity(SketchEntityId("test:sketch-entity#first".into()));
-    let second = SketchLocus::Entity(SketchEntityId("test:sketch-entity#second".into()));
+    let first = SketchLocus::Entity(SketchEntityId::mint("test:test:sketch-entity#first").unwrap());
+    let second =
+        SketchLocus::Entity(SketchEntityId::mint("test:test:sketch-entity#second").unwrap());
     for (kind, axis) in [
         ("horizontal_loci", SketchCoordinateAxis::V),
         ("horizontal_points", SketchCoordinateAxis::V),

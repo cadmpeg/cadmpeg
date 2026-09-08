@@ -65,10 +65,11 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
         .flat_map(|table| {
             table.entries.iter().filter_map(|entry| {
                 let external_id = entry.source_entity_id()?;
-                let entity = SketchEntityId(format!(
+                let entity = SketchEntityId::mint(format!(
                     "creo:featdefs:sketch_entity#{}:{external_id}",
                     definition.identity.id()
-                ));
+                ))
+                .ok()?;
                 (profile_entity_set.contains(&entity)
                     && generated_profile_entry_is_admissible(
                         feature_id,
@@ -117,7 +118,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let sketch_id = match model_sketch_id(scan, definition) {
+            Some(id) => id,
+            None => continue,
+        };
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };

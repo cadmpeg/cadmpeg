@@ -83,7 +83,10 @@ pub(in super::super) fn transfer_sketches(
                 section.offset,
             )
         });
-        let sketch_id = model_sketch_id(scan, definition);
+        let sketch_id = match model_sketch_id(scan, definition) {
+            Some(id) => id,
+            None => continue,
+        };
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
@@ -444,13 +447,16 @@ pub(in super::super) fn transfer_sketches(
             &profile_entities,
         );
         for (external_id, offset) in solver_only_section_entities(definition) {
-            let id = sketch_entity_id(&sketch_id, external_id);
+            let id = match sketch_entity_id(&sketch_id, external_id) {
+                Some(id) => id,
+                None => continue,
+            };
             if entities.iter().any(|entity| entity.id() == &id) {
                 continue;
             }
             annotate(
                 annotations,
-                &id.0,
+                id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "solver_only_section_entity",
@@ -491,7 +497,7 @@ pub(in super::super) fn transfer_sketches(
             .iter()
             .filter_map(|segment| {
                 let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
-                let entity = sketch_entity_id(&sketch_id, &suffix);
+                let entity = sketch_entity_id(&sketch_id, &suffix)?;
                 Some((
                     suffix,
                     section_segment_verhor_definition(segment, &sketch_id, entity)?,
@@ -503,23 +509,25 @@ pub(in super::super) fn transfer_sketches(
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.centered_lines())
-                    .map(|segment| {
-                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                            segment.external_id.to_string()
-                        } else {
-                            format!("centered_line:offset:{}", segment.offset)
-                        };
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
-                        (
-                            suffix,
-                            native_section_segment_verhor_definition(
-                                &sketch_id,
-                                entity,
-                                segment.external_id,
-                                0,
-                            ),
-                            segment.offset,
-                        )
+                    .filter_map(|segment| {
+                        Some({
+                            let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                                segment.external_id.to_string()
+                            } else {
+                                format!("centered_line:offset:{}", segment.offset)
+                            };
+                            let entity = sketch_entity_id(&sketch_id, &suffix)?;
+                            (
+                                suffix,
+                                native_section_segment_verhor_definition(
+                                    &sketch_id,
+                                    entity,
+                                    segment.external_id,
+                                    0,
+                                ),
+                                segment.offset,
+                            )
+                        })
                     }),
             )
             .chain(
@@ -534,7 +542,7 @@ pub(in super::super) fn transfer_sketches(
                         } else {
                             format!("bounded_curve:offset:{}", segment.offset)
                         };
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
                         Some((
                             suffix,
                             native_section_segment_verhor_definition(
@@ -559,7 +567,7 @@ pub(in super::super) fn transfer_sketches(
                         } else {
                             format!("reference_line:offset:{}", segment.offset)
                         };
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
                         Some((
                             suffix,
                             native_section_segment_verhor_definition(
@@ -581,7 +589,7 @@ pub(in super::super) fn transfer_sketches(
                         let verhor = segment.vertical_horizontal?;
                         let suffix =
                             opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
                         Some((
                             suffix,
                             native_section_segment_verhor_definition(
@@ -601,10 +609,10 @@ pub(in super::super) fn transfer_sketches(
                     &emitted_entity_ids,
                 )
                 .then_some(())?;
-                let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"));
+                let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"))?;
                 annotate(
                     annotations,
-                    &id.0,
+                    id.as_str(),
                     "FeatDefs",
                     offset as u64,
                     "section_verhor_constraint",
@@ -798,7 +806,7 @@ pub(in super::super) fn transfer_sketches(
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
-            &sketch_id.0,
+            sketch_id.as_str(),
             "FeatDefs",
             source_offset as u64,
             if transform.is_some() {

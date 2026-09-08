@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 fn point_entity(id: &str, sketch: &SketchId, native_ref: &str, position: Point2) -> SketchEntity {
     let mut entity = SketchEntity::new(
-        SketchEntityId(id.into()),
+        SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
         SketchGeometry::Point { position },
     );
@@ -21,7 +21,7 @@ fn point_entity(id: &str, sketch: &SketchId, native_ref: &str, position: Point2)
 
 #[test]
 fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let markers = [
         marker(
             "first-marker",
@@ -45,9 +45,24 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
             Some([0.01, 0.0]),
         ),
     ];
-    let first = point_entity("first", &sketch, "first-marker", Point2::new(0.0, 0.0));
-    let wrong = point_entity("wrong", &sketch, "wrong-marker", Point2::new(30.0, 0.0));
-    let target = point_entity("target", &sketch, "target-marker", Point2::new(10.0, 0.0));
+    let first = point_entity(
+        "synthetic:test:id#first",
+        &sketch,
+        "first-marker",
+        Point2::new(0.0, 0.0),
+    );
+    let wrong = point_entity(
+        "synthetic:test:id#wrong",
+        &sketch,
+        "wrong-marker",
+        Point2::new(30.0, 0.0),
+    );
+    let target = point_entity(
+        "synthetic:test:id#target",
+        &sketch,
+        "target-marker",
+        Point2::new(10.0, 0.0),
+    );
     let entities = vec![
         first.clone(),
         wrong,
@@ -84,7 +99,7 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
 
 #[test]
 fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point_marker = marker(
         "point-marker",
         0,
@@ -92,7 +107,12 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
         SketchInputKind::Point,
         Some([0.0, 0.0]),
     );
-    let point = point_entity("point", &sketch, "point-marker", Point2::new(0.0, 0.0));
+    let point = point_entity(
+        "synthetic:test:id#point",
+        &sketch,
+        "point-marker",
+        Point2::new(0.0, 0.0),
+    );
     let line = line_entity(
         "line",
         &sketch,
@@ -122,7 +142,7 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
 
 #[test]
 fn qualified_point_operand_uses_unique_linked_point_carrier() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point_marker = marker(
         "point-marker",
         0,
@@ -145,7 +165,12 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
             .collect(),
     );
     let line_marker = marker("line-marker", 2, 2, SketchInputKind::LineOrCircle, None);
-    let point = point_entity("point", &sketch, &point_marker.id, Point2::new(0.0, 1.0));
+    let point = point_entity(
+        "synthetic:test:id#point",
+        &sketch,
+        &point_marker.id,
+        Point2::new(0.0, 1.0),
+    );
     let line = line_entity(
         "line",
         &sketch,
@@ -153,7 +178,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
         Point2::new(10.0, 0.0),
     );
     let mut qualified_proxy = SketchEntity::new(
-        SketchEntityId("qualified-proxy".into()),
+        SketchEntityId::mint("synthetic:test:id#qualified-proxy").unwrap(),
         sketch.clone(),
         SketchGeometry::Point {
             position: Point2::new(0.0, 100.0),

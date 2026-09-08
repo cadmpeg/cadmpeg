@@ -19,9 +19,9 @@ use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
-    let sketch = SketchId("sketch".into());
-    let first = SketchEntityId("first".into());
-    let second = SketchEntityId("second".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let first = SketchEntityId::mint("synthetic:test:id#first").unwrap();
+    let second = SketchEntityId::mint("synthetic:test:id#second").unwrap();
     let entities = vec![
         SketchEntity::new(
             first.clone(),
@@ -201,7 +201,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         typed_marker_relation_definition(&coordinate_horizontal, &markers, &coordinate_loci,),
         None
     );
-    let relation_point = SketchEntityId("sldprt:model:sketch-entity#relation-point:lane:1".into());
+    let relation_point =
+        SketchEntityId::mint("sldprt:model:sketch-entity#relation-point:lane:1").unwrap();
     let point_handle = marker("point-handle", None);
     let mut point_horizontal = marker("point-horizontal", None);
     point_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
@@ -256,7 +257,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         typed_marker_relation_definition(&parallel, &markers, &joins),
         Some(SketchConstraintDefinition::Parallel {
             first: first.clone(),
-            second: SketchEntityId("second".into()),
+            second: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
         })
     );
     let mut symmetric = marker("symmetric", None);
@@ -270,7 +271,10 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
-            entities: vec![first.clone(), SketchEntityId("second".into())],
+            entities: vec![
+                first.clone(),
+                SketchEntityId::mint("synthetic:test:id#second").unwrap()
+            ],
             parameter: None,
             operands: vec![
                 cadmpeg_ir::sketches::SketchNativeOperand {
@@ -303,7 +307,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(SketchConstraintDefinition::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-                cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+                cadmpeg_ir::sketches::SketchLocus::End(
+                    SketchEntityId::mint("synthetic:test:id#second").unwrap()
+                ),
             ],
         })
     );
@@ -315,7 +321,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         typed_marker_relation_definition(&horizontal_points, &markers, &joins),
         Some(SketchConstraintDefinition::SameCoordinate {
             first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-            second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+            second: cadmpeg_ir::sketches::SketchLocus::End(
+                SketchEntityId::mint("synthetic:test:id#second").unwrap()
+            ),
             axis: SketchCoordinateAxis::V,
         })
     );
@@ -330,7 +338,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
         Some(SketchConstraintDefinition::SameCoordinate {
             first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-            second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+            second: cadmpeg_ir::sketches::SketchLocus::End(
+                SketchEntityId::mint("synthetic:test:id#second").unwrap()
+            ),
             axis: SketchCoordinateAxis::V,
         })
     );
@@ -354,9 +364,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let mut midpoint_loci = joins.clone();
     midpoint_loci.insert(
         entity_marker.id.clone(),
-        vec![cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId(
-            "second".into(),
-        ))],
+        vec![cadmpeg_ir::sketches::SketchLocus::End(
+            SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+        )],
     );
     markers.insert(entity_marker.id.as_str(), &entity_marker);
     markers.insert(midpoint.id.as_str(), &midpoint);
@@ -364,7 +374,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         typed_marker_relation_definition(&midpoint, &markers, &midpoint_loci),
         Some(SketchConstraintDefinition::Midpoint {
             point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
-            entity: SketchEntityId("second".into()),
+            entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
         })
     );
     let mut arc_marker = marker("arc-marker", None);
@@ -372,9 +382,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let mut arc_loci = midpoint_loci.clone();
     arc_loci.insert(
         arc_marker.id.clone(),
-        vec![cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId(
-            "second".into(),
-        ))],
+        vec![cadmpeg_ir::sketches::SketchLocus::Entity(
+            SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+        )],
     );
     markers.insert(arc_marker.id.as_str(), &arc_marker);
     for (kind, angle) in [
@@ -397,7 +407,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         assert_eq!(
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinition::ArcAngle {
-                entity: SketchEntityId("second".into()),
+                entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
                 angle: cadmpeg_ir::features::Angle(angle),
             })
         );
@@ -413,7 +423,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                 operands,
             ..
             }) if native_kind == format!("sldprt:marker-relation:{}", kind.native_code())
-                && entities == vec![SketchEntityId("second".into())]
+                && entities == vec![SketchEntityId::mint("synthetic:test:id#second").unwrap()]
                 && operands.len() == 1
                 && operands[0].object_index == 1
                 && operands[0].native_ref.as_deref() == Some("entity-marker")
@@ -458,7 +468,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         pmi: None,
         native_ref: None,
     };
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let distance = parameter("distance", None);
     assert!(matches!(
         typed_relation_definition(
@@ -554,7 +564,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ..circle
     };
     let circle_entity = SketchEntity::new(
-        SketchEntityId("dimensioned-circle".into()),
+        SketchEntityId::mint("synthetic:test:id#dimensioned-circle").unwrap(),
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
@@ -574,7 +584,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             if entity == circle_entity.id().clone()
     ));
     let duplicate_circle = SketchEntity::new(
-        SketchEntityId("duplicate-circle".into()),
+        SketchEntityId::mint("synthetic:test:id#duplicate-circle").unwrap(),
         circle_entity.sketch.clone(),
         circle_entity.geometry.clone(),
     )
@@ -597,8 +607,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
 
 #[test]
 fn line_handle_interior_points_identify_profile_entities() {
-    let sketch = SketchId("sketch".into());
-    let line_ids = ["horizontal", "vertical", "offset"].map(|id| SketchEntityId(id.into()));
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let line_ids = [
+        "synthetic:test:id#horizontal",
+        "synthetic:test:id#vertical",
+        "synthetic:test:id#offset",
+    ]
+    .map(|id| SketchEntityId::mint(id).unwrap());
     let entities = vec![
         SketchEntity::new(
             line_ids[0].clone(),
@@ -691,9 +706,9 @@ fn line_handle_interior_points_identify_profile_entities() {
 
 #[test]
 fn coordinate_less_point_handle_selects_one_shared_endpoint() {
-    let sketch = SketchId("sketch".into());
-    let first_id = SketchEntityId("first".into());
-    let second_id = SketchEntityId("second".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let first_id = SketchEntityId::mint("synthetic:test:id#first").unwrap();
+    let second_id = SketchEntityId::mint("synthetic:test:id#second").unwrap();
     let first = SketchEntity::new(
         first_id.clone(),
         sketch.clone(),
@@ -792,8 +807,8 @@ fn curve_handles_reject_point_geometry() {
 
 #[test]
 fn symmetry_invariant_marker_identifies_profile_entity() {
-    let sketch = SketchId("sketch".into());
-    let circle = SketchEntityId("circle".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let circle = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let entity = SketchEntity::new(
         circle.clone(),
         sketch.clone(),
@@ -804,7 +819,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
     );
     let points = [-10.0, 10.0].map(|u| {
         SketchEntity::new(
-            SketchEntityId(format!("point-{u}")),
+            SketchEntityId::mint(format!("synthetic:test:id#point-{u}")).unwrap(),
             sketch.clone(),
             SketchGeometry::Point {
                 position: Point2::new(u, 0.0),

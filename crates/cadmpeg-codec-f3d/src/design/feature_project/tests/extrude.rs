@@ -258,7 +258,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             op: BooleanOp::NewBody,
             solid: Some(true),
             ..
-        } if profile == &neutral_sketch_id(&placement)
+        } if profile == &neutral_sketch_id(&placement).unwrap()
     ));
     let reference_aware_prologue = scope.extrude_prologue();
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -522,7 +522,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let sketches = [cadmpeg_ir::sketches::Sketch {
-        id: neutral_sketch_id(&placement),
+        id: neutral_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -562,7 +562,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -612,7 +612,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let open_spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -965,7 +965,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(ref profile),
             ..
-        } if profile == &neutral_sketch_id(&placement)
+        } if profile == &neutral_sketch_id(&placement).unwrap()
     ));
     {
         let value = Some(DesignFixedExtrudeParameters {
@@ -1504,8 +1504,8 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         definition,
         native_ref: None,
     };
-    let planar_sketch = SketchId("f3d:sketch:planar".into());
-    let spatial_sketch = SpatialSketchId("f3d:sketch:spatial".into());
+    let planar_sketch = SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap();
+    let spatial_sketch = SpatialSketchId::mint("synthetic:test:id#f3d:sketch:spatial").unwrap();
     let planar_feature = feature(
         "f3d:feature:planar-sketch",
         0,

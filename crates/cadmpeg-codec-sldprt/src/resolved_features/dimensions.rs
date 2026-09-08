@@ -785,10 +785,13 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 };
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
                         relation.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     sketch.clone(),
                     geometry,
                 )
@@ -941,10 +944,13 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
                         relation.offset
-                    )),
+                    )) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    },
                     (*sketch).clone(),
                     SketchGeometry::Circle {
                         center,
@@ -1410,9 +1416,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                     for (index, ((parameter, _), radius)) in
                         radial_dimensions.iter().copied().zip(radii).enumerate()
                     {
-                        let entity_id = SketchEntityId(format!(
+                        let entity_id = match SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"
-                        ));
+                        )) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        };
                         entities.push(
                             SketchEntity::new(
                                 entity_id.clone(),
@@ -1571,9 +1580,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                 }
                 sketch.profiles.retain(|profile| !profile.is_empty());
                 for (index, center) in transformed.into_iter().enumerate() {
-                    let entity_id = SketchEntityId(format!(
+                    let entity_id = match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
-                    ));
+                    )) { Ok(id) => id, Err(_) => continue };
                     entities.push(
                         SketchEntity::new(
                             entity_id.clone(),
@@ -1721,10 +1730,13 @@ pub(crate) fn project_marker_dimensioned_circles(
                             .id
                             .rsplit_once('#')
                             .map_or(record.0.id.as_str(), |(_, key)| key);
-                        let entity_id = SketchEntityId(format!(
+                        let entity_id = match SketchEntityId::mint(format!(
                             "sldprt:model:sketch-entity#radial-circle:{lane_key}:{}",
                             record.1
-                        ));
+                        )) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        };
                         entities.push(
                             SketchEntity::new(
                                 entity_id.clone(),
@@ -1840,10 +1852,13 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .as_str()
                 .rsplit_once('#')
                 .map_or(feature.id.as_str(), |(_, key)| key);
-            let entity_id = SketchEntityId(format!(
+            let entity_id = match SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#marker-circle:{}:{}",
                 feature_key, parameter.ordinal
-            ));
+            )) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             entities.push(
                 SketchEntity::new(
                     entity_id.clone(),

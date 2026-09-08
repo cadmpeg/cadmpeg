@@ -28,8 +28,9 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#path".into());
-    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
+    let entity_id =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),

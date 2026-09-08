@@ -326,7 +326,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
 
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
@@ -338,7 +338,8 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
         profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
-            entity: cadmpeg_ir::sketches::SketchEntityId("sketch:entity".into()),
+            entity: cadmpeg_ir::sketches::SketchEntityId::mint("synthetic:test:id#sketch:entity")
+                .unwrap(),
             reversed: false,
         }]],
         native_ref: None,

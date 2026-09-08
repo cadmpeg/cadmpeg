@@ -3407,26 +3407,33 @@ pub(crate) fn project_bore_backed_position_sketches(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let sketch_id = SketchId(format!(
+        let sketch_id = match SketchId::mint(format!(
             "sldprt:model:sketch#bore:{lane_key}:{}",
             position.ordinal
-        ));
+        )) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
         let v_axis = normal.cross(*u_axis);
-        let projected_entities = axes
+        let Some(projected_entities) = axes
             .iter()
             .enumerate()
             .map(|(ordinal, (point, _))| {
                 let delta =
                     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-                SketchEntity::new(
-                    SketchEntityId(format!("{}:entity:{ordinal}", sketch_id.0)),
+                Some(SketchEntity::new(
+                    SketchEntityId::mint(format!("{}:entity:{ordinal}", sketch_id.as_str()))
+                        .ok()?,
                     sketch_id.clone(),
                     SketchGeometry::Point {
                         position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
                     },
-                )
+                ))
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
         projections.push(Projection {
             feature: position_feature.clone(),
             sketch: Sketch {

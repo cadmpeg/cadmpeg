@@ -404,7 +404,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         definition,
         native_ref: Some(native_ref.into()),
     };
-    let sketch = SketchId("path-sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#path-sketch").unwrap();
     let mut features = vec![
         model_feature(
             "pattern",
@@ -760,7 +760,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     let mut sweep_history = history;
     sweep_history.features[0].input_class = Some("moProfileFeature_c".into());
     sweep_history.features[1].input_class = Some("moSweep_c".into());
-    let path_sketch = SketchId("sweep-path".into());
+    let path_sketch = SketchId::mint("synthetic:test:id#sweep-path").unwrap();
     features[2].definition = FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
     };
@@ -901,7 +901,7 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 
 #[test]
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
@@ -947,7 +947,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .map(|marker| {
             let [u, v] = marker.coordinates_m.unwrap();
             SketchEntity::new(
-                SketchEntityId(format!("bound-{}", marker.id)),
+                SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id)).unwrap(),
                 sketch.clone(),
                 SketchGeometry::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
@@ -1042,7 +1042,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 
     let solver_lines = entities
         .iter()
-        .filter(|entity| entity.id().0.contains("#solver-line:"))
+        .filter(|entity| entity.id().as_str().contains("#solver-line:"))
         .collect::<Vec<_>>();
     assert_eq!(solver_lines.len(), 4);
     assert_eq!(
@@ -1085,7 +1085,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 
 #[test]
 fn roster_point_line_distance_materializes_one_solver_line() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
@@ -1127,7 +1127,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .enumerate()
         .map(|(index, [u, v])| {
             SketchEntity::new(
-                SketchEntityId(format!("bound-point-{index}")),
+                SketchEntityId::mint(format!("synthetic:test:id#bound-point-{index}")).unwrap(),
                 sketch.clone(),
                 SketchGeometry::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
@@ -1237,7 +1237,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
     };
     assert_eq!(
         first,
-        &SketchLocus::Entity(SketchEntityId("bound-point-0".into()))
+        &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#bound-point-0").unwrap())
     );
     assert_eq!(second, &SketchLocus::Entity(solver_line_id));
     assert_eq!(parameter_ref, &parameter.id);
@@ -1245,7 +1245,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
 
 #[test]
 fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguous() {
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -1277,7 +1277,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
     };
     let line = |id: &str, start: [f64; 2], end: [f64; 2]| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch_id.clone(),
             SketchGeometry::Line {
                 start: Point2::new(start[0], start[1]),
@@ -1286,12 +1286,20 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         )
     };
     let mut entities = vec![
-        line("profile-bottom", [0.0, -20.0], [70.0, -20.0]),
-        line("profile-top", [0.0, 0.0], [70.0, 0.0]),
-        line("profile-left", [0.0, -20.0], [0.0, 0.0]),
-        line("profile-right", [70.0, 0.0], [70.0, -20.0]),
+        line(
+            "synthetic:test:id#profile-bottom",
+            [0.0, -20.0],
+            [70.0, -20.0],
+        ),
+        line("synthetic:test:id#profile-top", [0.0, 0.0], [70.0, 0.0]),
+        line("synthetic:test:id#profile-left", [0.0, -20.0], [0.0, 0.0]),
+        line(
+            "synthetic:test:id#profile-right",
+            [70.0, 0.0],
+            [70.0, -20.0],
+        ),
         SketchEntity::new(
-            SketchEntityId("resolved-point".into()),
+            SketchEntityId::mint("synthetic:test:id#resolved-point").unwrap(),
             sketch_id.clone(),
             SketchGeometry::Point {
                 position: Point2::new(85.0, -10.0),
@@ -1415,14 +1423,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
     assert!(matches!(
         &constraint.definition,
         SketchConstraintDefinition::DistanceLoci { first, second, .. }
-            if first == &SketchLocus::Entity(SketchEntityId("resolved-point".into()))
+            if first == &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#resolved-point").unwrap())
                 && second == &SketchLocus::Entity(solver_line.id().clone())
     ));
 }
 
 #[test]
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
@@ -1441,7 +1449,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     };
     let point = |id: &str, marker: Option<&str>, u: f64| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
             SketchGeometry::Point {
                 position: Point2::new(u, 0.0),
@@ -1450,9 +1458,9 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         .with_native_ref(marker.map(str::to_owned))
     };
     let mut entities = vec![
-        point("origin", Some("known-a"), 0.0),
-        point("middle", Some("known-b"), 5.0),
-        point("far", None, 12.0),
+        point("synthetic:test:id#origin", Some("known-a"), 0.0),
+        point("synthetic:test:id#middle", Some("known-b"), 5.0),
+        point("synthetic:test:id#far", None, 12.0),
     ];
     let known_a = marker("known-a", Some([0.0, 0.0]));
     let known_b = marker("known-b", Some([0.005, 0.0]));
@@ -1557,7 +1565,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
 
     let solved = entities
         .iter()
-        .filter(|entity| entity.id().0.contains("dimension-point:"))
+        .filter(|entity| entity.id().as_str().contains("dimension-point:"))
         .collect::<Vec<_>>();
     assert_eq!(solved.len(), 3);
     assert!(matches!(
