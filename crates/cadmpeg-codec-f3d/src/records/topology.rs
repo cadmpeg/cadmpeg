@@ -643,22 +643,87 @@ pub struct DesignConstructionOperandGroup {
     /// Per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Ordered operand-record references.
-    pub members: Vec<Located<u32>>,
+    members: Vec<Located<u32>>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
     pub lost_edge_references: Vec<String>,
     /// Exact framing of the operand-member run and its auxiliary fields.
     pub frame: DesignConstructionOperandGroupFrame,
     /// Source role classified in its owning scope.
     pub operand_role: DesignConstructionOperandRole,
-    /// Byte offset of `role`.
-    pub role_offset: u64,
     /// Per-file dynamic paired class tag.
     pub paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub paired_byte_offset: u64,
 }
 
+/// Unchecked construction-group input.
+pub(crate) struct DesignConstructionOperandGroupDraft {
+    pub id: String,
+    pub scope_record_index: u32,
+    pub scope_reference_ordinal: u32,
+    pub record_index: u32,
+    pub byte_offset: u64,
+    pub class_tag: DesignClassTag,
+    pub members: Vec<Located<u32>>,
+    pub lost_edge_references: Vec<String>,
+    pub frame: DesignConstructionOperandGroupFrame,
+    pub operand_role: DesignConstructionOperandRole,
+    pub role_offset: u64,
+    pub paired_class_tag: DesignClassTag,
+    pub paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignConstructionOperandGroupDraft> for DesignConstructionOperandGroup {
+    type Error = String;
+    fn try_from(draft: DesignConstructionOperandGroupDraft) -> Result<Self, Self::Error> {
+        Self::check_members(&draft.members)?;
+        if draft.role_offset != draft.frame.role_offset() {
+            return Err("role_offset must precede opaque_index_offset by 18 bytes".into());
+        }
+        Ok(Self {
+            id: draft.id,
+            scope_record_index: draft.scope_record_index,
+            scope_reference_ordinal: draft.scope_reference_ordinal,
+            record_index: draft.record_index,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            members: draft.members,
+            lost_edge_references: draft.lost_edge_references,
+            frame: draft.frame,
+            operand_role: draft.operand_role,
+            paired_class_tag: draft.paired_class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+        })
+    }
+}
+
 impl DesignConstructionOperandGroup {
+    fn check_members(members: &[Located<u32>]) -> Result<(), String> {
+        if members.windows(2).any(|pair| {
+            pair[0]
+                .offset
+                .checked_add(11)
+                .is_none_or(|next| pair[1].offset < next)
+        }) {
+            return Err("construction member offsets must have a stride of at least 11".into());
+        }
+        Ok(())
+    }
+
+    pub fn members(&self) -> &[Located<u32>] {
+        &self.members
+    }
+
+    pub(crate) fn try_set_members(&mut self, members: Vec<Located<u32>>) -> Result<(), String> {
+        Self::check_members(&members)?;
+        self.members = members;
+        Ok(())
+    }
+
+    pub fn role_offset(&self) -> u64 {
+        self.frame.role_offset()
+    }
+
     /// The source role code.
     pub fn role(&self) -> DesignOperandRole {
         self.operand_role.source()
@@ -730,7 +795,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
             (role, None, None) => DesignConstructionOperandRole::Other(role),
             _ => return Err("role, extrude_role, and extrude_face_role disagree".into()),
         };
-        Ok(Self {
+        Self::try_from(DesignConstructionOperandGroupDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             scope_reference_ordinal: wire.scope_reference_ordinal,
@@ -755,6 +820,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
 
 impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerde {
     fn from(group: DesignConstructionOperandGroup) -> Self {
+        let role_offset = group.role_offset();
         let (members, member_offsets) = group
             .members
             .into_iter()
@@ -786,7 +852,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             role: group.operand_role.source().raw(),
             extrude_role,
             extrude_face_role,
-            role_offset: group.role_offset,
+            role_offset,
             paired_class_tag: group.paired_class_tag.into(),
             paired_byte_offset: group.paired_byte_offset,
         }
@@ -806,31 +872,192 @@ pub struct DesignConstructionOperandGroupFrame {
     /// member run; an absent reference contributes no entry.
     pub auxiliary_records: Vec<Located<u32>>,
     /// Exact selection-path records selected by the optional references.
-    pub auxiliary_paths: Vec<DesignConstructionOperandPath>,
+    auxiliary_paths: Vec<DesignConstructionOperandPath>,
     /// Indexed records named by the counted trailing-reference run. The target
     /// grammar is selected by the owning operand family: persistent-selection
     /// groups name identity wrappers and placed-selection groups name affine
     /// transforms.
-    pub trailing_records: Vec<Located<u32>>,
+    trailing_records: Option<Located<u32>>,
     /// Exact affine-transform records selected from the trailing-reference
     /// run. Other trailing records remain represented by their indices and
     /// offsets and can select another typed grammar.
-    pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    trailing_transforms: Vec<DesignConstructionOperandTransform>,
     /// Exact dual-transform records selected from the trailing-reference run.
-    pub trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
+    trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     /// Exact compact flag records selected from the trailing-reference run.
-    pub trailing_flags: Vec<DesignConstructionOperandFlag>,
+    trailing_flags: Vec<DesignConstructionOperandFlag>,
     /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
     /// every container generation but one.
-    pub opaque_index: u32,
+    pub opaque_index: NonZeroU32,
     /// Byte offset of the first `opaque_index` copy.
-    pub opaque_index_offset: u64,
+    opaque_index_offset: u64,
     /// Opaque nonnegative finite f64.
-    pub opaque_scalar: f64,
-    /// Byte offset of `opaque_scalar`.
-    pub opaque_scalar_offset: u64,
+    opaque_scalar: f64,
     /// Boolean tail variant.
     pub variant: bool,
+}
+
+/// Unchecked construction-frame input.
+pub(crate) struct DesignConstructionOperandGroupFrameDraft {
+    pub member_count_offset: u64,
+    pub auxiliary_records: Vec<Located<u32>>,
+    pub auxiliary_paths: Vec<DesignConstructionOperandPath>,
+    pub trailing_records: Vec<Located<u32>>,
+    pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    pub trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
+    pub trailing_flags: Vec<DesignConstructionOperandFlag>,
+    pub opaque_index: u32,
+    pub opaque_index_offset: u64,
+    pub opaque_scalar: f64,
+    pub opaque_scalar_offset: u64,
+    pub variant: bool,
+}
+
+impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOperandGroupFrame {
+    type Error = String;
+    fn try_from(draft: DesignConstructionOperandGroupFrameDraft) -> Result<Self, Self::Error> {
+        if draft.trailing_records.len() > 1 {
+            return Err("construction frame permits at most one trailing record".into());
+        }
+        let opaque_index =
+            NonZeroU32::new(draft.opaque_index).ok_or("opaque_index must be nonzero")?;
+        if !draft.opaque_scalar.is_finite() || draft.opaque_scalar < 0.0 {
+            return Err("opaque_scalar must be finite and nonnegative".into());
+        }
+        if draft.opaque_index_offset < 18
+            || draft.opaque_index_offset.checked_add(4) != Some(draft.opaque_scalar_offset)
+        {
+            return Err("opaque_index_offset and opaque_scalar_offset must follow the role by 18 and 22 bytes".into());
+        }
+        distinct_construction_records(
+            "auxiliary_paths",
+            draft
+                .auxiliary_paths
+                .iter()
+                .map(|record| record.record_index),
+        )?;
+        distinct_construction_records(
+            "trailing_transforms",
+            draft
+                .trailing_transforms
+                .iter()
+                .map(|record| record.record_index),
+        )?;
+        distinct_construction_records(
+            "trailing_dual_transforms",
+            draft
+                .trailing_dual_transforms
+                .iter()
+                .map(|record| record.record_index),
+        )?;
+        distinct_construction_records(
+            "trailing_flags",
+            draft
+                .trailing_flags
+                .iter()
+                .map(|record| record.record_index),
+        )?;
+        Ok(Self {
+            member_count_offset: draft.member_count_offset,
+            auxiliary_records: draft.auxiliary_records,
+            auxiliary_paths: draft.auxiliary_paths,
+            trailing_records: draft.trailing_records.into_iter().next(),
+            trailing_transforms: draft.trailing_transforms,
+            trailing_dual_transforms: draft.trailing_dual_transforms,
+            trailing_flags: draft.trailing_flags,
+            opaque_index,
+            opaque_index_offset: draft.opaque_index_offset,
+            opaque_scalar: draft.opaque_scalar,
+            variant: draft.variant,
+        })
+    }
+}
+
+fn distinct_construction_records(
+    field: &str,
+    records: impl Iterator<Item = u32>,
+) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for record in records {
+        if !seen.insert(record) {
+            return Err(format!("{field} record_index values must be distinct"));
+        }
+    }
+    Ok(())
+}
+
+impl DesignConstructionOperandGroupFrame {
+    pub fn role_offset(&self) -> u64 {
+        self.opaque_index_offset - 18
+    }
+    pub fn opaque_index_offset(&self) -> u64 {
+        self.opaque_index_offset
+    }
+    pub fn opaque_scalar_offset(&self) -> u64 {
+        self.opaque_index_offset + 4
+    }
+    pub fn opaque_scalar(&self) -> f64 {
+        self.opaque_scalar
+    }
+    pub fn trailing_records(&self) -> &[Located<u32>] {
+        self.trailing_records.as_slice()
+    }
+    pub fn auxiliary_paths(&self) -> &[DesignConstructionOperandPath] {
+        &self.auxiliary_paths
+    }
+    pub(crate) fn try_set_auxiliary_paths(
+        &mut self,
+        records: Vec<DesignConstructionOperandPath>,
+    ) -> Result<(), String> {
+        distinct_construction_records(
+            "auxiliary_paths",
+            records.iter().map(|record| record.record_index),
+        )?;
+        self.auxiliary_paths = records;
+        Ok(())
+    }
+    pub fn trailing_transforms(&self) -> &[DesignConstructionOperandTransform] {
+        &self.trailing_transforms
+    }
+    pub(crate) fn try_set_trailing_transforms(
+        &mut self,
+        records: Vec<DesignConstructionOperandTransform>,
+    ) -> Result<(), String> {
+        distinct_construction_records(
+            "trailing_transforms",
+            records.iter().map(|record| record.record_index),
+        )?;
+        self.trailing_transforms = records;
+        Ok(())
+    }
+    pub fn trailing_dual_transforms(&self) -> &[DesignConstructionOperandDualTransform] {
+        &self.trailing_dual_transforms
+    }
+    pub(crate) fn try_set_trailing_dual_transforms(
+        &mut self,
+        records: Vec<DesignConstructionOperandDualTransform>,
+    ) -> Result<(), String> {
+        distinct_construction_records(
+            "trailing_dual_transforms",
+            records.iter().map(|record| record.record_index),
+        )?;
+        self.trailing_dual_transforms = records;
+        Ok(())
+    }
+    pub fn trailing_flags(&self) -> &[DesignConstructionOperandFlag] {
+        &self.trailing_flags
+    }
+    pub(crate) fn try_set_trailing_flags(
+        &mut self,
+        records: Vec<DesignConstructionOperandFlag>,
+    ) -> Result<(), String> {
+        distinct_construction_records(
+            "trailing_flags",
+            records.iter().map(|record| record.record_index),
+        )?;
+        self.trailing_flags = records;
+        Ok(())
+    }
 }
 
 /// Serialized framing of a construction-operand group.
@@ -869,7 +1096,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
         if wire.trailing_record_indices.len() != wire.trailing_record_offsets.len() {
             return Err("trailing_record_offsets must match trailing_record_indices".into());
         }
-        Ok(Self {
+        Self::try_from(DesignConstructionOperandGroupFrameDraft {
             member_count_offset: wire.member_count_offset,
             auxiliary_records: wire
                 .auxiliary_record_indices
@@ -898,6 +1125,9 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
 
 impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
+        let opaque_scalar_offset = frame.opaque_scalar_offset();
+        let opaque_scalar = frame.opaque_scalar();
+        let opaque_index_offset = frame.opaque_index_offset();
         Self {
             member_count_offset: frame.member_count_offset,
             auxiliary_record_indices: frame
@@ -924,10 +1154,10 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
             trailing_transforms: frame.trailing_transforms,
             trailing_dual_transforms: frame.trailing_dual_transforms,
             trailing_flags: frame.trailing_flags,
-            opaque_index: frame.opaque_index,
-            opaque_index_offset: frame.opaque_index_offset,
-            opaque_scalar: frame.opaque_scalar,
-            opaque_scalar_offset: frame.opaque_scalar_offset,
+            opaque_index: frame.opaque_index.get(),
+            opaque_index_offset,
+            opaque_scalar,
+            opaque_scalar_offset,
             variant: frame.variant,
         }
     }

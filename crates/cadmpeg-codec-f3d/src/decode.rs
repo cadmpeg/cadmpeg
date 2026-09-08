@@ -4366,13 +4366,13 @@ fn extend_related_design_records(
                     .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
                 group
-                    .members
+                    .members()
                     .iter()
                     .map(|member| member.value)
                     .chain(
                         group
                             .frame
-                            .trailing_records
+                            .trailing_records()
                             .iter()
                             .map(|record| &record.value)
                             .flat_map(|record_index| {
@@ -4518,7 +4518,7 @@ fn extend_related_design_records(
                     let stream = crate::ids::native_stream(&group.id)?.to_owned();
                     Some(
                         group
-                            .members
+                            .members()
                             .iter()
                             .map(|member| member.value)
                             .map(move |record_index| (stream.clone(), record_index)),

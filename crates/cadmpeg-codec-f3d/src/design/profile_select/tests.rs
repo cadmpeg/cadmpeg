@@ -29,45 +29,51 @@ use cadmpeg_ir::sketches::{
 };
 
 fn group() -> DesignConstructionOperandGroup {
-    DesignConstructionOperandGroup {
-        id: "stream:group".into(),
-        scope_record_index: 7,
-        scope_reference_ordinal: 0,
-        record_index: 9,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        members: vec![
-            crate::records::Located {
-                value: 10,
-                offset: 0,
-            },
-            crate::records::Located {
-                value: 11,
-                offset: 0,
-            },
-        ],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "stream:group".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            members: vec![
+                crate::records::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 11,
+                    offset: 11,
+                },
+            ],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::ROLE_0X5,
+            ),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X5,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    }
+    )
+    .unwrap()
 }
 
 fn operand(
@@ -982,10 +988,18 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let mut group = group();
     group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
-    group.members = vec![10]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    group
+        .try_set_members(
+            vec![10]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,

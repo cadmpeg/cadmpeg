@@ -108,7 +108,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .expect("counted Extrude operand group");
     assert_eq!(
         group
-            .members
+            .members()
             .iter()
             .map(|member| member.value)
             .collect::<Vec<_>>(),
@@ -116,7 +116,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert_eq!(
         group
-            .members
+            .members()
             .iter()
             .map(|member| member.offset)
             .collect::<Vec<_>>(),
@@ -129,19 +129,19 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(
         group
             .frame
-            .trailing_records
+            .trailing_records()
             .iter()
             .map(|record| record.value)
             .collect::<Vec<_>>(),
         [300]
     );
-    assert_eq!(group.frame.opaque_index, 180);
-    assert_eq!(group.frame.opaque_scalar, 0.125);
+    assert_eq!(group.frame.opaque_index.get(), 180);
+    assert_eq!(group.frame.opaque_scalar(), 0.125);
     assert!(group.frame.variant);
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 
     let mut whole_body_bytes = bytes.clone();
-    whole_body_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+    whole_body_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
     let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
         .complete()
@@ -172,7 +172,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
     assert_eq!(
         flagged
-            .members
+            .members()
             .iter()
             .map(|member| member.value)
             .collect::<Vec<_>>(),
@@ -181,7 +181,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
-    start_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+    start_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &record)
@@ -255,7 +255,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             });
     }
     let mut to_face_bytes = bytes.clone();
-    to_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+    to_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
     let mut legacy_to_face =
         parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
@@ -290,7 +290,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .expect("flagless counted operand group");
     assert_eq!(
         flagless
-            .members
+            .members()
             .iter()
             .map(|member| member.value)
             .collect::<Vec<_>>(),
@@ -358,7 +358,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .expect("Extrude face group carrying both optional references");
     assert_eq!(
         auxiliary
-            .members
+            .members()
             .iter()
             .map(|member| member.value)
             .collect::<Vec<_>>(),
@@ -366,7 +366,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert_eq!(
         auxiliary
-            .members
+            .members()
             .iter()
             .map(|member| member.offset)
             .collect::<Vec<_>>(),
@@ -390,7 +390,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [37, 48]
     );
-    assert!(auxiliary.frame.trailing_records.is_empty());
+    assert!(auxiliary.frame.trailing_records().is_empty());
     assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
     assert_eq!(auxiliary.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
@@ -423,10 +423,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     target_group.record_index = 400;
     target_group.scope_reference_ordinal = 3;
-    target_group.members = vec![crate::records::Located {
-        value: 500,
-        offset: 1129,
-    }];
+    target_group
+        .try_set_members(vec![crate::records::Located {
+            value: 500,
+            offset: 1129,
+        }])
+        .unwrap();
     target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
         DesignOperandRole::ROLE_0X10,
     );
@@ -617,20 +619,24 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     split_tool_group.record_index = 100;
     split_tool_group.scope_reference_ordinal = 0;
-    split_tool_group.members = vec![crate::records::Located {
-        value: 200,
-        offset: 1096,
-    }];
+    split_tool_group
+        .try_set_members(vec![crate::records::Located {
+            value: 200,
+            offset: 1096,
+        }])
+        .unwrap();
     split_tool_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
     let mut split_target_group = group.clone();
     split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     split_target_group.record_index = 400;
     split_target_group.scope_reference_ordinal = 2;
-    split_target_group.members = vec![crate::records::Located {
-        value: 500,
-        offset: 1118,
-    }];
+    split_target_group
+        .try_set_members(vec![crate::records::Located {
+            value: 500,
+            offset: 1118,
+        }])
+        .unwrap();
     split_target_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let split_tool = DesignFaceOperand {
@@ -717,10 +723,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     multiple_targets_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
     let mut multiple_targets = split_target_group.clone();
-    multiple_targets.members = vec![500, 501]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    multiple_targets
+        .try_set_members(
+            vec![500, 501]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     assert!(matches!(
         project_split(
             &multiple_targets_scope,
@@ -738,10 +752,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     construction_tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
         DesignOperandRole::ROLE_0X21,
     );
-    construction_tool.members = vec![200, 201]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    construction_tool
+        .try_set_members(
+            vec![200, 201]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     split_target_group.scope_reference_ordinal = 3;
     assert!(matches!(
         project_split(
@@ -759,10 +781,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut invalid_groups = Vec::new();
     invalid_groups.push(vec![split_target_group.clone()]);
     let mut oversized_tool = split_tool_group.clone();
-    oversized_tool.members = vec![200, 201, 202, 203]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    oversized_tool
+        .try_set_members(
+            vec![200, 201, 202, 203]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     invalid_groups.push(vec![oversized_tool, split_target_group.clone()]);
     for mutate in 0..4 {
         let mut tool = split_tool_group.clone();
@@ -775,10 +805,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 );
             }
             3 => {
-                tool.members = vec![crate::records::Located {
+                tool.try_set_members(vec![crate::records::Located {
                     value: 201,
-                    offset: tool.members[0].offset,
-                }];
+                    offset: tool.members()[0].offset,
+                }])
+                .unwrap();
             }
             _ => unreachable!(),
         }
@@ -796,10 +827,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                     );
             }
             3 => {
-                target.members = vec![crate::records::Located {
-                    value: 501,
-                    offset: target.members[0].offset,
-                }];
+                target
+                    .try_set_members(vec![crate::records::Located {
+                        value: 501,
+                        offset: target.members()[0].offset,
+                    }])
+                    .unwrap();
             }
             _ => unreachable!(),
         }
@@ -832,10 +865,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .unwrap();
     let mut delete_group = group.clone();
     delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    delete_group.members = vec![crate::records::Located {
-        value: 200,
-        offset: 1096,
-    }];
+    delete_group
+        .try_set_members(vec![crate::records::Located {
+            value: 200,
+            offset: 1096,
+        }])
+        .unwrap();
     delete_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
         DesignOperandRole::ROLE_0X10,
     );
@@ -1131,10 +1166,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         });
     }
     let mut stitch_group = remove_group;
-    stitch_group.members = vec![200]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    stitch_group
+        .try_set_members(
+            vec![200]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     stitch_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert_eq!(
@@ -1247,7 +1290,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
 
         assert_eq!(
             group
-                .members
+                .members()
                 .iter()
                 .map(|member| member.value)
                 .collect::<Vec<_>>(),
