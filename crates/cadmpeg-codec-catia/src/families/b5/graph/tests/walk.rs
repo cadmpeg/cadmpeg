@@ -1458,7 +1458,7 @@ fn vertex_incidence_link_accepts_both_exact_terminal_controls() {
     for terminal_control in [0x00, 0x04] {
         assert_eq!(
             B5VertexIncidenceControl::from_byte(terminal_control)
-                .unwrap()
+                .expect("declared terminal control")
                 .as_byte(),
             terminal_control
         );
@@ -1467,7 +1467,8 @@ fn vertex_incidence_link_accepts_both_exact_terminal_controls() {
             Some(B5VertexIncidenceLink {
                 object_id: 17,
                 incidence: 18,
-                terminal_control: B5VertexIncidenceControl::from_byte(terminal_control).unwrap(),
+                terminal_control: B5VertexIncidenceControl::from_byte(terminal_control)
+                    .expect("declared terminal control"),
             })
         );
     }

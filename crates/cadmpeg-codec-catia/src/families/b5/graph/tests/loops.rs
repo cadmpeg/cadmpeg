@@ -671,7 +671,10 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
             Some(B5FaceRecord {
                 object_id: 3,
                 references: vec![1, 2],
-                terminal_control: Some(B5FramingControl::from_byte(terminal_control).unwrap()),
+                terminal_control: Some(
+                    B5FramingControl::from_byte(terminal_control)
+                        .expect("declared terminal control")
+                ),
             })
         );
 
