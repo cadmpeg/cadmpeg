@@ -111,7 +111,7 @@ impl Brep {
     pub(crate) fn qualify_ids(
         &mut self,
         site: &str,
-    ) -> Result<(), cadmpeg_ir::geometry::CacheFitToleranceError> {
+    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
         let qualify = |value: &str| {
             value.split_once('#').map_or_else(
                 || value.to_owned(),

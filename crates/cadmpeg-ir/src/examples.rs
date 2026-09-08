@@ -272,7 +272,7 @@ pub fn unit_cube() -> CadIr {
 }
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
-pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceError> {
+pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryError> {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
