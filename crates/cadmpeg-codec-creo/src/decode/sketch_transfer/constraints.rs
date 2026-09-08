@@ -2220,7 +2220,7 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("synthetic:test:id#synthetic:test:angle-difference").unwrap();
+        let sketch = SketchId::mint("creo:model:sketch#angle-difference").unwrap();
         let constraints =
             section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch);
         assert_eq!(constraints.len(), 1);
@@ -2290,7 +2290,7 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("synthetic:test:id#synthetic:test:scalar-equality").unwrap();
+        let sketch = SketchId::mint("creo:model:sketch#scalar-equality").unwrap();
         let constraints =
             section_equation_function_five_scalar_equality_constraints(&definition, &sketch);
         assert_eq!(constraints.len(), 1);
