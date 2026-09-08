@@ -6212,13 +6212,8 @@ struct SketchRelationSerde {
     pub byte_offset: u64,
     pub state_offset: u32,
     pub owner_reference: u32,
-    #[serde(
-        default,
-        serialize_with = "serialize_relation_owner",
-        deserialize_with = "deserialize_relation_owner"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
+    #[serde(default)]
+    pub owner_entity_id: String,
     #[serde(default)]
     pub auxiliary_references: Vec<u32>,
     #[serde(default)]
@@ -6253,25 +6248,6 @@ struct SketchRelationSerde {
     pub raw_bytes: Vec<u8>,
 }
 
-fn serialize_relation_owner<S: Serializer>(
-    owner: &Option<cadmpeg_ir::NonEmptyString>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(
-        owner
-            .as_ref()
-            .map_or("", cadmpeg_ir::NonEmptyString::as_str),
-    )
-}
-
-fn deserialize_relation_owner<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<cadmpeg_ir::NonEmptyString>, D::Error> {
-    Ok(cadmpeg_ir::NonEmptyString::new(String::deserialize(
-        deserializer,
-    )?))
-}
-
 impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
@@ -6296,7 +6272,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
-            owner_entity_id: wire.owner_entity_id,
+            owner_entity_id: cadmpeg_ir::NonEmptyString::new(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::from_columns(
                 wire.auxiliary_references,
                 wire.auxiliary_reference_offsets,
@@ -6336,7 +6312,10 @@ impl From<SketchRelation> for SketchRelationSerde {
             byte_offset: relation.byte_offset,
             state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,
-            owner_entity_id: relation.owner_entity_id,
+            owner_entity_id: relation
+                .owner_entity_id
+                .map(|owner| owner.as_str().to_owned())
+                .unwrap_or_default(),
             auxiliary_references,
             auxiliary_reference_offsets,
             rectangular_counted_reference_count: relation.rectangular_counted_reference_count,
