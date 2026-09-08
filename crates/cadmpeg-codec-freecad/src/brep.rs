@@ -236,7 +236,7 @@ struct TextFactsWire {
     polygons3d: Vec<TextPolygon3d>,
     polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
     triangulations: Vec<TextTriangulation>,
-    tshapes: Vec<TextTShape>,
+    tshapes: Vec<TextTShapeWire>,
     roots: Vec<TextShapeUse>,
 }
 
@@ -250,7 +250,7 @@ struct BinaryFactsWire {
     polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
     surfaces: Vec<TextSurface>,
     triangulations: Vec<TextTriangulation>,
-    tshapes: Vec<TextTShape>,
+    tshapes: Vec<TextTShapeWire>,
     roots: Vec<TextShapeUse>,
 }
 
@@ -265,15 +265,17 @@ impl From<(ShapeSet, BinaryTopologyVersion)> for BinaryFactsWire {
             polygons_on_triangulations: value.polygons_on_triangulations,
             surfaces: value.surfaces,
             triangulations: value.triangulations,
-            tshapes: value.tshapes,
+            tshapes: tshapes_to_wire(value.tshapes),
             roots: value.roots,
         }
     }
 }
 
-impl From<BinaryFactsWire> for ShapeSet {
-    fn from(value: BinaryFactsWire) -> Self {
-        Self {
+impl TryFrom<BinaryFactsWire> for ShapeSet {
+    type Error = String;
+
+    fn try_from(value: BinaryFactsWire) -> Result<Self, Self::Error> {
+        Ok(Self {
             locations: value.locations,
             curve2ds: value.curve2ds,
             curves: value.curves,
@@ -281,9 +283,9 @@ impl From<BinaryFactsWire> for ShapeSet {
             polygons_on_triangulations: value.polygons_on_triangulations,
             surfaces: value.surfaces,
             triangulations: value.triangulations,
-            tshapes: value.tshapes,
+            tshapes: tshapes_from_wire(value.tshapes)?,
             roots: value.roots,
-        }
+        })
     }
 }
 
@@ -310,7 +312,7 @@ impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
                         polygons3d: facts.polygons3d,
                         polygons_on_triangulations: facts.polygons_on_triangulations,
                         triangulations: facts.triangulations,
-                        tshapes: facts.tshapes,
+                        tshapes: tshapes_to_wire(facts.tshapes),
                         roots: facts.roots,
                     }),
                     None,
@@ -345,7 +347,7 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
                     polygons_on_triangulations: text.polygons_on_triangulations,
                     surfaces: text.surfaces,
                     triangulations: text.triangulations,
-                    tshapes: text.tshapes,
+                    tshapes: tshapes_from_wire(text.tshapes)?,
                     roots: text.roots,
                 };
                 if text.section_counts != facts.section_counts() {
@@ -363,7 +365,7 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
                 let version = BinaryTopologyVersion::try_from(binary.topology_version)?;
                 ShapePayload::Binary {
                     version,
-                    facts: binary.into(),
+                    facts: binary.try_into()?,
                 }
             }
             _ => return Err("shape payload form disagrees with text and binary facts".to_owned()),
@@ -1065,11 +1067,8 @@ impl<T> TableRef<T> {
 }
 
 /// One subshape-first topology record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "TextTShapeWire", into = "TextTShapeWire")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TextTShape {
-    /// One-based table index.
-    pub index: usize,
     /// Family-specific geometry, including geometry-less families.
     pub geometry: TextTShapeGeometry,
     /// Free, modified, checked, orientable, closed, infinite, convex flags.
@@ -1119,8 +1118,32 @@ enum TextTShapeGeometryWire {
     Empty,
 }
 
-impl From<TextTShape> for TextTShapeWire {
-    fn from(value: TextTShape) -> Self {
+fn tshapes_to_wire(shapes: Vec<TextTShape>) -> Vec<TextTShapeWire> {
+    shapes
+        .into_iter()
+        .enumerate()
+        .map(TextTShapeWire::from)
+        .collect()
+}
+
+fn tshapes_from_wire(shapes: Vec<TextTShapeWire>) -> Result<Vec<TextTShape>, String> {
+    shapes
+        .into_iter()
+        .enumerate()
+        .map(|(position, wire)| {
+            if wire.index != position + 1 {
+                return Err(format!(
+                    "tshapes[{position}].index must equal {}",
+                    position + 1
+                ));
+            }
+            wire.try_into()
+        })
+        .collect()
+}
+
+impl From<(usize, TextTShape)> for TextTShapeWire {
+    fn from((position, value): (usize, TextTShape)) -> Self {
         let kind = value.kind();
         let geometry = match value.geometry {
             TextTShapeGeometry::Vertex {
@@ -1165,7 +1188,7 @@ impl From<TextTShape> for TextTShapeWire {
             | TextTShapeGeometry::Compound => TextTShapeGeometryWire::Empty,
         };
         Self {
-            index: value.index,
+            index: position + 1,
             kind,
             geometry,
             flags: value.flags,
@@ -1241,7 +1264,6 @@ impl TryFrom<TextTShapeWire> for TextTShape {
             _ => return Err("TShape kind disagrees with geometry".to_owned()),
         };
         Ok(Self {
-            index: wire.index,
             geometry,
             flags: wire.flags,
             children: wire.children,
@@ -2384,7 +2406,6 @@ fn parse_binary_tshape(
         });
     }
     Ok(TextTShape {
-        index,
         geometry,
         flags,
         children,
@@ -3713,7 +3734,6 @@ fn parse_tshapes(
             children.push(child);
         }
         shapes.push(TextTShape {
-            index,
             geometry,
             flags,
             children,
@@ -5272,6 +5292,53 @@ pub(crate) mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn shape_set_wire_indices_match_position_for_both_carriers() {
+        for form in ["text", "binary"] {
+            let mut facts = serde_json::json!({
+                "topology_version": 1,
+                "locations": [], "curve2ds": [], "curves": [],
+                "polygons3d": [], "polygons_on_triangulations": [],
+                "surfaces": [], "triangulations": [], "roots": [],
+                "tshapes": [
+                    {"index": 1, "kind": "wire", "geometry": {"kind": "empty"},
+                     "flags": [false, false, false, false, false, false, false], "children": []},
+                    {"index": 2, "kind": "compound", "geometry": {"kind": "empty"},
+                     "flags": [false, false, false, false, false, false, false], "children": []}
+                ]
+            });
+            if form == "text" {
+                facts["shape_types"] = serde_json::json!({"wire": 1, "compound": 1});
+                facts["section_counts"] = serde_json::json!({
+                    "Locations": 0, "Curve2ds": 0, "Curves": 0, "Polygon3D": 0,
+                    "PolygonOnTriangulations": 0, "Surfaces": 0, "Triangulations": 0, "TShapes": 2
+                });
+            }
+            let mut wire = serde_json::json!({
+                "id": "shape", "property": "property", "entry": "Shape.brp",
+                "form": form, "text": null, "binary": null
+            });
+            wire[form] = facts;
+            let mut payload: ShapePayloadRecord = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&payload).unwrap(), wire);
+            let (ShapePayload::Text { facts, .. } | ShapePayload::Binary { facts, .. }) =
+                &mut payload.payload
+            else {
+                panic!("expected shape set");
+            };
+            facts.tshapes.swap(0, 1);
+            let reordered = serde_json::to_value(payload).unwrap();
+            assert_eq!(reordered[form]["tshapes"][0]["index"], 1);
+            assert_eq!(reordered[form]["tshapes"][1]["index"], 2);
+            assert_eq!(reordered[form]["tshapes"][0]["kind"], "compound");
+            assert_eq!(reordered[form]["tshapes"][1]["kind"], "wire");
+
+            wire[form]["tshapes"][1]["index"] = serde_json::json!(1);
+            let error = serde_json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
+            assert!(error.to_string().contains("tshapes[1].index must equal 2"));
+        }
+    }
+
+    #[test]
     fn shape_payload_wire_admits_only_versions_of_its_carrier() {
         for (form, maximum) in [("text", 3), ("binary", 4)] {
             for version in [0, 1, maximum, maximum + 1, u8::MAX] {
@@ -5313,13 +5380,20 @@ pub(crate) mod tests {
                 "tolerance": 0.0, "surface": 0, "location": 0, "triangulation": null },
             "flags": [false, false, false, false, false, false, false], "children": []
         });
-        let shape: TextTShape = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(shape).unwrap(), wire);
+        let shape =
+            TextTShape::try_from(serde_json::from_value::<TextTShapeWire>(wire.clone()).unwrap())
+                .unwrap();
+        assert_eq!(
+            serde_json::to_value(TextTShapeWire::from((0, shape))).unwrap(),
+            wire
+        );
         wire["geometry"]["triangulation"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<TextTShape>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("triangulation"));
+        assert!(
+            TextTShape::try_from(serde_json::from_value::<TextTShapeWire>(wire).unwrap())
+                .unwrap_err()
+                .to_string()
+                .contains("triangulation")
+        );
         assert!(TableRef::<TextSurface>::new(0).is_err());
         assert!(TableRef::<TextSurface>::new(1)
             .unwrap()
