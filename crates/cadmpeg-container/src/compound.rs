@@ -197,10 +197,38 @@ impl CompoundEntry {
 }
 
 #[derive(Debug, Clone)]
-struct DirectoryEntry {
+enum DirectorySlot {
+    Free,
+    Live(LiveEntry),
+}
+
+impl DirectorySlot {
+    fn live(&self) -> Option<&LiveEntry> {
+        match self {
+            Self::Free => None,
+            Self::Live(entry) => Some(entry),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectoryKind {
+    Storage,
+    Stream,
+    Root,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectoryColor {
+    Red,
+    Black,
+}
+
+#[derive(Debug, Clone)]
+struct LiveEntry {
     name: String,
-    object_type: u8,
-    color: u8,
+    kind: DirectoryKind,
+    color: DirectoryColor,
     left: u32,
     right: u32,
     child: u32,
@@ -244,7 +272,7 @@ struct CompoundState {
     sector_count: usize,
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
-    directory: Vec<DirectoryEntry>,
+    directory: Vec<DirectorySlot>,
     directory_chain: Vec<u32>,
     mini_fat_chain: Vec<u32>,
     root_mini_chain: Vec<u32>,
@@ -487,7 +515,7 @@ impl<'a> CompoundSnapshot<'a> {
             end: self.parsed.version.sector_size() as u64,
             role: SpanRole::CfbHeader,
         }];
-        let root_size = self.parsed.directory[0].size;
+        let root_size = directory_root(&self.parsed.directory)?.size;
         let root_sectors = self
             .parsed
             .root_mini_chain
@@ -892,7 +920,7 @@ impl CompoundState {
             .map(|word| le_u32(word, 0).expect("four-byte chunk"))
             .collect::<Vec<_>>();
         drop(mini_fat_scratch);
-        let root = &directory[0];
+        let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
@@ -946,7 +974,7 @@ impl CompoundState {
         self.walk_tree(
             ctx,
             snapshot_id,
-            self.directory[0].child,
+            directory_root(&self.directory)?.child,
             "",
             &mut reached,
             &mut output,
@@ -956,7 +984,9 @@ impl CompoundState {
             .iter()
             .enumerate()
             .skip(1)
-            .any(|(id, entry)| entry.object_type != 0 && !reached.contains(&(id as u32)))
+            .any(|(id, entry)| {
+                matches!(entry, DirectorySlot::Live(_)) && !reached.contains(&(id as u32))
+            })
         {
             return malformed("CFB directory contains an unreachable live entry");
         }
@@ -978,9 +1008,13 @@ impl CompoundState {
         validate_sibling_tree(&self.directory, root)?;
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
-            let entry = self.directory.get(id as usize).ok_or_else(|| {
-                CodecError::Malformed("CFB directory link is out of range".into())
-            })?;
+            let entry = self
+                .directory
+                .get(id as usize)
+                .and_then(DirectorySlot::live)
+                .ok_or_else(|| {
+                    CodecError::Malformed("CFB directory link is out of range".into())
+                })?;
             if !reached.insert(id) {
                 return malformed("CFB directory entry belongs to more than one storage");
             }
@@ -1016,15 +1050,15 @@ impl CompoundState {
                 )?;
                 format!("{parent}/{}", entry.name)
             };
-            match entry.object_type {
-                1 => {
+            match entry.kind {
+                DirectoryKind::Storage => {
                     output.push(CompoundEntry::Storage(CompoundStorageEntry {
                         id: CompoundStorageId(id),
                         path: path.clone(),
                     }));
                     self.walk_tree(ctx, snapshot_id, entry.child, &path, reached, output)?;
                 }
-                2 => {
+                DirectoryKind::Stream => {
                     let data = if let Some(logical_size) = NonZeroU64::new(entry.size) {
                         let allocation = if entry.size < MINI_STREAM_CUTOFF {
                             CompoundAllocation::Mini
@@ -1085,7 +1119,9 @@ impl CompoundState {
                         data,
                     }));
                 }
-                _ => return malformed("root or empty object appears in a storage child tree"),
+                DirectoryKind::Root => {
+                    return malformed("root or empty object appears in a storage child tree")
+                }
             }
             if entry.left != NO_STREAM {
                 pending.push(entry.left);
@@ -1112,7 +1148,7 @@ impl CompoundState {
             }
         }
         let mut mini_used = BTreeSet::new();
-        let mini_capacity = usize::try_from(self.directory[0].size)
+        let mini_capacity = usize::try_from(directory_root(&self.directory)?.size)
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
@@ -1133,7 +1169,7 @@ impl CompoundState {
                             || u64::from(sector)
                                 .saturating_mul(MINI_SECTOR_SIZE as u64)
                                 .saturating_add(payload)
-                                > self.directory[0].size)
+                                > directory_root(&self.directory)?.size)
                     {
                         return malformed("CFB mini stream escapes the root mini stream");
                     }
@@ -1357,20 +1393,24 @@ impl CompoundPrefixProbe {
             Ok(value) => value,
             Err(error) => return Self::Malformed(error.to_string()),
         };
+        let root = match directory_root(&directory) {
+            Ok(root) => root,
+            Err(error) => return Self::Malformed(error.to_string()),
+        };
         if let Err(error) = validate_root(&directory) {
             return Self::Malformed(error.to_string());
         }
-        if let Err(error) = validate_sibling_tree(&directory, directory[0].child) {
+        if let Err(error) = validate_sibling_tree(&directory, root.child) {
             return Self::Malformed(error.to_string());
         }
         let mut names = Vec::new();
-        let mut pending = vec![(directory[0].child, String::new())];
+        let mut pending = vec![(root.child, String::new())];
         let mut seen = BTreeSet::new();
         while let Some((id, parent)) = pending.pop() {
             if id == NO_STREAM {
                 continue;
             }
-            let Some(entry) = directory.get(id as usize) else {
+            let Some(entry) = directory.get(id as usize).and_then(DirectorySlot::live) else {
                 return Self::Malformed("CFB directory link is out of range".into());
             };
             if !seen.insert(id) {
@@ -1384,19 +1424,16 @@ impl CompoundPrefixProbe {
             names.push(path.clone());
             pending.push((entry.left, parent.clone()));
             pending.push((entry.right, parent.clone()));
-            if entry.object_type == 1 {
+            if entry.kind == DirectoryKind::Storage {
                 if let Err(error) = validate_sibling_tree(&directory, entry.child) {
                     return Self::Malformed(error.to_string());
                 }
                 pending.push((entry.child, path));
             }
         }
-        if directory
-            .iter()
-            .enumerate()
-            .skip(1)
-            .any(|(id, entry)| entry.object_type != 0 && !seen.contains(&(id as u32)))
-        {
+        if directory.iter().enumerate().skip(1).any(|(id, entry)| {
+            matches!(entry, DirectorySlot::Live(_)) && !seen.contains(&(id as u32))
+        }) {
             return Self::Malformed("CFB directory contains an unreachable live entry".into());
         }
         Self::DirectoryEvidence(names)
@@ -1472,7 +1509,7 @@ fn parse_directory(
     ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
     version: CompoundVersion,
-) -> Result<Vec<DirectoryEntry>, CodecError> {
+) -> Result<Vec<DirectorySlot>, CodecError> {
     if !bytes.len().is_multiple_of(128) {
         return malformed("CFB directory stream has a partial entry");
     }
@@ -1480,7 +1517,7 @@ fn parse_directory(
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(entry_count as u64, "parse CFB directory entries")?;
         let retained = entry_count
-            .checked_mul(std::mem::size_of::<DirectoryEntry>())
+            .checked_mul(std::mem::size_of::<DirectorySlot>())
             .and_then(|size| size.checked_add(bytes.len()))
             .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
         ctx.charge_retained(retained as u64, "retain CFB directory", None)?;
@@ -1489,24 +1526,15 @@ fn parse_directory(
     for raw in bytes.chunks_exact(128) {
         let object_type = raw[66];
         if object_type == 0 {
-            // An unallocated slot has no directory identity. Several writers
-            // leave stale bytes in such slots; preserve its index for links,
-            // but do not interpret any of those bytes as a live entry.
-            entries.push(DirectoryEntry {
-                name: String::new(),
-                object_type: 0,
-                color: 0,
-                left: NO_STREAM,
-                right: NO_STREAM,
-                child: NO_STREAM,
-                start_sector: FREE_SECTOR,
-                size: 0,
-            });
+            entries.push(DirectorySlot::Free);
             continue;
         }
-        if !matches!(object_type, 1 | 2 | 5) {
-            return malformed("invalid CFB directory object type");
-        }
+        let kind = match object_type {
+            1 => DirectoryKind::Storage,
+            2 => DirectoryKind::Stream,
+            5 => DirectoryKind::Root,
+            _ => return malformed("invalid CFB directory object type"),
+        };
         let name_len = usize::from(le_u16(raw, 64).expect("directory name length"));
         let name = {
             if !(2..=64).contains(&name_len)
@@ -1525,60 +1553,74 @@ fn parse_directory(
             }
             name
         };
-        let color = raw[67];
-        if color > 1 {
-            return malformed("invalid CFB directory node color");
-        }
+        let color = match raw[67] {
+            0 => DirectoryColor::Red,
+            1 => DirectoryColor::Black,
+            _ => return malformed("invalid CFB directory node color"),
+        };
         let mut size = le_u64(raw, 120).expect("directory stream size");
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
-        entries.push(DirectoryEntry {
+        entries.push(DirectorySlot::Live(LiveEntry {
             name,
-            object_type,
+            kind,
             color,
             left: le_u32(raw, 68).expect("directory left pointer"),
             right: le_u32(raw, 72).expect("directory right pointer"),
             child: le_u32(raw, 76).expect("directory child pointer"),
             start_sector: le_u32(raw, 116).expect("directory start sector"),
             size,
-        });
+        }));
     }
     Ok(entries)
 }
 
-fn validate_root(directory: &[DirectoryEntry]) -> Result<(), CodecError> {
-    let root = directory
+fn directory_root(directory: &[DirectorySlot]) -> Result<&LiveEntry, CodecError> {
+    directory
         .first()
-        .ok_or_else(|| CodecError::Malformed("empty CFB directory".into()))?;
-    if root.object_type != 5
+        .ok_or_else(|| CodecError::Malformed("empty CFB directory".into()))?
+        .live()
+        .ok_or_else(|| CodecError::Malformed("invalid CFB root directory entry".into()))
+}
+
+fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
+    let root = directory_root(directory)?;
+    if root.kind != DirectoryKind::Root
         || root.name != "Root Entry"
         || root.left != NO_STREAM
         || root.right != NO_STREAM
     {
         return malformed("invalid CFB root directory entry");
     }
-    if directory.iter().skip(1).any(|entry| entry.object_type == 5) {
+    if directory.iter().skip(1).any(|entry| {
+        entry
+            .live()
+            .is_some_and(|entry| entry.kind == DirectoryKind::Root)
+    }) {
         return malformed("CFB directory has more than one root entry");
     }
     Ok(())
 }
 
-fn validate_sibling_tree(directory: &[DirectoryEntry], root: u32) -> Result<(), CodecError> {
+fn validate_sibling_tree(directory: &[DirectorySlot], root: u32) -> Result<(), CodecError> {
     if root == NO_STREAM {
         return Ok(());
     }
     let root_entry = directory
         .get(root as usize)
         .ok_or_else(|| CodecError::Malformed("CFB sibling root is out of range".into()))?;
-    if root_entry.color != 1 {
+    if !root_entry
+        .live()
+        .is_some_and(|entry| entry.color == DirectoryColor::Black)
+    {
         return malformed("CFB sibling-tree root is not black");
     }
     visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new())
 }
 
 fn visit_sibling_tree(
-    directory: &[DirectoryEntry],
+    directory: &[DirectorySlot],
     id: u32,
     lower: Option<&str>,
     upper: Option<&str>,
@@ -1591,7 +1633,10 @@ fn visit_sibling_tree(
     let entry = directory
         .get(id as usize)
         .ok_or_else(|| CodecError::Malformed("CFB sibling link is out of range".into()))?;
-    if !matches!(entry.object_type, 1 | 2) || !seen.insert(id) {
+    let Some(entry) = entry.live() else {
+        return malformed("CFB sibling tree contains an invalid node or cycle");
+    };
+    if !matches!(entry.kind, DirectoryKind::Storage | DirectoryKind::Stream) || !seen.insert(id) {
         return malformed("CFB sibling tree contains an invalid node or cycle");
     }
     if lower.is_some_and(|name| cfb_name_cmp(name, &entry.name) != Ordering::Less)
@@ -1599,7 +1644,7 @@ fn visit_sibling_tree(
     {
         return malformed("CFB sibling tree violates directory-name ordering");
     }
-    let red = entry.color == 0;
+    let red = entry.color == DirectoryColor::Red;
     if red && parent_red {
         return malformed("CFB sibling tree contains adjacent red nodes");
     }
@@ -2089,11 +2134,15 @@ mod tests {
         );
         assert_eq!(
             parse_directory(None, &directory, CompoundVersion::V4).expect("v4 directory parses")[0]
+                .live()
+                .expect("live root")
                 .size,
             0x1_0000_0001
         );
         assert_eq!(
             parse_directory(None, &directory, CompoundVersion::V3).expect("v3 directory parses")[0]
+                .live()
+                .expect("live root")
                 .size,
             1
         );
@@ -2189,9 +2238,7 @@ mod tests {
         let entries = parse_directory(None, &directory, CompoundVersion::V3)
             .expect("unallocated slot is skipped");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].object_type, 0);
-        assert_eq!(entries[0].left, NO_STREAM);
-        assert_eq!(entries[0].start_sector, FREE_SECTOR);
+        assert!(matches!(entries[0], DirectorySlot::Free));
     }
 
     #[test]
