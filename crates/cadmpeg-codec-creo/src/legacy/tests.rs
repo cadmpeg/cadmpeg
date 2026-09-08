@@ -377,10 +377,7 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
             }],
         }
     );
-    assert_eq!(
-        persistence.type_11_values[1].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.type_11_values[1].parent, Some(root_offset));
 }
 
 #[test]
@@ -421,10 +418,7 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
         persistence.type_3_values[2].payload,
         StringValue::Bytes { bytes: vec![0xff] }
     );
-    assert_eq!(
-        persistence.type_3_values[0].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.type_3_values[0].parent, Some(root_offset));
 
     assert_eq!(persistence.type_4_values.len(), 2);
     assert_eq!(persistence.unresolved_type_4_value_count, 0);
@@ -507,10 +501,7 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
             .undecoded_encoding_count(),
         1
     );
-    assert_eq!(
-        persistence.string_values[4].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.string_values[4].parent, Some(root_offset));
 }
 
 #[test]
@@ -591,10 +582,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
     assert_eq!(persistence.incomplete_object_array_count, 0);
     assert!(persistence.objects[1].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 0);
-    assert_eq!(
-        persistence.objects[1].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.objects[1].parent, Some(root_offset));
     assert_eq!(
         persistence.objects[1].payload,
         ObjectPayload::Array {
@@ -606,15 +594,9 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
         }
     );
     assert_eq!(persistence.integer_values.len(), 1);
-    assert_eq!(
-        persistence.integer_values[0].parent.as_deref(),
-        Some(object_node_id(root_offset).as_str())
-    );
+    assert_eq!(persistence.integer_values[0].parent, Some(root_offset));
     assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(
-        persistence.real_values[0].parent.as_deref(),
-        Some(object_node_id(first_child_offset).as_str())
-    );
+    assert_eq!(persistence.real_values[0].parent, Some(first_child_offset));
     assert_eq!(persistence.objects[1].offset, array_offset);
 }
 

@@ -121,10 +121,10 @@ impl<T> NumericPayload<T> {
 }
 
 /// One typed legacy attribute value in the scoped object tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValueRecord<T> {
-    /// Globally unique native record identity.
-    pub id: String,
+    /// Native value identity family.
+    pub kind: ValueKind,
     /// Declared attribute name.
     pub name: String,
     /// Scope-local declaration identifier.
@@ -132,7 +132,7 @@ pub struct ValueRecord<T> {
     /// Byte offset of the owning attribute-ID scope.
     pub scope_offset: usize,
     /// Owning type-0 object node, when the depth tree supplies one.
-    pub parent: Option<String>,
+    pub parent: Option<usize>,
     /// Object-tree nesting depth of the scalar or array header.
     pub depth: u32,
     /// Typed value payload.
@@ -246,10 +246,8 @@ impl Serialize for ObjectPayload {
 }
 
 /// One legacy type-0 object node in the depth-defined ownership tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectRecord {
-    /// Globally unique native object-node identity.
-    pub id: String,
     /// Declared attribute name.
     pub name: String,
     /// Scope-local declaration identifier.
@@ -257,7 +255,7 @@ pub struct ObjectRecord {
     /// Byte offset of the owning attribute-ID scope.
     pub scope_offset: usize,
     /// Owning type-0 object node, when the depth tree supplies one.
-    pub parent: Option<String>,
+    pub parent: Option<usize>,
     /// Object-tree nesting depth.
     pub depth: u32,
     /// Stored object form.
@@ -507,7 +505,7 @@ impl Persistence {
         let objects = self
             .objects
             .iter()
-            .map(|object| (object.id.as_str(), object))
+            .map(|object| (object.offset, object))
             .collect::<BTreeMap<_, _>>();
         let mut all = BTreeMap::<String, usize>::new();
         let mut preferred = BTreeMap::<String, usize>::new();
@@ -529,7 +527,7 @@ impl Persistence {
             all.entry(text.to_string()).or_insert(record.offset);
             let is_root_solid = record
                 .parent
-                .as_deref()
+                .as_ref()
                 .and_then(|parent| objects.get(parent))
                 .is_some_and(|object| {
                     object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
@@ -668,8 +666,8 @@ impl Persistence {
             .iter()
             .map(|element_id| {
                 let mut matches = self.objects.iter().filter(|object| {
-                    object.id == *element_id
-                        && object.parent.as_deref() == Some(array.id.as_str())
+                    object.id() == *element_id
+                        && object.parent == Some(array.offset)
                         && object.name == "unit_arr"
                 });
                 let element = matches.next()?;
@@ -677,23 +675,23 @@ impl Persistence {
             })
             .collect::<Option<Vec<_>>>()?;
         let first = element_records.first()?;
-        let unit_type = self.unique_integer_scalar(&first.id, "unit_type")?;
+        let unit_type = self.unique_integer_scalar(first.offset, "unit_type")?;
         if unit_type != LEGACY_LENGTH_UNIT_TYPE
-            || self.unique_utf8_scalar(&first.id, "name")?.is_empty()
+            || self.unique_utf8_scalar(first.offset, "name")?.is_empty()
         {
             return None;
         }
-        let factor = self.unique_real_scalar(&first.id, "factor")?;
+        let factor = self.unique_real_scalar(first.offset, "factor")?;
         let scale_mm = factor * LEGACY_INCH_TO_MM;
         (scale_mm.is_finite() && scale_mm > 0.0)
             .then_some(PrincipalUnitSystem::LegacyLengthScale(scale_mm.to_bits()))
     }
 
-    fn unique_integer_scalar(&self, parent: &str, name: &str) -> Option<i32> {
+    fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
         let mut matches = self
             .integer_values
             .iter()
-            .filter(|record| record.parent.as_deref() == Some(parent) && record.name == name);
+            .filter(|record| record.parent == Some(parent) && record.name == name);
         let record = matches.next()?;
         matches.next().is_none().then_some(())?;
         match &record.payload {
@@ -702,11 +700,11 @@ impl Persistence {
         }
     }
 
-    fn unique_real_scalar(&self, parent: &str, name: &str) -> Option<f64> {
+    fn unique_real_scalar(&self, parent: usize, name: &str) -> Option<f64> {
         let mut matches = self
             .real_values
             .iter()
-            .filter(|record| record.parent.as_deref() == Some(parent) && record.name == name);
+            .filter(|record| record.parent == Some(parent) && record.name == name);
         let record = matches.next()?;
         matches.next().is_none().then_some(())?;
         match &record.payload {
@@ -715,11 +713,11 @@ impl Persistence {
         }
     }
 
-    fn unique_utf8_scalar<'a>(&'a self, parent: &str, name: &str) -> Option<&'a str> {
+    fn unique_utf8_scalar<'a>(&'a self, parent: usize, name: &str) -> Option<&'a str> {
         let mut matches = self
             .string_values
             .iter()
-            .filter(|record| record.parent.as_deref() == Some(parent) && record.name == name);
+            .filter(|record| record.parent == Some(parent) && record.name == name);
         let record = matches.next()?;
         matches.next().is_none().then_some(())?;
         match &record.payload {
@@ -876,7 +874,7 @@ fn continuation_numeric_runs<T>(
     Some(runs)
 }
 
-fn object_node_id(offset: usize) -> String {
+pub(crate) fn object_node_id(offset: usize) -> String {
     format!("creo:legacy_ascii:object#{offset}")
 }
 
@@ -980,13 +978,10 @@ fn object_records(
                 }
             };
             records.push(ObjectRecord {
-                id: object_node_id(value.offset),
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
-                parent: parents
-                    .get(&value.offset)
-                    .map(|offset| object_node_id(*offset)),
+                parent: parents.get(&value.offset).copied(),
                 depth: value.depth,
                 payload,
                 offset: value.offset,
@@ -1024,7 +1019,7 @@ fn scalar_string_records(
     data: &[u8],
     scopes: &[Scope],
     type_code: LegacyTypeCode,
-    identity_kind: &str,
+    identity_kind: ValueKind,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
 ) -> (Vec<ScalarStringRecord>, usize) {
@@ -1053,13 +1048,11 @@ fn scalar_string_records(
                 continue;
             };
             records.push(ValueRecord {
-                id: format!("creo:legacy_ascii:{identity_kind}#{}", value.offset),
+                kind: identity_kind,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
-                parent: parents
-                    .get(&value.offset)
-                    .map(|offset| object_node_id(*offset)),
+                parent: parents.get(&value.offset).copied(),
                 depth: value.depth,
                 payload: byte_string_value(bytes, null_token),
                 offset: value.offset,
@@ -1152,13 +1145,11 @@ fn string_records(
                 }
             };
             records.push(ValueRecord {
-                id: format!("creo:legacy_ascii:string#{}", value.offset),
+                kind: ValueKind::String,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
-                parent: parents
-                    .get(&value.offset)
-                    .map(|offset| object_node_id(*offset)),
+                parent: parents.get(&value.offset).copied(),
                 depth: value.depth,
                 payload,
                 offset: value.offset,
@@ -1172,7 +1163,7 @@ fn numeric_records<T>(
     data: &[u8],
     scopes: &[Scope],
     type_code: LegacyTypeCode,
-    identity_kind: &str,
+    identity_kind: ValueKind,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
 ) -> (Vec<NumericRecord<T>>, usize) {
@@ -1267,13 +1258,11 @@ fn numeric_records<T>(
                 )
             };
             records.push(ValueRecord {
-                id: format!("creo:legacy_ascii:{identity_kind}#{}", value.offset),
+                kind: identity_kind,
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
-                parent: parents
-                    .get(&value.offset)
-                    .map(|offset| object_node_id(*offset)),
+                parent: parents.get(&value.offset).copied(),
                 depth: value.depth,
                 payload,
                 offset: value.offset,
@@ -1395,7 +1384,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::NullableString,
-        "type_3",
+        ValueKind::Type3,
         NullToken::RepresentsNull,
         &parents,
     );
@@ -1403,7 +1392,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::ByteString,
-        "type_4",
+        ValueKind::Type4,
         NullToken::RepresentsBytes,
         &parents,
     );
@@ -1411,7 +1400,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Real,
-        "real",
+        ValueKind::Real,
         compact_real,
         &parents,
     );
@@ -1419,7 +1408,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Integer,
-        "integer",
+        ValueKind::Integer,
         signed_integer,
         &parents,
     );
@@ -1427,7 +1416,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned5,
-        "type_5",
+        ValueKind::Type5,
         unsigned_integer,
         &parents,
     );
@@ -1435,7 +1424,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Real6,
-        "type_6",
+        ValueKind::Type6,
         compact_real,
         &parents,
     );
@@ -1443,7 +1432,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned7,
-        "type_7",
+        ValueKind::Type7,
         unsigned_integer,
         &parents,
     );
@@ -1451,7 +1440,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned9,
-        "type_9",
+        ValueKind::Type9,
         unsigned_integer,
         &parents,
     );
@@ -1459,7 +1448,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         data,
         &scopes,
         LegacyTypeCode::Unsigned11,
-        "type_11",
+        ValueKind::Type11,
         unsigned_integer,
         &parents,
     );
@@ -1489,6 +1478,91 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         unresolved_type_9_value_count,
         type_11_values,
         unresolved_type_11_value_count,
+    }
+}
+
+impl<T> ValueRecord<T> {
+    /// Native identity derived from the source offset.
+    pub fn id(&self) -> String {
+        format!("creo:legacy_ascii:{}#{}", self.kind.as_str(), self.offset)
+    }
+}
+
+impl<T: Serialize> Serialize for ValueRecord<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("ValueRecord", 8)?;
+        wire.serialize_field("id", &self.id())?;
+        wire.serialize_field("name", &self.name)?;
+        wire.serialize_field("attribute_id", &self.attribute_id)?;
+        wire.serialize_field("scope_offset", &self.scope_offset)?;
+        wire.serialize_field("parent", &self.parent.map(object_node_id))?;
+        wire.serialize_field("depth", &self.depth)?;
+        wire.serialize_field("payload", &self.payload)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.end()
+    }
+}
+
+impl ObjectRecord {
+    /// Native identity derived from the source offset.
+    pub fn id(&self) -> String {
+        object_node_id(self.offset)
+    }
+}
+
+impl Serialize for ObjectRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("ObjectRecord", 8)?;
+        wire.serialize_field("id", &self.id())?;
+        wire.serialize_field("name", &self.name)?;
+        wire.serialize_field("attribute_id", &self.attribute_id)?;
+        wire.serialize_field("scope_offset", &self.scope_offset)?;
+        wire.serialize_field("parent", &self.parent.map(object_node_id))?;
+        wire.serialize_field("depth", &self.depth)?;
+        wire.serialize_field("payload", &self.payload)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.end()
+    }
+}
+
+/// Native identity family for a legacy value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueKind {
+    /// integer value.
+    Integer,
+    /// real value.
+    Real,
+    /// string value.
+    String,
+    /// type_3 value.
+    Type3,
+    /// type_4 value.
+    Type4,
+    /// type_5 value.
+    Type5,
+    /// type_6 value.
+    Type6,
+    /// type_7 value.
+    Type7,
+    /// type_9 value.
+    Type9,
+    /// type_11 value.
+    Type11,
+}
+impl ValueKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Integer => "integer",
+            Self::Real => "real",
+            Self::String => "string",
+            Self::Type3 => "type_3",
+            Self::Type4 => "type_4",
+            Self::Type5 => "type_5",
+            Self::Type6 => "type_6",
+            Self::Type7 => "type_7",
+            Self::Type9 => "type_9",
+            Self::Type11 => "type_11",
+        }
     }
 }
 

@@ -114,7 +114,7 @@ pub(in super::super) fn emit_legacy_value_arena<T: Serialize>(
     emit_arena(ir, annotations, key, records, |annotations, record| {
         annotate(
             annotations,
-            &record.id,
+            &record.id(),
             legacy_source_stream(scan, record.offset),
             record.offset as u64,
             tag,
@@ -139,7 +139,7 @@ pub(in super::super) fn emit_legacy_arenas(
         |annotations, record| {
             annotate(
                 annotations,
-                &record.id,
+                &record.id(),
                 legacy_source_stream(scan, record.offset),
                 record.offset as u64,
                 "legacy_type_0_object",
@@ -236,7 +236,7 @@ pub(in super::super) fn emit_legacy_arenas(
             |annotations, record| {
                 annotate(
                     annotations,
-                    &record.id,
+                    &record.id(),
                     legacy_source_stream(scan, record.offset),
                     record.offset as u64,
                     "legacy_configuration_driver_table",
