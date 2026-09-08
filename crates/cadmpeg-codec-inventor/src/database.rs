@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn schema_31_registry_uses_declared_object_and_node_counts() {
-        let bytes = registry_fixture();
+        let bytes = registry_fixture(&[2]);
         with_context(&bytes, |ctx| {
             let registry = parse_registry(ctx, &bytes).expect("schema 31 registry parses");
             assert_eq!(registry.entries.len(), 1);
@@ -535,6 +535,32 @@ mod tests {
             assert_eq!(registry.entries[0].objects.len(), 1);
             assert_eq!(registry.entries[0].nodes.len(), 1);
             assert_eq!(registry.primary_ids, vec![[0x61; 16]]);
+        });
+    }
+
+    #[test]
+    fn registry_framing_reads_the_last_object_count_without_requiring_agreement() {
+        let bytes = registry_fixture(&[7, 2]);
+        with_context(&bytes, |ctx| {
+            let registry = parse_registry(ctx, &bytes).unwrap();
+            assert_eq!(registry.entries[0].objects.len(), 2);
+            assert_eq!(registry.entries[0].objects[0].node_count, 7);
+            assert_eq!(registry.entries[0].objects[1].node_count, 2);
+            assert_eq!(registry.entries[0].nodes.len(), 1);
+        });
+        for counts in [[2, 1], [2, 3]] {
+            let bytes = registry_fixture(&counts);
+            with_context(&bytes, |ctx| assert!(parse_registry(ctx, &bytes).is_err()));
+        }
+    }
+
+    #[test]
+    fn registry_framing_rejects_unconsumed_node_sized_suffix() {
+        let mut bytes = registry_fixture(&[2]);
+        bytes.extend_from_slice(&[0; 22]);
+        with_context(&bytes, |ctx| {
+            let error = parse_registry(ctx, &bytes).unwrap_err().to_string();
+            assert!(error.contains("22 trailing bytes"), "{error}");
         });
     }
 
@@ -579,14 +605,14 @@ mod tests {
         bytes
     }
 
-    fn registry_fixture() -> Vec<u8> {
+    fn registry_fixture(object_node_counts: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 1);
         push_utf16(&mut bytes, "PmBRepSegment");
         bytes.extend_from_slice(&[0x10; 16]);
         bytes.extend_from_slice(&[0x20; 16]);
         push_u32(&mut bytes, 3);
-        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, object_node_counts.len() as u32);
         for value in 4..9 {
             push_u32(&mut bytes, value);
         }
@@ -596,11 +622,13 @@ mod tests {
         push_u32(&mut bytes, 11);
         push_version(&mut bytes, 24);
         push_u32(&mut bytes, 12);
-        bytes.extend_from_slice(&[0x20; 16]);
-        bytes.extend_from_slice(&[0x30; 9]);
-        bytes.extend_from_slice(&[0x10; 16]);
-        push_u32(&mut bytes, 13);
-        push_u32(&mut bytes, 2);
+        for node_count in object_node_counts {
+            bytes.extend_from_slice(&[0x20; 16]);
+            bytes.extend_from_slice(&[0x30; 9]);
+            bytes.extend_from_slice(&[0x10; 16]);
+            push_u32(&mut bytes, 13);
+            push_u32(&mut bytes, *node_count);
+        }
         push_u32(&mut bytes, 14);
         bytes.extend_from_slice(&(-1_i16).to_le_bytes());
         bytes.extend_from_slice(&2_i16.to_le_bytes());
