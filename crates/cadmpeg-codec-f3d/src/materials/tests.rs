@@ -44,7 +44,7 @@ fn resolved_body_binding(
     blob_name: &str,
     body: &str,
 ) -> crate::records::DesignBodyBinding {
-    crate::records::DesignBodyBinding {
+    crate::records::DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
         id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
         stream: stream.into(),
         pair_count: 1,
@@ -56,7 +56,8 @@ fn resolved_body_binding(
         blob_name: blob_name.into(),
         blob_name_offset: asm_key_offset + 32,
         body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
-    }
+    })
+    .unwrap()
 }
 
 #[test]

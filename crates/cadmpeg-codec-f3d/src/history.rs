@@ -3407,7 +3407,7 @@ pub(crate) fn bind_scope_histories(
                     .iter()
                     .filter(|history| {
                         historical_brep_source(&history.id).is_some_and(|source| {
-                            binding.blob_name.strip_prefix("BREP.") == Some(source)
+                            binding.blob_name().strip_prefix("BREP.") == Some(source)
                         })
                     })
                     .collect::<Vec<_>>();
@@ -3456,7 +3456,7 @@ pub(crate) fn bind_scope_histories(
             }
             let mut matching = candidates.iter().filter(|history| {
                 historical_brep_source(&history.id)
-                    .is_some_and(|source| binding.blob_name.strip_prefix("BREP.") == Some(source))
+                    .is_some_and(|source| binding.blob_name().strip_prefix("BREP.") == Some(source))
             });
             let history = matching.next()?;
             matching.next().is_none().then_some(history.id.as_str())
@@ -6883,7 +6883,7 @@ fn component_histories<'a>(
                 && binding.entity_suffix >= space.component_record_index
                 && binding.entity_suffix < cluster_end
         })
-        .map(|binding| binding.blob_name.as_str())
+        .map(|binding| binding.blob_name())
         .collect::<HashSet<_>>();
     let mut selected = histories
         .iter()

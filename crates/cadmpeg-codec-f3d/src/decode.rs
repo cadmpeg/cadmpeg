@@ -3067,7 +3067,7 @@ fn decode_scanned_document<'a>(
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
             selected_body_keys
-                .entry(binding.blob_name.clone())
+                .entry(binding.blob_name().to_owned())
                 .or_default()
                 .insert(binding.asm_body_key);
         }

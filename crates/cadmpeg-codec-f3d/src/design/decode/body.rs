@@ -1006,19 +1006,22 @@ pub fn decode_design_body_bindings(
                     })
                     .collect::<Vec<_>>();
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
-                out.push(DesignBodyBinding {
-                    id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
-                    stream: entry.name.clone(),
-                    pair_count,
-                    pair_ordinal: ordinal,
-                    asm_body_key: binding.asm_key,
-                    asm_body_key_offset: binding.asm_key_offset as u64,
-                    entity_suffix: binding.entity_suffix,
-                    entity_suffix_offset: binding.entity_suffix_offset() as u64,
-                    blob_name: record.blob_name.clone(),
-                    blob_name_offset: record.blob_name_offset as u64,
-                    body,
-                });
+                out.push(
+                    DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+                        id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
+                        stream: entry.name.clone(),
+                        pair_count,
+                        pair_ordinal: ordinal,
+                        asm_body_key: binding.asm_key,
+                        asm_body_key_offset: binding.asm_key_offset as u64,
+                        entity_suffix: binding.entity_suffix,
+                        entity_suffix_offset: binding.entity_suffix_offset() as u64,
+                        blob_name: record.blob_name.clone(),
+                        blob_name_offset: record.blob_name_offset as u64,
+                        body,
+                    })
+                    .map_err(CodecError::Malformed)?,
+                );
             }
         }
     }
@@ -1040,7 +1043,7 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
                     && binding.entity_suffix == bounds.entity_suffix()
             })
             .collect::<Vec<_>>();
-        matches.sort_by_key(|binding| binding.asm_body_key_offset);
+        matches.sort_by_key(|binding| binding.asm_body_key_offset());
         bounds.body_binding_ids = matches
             .into_iter()
             .map(|binding| binding.id.clone())

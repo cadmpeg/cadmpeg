@@ -1630,15 +1630,10 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(&binding.id);
         let valid = design_stream_contains_entry(native_stream, &binding.stream)
-            && binding.pair_count > 0
-            && binding.pair_ordinal < binding.pair_count
-            && binding.entity_suffix_offset == binding.asm_body_key_offset.saturating_add(8)
-            && binding.blob_name.starts_with("BREP.")
-            && binding.blob_name_offset > binding.entity_suffix_offset
             && binding.body.as_ref().is_none_or(|body| {
                 let has_named_source = native.body_native_keys.iter().any(|key| {
                     ids::same_native_occurrence(&key.id(), &binding.id)
-                        && key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                        && key.source_brep.as_deref() == Some(binding.blob_name())
                 });
                 let source_keys = native
                     .body_native_keys
@@ -1646,7 +1641,7 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .filter(|key| {
                         ids::same_native_occurrence(&key.id(), &binding.id)
                             && if has_named_source {
-                                key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                                key.source_brep.as_deref() == Some(binding.blob_name())
                             } else {
                                 key.source_brep.is_none()
                             }
@@ -1657,7 +1652,7 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     Ok(Some(resolved)) if &resolved == body
                 )
             })
-            && binding_offsets.insert((native_stream, binding.asm_body_key_offset));
+            && binding_offsets.insert((native_stream, binding.asm_body_key_offset()));
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -1667,19 +1662,19 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
         }
         binding_groups
-            .entry((native_stream, binding.blob_name_offset))
+            .entry((native_stream, binding.blob_name_offset()))
             .or_default()
             .push(binding);
     }
     for bindings in binding_groups.values_mut() {
-        bindings.sort_by_key(|binding| binding.pair_ordinal);
+        bindings.sort_by_key(|binding| binding.pair_ordinal());
         let complete = bindings
             .first()
-            .is_some_and(|first| usize::try_from(first.pair_count).ok() == Some(bindings.len()))
+            .is_some_and(|first| usize::try_from(first.pair_count()).ok() == Some(bindings.len()))
             && bindings.iter().enumerate().all(|(ordinal, binding)| {
-                usize::try_from(binding.pair_ordinal).ok() == Some(ordinal)
-                    && binding.pair_count == bindings[0].pair_count
-                    && binding.blob_name == bindings[0].blob_name
+                usize::try_from(binding.pair_ordinal()).ok() == Some(ordinal)
+                    && binding.pair_count() == bindings[0].pair_count()
+                    && binding.blob_name() == bindings[0].blob_name()
                     && binding.stream == bindings[0].stream
             });
         if !complete {
@@ -1717,7 +1712,7 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && binding.entity_suffix == bounds.entity_suffix()
             })
             .collect::<Vec<_>>();
-        expected_bindings.sort_by_key(|binding| binding.asm_body_key_offset);
+        expected_bindings.sort_by_key(|binding| binding.asm_body_key_offset());
         let expected_binding_ids = expected_bindings
             .into_iter()
             .map(|binding| binding.id.as_str())
